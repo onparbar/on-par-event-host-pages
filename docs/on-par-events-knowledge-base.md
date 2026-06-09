@@ -737,6 +737,28 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Highlight 4 bowling lanes.
 - Verification: BEO checked above billing section.
 
+### OPE Employee Appreciation Patio Party
+
+- Date/time: Sunday, June 14, 2026, 4:00 PM - 7:00 PM
+- Guests: 32
+- Areas: GEG Tables, Patio
+- Food:
+  - Food setup at Patio Bar
+- Drinks:
+  - No drink package listed on extracted BEO.
+- Entertainment:
+  - Darts, quantity 4 on the BEO per-hour/per-lane line, 6:00 PM - 7:00 PM, 1 hour
+- Special instructions:
+  - Food setup at Patio Bar.
+  - Crafts at the GEG tables.
+  - Party on the Patio.
+- Floor-plan interpretation:
+  - Highlight GEG tables for crafts.
+  - Highlight Patio/Patio Bar and mark the food setup with `F`.
+  - Highlight darts lanes 1-4 from 6:00 PM - 7:00 PM.
+  - Treat the darts quantity as 4 lane-hours / likely 4 lanes for the 1-hour window unless Tripleseat is later clarified.
+- Verification: BEO checked above billing section.
+
 ### Emily's Bachelorette Party
 
 - Date/time: Saturday, June 20, 2026, 5:00 PM - 8:00 PM
