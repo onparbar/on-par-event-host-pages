@@ -1,410 +1,932 @@
-# On Par Entertainment Events Knowledge Base
+# On Par Entertainment Events Agent Brain
 
-Handoff guide for an event request, booking, and event-output agent.
+Informational knowledge base for event request, booking, planning, and event-output agents.
 
 Last updated: June 9, 2026
 
-## Purpose
+## What This Document Is
 
-This knowledge base explains how On Par Entertainment event requests move from Tripleseat intake to finished host-facing outputs:
+This is the agent's event reference brain for On Par Entertainment. Use it to understand what Tripleseat event line items mean, what food and entertainment options imply operationally, how seating should be interpreted, and what details must appear in floor plans, entertainment schedules, and itineraries.
 
-- floor plans
-- entertainment schedules
-- event itineraries
-- hosted Next.js pages for Vercel
+This is not just a setup guide. It is the source to answer questions like:
 
-The agent's job is to keep every event artifact accurate against Tripleseat, especially the BEO/contract, while avoiding sensitive billing and payment data.
+- What does `The Full Course | WING BAR - Food + Beverage` include?
+- How many guests fit in a bowling lane, darts lane, VIP section, or karaoke room?
+- Which floor-plan areas should be reserved when Tripleseat says `VIP 1`, `VIP 2`, `The Big Show`, `WAT Tables`, or `Main Dining Room`?
+- What does each food platter mean?
+- Which event details must be captured before a booking or BEO can be trusted?
+- What should be flagged as missing or risky?
 
-## Golden Rules
+## Non-Negotiable Data Rules
 
-- Use Tripleseat as the source of truth for event name, date, time, guest count, room or area, food, drink options, and reserved entertainment.
-- Do not use anything below the Estimated Billing section of a Tripleseat BEO or contract.
-- Do not use or store payment information.
-- Do not print, display, commit, or share API secrets.
-- Use only the local `.env` credentials under `Secret Files/` for Tripleseat API access.
-- Every finished floor plan, entertainment schedule, and itinerary must be checked back against Tripleseat before it is considered complete.
-- Multiple events can happen on one day, so highlights, labels, and schedule sections must be specific to each event.
+- Tripleseat is the source of truth for booked event details.
+- Never use anything below the `Estimated Billing` section of a BEO/contract.
+- Never use payment information from a BEO.
+- Never expose, copy, commit, or summarize API secrets.
+- For a confirmed event, every floor plan, entertainment schedule, and itinerary must match the BEO/contract above `Estimated Billing`.
+- If the BEO document is missing, say so clearly and rely only on available API event/booking fields.
+- Do not guess food, drink, or entertainment reservations. If the line item is not present, mark it as not listed.
 
-## Workspace Map
+## Event Basics
 
-Main workspace:
+Venue:
 
-`/Users/christinamyers/Desktop/EVENTS`
+- On Par Entertainment
+- 4464 Indian Ripple Road, Beavercreek, Ohio 45440
+- Party pricing reference: 2026 Party Pricing, Beavercreek, Ohio
 
-Important files and folders:
+General event terms from current pricing reference:
 
-- `Secret Files/.env`: local credentials. Never commit or display.
-- `Tripleseat API/`: local Tripleseat API helpers.
-- `outputs/tripleseat/`: sanitized pulled events, BEO text, manifests, and verification reports.
-- `floor-plan-tool/`: local browser tool and map assets for editable floor-plan creation.
-- `canva floor plans/`: working PNG copies of finished floor plans.
-- `entertainment schedules/`: working PNG copies of generated entertainment schedules.
-- `ITINERARY/`: itinerary HTML/PDF outputs.
-- `public/`: deployable Vercel assets copied into the Next.js app.
-- `src/app/`: Next.js routes for index, floor plans, entertainment schedules, and itineraries.
-- `src/lib/events.ts`: route-facing event and asset index.
-- `public/data/event-plan-data.json`: deployable event data used by the hosted itinerary route.
-- `docs/on-par-events-knowledge-base.md`: this handoff guide.
+- Seating block: 2-hour guaranteed seating block
+- Minimum spend: $1,000
+- December minimum spend: $2,000
+- Booking fee: $100
+- Gratuity: 20% automatically applied
+- Buffet minimum: 15 guests
+- Family-style food service includes fountain drinks, juice, and water
+- Food + beverage package pricing includes a $20 drink card per guest
+- Beverage package drink cards are valid for drinks on tap
+- $20 is the minimum drink card value and can be increased
 
-GitHub repo:
-
-`https://github.com/marketing4464/on-par-event-host-pages`
+Use pricing and capacity information for reference and quoting support, but always confirm availability and final selections in Tripleseat.
 
 ## Tripleseat Calendar Statuses
 
-Tripleseat calendar color key:
-
 - Green: definite
-- Yellow: closed events
-- Blue: prospects
-- Brown: lost events
-- Red: full buyout events
+- Yellow: closed
+- Blue: prospect
+- Brown: lost
+- Red: full buyout
 
-For build-ready floor plans and schedules, prioritize definite and closed events unless the user says otherwise.
+For floor plans, entertainment schedules, and final itineraries, prioritize definite and closed events unless the user gives a different scope.
 
-## Event Request Intake
+## Required Event Fields
 
-For a new request or booking inquiry, collect or confirm:
-
-- event name or client/company name
-- requested event date
-- requested start and end time
-- estimated guest count
-- event type
-- requested spaces or areas
-- reserved entertainment
-- food package or food setup needs
-- drink options or bar package
-- special setup instructions
-- whether the event is definite, closed, prospect, lost, or full buyout
-
-Before building outputs, confirm the event is represented correctly in Tripleseat and has enough BEO/contract information to support floor plan and schedule decisions.
-
-## Pulling Events From Tripleseat
-
-Use the local Tripleseat helpers. They already sanitize sensitive fields and remove common financial data.
-
-Example event pull:
-
-```bash
-python3 "Tripleseat API/pull_events.py" \
-  --start 06/09/2026 \
-  --end 06/30/2026 \
-  --status definite \
-  --status closed \
-  --details \
-  --out outputs/tripleseat/june-09-30-2026-definite-closed-events.json
-```
-
-Extract BEO text above Estimated Billing:
-
-```bash
-python3 "Tripleseat API/extract_beos.py" \
-  --events outputs/tripleseat/june-09-30-2026-definite-closed-events.json \
-  --out-dir outputs/tripleseat/beo_text \
-  --manifest outputs/tripleseat/beo_manifest.json
-```
-
-If a BEO document view is missing, verify the event through available API event, booking, document, and attachment fields. Record the limitation in the verification status.
-
-## BEO Extraction Rules
-
-Only use BEO/contract content above Estimated Billing.
-
-Use these fields for planning:
+Every event record should include:
 
 - event name
 - event date
-- event time
+- day of week
+- event start and end time
 - guest count
+- Tripleseat status
 - booked room or area
-- reserved entertainment
-- food setup and menu notes
-- drink options
-- special setup instructions
+- food package or platters
+- drink package or drink-card terms
+- entertainment reservations
+- entertainment quantities
+- entertainment time windows
+- seating notes
+- food setup notes
+- special instructions
+- BEO verification status
 
-Do not use:
+If any of those are missing, flag the event before producing final outputs.
 
-- estimated billing
-- billing summary
-- grand totals
-- deposit information
-- payments
-- amount due
-- card or payment details
-- client contact information unless explicitly needed for booking operations
+## Food Package Dictionary
 
-## Floor Plan Workflow
+Food package names often appear in BEOs as package labels plus a selected buffet type.
 
-Use the BEO to identify:
+### The Front Nine
 
-- event name
-- guest count
-- date and day of week
-- time
-- room or reserved areas
-- food table setup
-- reserved entertainment
+Meaning:
 
-Canva references:
+- Food-only buffet package.
+- Includes guaranteed seating accommodations for 2 hours.
+- BEO examples commonly state soft drinks included or soft drinks free of charge.
 
-- Canva design name: `2026 FLOOR PLANS` or `2026 Floor Plans`
-- Use Canva page 43 as the map key and sizing reference.
-- Use Canva page 44 as the labeled location reference when needed.
-- Start new floor plans from a clean blank floor map.
+Common BEO forms:
 
-Local tool references:
+- `The Front Nine - Food Only`
+- `The Front Nine | TACO BAR- Food Only`
+- `The Front Nine | APPETIZER BAR- Food Only`
+- `The Front Nine w/COOKIES - Food + COOKIES`
 
-- `floor-plan-tool/index.html`
-- `floor-plan-tool/assets/blank-floor-map.png`
-- `floor-plan-tool/assets/map-key.png`
+Agent interpretation:
 
-Floor plan construction rules:
+- Treat as a food package, not entertainment.
+- Capture the selected buffet type: Wing Bar, Taco Bar, Appetizer Bar, or dessert/cookies variant.
+- Reserve seating for the guest count for at least the guaranteed 2-hour block unless the BEO adds extra seating time.
+- If guest count is over 100 and food setup applies, plan 2 food tables.
 
-- Put the day and date at the top left in black.
-- Put event name, guest count in parentheses, and event time under the date.
-- Give each event on the same day a unique highlight color.
-- Use the same color for one event's title, seating highlights, entertainment highlights, and food table markers.
-- Use square or rectangle highlights sized to the map key.
-- Set highlights to about 50% transparency so the floor map remains visible.
-- Mark food tables as `F`.
-- If guest count is over 100, mark 2 food tables.
-- Add reserved entertainment to the floor plan, not only seating.
-- Add reservation times to timed entertainment areas.
-- Mini golf is not timed entertainment.
+### The Full Course
 
-Area and seating notes:
+Meaning:
+
+- Food + beverage buffet package.
+- Includes guaranteed seating accommodations for 2 hours.
+- Includes soft drinks.
+- Current pricing reference says Food + Beverage includes a $20 drink card per guest.
+
+Common BEO forms:
+
+- `The Full Course - Food + Beverage`
+- `The Full Course | WING BAR - Food + Beverage`
+- `The Full Course | APPETIZER BAR - Food + Beverage`
+
+Agent interpretation:
+
+- Treat as a food and beverage package.
+- Capture selected buffet type.
+- Note drink-card/beverage inclusion only when shown in the BEO or current pricing reference.
+- Reserve seating for the guaranteed seating block.
+
+### The Back Nine
+
+Meaning:
+
+- Beverage-only package.
+- Example BEO language: guaranteed seating accommodations for 2 hours, preloaded $20 RFID card for each guest, soft drinks included.
+
+Common BEO form:
+
+- `The Back Nine - Beverage Only`
+
+Agent interpretation:
+
+- Treat as a beverage package, not a food package.
+- Do not add food setup unless a food line item is also present.
+- Seating still matters because the package can include guaranteed seating accommodations.
+
+## Buffet Type Dictionary
+
+### Wing Bar
+
+Description:
+
+- Deep fried jumbo wings with ranch or blue cheese.
+- Pricing reference says served with famous french fries.
+
+When used:
+
+- Appears under Front Nine or Full Course package lines.
+- If BEO says `WING BAR`, list the event food as Wing Bar.
+
+### Taco Bar
+
+Description:
+
+- Build-your-own tacos.
+- Protein/options from pricing reference: pork verde, chicken in red ranchero sauce, or Mexican ground beef.
+- Toppings include sour cream and salsa.
+
+When used:
+
+- Appears as `TACO BAR`.
+- Treat as buffet food setup requiring food table placement.
+
+### Appetizer Bar
+
+Description:
+
+- Mozzarella sticks with marinara.
+- Crispy chicken tenders.
+- Signature tater kegs.
+
+When used:
+
+- Appears as `APPETIZER BAR` or `App Bar`.
+- Treat as buffet food setup requiring food table placement.
+
+### With Dessert / Cookies
+
+Description:
+
+- Dessert variant of buffet package.
+- Pricing reference shows `With Dessert` as a buffet tier.
+- BEO examples include `w/COOKIES`.
+
+When used:
+
+- Capture cookies/dessert explicitly in the itinerary.
+- Keep the main buffet type, such as App Bar, in the food line.
+
+## Shareable Platter Dictionary
+
+Each platter serves 8 guests unless a newer source says otherwise.
+
+### Mozzarella Sticks
+
+- Served with marinara sauce.
+- Treat as a shareable platter.
+
+### Fry Platter
+
+- Golden crispy fries, piled high.
+- Treat as a shareable platter.
+
+### Veggie Tray
+
+- Fresh vegetables with ranch dressing.
+- BEO wording may say assorted fresh vegetables served with ranch dressing.
+- Treat as a shareable platter.
+
+### Tater Keg Platter
+
+- Crispy mashed-potato tots with cheese, bacon, and chives.
+- BEO wording may say super-sized crispy on the outside, mashed potato on the inside tots.
+- Treat as a shareable platter.
+
+### Wing Platter
+
+- Jumbo/traditional wings with celery and ranch or blue cheese.
+- Treat as a shareable platter.
+
+### Chicken Tender Platter
+
+- Fried chicken tenders.
+- Dipping sauce may be ranch or the guest's choice depending on BEO wording.
+- Treat as a shareable platter.
+
+### Garden Salad Platter
+
+- Chopped romaine, tomato, cucumber, red onion, cheese, and carrots.
+- Treat as a shareable platter.
+
+## Beverage Dictionary
+
+### Soft Drinks Included / Free Of Charge
+
+Meaning:
+
+- Non-alcoholic drink inclusion.
+- BEO wording may say `Soft drinks included` or `Soft drinks free of charge`.
+
+Agent interpretation:
+
+- Put this in drink options.
+- Do not infer alcoholic beverage package from this alone.
+
+### Food + Beverage Package
+
+Meaning:
+
+- Food package with beverage component.
+- Current pricing reference says it includes a $20 drink card per guest.
+
+Agent interpretation:
+
+- Include `Food + Beverage package`.
+- Include drink card only when needed for booking explanation or when BEO/pricing reference is being used for sales support.
+- For operational itineraries, `Food + Beverage package` and `soft drinks included` are usually enough.
+
+### Beverage Only / Back Nine
+
+Meaning:
+
+- Beverage package without food.
+- Example BEO says preloaded $20 RFID card per guest and soft drinks included.
+
+Agent interpretation:
+
+- Do not create food table unless there are separate food lines.
+- Include seating if guaranteed seating is listed.
+
+### Big Show Private Self-Pour Taps
+
+Meaning:
+
+- The Big Show private space rental includes private self-pour taps.
+- Also includes soft drinks in current references.
+
+Agent interpretation:
+
+- Put this under drink options for The Big Show events.
+- Do not interpret it as a full event buyout.
+
+## Entertainment Dictionary
+
+### Mini Golf
+
+Reference:
+
+- 3 courses total.
+- 9 holes each.
+- Pricing reference: per person per course, or all three courses.
+- BEO examples: `Mini Golf per person, per 9 holes`, `Mini Golf per person, all 3 courses`.
+
+Operational rules:
+
+- Mini golf is untimed unless Tripleseat explicitly states a time.
+- Do not add an entertainment schedule time block for mini golf unless a time is listed.
+- If guests receive mini golf coins and do not use them during the event, pricing reference says coins may be used later.
+
+Floor-plan implications:
+
+- Mark mini golf only if the event needs a reserved/identified area.
+- Available floor-plan buttons: Level Up Mini Golf, Wild Axe Mini Golf, Great Escape Mini Golf.
+
+### Duckpin Bowling
+
+Reference:
+
+- 12 lanes available.
+- Each lane holds 6 people.
+- BEO line examples:
+  - `Duckpin Bowling per hour, per lane Sunday-Thursday`
+  - `Duckpin Bowling per hour, per lane Friday-Saturday`
+  - `1 lane for 2 hours`
+  - `4 lanes of bowling for 2 hours`
+
+Operational rules:
+
+- Capture lane count.
+- Capture time window if BEO lists it.
+- If BEO does not list a time, use duration and ask/flag for exact schedule.
+- Add lane reservation to both floor plan and entertainment schedule.
+
+Floor-plan implications:
+
+- Bowling lanes run down the right side and are labeled 1 through 12.
+- If BEO says lane closest to karaoke, use lane 1 or the closest available lane near karaoke per map reference.
+- Available presets: Lanes 1-5, Lanes 1-7, Lanes 8-12, All Lanes, Lane 1 through Lane 12.
+
+### Darts
+
+Reference:
+
+- Pricing sheet says each lane holds 8 people and 2 lanes available.
+- Floor-plan tool currently has 5 darts lane positions labeled Darts 1-5.
+- BEO examples may say `*6 people per lane`.
+
+Operational rule:
+
+- Use the BEO for the specific event capacity/quantity when present.
+- If BEO and pricing reference differ, do not resolve silently. Flag the conflict and follow the BEO for that event's schedule.
+
+Floor-plan implications:
+
+- Darts lanes are at the lower-right side.
+- Available preset: Darts 1-5.
+- Darts conversation area is available as `Darts Convo`.
+
+### Neo Shuffleboard
+
+Reference:
+
+- Pricing reference says each lane holds 12 people and 5 lanes available.
+- BEO/floor-plan notes may refer to 2 shuffleboard lanes/tables in the mapped area.
+- BEO examples may say `*8 people per lane`.
+
+Operational rule:
+
+- Use BEO quantity for the event.
+- If time is not listed, use duration and flag exact time as missing.
+
+Floor-plan implications:
+
+- Neo shuffleboard lanes are narrow vertical lanes above VIP seating, between karaoke/VIP and bowling.
+- Highlight each lane individually.
+- Available preset: Shuffle 1-2.
+
+### Pool Tables
+
+Reference:
+
+- 3 tables available.
+- BEO examples: `Pool Table Friday-Saturday`, `1 table for 2 hours`, `3 tables for 2 hours`.
+
+Operational rule:
+
+- Capture table count and duration.
+- Add to floor plan and entertainment schedule when reserved.
+
+Floor-plan implications:
+
+- Available preset: Pool 1-3.
+
+### Karaoke Rooms
+
+Private room capacities and reference rates:
+
+| Room | Capacity |
+| --- | ---: |
+| Ocean Room | 1-16 guests |
+| Gem Room | 1-9 guests |
+| Royal Room | 1-14 guests |
+| Disco Inferno | 1-16 guests |
+| Prime Room | 1-18 guests |
+
+Operational rules:
+
+- Use room name and time window from BEO.
+- If a package says The Big Show, it includes private space with 5 karaoke rooms plus public karaoke space.
+
+Floor-plan implications:
+
+- Private karaoke rooms are along the upper-right side.
+- Available room presets: Disco, Prime, Royal, Gem, Ocean.
+
+### The Big Show
+
+Meaning:
+
+- Private space rental.
+- Accommodates 100 guests.
+- Includes 5 private karaoke rooms plus public karaoke space.
+- Includes private self-pour taps.
+- Includes TVs with HDMI setup.
+- BEO may call this `The Big Show - Space Rental Only`.
+
+Operational rules:
+
+- Treat as a private space/entertainment area.
+- Include private self-pour taps under drink options.
+- If BEO lists sponsor or TV text, include it in special instructions.
+- Do not reserve Main area seating for a group that has The Big Show unless Tripleseat separately says to.
+
+Floor-plan implications:
+
+- Highlight Big Show/public karaoke area.
+- Mark food setup in the public karaoke space with `F`.
+- Use event color for Big Show and the food marker.
+
+## Seating And Area Dictionary
+
+### Global Seating Rules
 
 - Rectangle tables fit 10 guests.
 - Square tables fit 4 guests.
-- There are 2 VIP sections.
-- Each VIP section fits up to 20 guests.
+- VIP sections each fit up to 20 guests.
 - Conversation wall areas fit up to 10 guests.
-- Karaoke includes public karaoke space plus 5 private rooms.
-- If an event has The Big Show, do not reserve Main area seating for that event.
-- If an event has The Big Show, food setup goes in public karaoke on a fold-out table and should be marked `F`.
-- For VIP1, reserve VIP1, the four rectangle tables in front of VIP1, and the conversation wall before using tables near Level Up mini golf.
-- For VIP2, reserve the table closest to Bowling.
-- Highlight neo shuffleboard lanes individually.
+- Guaranteed seating block is normally 2 hours.
+- Extra guaranteed seating time may appear as `Extra hour(s) for guaranteed reserved seating past 2 hours`.
+- If a food package is attached to the event, plan food table placement.
+- If guest count is over 100 and food setup applies, mark 2 food tables.
 
-Save outputs:
+### VIP 1
 
-- Working PNG copy: `canva floor plans/`
-- Deployable PNG copy: `public/floor-plans/`
-- Canva copy: add to the `2026 FLOOR PLANS` design on a new page.
+Meaning:
 
-## Entertainment Schedule Workflow
+- VIP 1 is the left VIP couch section inside the Main Wall/VIP area.
 
-The entertainment schedule is built from the floor plan and BEO entertainment reservations.
+Reserve with:
 
-For each event, include:
+- VIP 1 itself.
+- The four rectangle tables in front of VIP 1.
+- The conversation wall before using tables near Level Up mini golf.
+- VIP conversation walls between Karaoke and VIP when applicable.
 
-- event name
-- guest count
+Floor-plan tool preset:
+
+- `VIP 1 Full`
+- `VIP 1`
+- `VIP Food`
+
+### VIP 2
+
+Meaning:
+
+- VIP 2 is the right VIP section above the Main Wall, closer to Bowling.
+
+Reserve with:
+
+- VIP 2 itself.
+- The table closest to Bowling when a full VIP 2 setup is needed.
+- Related conversation/support seating when applicable.
+
+Floor-plan tool preset:
+
+- `VIP 2 Full`
+- `VIP 2`
+- `VIP Food`
+
+### Main Dining Room
+
+Meaning:
+
+- Main dining/event seating area.
+- Can combine rectangle tables, center rectangles, right rectangles, conversation walls, and nearby table areas.
+
+Floor-plan tool presets:
+
+- Left Rectangles
+- Center Rectangles
+- Right Rectangles
+- Conversation Walls
+- Level Up Squares
+- Main Food 1 and Main Food 2 are available as food table markers in the map data.
+
+Operational rule:
+
+- For large events, choose table groups that fit guest count.
+- Highlight tables individually instead of one large block when individual seats/tables are visible.
+
+### GEG Tables
+
+Meaning:
+
+- Great Escape Golf/GEG table area in the mapped floor-plan tool.
+
+Floor-plan tool:
+
+- `GEG Tables`
+- `ge-table-1`, `ge-table-2`, `ge-table-3`
+
+Operational rule:
+
+- Use when Tripleseat lists `GEG Tables` or when seating overflow is assigned near Great Escape.
+
+### WAT Tables
+
+Meaning:
+
+- WAT table area in the mapped floor-plan tool.
+
+Floor-plan tool:
+
+- `wat-table-1`, `wat-table-2`, `wat-table-3`
+
+Operational rule:
+
+- Use when Tripleseat lists `WAT Tables`.
+
+### Clubhouse
+
+Meaning:
+
+- Separate mapped area in the floor-plan tool.
+
+Operational rule:
+
+- Use when Tripleseat lists `Clubhouse`.
+
+### Patio
+
+Meaning:
+
+- Patio area exists in map data as `patio-reserved`.
+
+Operational rule:
+
+- Only reserve when Tripleseat explicitly lists Patio or notes outdoor/patio use.
+
+## Food Table Placement Rules
+
+Use `F` markers in the event color.
+
+Known food marker locations:
+
+- VIP food table near VIP 1/VIP 2.
+- Main food tables near Main Dining Room.
+- Karaoke food table for The Big Show/public karaoke.
+
+Rules:
+
+- Food package or platters generally require a food table.
+- One food table is usually enough for smaller events unless BEO says otherwise.
+- If guest count is over 100 and food setup applies, mark 2 food tables.
+- The Big Show food setup goes in public karaoke on a fold-out table.
+- Keep food markers visible but not blocking important map labels.
+
+## Event Line Item Interpretation Guide
+
+Use this table when reading BEO line items.
+
+| BEO line item contains | Agent should capture | Floor-plan impact | Schedule impact |
+| --- | --- | --- | --- |
+| `The Front Nine` | Food-only buffet package, buffet type, seating block | Reserve seating and food table | No entertainment unless separate lines |
+| `The Full Course` | Food + Beverage package, buffet type, seating block | Reserve seating and food table | No entertainment unless separate lines |
+| `The Back Nine` | Beverage-only package, drink card/soft drinks when listed | Reserve seating if guaranteed | No entertainment unless separate lines |
+| `Wing Bar` | Wing buffet | Food table | No entertainment |
+| `Taco Bar` | Taco buffet | Food table | No entertainment |
+| `Appetizer Bar` or `App Bar` | Appetizer buffet | Food table | No entertainment |
+| `w/COOKIES` or dessert | Dessert/cookies add-on | Food/dessert setup | No entertainment |
+| `Tater Keg Platter` | Shareable platter, serves 8 | Food table | No entertainment |
+| `Wing Platter` | Shareable platter, serves 8 | Food table | No entertainment |
+| `Chicken Tender Platter` | Shareable platter, serves 8 | Food table | No entertainment |
+| `Pretzel Bite Platter` | Shareable platter, serves 8 | Food table | No entertainment |
+| `Veggie Tray` | Shareable platter, serves 8 | Food table | No entertainment |
+| `Fry Platter` | Shareable platter, serves 8 | Food table | No entertainment |
+| `Duckpin Bowling` | Lane count, duration, time window | Highlight lane numbers | Add time block |
+| `Darts` | Lane count, duration, time window | Highlight darts lanes | Add time block |
+| `Pool Table` | Table count, duration, time window | Highlight pool tables | Add time block |
+| `Neo Shuffleboard` | Lane/table count, duration, time window | Highlight shuffle lanes | Add time block |
+| `Mini Golf` | Guest count and course count | Mark only when needed | Untimed unless BEO gives time |
+| `The Big Show` | Private space, karaoke rooms, self-pour taps, TVs | Highlight Big Show/public karaoke and karaoke food | Add private-space time block |
+| `Extra hour(s) for guaranteed reserved seating` | Seating extends past 2 hours | Extend seating reservation | Does not create entertainment by itself |
+
+## Floor Plan Highlight Rules
+
+- Add day/date at top left in black.
+- Under the date, add event name, guest count in parentheses, and event time.
+- Give every event on the same day a unique color.
+- Use the same event color for label, seating, entertainment, and food markers.
+- Highlights should be around 50% transparency.
+- Use page 43 in Canva as the map key and sizing reference.
+- Use page 44 in Canva as the labeled location reference.
+- Add the blank floor map first.
+- Highlight assigned tables, areas, entertainment spaces, and food tables.
+- Add times to timed entertainment areas.
+- Do not add times to mini golf unless Tripleseat explicitly lists a time.
+- Multiple events on one map must remain visually distinct.
+
+## Entertainment Schedule Rules
+
+Each schedule date should include:
+
+- date
+- each event on that date
+- event color
 - event time
+- guest count
 - entertainment item
-- quantity or lanes/tables/rooms when available
-- reserved time window
-- duration when relevant
+- quantity
+- time window
+- duration
 
-Schedule rules:
+Ordering:
 
-- One date can contain multiple event sections.
-- Each event should have a distinct highlight color matching its floor plan.
-- Keep events ordered by date, then time.
-- If multiple events share the same day, make each event visually distinct.
-- If the BEO lists staggered entertainment times, use the staggered times, not the full event time.
-- If an entertainment time is not listed, check whether the reservation is for 1 hour or 2 hours.
-- Mini golf does not need a timed reservation window unless Tripleseat explicitly states one.
+- Sort by date.
+- Within each date, sort by event time.
 
-Current linked-thread schedule generator:
+Missing time handling:
 
-```bash
-python3 generate_entertainment_schedules_from_thread.py
-```
+- If BEO lists duration but no exact time, write `Time not listed on BEO` and include the duration.
+- Do not invent a time.
+- If the user later gives a staggered schedule, update the schedule to use the staggered times.
 
-Current local output builder:
+Mini golf:
 
-```bash
-python3 build_event_outputs.py
-```
+- List as untimed unless Tripleseat gives a specific time.
 
-Save outputs:
+## Itinerary Rules
 
-- Working PNG copy: `entertainment schedules/`
-- Deployable PNG copy: `public/entertainment-schedules/`
-- Hosted route: `/entertainment-schedules`
-
-## Itinerary Workflow
-
-The itinerary should summarize each event in operational language.
-
-Include:
+Each itinerary card/section should include:
 
 - event name
 - date
 - time
 - guest count
-- room or booked area
+- room or area
 - food options
 - drink options
-- reserved entertainment
+- entertainment reservations
 - special instructions
 - verification status
 
-Keep the itinerary in date/time order. For multiple events on one day, keep each event as a separate card or section.
+Use operational wording. Do not include prices, billing, deposits, or payment status from BEOs.
 
-Current hosted route:
+## Current Event Detail Matrix
 
-`/itineraries`
+This matrix summarizes the current deployable event data. Always re-check Tripleseat before using it for a new production handoff.
 
-Deployable data source:
+### The Greentree Group Leadership Event
 
-`public/data/event-plan-data.json`
+- Date/time: Tuesday, June 9, 2026, 6:00 PM - 9:00 PM
+- Guests: 12
+- Area: VIP 2
+- Food:
+  - Tater Keg Platter
+  - The Full Course | Wing Bar - Food + Beverage
+  - Chicken Tender Platter
+- Drinks:
+  - Food + Beverage package
+  - Soft drinks included
+- Entertainment:
+  - Duckpin Bowling, 1 lane, 6:30 PM - 8:30 PM, 2 hours
+  - Mini Golf, 12 guests, untimed, 9 holes
+- Floor-plan interpretation:
+  - Highlight VIP 2 and related support seating.
+  - Mark VIP food table.
+  - Highlight 1 bowling lane and label 6:30-8:30.
+  - Mini golf is untimed.
+- Verification: BEO checked above billing section.
 
-## Hosted Next.js App
+### Oasis Turf & Tree Employee Outing
 
-The Vercel-ready app is in the root of this repo.
+- Date/time: Friday, June 12, 2026, 12:00 PM - 5:00 PM
+- Guests: 30
+- Area: VIP 1
+- Food:
+  - The Full Course | Appetizer Bar - Food + Beverage
+- Drinks:
+  - Food + Beverage package
+  - Soft drinks included
+- Entertainment:
+  - Darts, 1 lane, time not listed on BEO, 2 hours
+  - Duckpin Bowling, 1 lane, time not listed on BEO, 2 hours
+  - Mini Golf, 30 guests, untimed, 9 holes
+  - Pool Table, 1 table, time not listed on BEO, 2 hours
+  - Neo Shuffleboard, 1 table, time not listed on BEO, 2 hours
+- Floor-plan interpretation:
+  - Highlight VIP 1 full support seating and VIP food.
+  - Highlight one darts lane, one bowling lane, one pool table, one shuffleboard lane/table.
+  - Mark mini golf only as needed; do not assign a time unless provided.
+- Known update:
+  - A later schedule version used staggered entertainment times: bowling 12:30-1:30, darts 1:30-2:30, pool 2:30-3:30, shuffleboard 3:30-4:30.
+- Verification: BEO checked above billing section.
 
-Routes:
+### Graduation Party
 
-- `/`: index page
-- `/floor-plans`: hosted floor-plan maps
-- `/entertainment-schedules`: hosted entertainment schedule PNGs
-- `/itineraries`: hosted event itinerary cards
+- Date/time: Saturday, June 13, 2026, 3:00 PM - 6:00 PM
+- Guests: 75
+- Area: VIP 1 and VIP 2
+- Food:
+  - The Front Nine - Food Only
+  - Taco Bar
+- Drinks:
+  - Soft drinks free of charge
+- Entertainment:
+  - Duckpin Bowling, 4 lanes, time not listed on BEO, 2 hours
+- Special instructions:
+  - BEO includes `VIP`.
+- Floor-plan interpretation:
+  - Highlight VIP 1 and VIP 2 support areas.
+  - Mark VIP food table.
+  - Highlight 4 bowling lanes.
+- Verification: BEO checked above billing section.
 
-Local development:
+### Emily's Bachelorette Party
 
-```bash
-npm install
-npm run dev
-```
+- Date/time: Saturday, June 20, 2026, 5:00 PM - 8:00 PM
+- Guests: 12
+- Area: VIP 2
+- Food:
+  - The Full Course - Food + Beverage
+  - Wing Bar
+  - Tater Keg Platter
+  - Pretzel Bite Platter
+  - Garden Salad Platter
+- Drinks:
+  - Food + Beverage package
+  - Soft drinks free of charge
+- Entertainment:
+  - Duckpin Bowling, 2 lanes, time not listed on BEO, 2 hours
+  - Mini Golf, 10 guests, untimed, all 3 courses
+- Seating:
+  - BEO includes extra hour for guaranteed reserved seating past 2 hours.
+- Floor-plan interpretation:
+  - Highlight VIP 2.
+  - Mark VIP food.
+  - Highlight 2 bowling lanes.
+  - Mini golf is untimed.
+- Verification: BEO checked above billing section.
 
-Production build:
+### CJ 20th Reunion
 
-```bash
-npm run build
-```
+- Date/time: Saturday, June 20, 2026, 6:30 PM - 9:30 PM
+- Guests: 150
+- Areas: VIP 1, WAT Tables, Clubhouse
+- Food:
+  - No BEO document view returned by Tripleseat API.
+- Drinks:
+  - No BEO document view returned by Tripleseat API.
+- Entertainment:
+  - No reserved entertainment listed in available API fields.
+- Floor-plan interpretation:
+  - Highlight VIP 1, WAT tables, Clubhouse.
+  - Because guest count is 150, if food is later confirmed, plan 2 food tables.
+- Verification: API event and booking fields checked; no BEO document view returned.
 
-Asset verification:
+### CJA Class Of 2016 10 Year Reunion Meet Up
 
-```bash
-python3 verify_next_assets.py
-```
+- Date/time: Saturday, June 20, 2026, 8:00 PM - 10:00 PM
+- Guests: 100
+- Area: Main Dining Room
+- Food:
+  - No BEO document view returned by Tripleseat API.
+- Drinks:
+  - No BEO document view returned by Tripleseat API.
+- Entertainment:
+  - No reserved entertainment listed in available API fields.
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating.
+  - If food is later confirmed, mark food table based on BEO.
+- Verification: API event and booking fields checked; no BEO document view returned.
 
-Sync working assets into `public/`:
+### Expo Experts
 
-```bash
-python3 sync_public_assets.py
-```
+- Date/time: Wednesday, June 24, 2026, 2:00 PM - 5:00 PM
+- Guests: 70
+- Area: Main Dining Room
+- Food:
+  - Wing Platter
+  - Chicken Tender Platter
+  - Veggie Tray
+  - Fry Platter
+- Drinks:
+  - The Big Show space rental includes private self-pour taps
+  - Soft drinks included
+- Entertainment:
+  - The Big Show, private space with 5 karaoke rooms, 2:00 PM - 5:00 PM, 3 hours
+  - Duckpin Bowling, 1 lane closest to karaoke, 2:00 PM - 5:00 PM, 3 hours
+- Special instructions:
+  - Use bowling lane closest to karaoke.
+  - Put Sierra Nevada Corporation on the TVs.
+- Floor-plan interpretation:
+  - Highlight Big Show/public karaoke.
+  - Mark food setup in public karaoke with `F`.
+  - Highlight bowling lane closest to karaoke.
+  - Do not reserve Main area seating solely because event area says Main Dining Room if The Big Show is the actual private-space setup; verify against BEO and floor-plan note.
+- Verification: BEO checked above billing section.
 
-## Verification Checklist
+### Sydney Lance
 
-Before handoff, confirm:
+- Date/time: Wednesday, June 24, 2026, 2:00 PM - 5:00 PM
+- Guests: 40
+- Area: VIP 1
+- Food:
+  - The Front Nine w/ Cookies - Food + Cookies
+  - App Bar
+- Drinks:
+  - Soft drinks free of charge
+- Entertainment:
+  - Darts, 3 lanes, 2:00 PM - 5:00 PM, 3 hours
+  - Duckpin Bowling, 6 lanes, 2:00 PM - 5:00 PM, 3 hours
+  - Mini Golf, 80 guests, untimed, 9 holes
+- Seating:
+  - BEO includes extra hour for guaranteed reserved seating past 2 hours.
+- Floor-plan interpretation:
+  - Highlight VIP 1 full support seating and VIP food.
+  - Highlight 3 darts lanes and 6 bowling lanes.
+  - Mini golf is untimed.
+- Verification: BEO checked above billing section.
 
-- Tripleseat event count matches the planning data.
-- Every event ID in the pulled Tripleseat data exists in the planning data.
-- Every BEO extraction stopped at or above Estimated Billing.
-- No billing/payment markers appear in extracted BEO text, generated HTML, or deployable event data.
-- Event name matches Tripleseat.
-- Event date and day of week match Tripleseat.
-- Event time matches Tripleseat.
-- Guest count matches Tripleseat.
-- Food and drink options match Tripleseat.
-- Entertainment reservations match Tripleseat.
-- Floor-plan areas match the BEO and Canva map key.
-- Food tables are marked correctly.
-- Guest counts over 100 have 2 food tables when food setup applies.
-- Entertainment times are shown on floor plans when applicable.
-- Entertainment schedule matches the floor plan and BEO.
-- Itinerary matches the BEO, floor plan, and entertainment schedule.
-- Multiple events on one day are visually distinct.
-- Hosted floor-plan sections are ordered by date.
-- Hosted entertainment schedule sections are ordered by date.
-- All public asset references exist.
+### Space Force
 
-Run:
+- Date/time: Thursday, June 25, 2026, 6:00 PM - 8:00 PM
+- Guests: 250
+- Areas: Main Dining Room, VIP 1, VIP 2, GEG Tables, WAT Tables
+- Food:
+  - Tater Keg Platter
+  - Wing Platter
+  - Chicken Tender Platter
+  - Pretzel Bite Platter
+  - Veggie Tray
+- Drinks:
+  - No drink package listed on extracted BEO.
+- Entertainment:
+  - No reserved entertainment listed on extracted BEO.
+- Floor-plan interpretation:
+  - Highlight Main Dining Room, VIP 1, VIP 2, GEG Tables, WAT Tables.
+  - Mark 2 food tables because guest count is over 100 and food setup is listed.
+- Verification: BEO checked above billing section.
 
-```bash
-python3 verify_event_outputs.py
-python3 verify_next_assets.py
-```
+## Missing Information Flags
 
-Note: `verify_event_outputs.py` checks the full local generated workflow. `verify_next_assets.py` checks the deployable Next.js app.
+Flag an event when:
 
-## Current Hosted Event Data
+- no BEO document view is returned
+- food package is missing
+- drink package is missing
+- entertainment time is missing
+- entertainment quantity is missing
+- BEO capacity conflicts with pricing/floor-plan reference
+- Tripleseat room assignment conflicts with a line-item package such as The Big Show
+- guest count is over 100 and food-table count is not clear
+- event has multiple rooms/areas and seating distribution is not clear
+- special instructions mention sponsor/TV/setup and the floor plan or itinerary does not include them
 
-As of this handoff, the deployed planning data covers these 9 Tripleseat events:
+## Agent Response Rules
 
-| Date | Event | Guests | Time | Entertainment Items | Verification |
-| --- | --- | ---: | --- | ---: | --- |
-| 2026-06-09 | The Greentree Group Leadership Event | 12 | 6:00 PM - 9:00 PM | 2 | BEO checked above billing section |
-| 2026-06-12 | Oasis Turf & Tree employee outing | 30 | 12:00 PM - 5:00 PM | 5 | BEO checked above billing section |
-| 2026-06-13 | Graduation Party | 75 | 3:00 PM - 6:00 PM | 1 | BEO checked above billing section |
-| 2026-06-20 | Emily's bachelorette party | 12 | 5:00 PM - 8:00 PM | 2 | BEO checked above billing section |
-| 2026-06-20 | CJ 20th reunion | 150 | 6:30 PM - 9:30 PM | 0 | API fields checked; no BEO document view returned |
-| 2026-06-20 | CJA CLASS OF 2016 10 yr reunion meet up | 100 | 8:00 PM - 10:00 PM | 0 | API fields checked; no BEO document view returned |
-| 2026-06-24 | Expo Experts | 70 | 2:00 PM - 5:00 PM | 2 | BEO checked above billing section |
-| 2026-06-24 | Sydney Lance | 40 | 2:00 PM - 5:00 PM | 3 | BEO checked above billing section |
-| 2026-06-25 | Space Force | 250 | 6:00 PM - 8:00 PM | 0 | BEO checked above billing section |
+When answering an event question:
 
-Hosted floor plans currently exist for:
+1. Identify whether the question is about booking/sales, floor plan, schedule, itinerary, or verification.
+2. Pull event truth from Tripleseat/BEO first.
+3. Use this knowledge base to interpret line items.
+4. State missing data clearly.
+5. Do not invent quantities, times, rooms, or food.
+6. Do not mention prices from BEOs or any payment status.
+7. For customer-facing wording, keep it simple and positive.
+8. For internal operations, include exact room, table, lane, timing, food table, and verification details.
 
-- 2026-06-09
-- 2026-06-12
-- 2026-06-13
-- 2026-06-20
-- 2026-06-24
-- 2026-06-25
+## Output Requirements
 
-Hosted entertainment schedule images currently exist for:
+Floor plan must show:
 
-- 2026-05-30
-- 2026-05-31
-- 2026-06-05
-- 2026-06-06
-- 2026-06-07
-- 2026-06-09
-- 2026-06-12
-- 2026-06-13
-- 2026-06-20
-- 2026-06-24
-- 2026-06-25
+- day/date
+- event name
+- guest count
+- event time
+- unique event color
+- seating/area highlights
+- food table markers
+- entertainment highlights
+- entertainment time labels when timed
 
-## GitHub And Vercel Handoff
+Entertainment schedule must show:
 
-After updating data or assets:
+- date
+- event name
+- guest count
+- entertainment item
+- quantity
+- time window
+- duration
+- event-specific color/highlight
 
-1. Sync assets into `public/`.
-2. Run verification.
-3. Review the hosted pages locally if a dev server is available.
-4. Commit only the deployable app and documentation files.
-5. Do not commit `Secret Files/`, `outputs/`, `beo_extracts/`, `canva floor plans/`, or `entertainment schedules/`.
-6. Push to GitHub.
-7. Vercel can deploy from the GitHub repo.
+Itinerary must show:
 
-Suggested commit commands:
+- event name
+- date
+- time
+- guest count
+- room/area
+- food
+- drink options
+- entertainment
+- special instructions
+- verification status
 
-```bash
-git status --short
-git add public src docs README.md package.json next.config.ts tsconfig.json vercel.json verify_next_assets.py
-git commit -m "Update event host assets"
-git push
-```
-
-## Booking Agent Quick Script
-
-Use this as the operating rhythm:
-
-1. Pull the requested date range from Tripleseat.
-2. Extract BEOs and stop at Estimated Billing.
-3. Build or update planning data.
-4. Build floor plans from BEO seating, food, area, and entertainment requirements.
-5. Build entertainment schedules from the BEO and floor plans.
-6. Build itinerary cards from the BEO and verified outputs.
-7. Verify every artifact against Tripleseat.
-8. Copy deployable assets into `public/`.
-9. Run verification scripts.
-10. Push the Vercel-ready app to GitHub.
-
-The work is complete only when the BEO, floor plan, entertainment schedule, itinerary, and hosted HTML/Next.js pages all agree.
+The work is complete only when Tripleseat/BEO, floor plan, entertainment schedule, itinerary, and hosted pages all agree.

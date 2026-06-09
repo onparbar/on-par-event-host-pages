@@ -4,7 +4,7 @@ Next.js app for hosting On Par event floor plans, entertainment schedules, and i
 
 ## Knowledge Base
 
-- `docs/on-par-events-knowledge-base.md` - handoff guide for event request, booking, floor-plan, entertainment schedule, itinerary, GitHub, and Vercel workflows.
+- `docs/on-par-events-knowledge-base.md` - event agent brain with food packages, platters, beverage meanings, seating/area rules, entertainment options, current event details, and verification rules.
 
 ## Routes
 
