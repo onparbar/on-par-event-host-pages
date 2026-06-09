@@ -1,0 +1,24 @@
+.DS_Store
+node_modules/
+.next/
+out/
+.vercel/
+*.log
+.env
+.env.*
+
+# Local credential and working-source folders.
+Secret Files/
+beo_extracts/
+outputs/
+generated_floor_plans/
+Canva API/
+Tripleseat API/
+
+# Generated local-only PDFs and Canva/source work.
+ITINERARY/
+canva floor plans/
+entertainment schedules/
+floor-plan-tool/
+RESERVE SIGNS/
+pricing sheet/

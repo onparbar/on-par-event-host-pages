@@ -1,0 +1,165 @@
+{
+  "date_range": {
+    "start": "2026-06-09",
+    "end": "2026-06-30"
+  },
+  "events": [
+    {
+      "id": 60314393,
+      "name": "The Greentree Group Leadership Event",
+      "date": "2026-06-09",
+      "day": "Tuesday",
+      "time": "6:00 PM - 9:00 PM",
+      "guest_count": 12,
+      "rooms": ["VIP 2"],
+      "color": "#2f8f46",
+      "food": ["Tater Keg Platter", "The Full Course | WING BAR - Food + Beverage", "Chicken Tender Platter"],
+      "drink_options": ["Food + Beverage package", "Soft drinks included"],
+      "entertainment": [
+        {"name": "Duckpin Bowling", "quantity": "1 lane", "time": "6:30 PM - 8:30 PM", "duration": "2 hours"},
+        {"name": "Mini Golf", "quantity": "12 guests", "time": "Untimed", "duration": "9 holes"}
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-09_the-greentree-group-leadership-event_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
+      "id": 59457669,
+      "name": "Oasis Turf & Tree employee outing",
+      "date": "2026-06-12",
+      "day": "Friday",
+      "time": "12:00 PM - 5:00 PM",
+      "guest_count": 30,
+      "rooms": ["VIP 1"],
+      "color": "#2f8f46",
+      "food": ["The Full Course | APPETIZER BAR - Food + Beverage"],
+      "drink_options": ["Food + Beverage package", "Soft drinks included"],
+      "entertainment": [
+        {"name": "Darts", "quantity": "1 lane", "time": "Time not listed on BEO", "duration": "2 hours"},
+        {"name": "Duckpin Bowling", "quantity": "1 lane", "time": "Time not listed on BEO", "duration": "2 hours"},
+        {"name": "Mini Golf", "quantity": "30 guests", "time": "Untimed", "duration": "9 holes"},
+        {"name": "Pool Table", "quantity": "1 table", "time": "Time not listed on BEO", "duration": "2 hours"},
+        {"name": "Neo Shuffleboard", "quantity": "1 table", "time": "Time not listed on BEO", "duration": "2 hours"}
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-12_oasis-turf-tree-employee-outing_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
+      "id": 55711085,
+      "name": "Graduation Party",
+      "date": "2026-06-13",
+      "day": "Saturday",
+      "time": "3:00 PM - 6:00 PM",
+      "guest_count": 75,
+      "rooms": ["VIP 1", "VIP 2"],
+      "color": "#2f8f46",
+      "food": ["The Front Nine - Food Only", "Taco Bar"],
+      "drink_options": ["Soft drinks free of charge"],
+      "entertainment": [
+        {"name": "Duckpin Bowling", "quantity": "4 lanes", "time": "Time not listed on BEO", "duration": "2 hours"}
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-13_graduation-party_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
+      "id": 53467014,
+      "name": "Emily's bachelorette party",
+      "date": "2026-06-20",
+      "day": "Saturday",
+      "time": "5:00 PM - 8:00 PM",
+      "guest_count": 12,
+      "rooms": ["VIP 2"],
+      "color": "#f97316",
+      "food": ["The Full Course - Food + Beverage", "Wing Bar", "Tater Keg Platter", "Pretzel Bite Platter", "Garden Salad Platter"],
+      "drink_options": ["Food + Beverage package", "Soft drinks free of charge"],
+      "entertainment": [
+        {"name": "Duckpin Bowling", "quantity": "2 lanes", "time": "Time not listed on BEO", "duration": "2 hours"},
+        {"name": "Mini Golf", "quantity": "10 guests", "time": "Untimed", "duration": "All 3 courses"}
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-20_emily-s-bachelorette-party_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
+      "id": 58788436,
+      "name": "CJ 20th reunion",
+      "date": "2026-06-20",
+      "day": "Saturday",
+      "time": "6:30 PM - 9:30 PM",
+      "guest_count": 150,
+      "rooms": ["VIP 1", "WAT Tables", "Clubhouse"],
+      "color": "#0891b2",
+      "food": ["No BEO document view returned by Tripleseat API"],
+      "drink_options": ["No BEO document view returned by Tripleseat API"],
+      "entertainment": [],
+      "beo_text": null,
+      "verification_status": "API event and booking fields checked; no BEO document view returned"
+    },
+    {
+      "id": 59409246,
+      "name": "CJA CLASS OF 2016 10 yr reunion meet up",
+      "date": "2026-06-20",
+      "day": "Saturday",
+      "time": "8:00 PM - 10:00 PM",
+      "guest_count": 100,
+      "rooms": ["Main Dining Room"],
+      "color": "#a855f7",
+      "food": ["No BEO document view returned by Tripleseat API"],
+      "drink_options": ["No BEO document view returned by Tripleseat API"],
+      "entertainment": [],
+      "beo_text": null,
+      "verification_status": "API event and booking fields checked; no BEO document view returned"
+    },
+    {
+      "id": 57931690,
+      "name": "Expo Experts",
+      "date": "2026-06-24",
+      "day": "Wednesday",
+      "time": "2:00 PM - 5:00 PM",
+      "guest_count": 70,
+      "rooms": ["Main Dining Room"],
+      "color": "#f97316",
+      "food": ["Wing Platter", "Chicken Tender Platter", "Veggie Tray", "Fry Platter"],
+      "drink_options": ["The Big Show space rental includes private self-pour taps", "Soft drinks included"],
+      "entertainment": [
+        {"name": "The Big Show", "quantity": "Private space with 5 karaoke rooms", "time": "2:00 PM - 5:00 PM", "duration": "3 hours"},
+        {"name": "Duckpin Bowling", "quantity": "1 lane closest to karaoke", "time": "2:00 PM - 5:00 PM", "duration": "3 hours"}
+      ],
+      "special_instructions": ["Use bowling lane closest to karaoke", "Put Sierra Nevada Corporation on the TVs"],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-24_expo-experts_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
+      "id": 53720577,
+      "name": "Sydney Lance",
+      "date": "2026-06-24",
+      "day": "Wednesday",
+      "time": "2:00 PM - 5:00 PM",
+      "guest_count": 40,
+      "rooms": ["VIP 1"],
+      "color": "#2f8f46",
+      "food": ["The Front Nine w/COOKIES - Food + COOKIES", "App Bar"],
+      "drink_options": ["Soft drinks free of charge"],
+      "entertainment": [
+        {"name": "Darts", "quantity": "3 lanes", "time": "2:00 PM - 5:00 PM", "duration": "3 hours"},
+        {"name": "Duckpin Bowling", "quantity": "6 lanes", "time": "2:00 PM - 5:00 PM", "duration": "3 hours"},
+        {"name": "Mini Golf", "quantity": "80 guests", "time": "Untimed", "duration": "9 holes"}
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-24_sydney-lance_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
+      "id": 58529118,
+      "name": "Space Force",
+      "date": "2026-06-25",
+      "day": "Thursday",
+      "time": "6:00 PM - 8:00 PM",
+      "guest_count": 250,
+      "rooms": ["Main Dining Room", "VIP 1", "VIP 2", "GEG Tables", "WAT Tables"],
+      "color": "#2f8f46",
+      "food": ["Tater Keg Platter", "Wing Platter", "Chicken Tender Platter", "Pretzel Bite Platter", "Veggie Tray"],
+      "drink_options": ["No drink package listed on extracted BEO"],
+      "entertainment": [],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-25_space-force_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    }
+  ]
+}
