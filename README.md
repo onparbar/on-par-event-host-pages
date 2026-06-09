@@ -2,6 +2,10 @@
 
 Next.js app for hosting On Par event floor plans, entertainment schedules, and itineraries on Vercel.
 
+## Knowledge Base
+
+- `docs/on-par-events-knowledge-base.md` - handoff guide for event request, booking, floor-plan, entertainment schedule, itinerary, GitHub, and Vercel workflows.
+
 ## Routes
 
 - `/` - index
