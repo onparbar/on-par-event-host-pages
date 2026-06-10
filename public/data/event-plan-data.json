@@ -61,24 +61,6 @@
       "verification_status": "BEO checked above billing section"
     },
     {
-      "id": 60440679,
-      "name": "OPE Employee Appreciation Patio Party",
-      "date": "2026-06-14",
-      "day": "Sunday",
-      "time": "4:00 PM - 7:00 PM",
-      "guest_count": 32,
-      "rooms": ["GEG Tables", "Patio"],
-      "color": "#f97316",
-      "food": ["Food setup at Patio Bar"],
-      "drink_options": ["No drink package listed on extracted BEO"],
-      "entertainment": [
-        {"name": "Darts", "quantity": "4 lane-hours; shown as lanes 1-4", "time": "6:00 PM - 7:00 PM", "duration": "1 hour"}
-      ],
-      "special_instructions": ["Food setup at Patio Bar", "Crafts at the GEG tables", "Party on the Patio"],
-      "beo_text": "outputs/tripleseat/beo_text/2026-06-14_ope-employee-appreciation-patio-party_beo.txt",
-      "verification_status": "BEO checked above billing section; darts quantity interpreted from per-hour/per-lane line"
-    },
-    {
       "id": 53467014,
       "name": "Emily's bachelorette party",
       "date": "2026-06-20",
