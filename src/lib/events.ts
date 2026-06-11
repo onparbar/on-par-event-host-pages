@@ -51,6 +51,12 @@ export const floorPlans: DateAsset[] = [
     events: ["Graduation Party"],
   },
   {
+    date: "2026-06-14",
+    label: "Sunday, June 14, 2026",
+    image: "/floor-plans/june-14-ope-employee-appreciation-patio-party.png",
+    events: ["OPE Employee Appreciation Patio Party"],
+  },
+  {
     date: "2026-06-20",
     label: "Saturday, June 20, 2026",
     image: "/floor-plans/june-20-floor-plans.png",
@@ -126,6 +132,13 @@ export const entertainmentSchedules: DateAsset[] = [
     image: "/entertainment-schedules/june-13-entertainment-schedule.png",
     events: ["Graduation Party"],
     source: "Linked schedule thread",
+  },
+  {
+    date: "2026-06-14",
+    label: "Sunday, June 14, 2026",
+    image: "/entertainment-schedules/june-14-entertainment-schedule.png",
+    events: ["OPE Employee Appreciation Patio Party"],
+    source: "Tripleseat BEO pulled June 9, 2026",
   },
   {
     date: "2026-06-20",
