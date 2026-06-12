@@ -99,8 +99,8 @@
       "name": "Graduation Party",
       "date": "2026-06-13",
       "day": "Saturday",
-      "time": "3:00 PM - 6:00 PM",
-      "guest_count": 75,
+      "time": "3:00 PM - 7:00 PM",
+      "guest_count": 55,
       "rooms": [
         "VIP 1",
         "VIP 2"
@@ -111,18 +111,29 @@
         "Taco Bar"
       ],
       "drink_options": [
-        "Soft drinks free of charge"
+        "The Back Nine - Beverage Only",
+        "Soft drinks free of charge",
+        "Soft drinks included"
       ],
       "entertainment": [
         {
           "name": "Duckpin Bowling",
           "quantity": "4 lanes",
-          "time": "Time not listed on BEO",
+          "time": "3:30 PM - 5:30 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "The Ocean Karaoke",
+          "quantity": "1 room",
+          "time": "4:00 PM - 6:00 PM",
           "duration": "2 hours"
         }
       ],
+      "special_instructions": [
+        "VIP"
+      ],
       "beo_text": "outputs/tripleseat/beo_text/2026-06-13_graduation-party_beo.txt",
-      "verification_status": "BEO checked above billing section"
+      "verification_status": "BEO checked above billing section; refreshed June 12, 2026"
     },
     {
       "id": 60440679,
