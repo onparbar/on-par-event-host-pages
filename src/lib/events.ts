@@ -144,7 +144,7 @@ export const entertainmentSchedules: DateAsset[] = [
     date: "2026-06-20",
     label: "Saturday, June 20, 2026",
     image: "/entertainment-schedules/june-20-entertainment-schedule.png",
-    events: ["Emily's bachelorette party", "CJ 20th reunion", "CJA CLASS OF 2016 10 yr reunion meet up"],
+    events: ["Emily's bachelorette party"],
     source: "Current EVENTS workspace data",
   },
   {
