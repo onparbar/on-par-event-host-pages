@@ -47,7 +47,7 @@
       "date": "2026-06-12",
       "day": "Friday",
       "time": "12:00 PM - 5:00 PM",
-      "guest_count": 30,
+      "guest_count": 31,
       "rooms": [
         "VIP 1"
       ],
@@ -174,8 +174,8 @@
       "name": "Emily's bachelorette party",
       "date": "2026-06-20",
       "day": "Saturday",
-      "time": "5:00 PM - 8:00 PM",
-      "guest_count": 12,
+      "time": "5:00 PM - 7:00 PM",
+      "guest_count": 10,
       "rooms": [
         "VIP 2"
       ],
@@ -184,8 +184,7 @@
         "The Full Course - Food + Beverage",
         "Wing Bar",
         "Tater Keg Platter",
-        "Pretzel Bite Platter",
-        "Garden Salad Platter"
+        "Pretzel Bite Platter"
       ],
       "drink_options": [
         "Food + Beverage package",
@@ -253,6 +252,54 @@
       "verification_status": "API event and booking fields checked; no BEO document view returned"
     },
     {
+      "id": 60385744,
+      "name": "RAM - Residents",
+      "date": "2026-06-23",
+      "day": "Tuesday",
+      "time": "3:00 PM - 6:00 PM",
+      "guest_count": 50,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#2f8f46",
+      "food": [
+        "Wing Platter",
+        "Veggie Tray",
+        "Mozzarella Sticks"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "1 lane",
+          "time": "3:15 PM - 5:15 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "3 lanes",
+          "time": "3:15 PM - 5:15 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Pool Table",
+          "quantity": "1 table",
+          "time": "3:15 PM - 5:15 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Mini Golf",
+          "quantity": "33 guests",
+          "time": "Untimed",
+          "duration": "9 holes"
+        }
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-23_ram-residents_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
       "id": 57931690,
       "name": "Expo Experts",
       "date": "2026-06-24",
@@ -315,7 +362,7 @@
       "entertainment": [
         {
           "name": "Darts",
-          "quantity": "3 lanes",
+          "quantity": "4 lanes",
           "time": "2:00 PM - 5:00 PM",
           "duration": "3 hours"
         },
@@ -327,20 +374,24 @@
         },
         {
           "name": "Mini Golf",
-          "quantity": "80 guests",
+          "quantity": "85 guests",
           "time": "Untimed",
           "duration": "9 holes"
         }
       ],
+      "special_instructions": [
+        "BEO includes extra hour for guaranteed reserved seating past 2 hours",
+        "Event summary shows 40 guests while food and mini golf line items list quantity 85"
+      ],
       "beo_text": "outputs/tripleseat/beo_text/2026-06-24_sydney-lance_beo.txt",
-      "verification_status": "BEO checked above billing section"
+      "verification_status": "BEO checked above billing section; guest-count discrepancy flagged"
     },
     {
       "id": 58529118,
       "name": "Space Force",
       "date": "2026-06-25",
       "day": "Thursday",
-      "time": "6:00 PM - 8:00 PM",
+      "time": "6:00 PM - 10:00 PM",
       "guest_count": 250,
       "rooms": [
         "Main Dining Room",
@@ -361,6 +412,9 @@
         "No drink package listed on extracted BEO"
       ],
       "entertainment": [],
+      "special_instructions": [
+        "BEO includes extra hour for guaranteed reserved seating past 2 hours"
+      ],
       "beo_text": "outputs/tripleseat/beo_text/2026-06-25_space-force_beo.txt",
       "verification_status": "BEO checked above billing section"
     }

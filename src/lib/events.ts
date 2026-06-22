@@ -63,6 +63,12 @@ export const floorPlans: DateAsset[] = [
     events: ["Emily's bachelorette party", "CJ 20th reunion", "CJA CLASS OF 2016 10 yr reunion meet up"],
   },
   {
+    date: "2026-06-23",
+    label: "Tuesday, June 23, 2026",
+    image: "/floor-plans/june-23-ram-residents.png",
+    events: ["RAM - Residents"],
+  },
+  {
     date: "2026-06-24",
     label: "Wednesday, June 24, 2026",
     image: "/floor-plans/june-24-floor-plans.png",
@@ -144,22 +150,29 @@ export const entertainmentSchedules: DateAsset[] = [
     date: "2026-06-20",
     label: "Saturday, June 20, 2026",
     image: "/entertainment-schedules/june-20-entertainment-schedule.png",
-    events: ["Emily's bachelorette party"],
-    source: "Current EVENTS workspace data",
+    events: ["Emily's bachelorette party", "CJ 20th reunion", "CJA CLASS OF 2016 10 yr reunion meet up"],
+    source: "Tripleseat BEO/API pull June 19, 2026",
+  },
+  {
+    date: "2026-06-23",
+    label: "Tuesday, June 23, 2026",
+    image: "/entertainment-schedules/june-23-entertainment-schedule.png",
+    events: ["RAM - Residents"],
+    source: "Tripleseat BEO/API pull June 22, 2026",
   },
   {
     date: "2026-06-24",
     label: "Wednesday, June 24, 2026",
     image: "/entertainment-schedules/june-24-entertainment-schedule.png",
-    events: ["Sydney Lance"],
-    source: "Linked schedule thread",
+    events: ["Expo Experts", "Sydney Lance"],
+    source: "Tripleseat BEO/API pull June 22, 2026",
   },
   {
     date: "2026-06-25",
     label: "Thursday, June 25, 2026",
     image: "/entertainment-schedules/june-25-entertainment-schedule.png",
     events: ["Space Force"],
-    source: "Linked schedule thread",
+    source: "Tripleseat BEO/API pull June 22, 2026",
   },
 ];
 
