@@ -822,7 +822,7 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 
 - Date/time: Tuesday, June 23, 2026, 3:00 PM - 6:00 PM
 - Guests: 50
-- Area: Main Dining Room
+- Area: VIP 1
 - Food:
   - Wing Platter
   - Veggie Tray
@@ -835,8 +835,8 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Pool Table, 1 table, 3:15 PM - 5:15 PM, 2 hours
   - Mini Golf, 33 guests, untimed, 9 holes
 - Floor-plan interpretation:
-  - Highlight Main Dining Room seating.
-  - Mark 1 main food table.
+  - Highlight VIP 1 full support seating.
+  - Mark VIP food table.
   - Highlight bowling lanes 1-3, darts lane 1, and pool table 1 with `3:15-5:15` labels.
   - Mark mini golf only as needed; do not assign a time unless provided.
 - Verification: BEO checked above billing section.
