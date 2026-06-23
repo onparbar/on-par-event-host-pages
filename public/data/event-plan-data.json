@@ -336,7 +336,8 @@
       ],
       "special_instructions": [
         "Use bowling lane closest to karaoke",
-        "Put Sierra Nevada Corporation on the TVs"
+        "Put Sierra Nevada Corporation on the TVs",
+        "Set lights in karaoke to full brightness"
       ],
       "beo_text": "outputs/tripleseat/beo_text/2026-06-24_expo-experts_beo.txt",
       "verification_status": "BEO checked above billing section"
