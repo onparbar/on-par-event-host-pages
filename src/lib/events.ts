@@ -77,8 +77,14 @@ export const floorPlans: DateAsset[] = [
   {
     date: "2026-06-25",
     label: "Thursday, June 25, 2026",
-    image: "/floor-plans/june-25-space-force.png",
-    events: ["Space Force"],
+    image: "/floor-plans/june-25-floor-plans.png",
+    events: ["Lowes MST Team", "Space Force"],
+  },
+  {
+    date: "2026-07-07",
+    label: "Tuesday, July 7, 2026",
+    image: "/floor-plans/july-07-work-event-for-30-co-workers.png",
+    events: ["Work event for 30 co-workers"],
   },
 ];
 
@@ -165,14 +171,21 @@ export const entertainmentSchedules: DateAsset[] = [
     label: "Wednesday, June 24, 2026",
     image: "/entertainment-schedules/june-24-entertainment-schedule.png",
     events: ["Expo Experts", "Sydney Lance"],
-    source: "Tripleseat BEO/API pull June 22, 2026",
+    source: "Tripleseat BEO/API pull June 24, 2026",
   },
   {
     date: "2026-06-25",
     label: "Thursday, June 25, 2026",
     image: "/entertainment-schedules/june-25-entertainment-schedule.png",
-    events: ["Space Force"],
-    source: "Tripleseat BEO/API pull June 22, 2026",
+    events: ["Lowes MST Team", "Space Force"],
+    source: "Tripleseat BEO/API pull June 24, 2026",
+  },
+  {
+    date: "2026-07-07",
+    label: "Tuesday, July 7, 2026",
+    image: "/entertainment-schedules/july-07-entertainment-schedule.png",
+    events: ["Work event for 30 co-workers"],
+    source: "Tripleseat BEO/API pull June 24, 2026",
   },
 ];
 

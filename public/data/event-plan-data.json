@@ -388,6 +388,43 @@
       "verification_status": "BEO checked above billing section; guest-count discrepancy flagged"
     },
     {
+      "id": 60796399,
+      "name": "Lowes MST Team",
+      "date": "2026-06-25",
+      "day": "Thursday",
+      "time": "11:00 AM - 2:00 PM",
+      "guest_count": 23,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#f97316",
+      "food": [
+        "Premium Taco Bar",
+        "Wing Platter",
+        "Fry Platter",
+        "Veggie Tray"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "11:00 AM - 2:00 PM",
+          "duration": "3 hours"
+        },
+        {
+          "name": "Pool Table",
+          "quantity": "1 table",
+          "time": "11:00 AM - 2:00 PM",
+          "duration": "3 hours"
+        }
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-06-25_lowes-mst-team_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
       "id": 58529118,
       "name": "Space Force",
       "date": "2026-06-25",
@@ -417,6 +454,46 @@
         "BEO includes extra hour for guaranteed reserved seating past 2 hours"
       ],
       "beo_text": "outputs/tripleseat/beo_text/2026-06-25_space-force_beo.txt",
+      "verification_status": "BEO checked above billing section"
+    },
+    {
+      "id": 60384590,
+      "name": "Work event for 30 co-workers",
+      "date": "2026-07-07",
+      "day": "Tuesday",
+      "time": "4:00 PM - 8:00 PM",
+      "guest_count": 30,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#2f8f46",
+      "food": [
+        "The Full Course - Food + Beverage",
+        "Premium Taco Bar",
+        "Dessert",
+        "Wing Platter"
+      ],
+      "drink_options": [
+        "Food + Beverage package"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "5 lanes",
+          "time": "4:00 PM - 8:00 PM",
+          "duration": "4 hours"
+        },
+        {
+          "name": "Mini Golf",
+          "quantity": "30 guests",
+          "time": "Untimed",
+          "duration": "9 holes"
+        }
+      ],
+      "special_instructions": [
+        "Need to start around 4:00 PM and end by 8:00 PM"
+      ],
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-07_work-event-for-30-co-workers_beo.txt",
       "verification_status": "BEO checked above billing section"
     }
   ]

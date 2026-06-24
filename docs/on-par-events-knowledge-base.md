@@ -2,7 +2,7 @@
 
 Informational knowledge base for event request, booking, planning, and event-output agents.
 
-Last updated: June 22, 2026
+Last updated: June 24, 2026
 
 ## What This Document Is
 
@@ -891,6 +891,27 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Mini golf is untimed.
 - Verification: BEO checked above billing section; guest-count discrepancy flagged.
 
+### Lowes MST Team
+
+- Date/time: Thursday, June 25, 2026, 11:00 AM - 2:00 PM
+- Guests: 23
+- Area: Main Dining Room
+- Food:
+  - Premium Taco Bar
+  - Wing Platter
+  - Fry Platter
+  - Veggie Tray
+- Drinks:
+  - No drink package listed on extracted BEO.
+- Entertainment:
+  - Duckpin Bowling, 4 lanes, 11:00 AM - 2:00 PM, 3 hours
+  - Pool Table, 1 table, 11:00 AM - 2:00 PM, 3 hours
+- Floor-plan interpretation:
+  - Highlight the Main Dining Room seating needed for a 23-guest lunch event.
+  - Mark 1 main food table.
+  - Highlight bowling lanes 1-4 and pool table 1 with `11-2` labels.
+- Verification: BEO checked above billing section.
+
 ### Space Force
 
 - Date/time: Thursday, June 25, 2026, 6:00 PM - 10:00 PM
@@ -911,6 +932,29 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 - Floor-plan interpretation:
   - Highlight Main Dining Room, VIP 1, VIP 2, GEG Tables, WAT Tables.
   - Mark 2 food tables because guest count is over 100 and food setup is listed.
+- Verification: BEO checked above billing section.
+
+### Work Event For 30 Co-Workers
+
+- Date/time: Tuesday, July 7, 2026, 4:00 PM - 8:00 PM
+- Guests: 30
+- Area: Main Dining Room
+- Food:
+  - The Full Course - Food + Beverage
+  - Premium Taco Bar
+  - Dessert
+  - Wing Platter
+- Drinks:
+  - Food + Beverage package
+- Entertainment:
+  - Duckpin Bowling, 5 lanes, 4:00 PM - 8:00 PM, 4 hours
+  - Mini Golf, 30 guests, untimed, 9 holes
+- Special instructions:
+  - Need to start around 4:00 PM and end by 8:00 PM.
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating and 1 food table.
+  - Highlight bowling lanes 1-5 and label `4-8`.
+  - Mini golf is untimed and does not need a time label.
 - Verification: BEO checked above billing section.
 
 ## Missing Information Flags
