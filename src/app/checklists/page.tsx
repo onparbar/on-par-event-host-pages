@@ -1,361 +1,80 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { checklistEvents } from "@/lib/checklist-events";
+import {
+  checklistSections,
+  currency,
+  defaultChecklistState,
+  entertainmentAddOns,
+  entertainmentUnitPrice,
+  eventCompletion,
+  foodAddOns,
+  foodUnitPrice,
+  numeric,
+  recordToChecklistState,
+  type ChecklistRecord,
+  type ChecklistRecordStatus,
+  type EventChecklistState,
+} from "@/lib/checklist-model";
 
-type RateOption = {
-  key: string;
-  label: string;
-  price: number;
+type EventChecklistMeta = {
+  status: ChecklistRecordStatus;
+  updatedAt: string | null;
+  submittedAt: string | null;
 };
 
-type EntertainmentAddOnConfig = {
-  key: string;
-  label: string;
-  kind: "manual-price" | "fixed-price" | "rate-select";
-  fixedPrice?: number;
-  options?: RateOption[];
-  unitLabel: string;
-};
+type SaveState = "idle" | "saving" | "saved" | "error" | "submitting" | "submitted";
 
-type FoodAddOnConfig = {
-  key: string;
-  label: string;
-  kind: "manual-price" | "fixed-price";
-  fixedPrice?: number;
-};
-
-type ChecklistSection = {
-  key: string;
-  title: string;
-  items: Array<{
-    key: string;
-    label: string;
-  }>;
-};
-
-type EntertainmentState = {
-  quantity: string;
-  selectedRateKey: string;
-  manualPrice: string;
-};
-
-type FoodState = {
-  quantity: string;
-  manualPrice: string;
-};
-
-type EventChecklistState = {
-  bwa: string;
-  extrasAdded: string;
-  remainingDrinkCardBalance: string;
-  tasks: Record<string, boolean>;
-  entertainment: Record<string, EntertainmentState>;
-  food: Record<string, FoodState>;
-};
-
-const STORAGE_KEY = "on-par-event-checklists-v1";
-
-const entertainmentAddOns: EntertainmentAddOnConfig[] = [
-  {
-    key: "prepaid-drink-cards",
-    label: "Prepaid Drink Cards",
-    kind: "manual-price",
-    unitLabel: "cards",
-  },
-  {
-    key: "bowling",
-    label: "Bowling",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $30 per hour", price: 30 },
-      { key: "fri-sat", label: "Friday-Saturday · $40 per hour", price: 40 },
-    ],
-  },
-  {
-    key: "darts",
-    label: "Darts",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $30 per hour", price: 30 },
-      { key: "fri-sat", label: "Friday-Saturday · $40 per hour", price: 40 },
-    ],
-  },
-  {
-    key: "mini-golf",
-    label: "Mini Golf",
-    kind: "fixed-price",
-    fixedPrice: 9,
-    unitLabel: "courses",
-  },
-  {
-    key: "shuffleboard",
-    label: "Shuffleboard",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $30 per hour", price: 30 },
-      { key: "fri-sat", label: "Friday-Saturday · $40 per hour", price: 40 },
-    ],
-  },
-  {
-    key: "gem-room",
-    label: "The Gem Room",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $39 per hour", price: 39 },
-      { key: "fri-sat", label: "Friday-Saturday · $79 per hour", price: 79 },
-    ],
-  },
-  {
-    key: "ocean-room",
-    label: "The Ocean Room",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $35 per hour", price: 35 },
-      { key: "fri-sat", label: "Friday-Saturday · $69 per hour", price: 69 },
-    ],
-  },
-  {
-    key: "prime-room",
-    label: "The Prime Room",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $35 per hour", price: 35 },
-      { key: "fri-sat", label: "Friday-Saturday · $69 per hour", price: 69 },
-    ],
-  },
-  {
-    key: "disco-room",
-    label: "The Disco Room",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $39 per hour", price: 39 },
-      { key: "fri-sat", label: "Friday-Saturday · $79 per hour", price: 79 },
-    ],
-  },
-  {
-    key: "royal-room",
-    label: "The Royal Room",
-    kind: "rate-select",
-    unitLabel: "hours",
-    options: [
-      { key: "sun-thu", label: "Sun-Thursday · $35 per hour", price: 35 },
-      { key: "fri-sat", label: "Friday-Saturday · $69 per hour", price: 69 },
-    ],
-  },
-];
-
-const foodAddOns: FoodAddOnConfig[] = [
-  { key: "wings", label: "Wings", kind: "fixed-price", fixedPrice: 120 },
-  { key: "mozzarella-sticks", label: "Mozzarella Sticks", kind: "fixed-price", fixedPrice: 120 },
-  { key: "tater-kegs", label: "Tater Kegs", kind: "fixed-price", fixedPrice: 120 },
-  { key: "fry-platters", label: "Fry Platters", kind: "fixed-price", fixedPrice: 75 },
-  { key: "chicken-tenders", label: "Chicken Tenders", kind: "fixed-price", fixedPrice: 120 },
-  { key: "veggie-tray", label: "Veggie Tray", kind: "fixed-price", fixedPrice: 75 },
-  { key: "bbq-sauce", label: "BBQ Sauce", kind: "fixed-price", fixedPrice: 5 },
-  { key: "garlic-parm", label: "Garlic Parm", kind: "fixed-price", fixedPrice: 5 },
-  { key: "buffalo-sauce", label: "Buffalo Sauce", kind: "fixed-price", fixedPrice: 5 },
-  { key: "ranch", label: "Ranch", kind: "fixed-price", fixedPrice: 5 },
-  { key: "dessert-platter", label: "Dessert Platter", kind: "manual-price" },
-];
-
-const checklistSections: ChecklistSection[] = [
-  {
-    key: "morning-of-event",
-    title: "Morning of Event-Shift Lead",
-    items: [
-      { key: "tripleseat-contract-printed", label: "Confirm 2 copies of the contract is printed from Tripleseat" },
-      {
-        key: "contract-placed-front-desk",
-        label: "Place one copy of the contract in the sign holder and place on the front desk with both sides showing the events details",
-      },
-      { key: "tablet-layout-accurate", label: "Confirm table layout tablet has accurate time and has no overlaps" },
-      { key: "entertainment-tablet-accurate", label: "Confirm entertainment is accurate on the entertainment tablet and has no overlaps" },
-      {
-        key: "food-details-accurate",
-        label: "Confirm food details, time and ensure Event Kitchen Checklist sheets are file in and accurate",
-      },
-      { key: "prepaid-drink-cards-labeled", label: "Ensure any prepaid drink cards have been created and labeled" },
-      { key: "table-signs-printed", label: "Ensure all necessary table signs are printed and in sign holders" },
-    ],
-  },
-  {
-    key: "one-hour-before",
-    title: "1 hour before the event-BWA POC",
-    items: [
-      { key: "contract-details-confirmed", label: "Confirm food, drink card, and entertainment details with the contract" },
-      {
-        key: "entertainment-reserved",
-        label: "Ensure entertainment is reserved (move shuffleboard pucks, pool balls and darts to your contract)",
-      },
-      { key: "event-tables-cleaned", label: "Ensure all tables being used for the events are cleaned" },
-      {
-        key: "table-line-placed",
-        label: "Place black table linen and table runner (color of company) on the food table",
-      },
-      { key: "signs-placed", label: "Place table signs on tables and entertainment" },
-      { key: "food-carts-prepped", label: "Prepare food carts w/ plates, utensils, tongs, napkins" },
-      {
-        key: "chaffing-dishes-placed",
-        label: "Get necessary chaffing dishes placed on reserved tables, fill bottom w/ water & light sterno warmers",
-      },
-      { key: "chaffing-dishes-clean", label: "Ensure chafing dish covers are clean" },
-      { key: "floor-boxes-cleaned", label: "Set up clear boxes that food goes on. Clean with glass cleaner if needed" },
-      {
-        key: "stanchions-placed",
-        label: "Place stanchions out to separate the parties food table from general public and ropes for bowling if applicable",
-      },
-    ],
-  },
-  {
-    key: "guest-arrival",
-    title: "Guest Arrival-BWA POC",
-    items: [
-      { key: "introduce-bwa", label: "Introduce yourself and the BWA(s) working the event to the groups POC" },
-      {
-        key: "review-times-with-poc",
-        label: "Give group POC itinerary-Review food, drink and entertainment start times with them",
-      },
-      { key: "mini-golf-coins", label: "Give guests mini golf coins (if applicable)" },
-      { key: "show-reserved-seating", label: "Show POC where their reserved seating for their party will be" },
-      {
-        key: "prepaid-drink-cards-shown",
-        label: "Give guests prepaid drink cards and show them how the tapwall works",
-      },
-      { key: "food-ready", label: "Tell POC when the food is ready" },
-      {
-        key: "plates-and-tables-cleared",
-        label: "Tell guests to leave their food plates and empty glasses on the tables. We will bus tables for them",
-      },
-      {
-        key: "upsell-additional-items",
-        label: "Upsell guests on additional items such as mini golf, prepaid drink cards, food or entertainment",
-      },
-      {
-        key: "additional-items-noted",
-        label: "If guests add any additional items, write those items down on the Events Add-Ons sheet",
-      },
-    ],
-  },
-  {
-    key: "during-event",
-    title: "During the Event check-ins-BWA POC",
-    items: [
-      { key: "food-kitchen-window", label: "Food shall be in the kitchen window 15 minutes prior to start of the event" },
-      { key: "food-setup-confirmed", label: "Ensure all the food the party ordered is set up at event start time" },
-      { key: "food-quality-check", label: "Ensure food is filled quickly" },
-      {
-        key: "event-specialist-restocking",
-        label: "Event specialist (BWA or person running the event) shall bus, restock food during the event",
-      },
-      { key: "bowling-pin-setup", label: "Give POC bowling pin and sharpie to keep" },
-    ],
-  },
-  {
-    key: "end-of-event",
-    title: "End of the Event",
-    items: [
-      { key: "ask-experience", label: "Ask the guests how their experience and favorite part of the event was" },
-      {
-        key: "review-add-ons",
-        label: "Review any add ons with the guests and tell them we will get final payment after the event.",
-      },
-      {
-        key: "guest-feedback-booklet",
-        label: "Ask guests to leave a google review and feedback in black itinerary booklet.",
-      },
-      { key: "used-tables-bussed", label: "Ensure all used tables are bussed and area is clean (signs, food tables, dishes, stanchions)" },
-      { key: "sternos-cooled", label: "Put a cap on the sternos. Wait until they have cooled before throwing it away" },
-      { key: "prepaid-cards-collected", label: "Collect prepaid cards" },
-      { key: "carts-laundry", label: "Clean carts and start a load of laundry" },
-      { key: "add-on-sheet-stapled", label: "Staple the Add-On sheets in the door holder of the Sales office" },
-      { key: "shift-lead-checkout", label: "Check in with shift lead to confirm you can leave" },
-    ],
-  },
-];
-
-function isWeekendRateEvent(dateValue: string) {
-  const day = new Date(`${dateValue}T12:00:00Z`).getUTCDay();
-  return day === 5 || day === 6;
+function buildInitialChecklistMap() {
+  return Object.fromEntries(checklistEvents.map((event) => [event.id, defaultChecklistState(event.date)]));
 }
 
-function defaultChecklistState(dateValue: string): EventChecklistState {
-  const defaultRateKey = isWeekendRateEvent(dateValue) ? "fri-sat" : "sun-thu";
-  const entertainment = Object.fromEntries(
-    entertainmentAddOns.map((item) => [
-      item.key,
+function buildInitialMetaMap() {
+  return Object.fromEntries(
+    checklistEvents.map((event) => [
+      event.id,
       {
-        quantity: "",
-        selectedRateKey: item.kind === "rate-select" ? defaultRateKey : "",
-        manualPrice: "",
+        status: "draft" as ChecklistRecordStatus,
+        updatedAt: null,
+        submittedAt: null,
       },
     ]),
   );
-  const food = Object.fromEntries(
-    foodAddOns.map((item) => [
-      item.key,
-      {
-        quantity: "",
-        manualPrice: "",
-      },
-    ]),
-  );
-  const tasks = Object.fromEntries(
-    checklistSections.flatMap((section) => section.items.map((item) => [item.key, false])),
-  );
+}
 
+function buildInitialSaveStateMap() {
+  return Object.fromEntries(checklistEvents.map((event) => [event.id, "idle" as SaveState]));
+}
+
+function uniqueIds(values: number[]) {
+  return Array.from(new Set(values));
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function metaFromRecord(record: ChecklistRecord): EventChecklistMeta {
   return {
-    bwa: "",
-    extrasAdded: "",
-    remainingDrinkCardBalance: "",
-    tasks,
-    entertainment,
-    food,
+    status: record.status,
+    updatedAt: record.updatedAt,
+    submittedAt: record.submittedAt,
   };
 }
 
-function currency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(value);
-}
-
-function numeric(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function entertainmentUnitPrice(config: EntertainmentAddOnConfig, state: EntertainmentState) {
-  if (config.kind === "manual-price") {
-    return numeric(state.manualPrice);
-  }
-  if (config.kind === "fixed-price") {
-    return config.fixedPrice ?? 0;
-  }
-  const selected = config.options?.find((option) => option.key === state.selectedRateKey);
-  return selected?.price ?? 0;
-}
-
-function foodUnitPrice(config: FoodAddOnConfig, state: FoodState) {
-  if (config.kind === "manual-price") {
-    return numeric(state.manualPrice);
-  }
-  return config.fixedPrice ?? 0;
-}
-
-function eventCompletion(state: EventChecklistState) {
-  const total = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-  const completed = Object.values(state.tasks).filter(Boolean).length;
-  return { completed, total };
+function mergeRecordState(record: ChecklistRecord, dateValue: string) {
+  return recordToChecklistState(dateValue, record);
 }
 
 function Header() {
@@ -376,87 +95,211 @@ function Header() {
 export default function ChecklistsPage() {
   const [activeEventId, setActiveEventId] = useState<number>(checklistEvents[0]?.id ?? 0);
   const [activeEventTab, setActiveEventTab] = useState<"checklist" | "addons">("checklist");
-  const [checklistsByEvent, setChecklistsByEvent] = useState<Record<number, EventChecklistState>>(() =>
-    Object.fromEntries(checklistEvents.map((event) => [event.id, defaultChecklistState(event.date)])),
-  );
-  const [isHydrated, setIsHydrated] = useState(false);
+  const [checklistsByEvent, setChecklistsByEvent] = useState<Record<number, EventChecklistState>>(buildInitialChecklistMap);
+  const [metaByEvent, setMetaByEvent] = useState<Record<number, EventChecklistMeta>>(buildInitialMetaMap);
+  const [saveStateByEvent, setSaveStateByEvent] = useState<Record<number, SaveState>>(buildInitialSaveStateMap);
+  const [dirtyEventIds, setDirtyEventIds] = useState<number[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const revisionByEventRef = useRef<Record<number, number>>(Object.fromEntries(checklistEvents.map((event) => [event.id, 0])));
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    let isCancelled = false;
+
+    async function loadSavedChecklists() {
       try {
-        const parsed = JSON.parse(saved) as Record<number, Partial<EventChecklistState>>;
-        const nextState = Object.fromEntries(
-          checklistEvents.map((event) => {
-            const base = defaultChecklistState(event.date);
-            const savedState = parsed[event.id];
-            return [
-              event.id,
-              {
-                ...base,
-                ...savedState,
-                tasks: {
-                  ...base.tasks,
-                  ...(savedState?.tasks ?? {}),
-                },
-                entertainment: Object.fromEntries(
-                  entertainmentAddOns.map((item) => [
-                    item.key,
-                    {
-                      ...base.entertainment[item.key],
-                      ...(savedState?.entertainment?.[item.key] ?? {}),
-                    },
-                  ]),
-                ),
-                food: Object.fromEntries(
-                  foodAddOns.map((item) => [
-                    item.key,
-                    {
-                      ...base.food[item.key],
-                      ...(savedState?.food?.[item.key] ?? {}),
-                    },
-                  ]),
-                ),
-              },
-            ];
-          }),
+        const response = await fetch("/api/checklists", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to load saved checklists.");
+        }
+
+        const payload = (await response.json()) as { records?: ChecklistRecord[] };
+        const recordsById = new Map((payload.records ?? []).map((record) => [record.eventId, record]));
+        if (isCancelled) {
+          return;
+        }
+
+        setChecklistsByEvent((current) =>
+          Object.fromEntries(
+            checklistEvents.map((event) => {
+              const record = recordsById.get(event.id);
+              return [event.id, record ? mergeRecordState(record, event.date) : current[event.id] ?? defaultChecklistState(event.date)];
+            }),
+          ),
         );
-        setChecklistsByEvent(nextState);
+        setMetaByEvent((current) => {
+          const next = { ...current };
+          for (const event of checklistEvents) {
+            const record = recordsById.get(event.id);
+            if (record) {
+              next[event.id] = metaFromRecord(record);
+            }
+          }
+          return next;
+        });
+        setSaveStateByEvent((current) => {
+          const next = { ...current };
+          for (const event of checklistEvents) {
+            const record = recordsById.get(event.id);
+            next[event.id] = record?.status === "submitted" ? "submitted" : "idle";
+          }
+          return next;
+        });
+        setLoadState("ready");
       } catch {
-        // Ignore invalid local checklist cache and use defaults.
+        if (!isCancelled) {
+          setLoadState("error");
+        }
       }
     }
-    setIsHydrated(true);
+
+    void loadSavedChecklists();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
+  const saveDrafts = useEffectEvent(async (eventIds: number[]) => {
+    const revisionSnapshot = Object.fromEntries(eventIds.map((eventId) => [eventId, revisionByEventRef.current[eventId] ?? 0]));
+
+    setSaveStateByEvent((current) => {
+      const next = { ...current };
+      for (const eventId of eventIds) {
+        next[eventId] = "saving";
+      }
+      return next;
+    });
+
+    for (const eventId of eventIds) {
+      const event = checklistEvents.find((item) => item.id === eventId);
+      const checklist = checklistsByEvent[eventId];
+
+      if (!event || !checklist || metaByEvent[eventId]?.status === "submitted") {
+        continue;
+      }
+
+      try {
+        const response = await fetch("/api/checklists", {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            eventId,
+            checklist,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to save draft.");
+        }
+
+        const payload = (await response.json()) as { record: ChecklistRecord };
+
+        setChecklistsByEvent((current) => ({
+          ...current,
+          [eventId]: mergeRecordState(payload.record, event.date),
+        }));
+        setMetaByEvent((current) => ({
+          ...current,
+          [eventId]: metaFromRecord(payload.record),
+        }));
+        setSaveStateByEvent((current) => ({
+          ...current,
+          [eventId]: payload.record.status === "submitted" ? "submitted" : "saved",
+        }));
+        if ((revisionByEventRef.current[eventId] ?? 0) === revisionSnapshot[eventId]) {
+          setDirtyEventIds((current) => current.filter((item) => item !== eventId));
+        }
+      } catch {
+        setSaveStateByEvent((current) => ({
+          ...current,
+          [eventId]: "error",
+        }));
+      }
+    }
+  });
+
   useEffect(() => {
-    if (!isHydrated) {
+    if (loadState === "loading" || dirtyEventIds.length === 0) {
       return;
     }
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(checklistsByEvent));
-  }, [checklistsByEvent, isHydrated]);
+
+    const eventIds = uniqueIds(dirtyEventIds);
+    const timeoutId = window.setTimeout(() => {
+      void saveDrafts(eventIds);
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [dirtyEventIds, loadState, saveDrafts]);
+
+  const submitChecklist = useEffectEvent(async (eventId: number) => {
+    const event = checklistEvents.find((item) => item.id === eventId);
+    const checklist = checklistsByEvent[eventId];
+
+    if (!event || !checklist) {
+      return;
+    }
+
+    setSaveStateByEvent((current) => ({
+      ...current,
+      [eventId]: "submitting",
+    }));
+
+    try {
+      const response = await fetch("/api/checklists/submit", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          eventId,
+          checklist,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to submit checklist.");
+      }
+
+      const payload = (await response.json()) as { record: ChecklistRecord };
+
+      setChecklistsByEvent((current) => ({
+        ...current,
+        [eventId]: mergeRecordState(payload.record, event.date),
+      }));
+      setMetaByEvent((current) => ({
+        ...current,
+        [eventId]: metaFromRecord(payload.record),
+      }));
+      setSaveStateByEvent((current) => ({
+        ...current,
+        [eventId]: "submitted",
+      }));
+      setDirtyEventIds((current) => current.filter((item) => item !== eventId));
+    } catch {
+      setSaveStateByEvent((current) => ({
+        ...current,
+        [eventId]: "error",
+      }));
+    }
+  });
 
   const activeEvent = checklistEvents.find((event) => event.id === activeEventId) ?? checklistEvents[0];
   const activeChecklist = activeEvent ? checklistsByEvent[activeEvent.id] : undefined;
+  const activeMeta = activeEvent ? metaByEvent[activeEvent.id] : undefined;
+  const activeSaveState = activeEvent ? saveStateByEvent[activeEvent.id] : "idle";
 
-  function updateEventChecklist(eventId: number, updater: (current: EventChecklistState) => EventChecklistState) {
-    setChecklistsByEvent((current) => {
-      const existing = current[eventId];
-      const event = checklistEvents.find((item) => item.id === eventId);
-      if (!existing || !event) {
-        return current;
-      }
-      return {
-        ...current,
-        [eventId]: updater(existing),
-      };
-    });
-  }
-
-  if (!activeEvent || !activeChecklist) {
+  if (!activeEvent || !activeChecklist || !activeMeta) {
     return null;
   }
 
+  const isSubmitted = activeMeta.status === "submitted";
+  const isEditable = loadState !== "loading" && !isSubmitted;
+  const canSubmit = isEditable && activeChecklist.bwa.trim().length > 0 && activeSaveState !== "submitting";
   const progress = eventCompletion(activeChecklist);
   const entertainmentSubtotal = entertainmentAddOns.reduce((sum, item) => {
     const state = activeChecklist.entertainment[item.key];
@@ -467,6 +310,21 @@ export default function ChecklistsPage() {
     return sum + foodUnitPrice(item, state) * numeric(state.quantity);
   }, 0);
 
+  let saveMessage = "Draft not saved yet.";
+  if (loadState === "loading") {
+    saveMessage = "Loading saved checklist…";
+  } else if (activeSaveState === "saving") {
+    saveMessage = "Saving draft to Supabase…";
+  } else if (activeSaveState === "submitting") {
+    saveMessage = "Submitting final checklist…";
+  } else if (activeMeta.status === "submitted" && activeMeta.submittedAt) {
+    saveMessage = `Submitted ${formatTimestamp(activeMeta.submittedAt)}`;
+  } else if (activeSaveState === "saved" && activeMeta.updatedAt) {
+    saveMessage = `Draft saved ${formatTimestamp(activeMeta.updatedAt)}`;
+  } else if (activeSaveState === "error" || loadState === "error") {
+    saveMessage = "Supabase save failed. Refresh and try again.";
+  }
+
   return (
     <>
       <Header />
@@ -474,7 +332,7 @@ export default function ChecklistsPage() {
         <section className="intro">
           <div>
             <h2>Digital Event Checklists</h2>
-            <p>Each event has its own checklist page and add-on page. Updates save locally on this device.</p>
+            <p>Each event has its own checklist page and add-on page. Drafts save to Supabase and final checklists can be submitted here.</p>
           </div>
           <div className="checklist-meta-card">
             <span className="eyebrow">Current Event</span>
@@ -482,13 +340,16 @@ export default function ChecklistsPage() {
             <span className="meta">
               {progress.completed} of {progress.total} checklist items complete
             </span>
+            <span className={`sync-chip sync-chip-${activeSaveState}`}>{saveMessage}</span>
           </div>
         </section>
 
         <section className="event-tab-strip" aria-label="Event checklist tabs">
           {checklistEvents.map((event) => {
             const eventState = checklistsByEvent[event.id];
+            const eventMeta = metaByEvent[event.id];
             const eventProgress = eventCompletion(eventState);
+
             return (
               <button
                 key={event.id}
@@ -498,7 +359,7 @@ export default function ChecklistsPage() {
               >
                 <span>{event.name}</span>
                 <small>
-                  {event.dateLabel} · {eventProgress.completed}/{eventProgress.total}
+                  {event.dateLabel} · {eventMeta.status === "submitted" ? "Submitted" : "Draft"} · {eventProgress.completed}/{eventProgress.total}
                 </small>
               </button>
             );
@@ -511,6 +372,7 @@ export default function ChecklistsPage() {
             <Field label="Event Name" value={activeEvent.name} />
             <Field label="POC" value={activeEvent.poc} />
             <EditableField
+              disabled={!isEditable}
               label="BWA"
               value={activeChecklist.bwa}
               placeholder="Type employee name"
@@ -524,6 +386,7 @@ export default function ChecklistsPage() {
           </div>
           <div className="notes-grid">
             <EditableTextArea
+              disabled={!isEditable}
               label="Extras Added"
               value={activeChecklist.extrasAdded}
               placeholder="Track extra items added during the event."
@@ -535,6 +398,7 @@ export default function ChecklistsPage() {
               }
             />
             <EditableTextArea
+              disabled={!isEditable}
               label="Remaining Drink Card Balance"
               value={activeChecklist.remainingDrinkCardBalance}
               placeholder="Add any remaining drink card balance notes."
@@ -545,6 +409,26 @@ export default function ChecklistsPage() {
                 }))
               }
             />
+          </div>
+          <div className="checklist-actions">
+            <div className="action-copy">
+              <strong>{isSubmitted ? "Final checklist submitted" : "Draft saves automatically"}</strong>
+              <span className="meta">
+                {isSubmitted
+                  ? "Submitted checklists are locked to preserve the final event record."
+                  : canSubmit
+                    ? "Use the submit button when the event checklist is final."
+                    : "Enter the BWA name before submitting the final checklist."}
+              </span>
+            </div>
+            <button
+              type="button"
+              className={`submit-button${isSubmitted ? " submitted" : ""}`}
+              disabled={!canSubmit || isSubmitted}
+              onClick={() => void submitChecklist(activeEvent.id)}
+            >
+              {activeSaveState === "submitting" ? "Submitting..." : isSubmitted ? "Checklist Submitted" : "Submit Final Checklist"}
+            </button>
           </div>
         </section>
 
@@ -572,10 +456,11 @@ export default function ChecklistsPage() {
                 <header className="task-section-header">{section.title}</header>
                 <div className="task-list">
                   {section.items.map((item) => (
-                    <label className="task-row" key={item.key}>
+                    <label className={`task-row${!isEditable ? " task-row-disabled" : ""}`} key={item.key}>
                       <input
                         type="checkbox"
                         checked={activeChecklist.tasks[item.key]}
+                        disabled={!isEditable}
                         onChange={(event) =>
                           updateEventChecklist(activeEvent.id, (current) => ({
                             ...current,
@@ -608,6 +493,7 @@ export default function ChecklistsPage() {
                   const state = activeChecklist.entertainment[item.key];
                   const unitPrice = entertainmentUnitPrice(item, state);
                   const subtotal = unitPrice * numeric(state.quantity);
+
                   return (
                     <article className="addon-row-card" key={item.key}>
                       <div className="addon-row-top">
@@ -622,6 +508,7 @@ export default function ChecklistsPage() {
                           <label className="control-block">
                             <span>Rate</span>
                             <select
+                              disabled={!isEditable}
                               value={state.selectedRateKey}
                               onChange={(event) =>
                                 updateEventChecklist(activeEvent.id, (current) => ({
@@ -651,6 +538,7 @@ export default function ChecklistsPage() {
                               inputMode="decimal"
                               min="0"
                               step="0.01"
+                              disabled={!isEditable}
                               value={state.manualPrice}
                               onChange={(event) =>
                                 updateEventChecklist(activeEvent.id, (current) => ({
@@ -681,6 +569,7 @@ export default function ChecklistsPage() {
                             inputMode="numeric"
                             min="0"
                             step="1"
+                            disabled={!isEditable}
                             value={state.quantity}
                             onChange={(event) =>
                               updateEventChecklist(activeEvent.id, (current) => ({
@@ -717,6 +606,7 @@ export default function ChecklistsPage() {
                   const state = activeChecklist.food[item.key];
                   const unitPrice = foodUnitPrice(item, state);
                   const subtotal = unitPrice * numeric(state.quantity);
+
                   return (
                     <article className="addon-row-card" key={item.key}>
                       <div className="addon-row-top">
@@ -735,6 +625,7 @@ export default function ChecklistsPage() {
                               inputMode="decimal"
                               min="0"
                               step="0.01"
+                              disabled={!isEditable}
                               value={state.manualPrice}
                               onChange={(event) =>
                                 updateEventChecklist(activeEvent.id, (current) => ({
@@ -765,6 +656,7 @@ export default function ChecklistsPage() {
                             inputMode="numeric"
                             min="0"
                             step="1"
+                            disabled={!isEditable}
                             value={state.quantity}
                             onChange={(event) =>
                               updateEventChecklist(activeEvent.id, (current) => ({
@@ -808,6 +700,30 @@ export default function ChecklistsPage() {
       </main>
     </>
   );
+
+  function updateEventChecklist(eventId: number, updater: (current: EventChecklistState) => EventChecklistState) {
+    if (metaByEvent[eventId]?.status === "submitted") {
+      return;
+    }
+
+    revisionByEventRef.current[eventId] = (revisionByEventRef.current[eventId] ?? 0) + 1;
+    setChecklistsByEvent((current) => {
+      const existing = current[eventId];
+      if (!existing) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [eventId]: updater(existing),
+      };
+    });
+    setDirtyEventIds((current) => (current.includes(eventId) ? current : [...current, eventId]));
+    setSaveStateByEvent((current) => ({
+      ...current,
+      [eventId]: "idle",
+    }));
+  }
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -820,11 +736,13 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 function EditableField({
+  disabled,
   label,
   value,
   placeholder,
   onChange,
 }: {
+  disabled: boolean;
   label: string;
   value: string;
   placeholder: string;
@@ -833,17 +751,19 @@ function EditableField({
   return (
     <label className="field-card">
       <span>{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <input disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
     </label>
   );
 }
 
 function EditableTextArea({
+  disabled,
   label,
   value,
   placeholder,
   onChange,
 }: {
+  disabled: boolean;
   label: string;
   value: string;
   placeholder: string;
@@ -852,7 +772,13 @@ function EditableTextArea({
   return (
     <label className="field-card textarea-card">
       <span>{label}</span>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} />
+      <textarea
+        disabled={disabled}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={3}
+      />
     </label>
   );
 }
