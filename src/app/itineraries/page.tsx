@@ -75,6 +75,7 @@ function Header() {
         <Link href="/">Home</Link>
         <Link href="/floor-plans">Floor Plans</Link>
         <Link href="/entertainment-schedules">Entertainment Schedules</Link>
+        <Link href="/checklists">Checklists</Link>
       </nav>
     </header>
   );

@@ -25,6 +25,7 @@ def main() -> None:
 
     required_routes = [
         "src/app/page.tsx",
+        "src/app/checklists/page.tsx",
         "src/app/floor-plans/page.tsx",
         "src/app/entertainment-schedules/page.tsx",
         "src/app/itineraries/page.tsx",

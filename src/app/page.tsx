@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { entertainmentSchedules, events, floorPlans } from "@/lib/events";
+import { checklistEvents } from "@/lib/checklist-events";
 
 export default function HomePage() {
   return (
@@ -10,8 +11,8 @@ export default function HomePage() {
           <div>
             <h2>Event host pages</h2>
             <p>
-              {events.length} verified events, {floorPlans.length} floor-plan dates, and{" "}
-              {entertainmentSchedules.length} entertainment schedule dates.
+              {events.length} verified events, {floorPlans.length} floor-plan dates,{" "}
+              {entertainmentSchedules.length} entertainment schedule dates, and {checklistEvents.length} checklist tabs.
             </p>
           </div>
         </section>
@@ -28,6 +29,10 @@ export default function HomePage() {
             <strong>Itineraries</strong>
             <span>View guest count, food, drinks, rooms, and reserved entertainment.</span>
           </Link>
+          <Link className="home-link" href="/checklists">
+            <strong>Event Checklists</strong>
+            <span>Switch between event checklist pages and add-on sheets.</span>
+          </Link>
         </nav>
       </main>
     </>
@@ -42,6 +47,7 @@ function Header() {
         <Link href="/floor-plans">Floor Plans</Link>
         <Link href="/entertainment-schedules">Entertainment Schedules</Link>
         <Link href="/itineraries">Itineraries</Link>
+        <Link href="/checklists">Checklists</Link>
       </nav>
     </header>
   );
