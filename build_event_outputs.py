@@ -20,15 +20,16 @@ FONT_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 FONT_REGULAR = "/System/Library/Fonts/Supplemental/Arial.ttf"
 
 FLOOR_PLAN_BY_DATE = {
-    "2026-06-09": "canva floor plans/June_09_The_Greentree_Group_Leadership_Event.png",
-    "2026-06-12": "canva floor plans/June_12_Oasis_Turf_Tree.png",
-    "2026-06-13": "canva floor plans/June_13_Graduation_Party.png",
-    "2026-06-14": "canva floor plans/June_14_OPE_Employee_Appreciation_Patio_Party.png",
-    "2026-06-20": "canva floor plans/June_20_Floor_Plans.png",
-    "2026-06-23": "canva floor plans/June_23_RAM_Residents.png",
-    "2026-06-24": "canva floor plans/June_24_Floor_Plans.png",
     "2026-06-25": "canva floor plans/June_25_Floor_Plans.png",
     "2026-07-07": "canva floor plans/July_07_Work_Event_For_30_Co_Workers.png",
+    "2026-07-09": "canva floor plans/July_09_LexisNexis_Government_Markets_Meeting.png",
+    "2026-07-10": "canva floor plans/July_10_Floor_Plans.png",
+    "2026-07-14": "canva floor plans/July_14_Jennifer_Nicholson.png",
+    "2026-07-15": "canva floor plans/July_15_LexisNexis.png",
+    "2026-07-19": "canva floor plans/July_19_Husbands_60th_Birthday.png",
+    "2026-07-21": "canva floor plans/July_21_Beacon_Investing.png",
+    "2026-07-22": "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
+    "2026-07-23": "canva floor plans/July_23_Floor_Plans.png",
 }
 
 
@@ -241,7 +242,7 @@ def build_itinerary(events: list[dict]) -> Path:
       </article>"""
         )
     body = f'    <section><div class="itinerary-grid">\n{"".join(cards)}\n    </div></section>'
-    out = ITINERARY_DIR / "june-09-30-2026-event-itineraries.html"
+    out = ITINERARY_DIR / "june-25-to-july-23-2026-event-itineraries.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html_page("On Par Event Itineraries", body), encoding="utf-8")
     return out

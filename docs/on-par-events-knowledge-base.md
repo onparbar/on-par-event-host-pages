@@ -2,7 +2,7 @@
 
 Informational knowledge base for event request, booking, planning, and event-output agents.
 
-Last updated: June 24, 2026
+Last updated: June 25, 2026
 
 ## What This Document Is
 
@@ -671,246 +671,27 @@ Use operational wording. Do not include prices, billing, deposits, or payment st
 
 This matrix summarizes the current deployable event data. Always re-check Tripleseat before using it for a new production handoff.
 
-### The Greentree Group Leadership Event
-
-- Date/time: Tuesday, June 9, 2026, 6:00 PM - 9:00 PM
-- Guests: 12
-- Area: VIP 2
-- Food:
-  - Tater Keg Platter
-  - The Full Course | Wing Bar - Food + Beverage
-  - Chicken Tender Platter
-- Drinks:
-  - Food + Beverage package
-  - Soft drinks included
-- Entertainment:
-  - Duckpin Bowling, 1 lane, 6:30 PM - 8:30 PM, 2 hours
-  - Mini Golf, 12 guests, untimed, 9 holes
-- Floor-plan interpretation:
-  - Highlight VIP 2 and related support seating.
-  - Mark VIP food table.
-  - Highlight 1 bowling lane and label 6:30-8:30.
-  - Mini golf is untimed.
-- Verification: BEO checked above billing section.
-
-### Oasis Turf & Tree Employee Outing
-
-- Date/time: Friday, June 12, 2026, 12:00 PM - 5:00 PM
-- Guests: 31
-- Area: VIP 1
-- Food:
-  - The Full Course | Appetizer Bar - Food + Beverage
-- Drinks:
-  - Food + Beverage package
-  - Soft drinks included
-- Entertainment:
-  - Darts, 1 lane, time not listed on BEO, 2 hours
-  - Duckpin Bowling, 1 lane, time not listed on BEO, 2 hours
-  - Mini Golf, 31 guests, untimed, 9 holes
-  - Pool Table, 1 table, time not listed on BEO, 2 hours
-  - Neo Shuffleboard, 1 table, time not listed on BEO, 2 hours
-- Floor-plan interpretation:
-  - Highlight VIP 1 full support seating and VIP food.
-  - Highlight one darts lane, one bowling lane, one pool table, one shuffleboard lane/table.
-  - Mark mini golf only as needed; do not assign a time unless provided.
-- Known update:
-  - A later schedule version used staggered entertainment times: bowling 12:30-1:30, darts 1:30-2:30, pool 2:30-3:30, shuffleboard 3:30-4:30.
-- Verification: BEO checked above billing section.
-
-### Graduation Party
-
-- Date/time: Saturday, June 13, 2026, 3:00 PM - 7:00 PM
-- Guests: 55
-- Area: VIP 1 and VIP 2
-- Food:
-  - The Front Nine - Food Only
-  - Taco Bar
-- Drinks:
-  - The Back Nine - Beverage Only
-  - Soft drinks free of charge
-  - Soft drinks included
-- Entertainment:
-  - Duckpin Bowling, 4 lanes, 3:30 PM - 5:30 PM, 2 hours
-  - The Ocean Karaoke, 1 room, 4:00 PM - 6:00 PM, 2 hours
-- Special instructions:
-  - BEO includes `VIP`.
-- Floor-plan interpretation:
-  - Highlight VIP 1 and VIP 2 support areas.
-  - Mark VIP food table.
-  - Highlight 4 bowling lanes and label 3:30-5:30.
-  - Highlight Ocean karaoke and label 4-6.
-- Verification: BEO checked above billing section; refreshed June 12, 2026.
-
-### OPE Employee Appreciation Patio Party
-
-- Date/time: Sunday, June 14, 2026, 4:00 PM - 7:00 PM
-- Guests: 32
-- Areas: GEG Tables, Patio
-- Food:
-  - Food setup at Patio Bar
-- Drinks:
-  - No drink package listed on extracted BEO.
-- Entertainment:
-  - Darts, quantity 4 on the BEO per-hour/per-lane line, 6:00 PM - 7:00 PM, 1 hour
-- Special instructions:
-  - Food setup at Patio Bar.
-  - Crafts at the GEG tables.
-  - Party on the Patio.
-- Floor-plan interpretation:
-  - Highlight GEG tables for crafts.
-  - Highlight Patio/Patio Bar and mark the food setup with `F`.
-  - Highlight darts lanes 1-4 from 6:00 PM - 7:00 PM.
-  - Treat the darts quantity as 4 lane-hours / likely 4 lanes for the 1-hour window unless Tripleseat is later clarified.
-- Verification: BEO checked above billing section.
-
-### Emily's Bachelorette Party
-
-- Date/time: Saturday, June 20, 2026, 5:00 PM - 7:00 PM
-- Guests: 10
-- Area: VIP 2
-- Food:
-  - The Full Course - Food + Beverage
-  - Wing Bar
-  - Tater Keg Platter
-  - Pretzel Bite Platter
-- Drinks:
-  - Food + Beverage package
-  - Soft drinks free of charge
-- Entertainment:
-  - Duckpin Bowling, 2 lanes, 6:00 PM - 8:00 PM, 2 hours
-  - Mini Golf, 10 guests, untimed, all 3 courses
-- Floor-plan interpretation:
-  - Highlight VIP 2.
-  - Mark VIP food.
-  - Highlight 2 bowling lanes and label 6-8.
-  - Mini golf is untimed.
-- Verification: BEO checked above billing section.
-
-### CJ 20th Reunion
-
-- Date/time: Saturday, June 20, 2026, 6:30 PM - 9:30 PM
-- Guests: 150
-- Areas: VIP 1, WAT Tables, Clubhouse
-- Food:
-  - No BEO document view returned by Tripleseat API.
-- Drinks:
-  - No BEO document view returned by Tripleseat API.
-- Entertainment:
-  - No reserved entertainment listed in available API fields.
-- Floor-plan interpretation:
-  - Highlight VIP 1, WAT tables, Clubhouse.
-  - Because guest count is 150, if food is later confirmed, plan 2 food tables.
-- Verification: API event and booking fields checked; no BEO document view returned.
-
-### CJA Class Of 2016 10 Year Reunion Meet Up
-
-- Date/time: Saturday, June 20, 2026, 8:00 PM - 10:00 PM
-- Guests: 100
-- Area: Main Dining Room
-- Food:
-  - No BEO document view returned by Tripleseat API.
-- Drinks:
-  - No BEO document view returned by Tripleseat API.
-- Entertainment:
-  - No reserved entertainment listed in available API fields.
-- Floor-plan interpretation:
-  - Highlight Main Dining Room seating.
-  - If food is later confirmed, mark food table based on BEO.
-- Verification: API event and booking fields checked; no BEO document view returned.
-
-### RAM - Residents
-
-- Date/time: Tuesday, June 23, 2026, 3:00 PM - 6:00 PM
-- Guests: 50
-- Area: VIP 1
-- Food:
-  - Wing Platter
-  - Veggie Tray
-  - Mozzarella Sticks
-- Drinks:
-  - No drink package listed on extracted BEO.
-- Entertainment:
-  - Darts, 1 lane, 3:15 PM - 5:15 PM, 2 hours
-  - Duckpin Bowling, 3 lanes, 3:15 PM - 5:15 PM, 2 hours
-  - Pool Table, 1 table, 3:15 PM - 5:15 PM, 2 hours
-  - Mini Golf, 33 guests, untimed, 9 holes
-- Floor-plan interpretation:
-  - Highlight VIP 1 full support seating.
-  - Mark VIP food table.
-  - Highlight bowling lanes 1-3, darts lane 1, and pool table 1 with `3:15-5:15` labels.
-  - Mark mini golf only as needed; do not assign a time unless provided.
-- Verification: BEO checked above billing section.
-
-### Expo Experts
-
-- Date/time: Wednesday, June 24, 2026, 2:00 PM - 5:00 PM
-- Guests: 70
-- Area: Main Dining Room
-- Food:
-  - Wing Platter
-  - Chicken Tender Platter
-  - Veggie Tray
-  - Fry Platter
-- Drinks:
-  - The Big Show space rental includes private self-pour taps
-  - Soft drinks included
-- Entertainment:
-  - The Big Show, private space with 5 karaoke rooms, 2:00 PM - 5:00 PM, 3 hours
-  - Duckpin Bowling, 1 lane closest to karaoke, 2:00 PM - 5:00 PM, 3 hours
-- Special instructions:
-  - Use bowling lane closest to karaoke.
-  - Put Sierra Nevada Corporation on the TVs.
-- Floor-plan interpretation:
-  - Highlight Big Show/public karaoke.
-  - Mark food setup in public karaoke with `F`.
-  - Highlight bowling lane closest to karaoke.
-  - Do not reserve Main area seating solely because event area says Main Dining Room if The Big Show is the actual private-space setup; verify against BEO and floor-plan note.
-- Verification: BEO checked above billing section.
-
-### Sydney Lance
-
-- Date/time: Wednesday, June 24, 2026, 2:00 PM - 5:00 PM
-- Guests: 40
-- Area: VIP 1
-- Food:
-  - The Front Nine w/ Cookies - Food + Cookies
-  - App Bar
-- Drinks:
-  - Soft drinks free of charge
-- Entertainment:
-  - Darts, 4 lanes, 2:00 PM - 5:00 PM, 3 hours
-  - Duckpin Bowling, 6 lanes, 2:00 PM - 5:00 PM, 3 hours
-  - Mini Golf, 85 guests, untimed, 9 holes
-- Seating:
-  - BEO includes extra hour for guaranteed reserved seating past 2 hours.
-- Verification note:
-  - Event summary still shows 40 guests, while BEO food and mini golf line-item quantities show 85.
-- Floor-plan interpretation:
-  - Highlight VIP 1 full support seating and VIP food.
-  - Highlight 4 darts lanes and 6 bowling lanes.
-  - Mini golf is untimed.
-- Verification: BEO checked above billing section; guest-count discrepancy flagged.
-
 ### Lowes MST Team
 
 - Date/time: Thursday, June 25, 2026, 11:00 AM - 2:00 PM
 - Guests: 23
-- Area: Main Dining Room
+- Area: VIP 1
 - Food:
   - Premium Taco Bar
   - Wing Platter
   - Fry Platter
   - Veggie Tray
 - Drinks:
-  - No drink package listed on extracted BEO.
+  - No drink package listed on extracted BEO
 - Entertainment:
   - Duckpin Bowling, 4 lanes, 11:00 AM - 2:00 PM, 3 hours
   - Pool Table, 1 table, 11:00 AM - 2:00 PM, 3 hours
+- Special instructions:
+  - VIP 1 is listed in the event summary on the current BEO.
 - Floor-plan interpretation:
-  - Highlight the Main Dining Room seating needed for a 23-guest lunch event.
-  - Mark 1 main food table.
-  - Highlight bowling lanes 1-4 and pool table 1 with `11-2` labels.
-- Verification: BEO checked above billing section.
+  - Highlight VIP 1 full support seating and 1 VIP food table.
+  - Highlight bowling lanes 1-4 and pool table 1 using the event window shown on the BEO.
+- Verification: BEO checked above billing section; room assignment updated to VIP 1.
 
 ### Space Force
 
@@ -924,17 +705,18 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Pretzel Bite Platter
   - Veggie Tray
 - Drinks:
-  - No drink package listed on extracted BEO.
+  - No drink package listed on extracted BEO
 - Entertainment:
-  - No reserved entertainment listed on extracted BEO.
-- Seating:
-  - BEO includes extra hour for guaranteed reserved seating past 2 hours.
+  - No reserved entertainment listed on the available BEO/API fields.
+- Special instructions:
+  - BEO includes an extra hour for guaranteed reserved seating past 2 hours.
 - Floor-plan interpretation:
-  - Highlight Main Dining Room, VIP 1, VIP 2, GEG Tables, WAT Tables.
-  - Mark 2 food tables because guest count is over 100 and food setup is listed.
+  - Highlight Main Dining Room, VIP 1, VIP 2, GEG Tables, and WAT Tables.
+  - Mark 2 main food tables because the guest count is over 100 and food setup is listed.
+  - No reserved entertainment is listed on the current BEO.
 - Verification: BEO checked above billing section.
 
-### Work Event For 30 Co-Workers
+### Work event for 30 co-workers
 
 - Date/time: Tuesday, July 7, 2026, 4:00 PM - 8:00 PM
 - Guests: 30
@@ -948,13 +730,228 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Food + Beverage package
 - Entertainment:
   - Duckpin Bowling, 5 lanes, 4:00 PM - 8:00 PM, 4 hours
-  - Mini Golf, 30 guests, untimed, 9 holes
+  - Mini Golf, 30 guests, Untimed, 9 holes
 - Special instructions:
   - Need to start around 4:00 PM and end by 8:00 PM.
 - Floor-plan interpretation:
-  - Highlight Main Dining Room seating and 1 food table.
-  - Highlight bowling lanes 1-5 and label `4-8`.
+  - Highlight Main Dining Room seating and 1 main food table.
+  - Highlight bowling lanes 1-5 and label 4-8.
   - Mini golf is untimed and does not need a time label.
+- Verification: BEO checked above billing section.
+
+### LexisNexis Government Markets Meeting
+
+- Date/time: Thursday, July 9, 2026, 6:30 PM - 8:30 PM
+- Guests: 100
+- Area: Main Dining Room
+- Food:
+  - The Full Course | TACO BAR - Food + Beverage
+  - Veggie Tray
+- Drinks:
+  - Food + Beverage package
+  - Soft drinks included
+- Entertainment:
+  - Duckpin Bowling, 7 lanes, Time not listed on BEO, 2 hours
+  - Pool Table, 3 tables, Time not listed on BEO, 2 hours
+  - Neo Shuffleboard, 2 tables, Time not listed on BEO, 2 hours
+  - Prime Room, 1 room, 7:00 PM - 9:00 PM, 2 hours
+- Special instructions:
+  - Booking description asks for bowling, karaoke, and add-on activities for the team.
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating and 1 main food table.
+  - Highlight bowling lanes 1-7, pool tables 1-3, and shuffleboard tables 1-2 with 2-hour labels.
+  - Highlight Prime Room and label 7-9.
+- Verification: BEO checked above billing section.
+
+### Oculii
+
+- Date/time: Friday, July 10, 2026, 2:00 PM - 4:00 PM
+- Guests: 23
+- Area: VIP 1
+- Food:
+  - Veggie Tray
+- Drinks:
+  - No drink package listed on extracted BEO
+- Entertainment:
+  - Darts, 1 lane, Time not listed on BEO, 2 hours
+  - Duckpin Bowling, 2 lanes, Time not listed on BEO, 2 hours
+  - Pool Table, 1 table, Time not listed on BEO, 2 hours
+  - Neo Shuffleboard, 1 table, Time not listed on BEO, 2 hours
+  - Gem Room, 1 room, Time not listed on BEO, 2 hours
+  - Mini Golf, 18 guests, Untimed, All 3 courses
+- Floor-plan interpretation:
+  - Highlight VIP 1 full support seating and 1 VIP food table.
+  - Highlight darts lane 1, bowling lanes 1-2, pool table 1, shuffleboard table 1, and Gem Room with 2-hour labels.
+  - Mini golf is untimed.
+- Verification: BEO checked above billing section.
+
+### Core4ce
+
+- Date/time: Friday, July 10, 2026, 5:30 PM - 7:30 PM
+- Guests: 170
+- Areas: VIP 1, VIP 2
+- Food:
+  - The Front Nine | TACO BAR - Food Only
+- Drinks:
+  - Soft drinks included
+- Entertainment:
+  - Darts, 3 lanes, Time not listed on BEO, 2 hours
+  - Duckpin Bowling, 12 lanes, Time not listed on BEO, 2 hours
+  - Mini Golf, 100 guests, Untimed, 9 holes
+  - Pool Table, 2 tables, Time not listed on BEO, 2 hours
+  - Neo Shuffleboard, 1 table, Time not listed on BEO, 2 hours
+- Special instructions:
+  - API guest count is blank; using the 170-person food package quantity from the BEO for planning.
+  - VIP 1 and VIP 2 do not provide seated capacity for 170 guests; confirm overflow approach if operations needs a full seating map.
+- Floor-plan interpretation:
+  - Highlight VIP 1 and VIP 2 support seating plus both VIP food tables.
+  - Highlight darts lanes 1-3, all 12 bowling lanes, pool tables 1-2, and shuffleboard table 1 with 2-hour labels.
+  - Mini golf is untimed; guest quantity exceeds the listed room seating footprint and should remain flagged.
+- Verification: BEO checked above billing section; guest count inferred from BEO food quantity and seating-capacity mismatch flagged.
+
+### Jennifer Nicholson
+
+- Date/time: Tuesday, July 14, 2026, 6:30 PM - 9:30 PM
+- Guests: 30
+- Areas: Big Show, Gem Room, Royal Room
+- Food:
+  - The Front Nine w/COOKIES | TACO BAR - Food + COOKIES
+  - Pretzel Bite Platter
+- Drinks:
+  - The Back Nine - Beverage Only
+  - Soft drinks free of charge
+- Entertainment:
+  - Gem Room, 1 room, 6:30 PM - 9:30 PM, 3 hours
+- Special instructions:
+  - Black bean and lettuce.
+  - Food setup in Royal Room from 6:30 PM - 7:30 PM.
+  - Presentation at 7:00 PM.
+  - Entertainment from 8:00 PM - 9:30 PM.
+- Floor-plan interpretation:
+  - Highlight Big Show/public karaoke, Gem Room, and Royal Room.
+  - Mark the Royal Room food setup and note the 6:30-7:30 setup window.
+  - Carry the presentation and entertainment timing notes onto the floor plan labels.
+- Verification: BEO checked above billing section; Big Show/Gem/Royal room setup details flagged.
+
+### LexisNexis 07/15/2026
+
+- Date/time: Wednesday, July 15, 2026, 6:30 PM - 9:00 PM
+- Guests: 110
+- Area: Main Dining Room
+- Food:
+  - The Full Course | TACO BAR - Food + Beverage
+  - Veggie Tray
+- Drinks:
+  - Food + Beverage package
+  - Soft drinks included
+- Entertainment:
+  - Duckpin Bowling, 7 lanes, Time not listed on BEO, 2 hours
+  - Pool Table, 3 tables, Time not listed on BEO, 2 hours
+  - Neo Shuffleboard, 2 tables, Time not listed on BEO, 2 hours
+  - Prime Room, 1 room, Time not listed on BEO, 2 hours
+- Special instructions:
+  - Booking description requests the same games, karaoke, and food as the July 9, 2026 event.
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating and 2 main food tables because the guest count is over 100.
+  - Highlight bowling lanes 1-7, pool tables 1-3, and shuffleboard tables 1-2 with 2-hour labels.
+  - Highlight Prime Room, but keep its timing flagged as not listed on this BEO.
+- Verification: BEO checked above billing section; Prime Room time not listed on this BEO.
+
+### Husband's 60th birthday
+
+- Date/time: Sunday, July 19, 2026, 1:00 PM - 3:00 PM
+- Guests: 35
+- Area: VIP 1
+- Food:
+  - Taco Bar
+- Drinks:
+  - No drink package listed on extracted BEO
+- Entertainment:
+  - No reserved entertainment listed on the available BEO/API fields.
+- Special instructions:
+  - The extracted BEO shows Taco Bar under food-bar choices but does not show the package label.
+- Floor-plan interpretation:
+  - Highlight VIP 1 full support seating and 1 VIP food table.
+  - No reserved entertainment is listed on the extracted BEO.
+- Verification: BEO checked above billing section; food package label missing from document text.
+
+### Beacon Investing
+
+- Date/time: Tuesday, July 21, 2026, 5:30 PM - 7:30 PM
+- Guests: 13
+- Area: Main Dining Room
+- Food:
+  - No BEO document view returned by Tripleseat API
+- Drinks:
+  - No BEO document view returned by Tripleseat API
+- Entertainment:
+  - No reserved entertainment listed on the available BEO/API fields.
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating only.
+  - Do not add food, drink, or entertainment reservations that are not present in the available API fields.
+- Verification: API event and booking fields checked; no BEO document view returned.
+
+### North Dayton School of Discovery Staff Engagement Event.
+
+- Date/time: Wednesday, July 22, 2026, 4:00 PM - 6:00 PM
+- Guests: 50
+- Area: Main Dining Room
+- Food:
+  - The Front Nine | TACO BAR - Food Only
+- Drinks:
+  - Soft drinks included
+- Entertainment:
+  - Darts, 2 lanes, Time not listed on BEO, 1 hour
+  - Duckpin Bowling, 2 lanes, Time not listed on BEO, 1 hour
+  - Neo Shuffleboard, 1 table, Time not listed on BEO, 2 hours
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating and 1 main food table.
+  - Highlight darts lanes 1-2 and bowling lanes 1-2 with 1-hour labels.
+  - Highlight shuffleboard table 1 with a 2-hour label.
+- Verification: BEO checked above billing section.
+
+### Danis 07/23/2026
+
+- Date/time: Thursday, July 23, 2026, 1:00 PM - 3:00 PM
+- Guests: 23
+- Area: Main Dining Room
+- Food:
+  - The Front Nine w/COOKIES | TACO BAR - Food + COOKIES
+  - Tater Keg Platter
+- Drinks:
+  - Soft drinks included
+- Entertainment:
+  - Darts, 2 lanes, Time not listed on BEO, 2 hours
+  - Duckpin Bowling, 2 lanes, Time not listed on BEO, 2 hours
+  - Neo Shuffleboard, 2 tables, Time not listed on BEO, 2 hours
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating and 1 main food table.
+  - Highlight darts lanes 1-2, bowling lanes 1-2, and shuffleboard tables 1-2 with 2-hour labels.
+  - Duckpin quantity is interpreted from the 4 lane-hours line on the BEO.
+- Verification: BEO checked above billing section; bowling quantity interpreted from lane-hours line.
+
+### GS1
+
+- Date/time: Thursday, July 23, 2026, 2:00 PM - 5:00 PM
+- Guests: 118
+- Area: Main Dining Room
+- Food:
+  - The Front Nine | TACO BAR - Food Only
+  - Tater Keg Platter
+  - Veggie Tray
+- Drinks:
+  - The Back Nine - Beverage Only
+  - Soft drinks included
+- Entertainment:
+  - Darts, 3 lanes, 2:30 PM - 4:30 PM, 2 hours
+  - Duckpin Bowling, 10 lanes, 2:30 PM - 4:30 PM, 2 hours
+  - Mini Golf, 25 guests, Untimed, 9 holes
+  - Pool Table, 1 table, 2:30 PM - 4:30 PM, 2 hours
+  - Gem Room, 1 room, 2:30 PM - 4:30 PM, 2 hours
+- Floor-plan interpretation:
+  - Highlight Main Dining Room seating and 2 main food tables because the guest count is over 100.
+  - Highlight darts lanes 1-3, bowling lanes 1-10, pool table 1, and Gem Room with 2:30-4:30 labels.
+  - Mini golf is untimed and should remain unlabeled on the floor map.
 - Verification: BEO checked above billing section.
 
 ## Missing Information Flags

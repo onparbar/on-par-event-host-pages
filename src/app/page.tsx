@@ -22,7 +22,7 @@ export default function HomePage() {
           </Link>
           <Link className="home-link" href="/entertainment-schedules">
             <strong>Entertainment Schedules</strong>
-            <span>View template schedules generated from the linked schedule thread.</span>
+            <span>View schedule exports generated from the current Tripleseat/BEO data.</span>
           </Link>
           <Link className="home-link" href="/itineraries">
             <strong>Itineraries</strong>
