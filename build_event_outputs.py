@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import html
 import json
+import re
 import textwrap
 from collections import defaultdict
 from pathlib import Path
@@ -18,6 +19,31 @@ SCHEDULE_DIR = ROOT / "entertainment schedules"
 ITINERARY_DIR = ROOT / "ITINERARY"
 FONT_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 FONT_REGULAR = "/System/Library/Fonts/Supplemental/Arial.ttf"
+SCHEDULE_TEMPLATE_PATH = ROOT / "templates" / "entertainment-schedule-template.png"
+SCHEDULE_WIDTH = 1920
+SCHEDULE_HEIGHT = 1080
+SCHEDULE_TITLE_X = 50
+SCHEDULE_HOUR_X = {
+    11: 537,
+    12: 646,
+    13: 753,
+    14: 848,
+    15: 965,
+    16: 1061,
+    17: 1156,
+    18: 1252,
+    19: 1347,
+    20: 1444,
+    21: 1550,
+    22: 1652,
+}
+SCHEDULE_BANDS = {
+    "bowling": {"top": 151, "row_height": 27.5, "names": [f"lane {index}" for index in range(1, 13)]},
+    "darts": {"top": 522, "row_height": 27.4, "names": [f"lane {index}" for index in range(1, 6)]},
+    "pool": {"top": 700, "row_height": 27.5, "names": [f"table {index}" for index in range(1, 4)]},
+    "karaoke": {"top": 823, "row_height": 27.5, "names": ["disco", "gem", "royal", "prime", "ocean"]},
+    "shuffleboard": {"top": 998, "row_height": 27.5, "names": ["lane 1", "lane 2"]},
+}
 
 FLOOR_PLAN_BY_DATE = {
     "2026-06-25": "canva floor plans/June_25_Floor_Plans.png",
@@ -71,57 +97,160 @@ def short_verification(text: str) -> str:
     return text
 
 
-def schedule_for_date(date: str, events: list[dict]) -> Path:
-    width = 1600
-    def event_card_height(event: dict) -> int:
-        entertainment = event.get("entertainment") or []
-        line_count = 1 if not entertainment else sum(
-            len(wrap_lines(
-                f"{item['name']} | {item.get('quantity','')} | {item.get('time','')}"
-                + (f" | {item.get('duration','')}" if item.get("duration") and item.get("duration") not in item.get("time", "") else ""),
-                92,
-            ))
-            for item in entertainment
+def ordinal_day(day: int) -> str:
+    if 10 <= day % 100 <= 20:
+        suffix = "TH"
+    else:
+        suffix = {1: "ST", 2: "ND", 3: "RD"}.get(day % 10, "TH")
+    return f"{day}{suffix}"
+
+
+def schedule_date_label(value: str) -> str:
+    date = dt.date.fromisoformat(value)
+    return f"{date.strftime('%A').upper()} {date.strftime('%B').upper()} {ordinal_day(date.day)}"
+
+
+def parse_time_value(raw: str) -> float:
+    value = raw.strip().lower().replace(" ", "").replace(".", "")
+    match = re.fullmatch(r"(\d{1,2})(?::(\d{2}))?(am|pm)", value)
+    if not match:
+        raise ValueError(f"Could not parse time '{raw}'")
+
+    hour = int(match.group(1))
+    minute = int(match.group(2) or "0")
+    meridiem = match.group(3)
+    if meridiem == "pm" and hour < 12:
+        hour += 12
+    if meridiem == "am" and hour == 12:
+        hour = 0
+    return hour + minute / 60
+
+
+def x_for_time(raw: str) -> float:
+    value = parse_time_value(raw)
+    floor_hour = int(value)
+    ceil_hour = int(value) if value.is_integer() else int(value) + 1
+    if float(floor_hour) == value:
+        if floor_hour not in SCHEDULE_HOUR_X:
+            raise ValueError(f"Time '{raw}' is outside the schedule range")
+        return SCHEDULE_HOUR_X[floor_hour]
+
+    if floor_hour not in SCHEDULE_HOUR_X or ceil_hour not in SCHEDULE_HOUR_X:
+        raise ValueError(f"Time '{raw}' is outside the schedule range")
+    fraction = value - floor_hour
+    left = SCHEDULE_HOUR_X[floor_hour]
+    right = SCHEDULE_HOUR_X[ceil_hour]
+    return left + (right - left) * fraction
+
+
+def quantity_number(raw: str) -> int:
+    match = re.search(r"(\d+)", raw or "")
+    return int(match.group(1)) if match else 0
+
+
+def time_range_parts(raw: str) -> tuple[str, str] | None:
+    match = re.search(r"(\d{1,2}(?::\d{2})?\s*[AP]M)\s*-\s*(\d{1,2}(?::\d{2})?\s*[AP]M)", raw or "", re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1).upper(), match.group(2).upper()
+
+
+def schedule_block_rows(item: dict) -> tuple[str, list[str]] | None:
+    name = (item.get("name") or "").lower()
+    quantity = quantity_number(item.get("quantity") or "")
+    if "bowling" in name:
+        count = min(max(quantity, 1), 12)
+        return "bowling", [f"lane {index}" for index in range(1, count + 1)]
+    if "darts" in name:
+        count = min(max(quantity, 1), 5)
+        return "darts", [f"lane {index}" for index in range(1, count + 1)]
+    if "pool" in name:
+        count = min(max(quantity, 1), 3)
+        return "pool", [f"table {index}" for index in range(1, count + 1)]
+    if "shuffleboard" in name:
+        count = min(max(quantity, 1), 2)
+        return "shuffleboard", [f"lane {index}" for index in range(1, count + 1)]
+    if "disco" in name:
+        return "karaoke", ["disco"]
+    if "gem" in name:
+        return "karaoke", ["gem"]
+    if "royal" in name:
+        return "karaoke", ["royal"]
+    if "prime" in name:
+        return "karaoke", ["prime"]
+    if "ocean" in name:
+        return "karaoke", ["ocean"]
+    return None
+
+
+def schedule_blocks_for_event(event: dict) -> list[dict]:
+    blocks: list[dict] = []
+    for item in event.get("entertainment") or []:
+        time_parts = time_range_parts(item.get("time") or "")
+        row_info = schedule_block_rows(item)
+        if not time_parts or not row_info:
+            continue
+        category, rows = row_info
+        blocks.append(
+            {
+                "category": category,
+                "rows": rows,
+                "start": time_parts[0],
+                "end": time_parts[1],
+            }
         )
-        return max(214, 140 + line_count * 31 + 48)
+    return blocks
 
-    card_heights = [event_card_height(event) for event in events]
-    height = 180 + sum(card_heights) + 60
-    image = Image.new("RGB", (width, height), "#f7f8f4")
-    draw = ImageDraw.Draw(image)
-    title_font = load_font(FONT_BOLD, 54)
-    event_font = load_font(FONT_BOLD, 30)
-    body_font = load_font(FONT_REGULAR, 25)
-    small_font = load_font(FONT_REGULAR, 20)
 
-    draw.rectangle([0, 0, width, 118], fill="#202326")
-    draw.text((54, 32), "Entertainment Schedule", font=title_font, fill="#ffffff")
-    draw.text((54, 120), date_label(date), font=load_font(FONT_BOLD, 34), fill="#202326")
+def schedule_rect(block: dict) -> tuple[float, float, float, float]:
+    band = SCHEDULE_BANDS[block["category"]]
+    indices = [band["names"].index(row) for row in block["rows"]]
+    first = min(indices)
+    last = max(indices)
+    left = x_for_time(block["start"])
+    right = x_for_time(block["end"])
+    top = band["top"] + first * band["row_height"]
+    height = (last - first + 1) * band["row_height"]
+    return left, top, right, top + height
 
-    y = 176
-    for event, card_h in zip(events, card_heights):
-        color = event["color"]
-        rgb = ImageColor.getrgb(color)
-        pale = tuple(int(channel * 0.16 + 255 * 0.84) for channel in rgb)
-        draw.rounded_rectangle([44, y, width - 44, y + card_h - 22], radius=8, fill=pale, outline=color, width=5)
-        draw.rectangle([44, y, 66, y + card_h - 22], fill=color)
-        draw.text((88, y + 24), f"{event['name']} ({event['guest_count']})", font=event_font, fill="#202326")
-        draw.text((88, y + 62), event["time"], font=body_font, fill="#384047")
-        entertainment = event.get("entertainment") or []
-        if entertainment:
-            line_y = y + 105
-            for item in entertainment[:3]:
-                time = item["time"]
-                duration = item.get("duration", "")
-                quantity = item.get("quantity", "")
-                detail = f"{item['name']} | {quantity} | {time}"
-                if duration and duration not in time:
-                    detail += f" | {duration}"
-                line_y = draw_wrapped(draw, detail, (88, line_y), body_font, "#202326", 92, 31)
-        else:
-            draw.text((88, y + 110), "No reserved entertainment listed on the available BEO/API fields.", font=body_font, fill="#384047")
-        draw_wrapped(draw, short_verification(event["verification_status"]), (88, y + card_h - 54), small_font, "#4b5563", 72, 23)
-        y += card_h
+
+def centered_text(draw: ImageDraw.ImageDraw, rect: tuple[float, float, float, float], text: str, font, fill) -> None:
+    left, top, right, bottom = rect
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    x = left + (right - left - text_width) / 2
+    y = top + (bottom - top - text_height) / 2 - 2
+    draw.text((x, y), text, font=font, fill=fill)
+
+
+def block_label(start: str, end: str) -> str:
+    return f"{start.replace(' ', '')}-{end.replace(' ', '')}"
+
+
+def schedule_for_date(date: str, events: list[dict]) -> Path:
+    image = Image.open(SCHEDULE_TEMPLATE_PATH).convert("RGBA")
+    image = image.resize((SCHEDULE_WIDTH, SCHEDULE_HEIGHT))
+    draw = ImageDraw.Draw(image, "RGBA")
+    title_font = load_font(FONT_BOLD, 30)
+    event_font = load_font(FONT_BOLD, 28)
+    block_font = load_font(FONT_BOLD, 24)
+
+    draw.text((SCHEDULE_TITLE_X, 31), schedule_date_label(date), font=title_font, fill="#000000")
+    title_y = 67
+    for event in events:
+        size = 22 if len(event["name"]) > 30 else 28
+        event_font = load_font(FONT_BOLD, size)
+        draw.text((SCHEDULE_TITLE_X, title_y), event["name"], font=event_font, fill=event["color"])
+        title_y += 34
+
+    for event in events:
+        rgb = ImageColor.getrgb(event["color"])
+        fill = (*rgb, 128)
+        for block in schedule_blocks_for_event(event):
+            rect = schedule_rect(block)
+            draw.rectangle(rect, fill=fill)
+            centered_text(draw, rect, block_label(block["start"], block["end"]), block_font, "#000000")
 
     out = SCHEDULE_DIR / f"{safe_date_file(date)}_entertainment_schedule.png"
     out.parent.mkdir(parents=True, exist_ok=True)
