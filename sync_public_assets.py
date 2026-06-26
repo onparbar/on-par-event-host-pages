@@ -45,6 +45,18 @@ ASSET_MAP = {
     "entertainment schedules/july_21_entertainment_schedule.png": "public/entertainment-schedules/july-21-entertainment-schedule.png",
     "entertainment schedules/july_22_entertainment_schedule.png": "public/entertainment-schedules/july-22-entertainment-schedule.png",
     "entertainment schedules/july_23_entertainment_schedule.png": "public/entertainment-schedules/july-23-entertainment-schedule.png",
+    "ITINERARY/lowes-mst-team.pdf": "public/itinerary-pdfs/lowes-mst-team.pdf",
+    "ITINERARY/space-force.pdf": "public/itinerary-pdfs/space-force.pdf",
+    "ITINERARY/work-event-for-30-co-workers.pdf": "public/itinerary-pdfs/work-event-for-30-co-workers.pdf",
+    "ITINERARY/lexisnexis-government-markets-meeting.pdf": "public/itinerary-pdfs/lexisnexis-government-markets-meeting.pdf",
+    "ITINERARY/oculii.pdf": "public/itinerary-pdfs/oculii.pdf",
+    "ITINERARY/core4ce.pdf": "public/itinerary-pdfs/core4ce.pdf",
+    "ITINERARY/jennifer-nicholson.pdf": "public/itinerary-pdfs/jennifer-nicholson.pdf",
+    "ITINERARY/lexisnexis-07-15-2026.pdf": "public/itinerary-pdfs/lexisnexis-07-15-2026.pdf",
+    "ITINERARY/husband-s-60th-birthday.pdf": "public/itinerary-pdfs/husband-s-60th-birthday.pdf",
+    "ITINERARY/north-dayton-school-of-discovery-staff-engagement-event.pdf": "public/itinerary-pdfs/north-dayton-school-of-discovery-staff-engagement-event.pdf",
+    "ITINERARY/danis-07-23-2026.pdf": "public/itinerary-pdfs/danis-07-23-2026.pdf",
+    "ITINERARY/gs1.pdf": "public/itinerary-pdfs/gs1.pdf",
     "outputs/tripleseat/event_plan_data.json": "public/data/event-plan-data.json",
 }
 

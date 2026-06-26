@@ -29,7 +29,31 @@ export type DateAsset = {
   source?: string;
 };
 
+export type ItineraryAsset = EventPlan & {
+  pdf?: string;
+};
+
 export const events = (eventPlanData as { events: EventPlan[] }).events;
+
+const itineraryPdfByName: Record<string, string> = {
+  "Lowes MST Team": "/itinerary-pdfs/lowes-mst-team.pdf",
+  "Space Force": "/itinerary-pdfs/space-force.pdf",
+  "Work event for 30 co-workers": "/itinerary-pdfs/work-event-for-30-co-workers.pdf",
+  "LexisNexis Government Markets Meeting": "/itinerary-pdfs/lexisnexis-government-markets-meeting.pdf",
+  Oculii: "/itinerary-pdfs/oculii.pdf",
+  Core4ce: "/itinerary-pdfs/core4ce.pdf",
+  "Jennifer Nicholson": "/itinerary-pdfs/jennifer-nicholson.pdf",
+  "LexisNexis 07/15/2026": "/itinerary-pdfs/lexisnexis-07-15-2026.pdf",
+  "Husband's 60th birthday": "/itinerary-pdfs/husband-s-60th-birthday.pdf",
+  "North Dayton School of Discovery Staff Engagement Event.": "/itinerary-pdfs/north-dayton-school-of-discovery-staff-engagement-event.pdf",
+  "Danis 07/23/2026": "/itinerary-pdfs/danis-07-23-2026.pdf",
+  GS1: "/itinerary-pdfs/gs1.pdf",
+};
+
+export const itineraries: ItineraryAsset[] = events.map((event) => {
+  const pdf = itineraryPdfByName[event.name];
+  return pdf ? { ...event, pdf } : event;
+});
 
 export const floorPlans: DateAsset[] = [
   {
@@ -222,4 +246,3 @@ export function formatEventDate(value: string) {
     timeZone: "UTC",
   }).format(new Date(`${value}T12:00:00Z`));
 }
-
