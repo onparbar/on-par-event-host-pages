@@ -31,38 +31,75 @@ function upper(value: string) {
   return value.toUpperCase();
 }
 
+function compactTimeRange(value: string) {
+  return value.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").toUpperCase();
+}
+
+function titleSize(name: string) {
+  if (name.length > 44) {
+    return "3.5rem";
+  }
+  if (name.length > 30) {
+    return "4.2rem";
+  }
+  return "5.3rem";
+}
+
 function entertainmentGroups(event: EventPlan) {
   if (!event.entertainment.length) {
     return [
       {
-        title: "Entertainment",
+        title: "No Reserved Entertainment",
         lines: ["No reserved entertainment listed"],
       },
     ];
   }
 
   return event.entertainment.map((item) => {
-    const detail = [item.quantity, item.time, item.duration].filter(Boolean).join(" | ");
+    const detailParts = [item.quantity];
+
+    if (item.time && !/time not listed|untimed/i.test(item.time)) {
+      detailParts.push(compactTimeRange(item.time));
+    } else if (item.duration) {
+      detailParts.push(upper(item.duration));
+    }
+
     return {
       title: item.name,
-      lines: detail ? [detail] : [],
+      lines: detailParts.filter(Boolean).length ? [detailParts.filter(Boolean).join(" | ")] : [],
     };
   });
 }
 
-function PosterSection({
-  heading,
-  items,
-}: {
-  heading: string;
-  items: Array<{ title?: string; lines: string[] }>;
-}) {
+function ItineraryPoster({ event }: { event: ItineraryAsset }) {
+  const foodItems = event.food.map((item) => upper(item));
+  const drinkItems = event.drink_options.map((item) => upper(item));
+  const entertainmentItems = entertainmentGroups(event);
+
   return (
-    <section className="poster-section">
-      <h4>{heading}</h4>
-      <div className="poster-section-body">
-        {items.map((item, index) => (
-          <div className="poster-item" key={`${heading}-${index}-${item.title ?? item.lines.join("-")}`}>
+    <article className="itinerary-poster itinerary-template-poster">
+      <div className="template-mask template-date-mask" />
+      <div className="template-mask template-time-mask" />
+      <div className="template-mask template-event-mask" />
+      <div className="template-mask template-food-mask" />
+      <div className="template-mask template-entertainment-mask" />
+      <div className="template-mask template-drinks-mask" />
+
+      <div className="template-date-value">{upper(formatPosterDate(event.date))}</div>
+      <div className="template-time-value">{compactTimeRange(event.time)}</div>
+      <h3 className="template-event-value" style={{ fontSize: titleSize(event.name) }}>
+        {upper(event.name)}
+      </h3>
+
+      <div className="template-food-value">
+        {foodItems.map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+      </div>
+
+      <div className="template-entertainment-value">
+        {entertainmentItems.map((item) => (
+          <div className="template-entertainment-item" key={`${item.title}-${item.lines.join("-")}`}>
             {item.title ? <strong>{upper(item.title)}</strong> : null}
             {item.lines.map((line) => (
               <p key={line}>{upper(line)}</p>
@@ -70,43 +107,11 @@ function PosterSection({
           </div>
         ))}
       </div>
-    </section>
-  );
-}
 
-function ItineraryPoster({ event }: { event: ItineraryAsset }) {
-  const foodItems = event.food.map((item) => ({ lines: [item] }));
-  const drinkItems = event.drink_options.map((item) => ({ lines: [item] }));
-  const entertainmentItems = entertainmentGroups(event);
-
-  return (
-    <article className="itinerary-poster">
-      <div className="poster-stripe poster-stripe-a" />
-      <div className="poster-stripe poster-stripe-b" />
-      <div className="poster-stripe poster-stripe-c" />
-
-      <div className="poster-logo">
-        <img alt="On Par Entertainment logo" className="poster-logo-image" src="/itinerary-assets/on-par-logo.png" />
-      </div>
-
-      <div className="poster-topline">
-        <span>{formatPosterDate(event.date)}</span>
-        <span>{upper(event.time)}</span>
-      </div>
-
-      <h3 className="poster-title">{upper(event.name)}</h3>
-
-      <PosterSection heading="Food" items={foodItems} />
-      <PosterSection heading="Entertainment" items={entertainmentItems} />
-      <PosterSection heading="Drinks" items={drinkItems} />
-
-      <div className="poster-review">
-        <img
-          alt="On Par Google review QR code"
-          className="poster-review-image"
-          src="/itinerary-assets/google-review-qr.png"
-        />
-        <p>SCAN TO LEAVE US A GOOGLE REVIEW</p>
+      <div className="template-drinks-value">
+        {drinkItems.map((item) => (
+          <p key={item}>{item}</p>
+        ))}
       </div>
     </article>
   );

@@ -208,151 +208,164 @@ a {
 .itinerary-poster {
   position: relative;
   overflow: hidden;
-  width: min(100%, 760px);
-  min-height: 1460px;
-  padding: 48px 56px 44px;
-  border: 1px solid var(--line);
+  width: min(100%, 889px);
+  aspect-ratio: 889 / 2000;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 18px;
-  background: #fffdfa;
+  background: #526d52;
   box-shadow: 0 24px 60px rgba(32, 35, 38, 0.08);
 }
 
-.poster-stripe {
-  position: absolute;
-  background: rgba(32, 35, 38, 0.1);
-  pointer-events: none;
+.itinerary-template-poster {
+  background-image: url("/itinerary-assets/itinerary-template-2026.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
-.poster-stripe-a {
-  top: -140px;
-  left: 88px;
-  width: 26px;
-  height: 1720px;
-  transform: rotate(20deg);
-}
-
-.poster-stripe-b {
-  top: -90px;
-  right: 118px;
-  width: 22px;
-  height: 1560px;
-  transform: rotate(-20deg);
-}
-
-.poster-stripe-c {
-  top: -60px;
-  right: 44px;
-  width: 18px;
-  height: 420px;
-  transform: rotate(36deg);
-}
-
-.poster-logo,
-.poster-topline,
-.poster-title,
-.poster-section,
-.poster-review {
+.template-mask,
+.template-date-value,
+.template-time-value,
+.template-event-value,
+.template-food-value,
+.template-entertainment-value,
+.template-drinks-value {
   position: relative;
   z-index: 1;
 }
 
-.poster-logo {
-  display: grid;
-  justify-items: center;
-  margin-bottom: 22px;
-  text-align: center;
+.template-mask {
+  position: absolute;
+  background: #526d52;
 }
 
-.poster-logo-image {
-  display: block;
-  width: min(100%, 520px);
-  height: auto;
+.template-date-mask {
+  top: 18.9%;
+  left: 2.8%;
+  width: 22%;
+  height: 4%;
 }
 
-.poster-topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 34px;
-  color: #1f6d2f;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 32px;
-  font-weight: 700;
+.template-time-mask {
+  top: 18.9%;
+  left: 73.3%;
+  width: 23%;
+  height: 4%;
 }
 
-.poster-title {
-  max-width: 520px;
-  margin: 0 0 44px;
-  color: #1f6d2f;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 78px;
-  line-height: 0.94;
-  text-transform: uppercase;
+.template-event-mask {
+  top: 22.8%;
+  left: 2.6%;
+  width: 94%;
+  height: 7.5%;
 }
 
-.poster-section {
-  margin-bottom: 48px;
+.template-food-mask {
+  top: 33.9%;
+  left: 2.6%;
+  width: 48%;
+  min-height: 7.6%;
+  height: 9.5%;
 }
 
-.poster-section h4 {
-  margin: 0 0 12px;
-  color: #1f6d2f;
-  font-family: "Snell Roundhand", "Apple Chancery", "Times New Roman", cursive;
-  font-size: 76px;
-  font-style: italic;
-  font-weight: 500;
-  line-height: 0.9;
+.template-entertainment-mask {
+  top: 46.4%;
+  left: 2.6%;
+  width: 83%;
+  min-height: 18%;
+  height: 21%;
 }
 
-.poster-section-body {
-  display: grid;
-  gap: 18px;
+.template-drinks-mask {
+  top: 71%;
+  left: 2.6%;
+  width: 91.5%;
+  min-height: 8%;
+  height: 10.8%;
 }
 
-.poster-item strong,
-.poster-item p {
+.template-date-value,
+.template-time-value,
+.template-event-value,
+.template-food-value p,
+.template-entertainment-item strong,
+.template-entertainment-item p,
+.template-drinks-value p {
   margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
-  line-height: 1.06;
+  color: #f5f4ec;
+  font-family: Didot, "Bodoni 72", "Times New Roman", serif;
+  line-height: 1.02;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
-.poster-item strong {
+.template-date-value,
+.template-time-value {
+  position: absolute;
+  top: 19.4%;
+  font-size: 3.1rem;
+  font-weight: 700;
+}
+
+.template-date-value {
+  left: 3.2%;
+}
+
+.template-time-value {
+  right: 3.8%;
+  text-align: right;
+}
+
+.template-event-value {
+  position: absolute;
+  top: 23.8%;
+  left: 3.2%;
+  width: 90%;
+  line-height: 0.92;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+.template-food-value,
+.template-entertainment-value,
+.template-drinks-value {
+  position: absolute;
+  left: 3.6%;
+  width: 90%;
+}
+
+.template-food-value {
+  top: 35.2%;
+}
+
+.template-entertainment-value {
+  top: 47.6%;
+}
+
+.template-drinks-value {
+  top: 72.4%;
+}
+
+.template-food-value p,
+.template-entertainment-item strong,
+.template-entertainment-item p,
+.template-drinks-value p {
+  font-size: 2.45rem;
+  font-weight: 700;
+}
+
+.template-food-value p,
+.template-drinks-value p {
+  margin-bottom: 0.35rem;
+}
+
+.template-entertainment-item {
+  margin-bottom: 1.2rem;
+}
+
+.template-entertainment-item strong {
   display: block;
-  color: #1f6d2f;
-  font-size: 38px;
-  font-weight: 700;
-}
-
-.poster-item p {
-  color: #111;
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.poster-review {
-  display: grid;
-  justify-items: center;
-  gap: 18px;
-  margin-top: 30px;
-  text-align: center;
-}
-
-.poster-review-image {
-  display: block;
-  width: min(100%, 304px);
-  height: auto;
-}
-
-.poster-review p {
-  margin: 0;
-  color: #1f6d2f;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 1.05;
-  text-transform: uppercase;
+  margin-bottom: 0.2rem;
 }
 
 .itinerary-support-card {
@@ -759,8 +772,16 @@ a {
 }
 
 @media (max-width: 1080px) {
-  .poster-title {
-    font-size: 64px;
+  .template-date-value,
+  .template-time-value {
+    font-size: 2.3rem;
+  }
+
+  .template-food-value p,
+  .template-entertainment-item strong,
+  .template-entertainment-item p,
+  .template-drinks-value p {
+    font-size: 1.85rem;
   }
 
   .event-field-grid,
@@ -780,36 +801,20 @@ a {
 }
 
 @media (max-width: 680px) {
-  .itinerary-poster {
-    min-height: 1180px;
-    padding: 32px 24px 30px;
+  .template-date-value,
+  .template-time-value {
+    font-size: 1.45rem;
   }
 
-  .poster-logo-image {
-    width: min(100%, 360px);
+  .template-food-value p,
+  .template-entertainment-item strong,
+  .template-entertainment-item p,
+  .template-drinks-value p {
+    font-size: 1.18rem;
   }
 
-  .poster-topline {
-    align-items: start;
-    flex-direction: column;
-    font-size: 22px;
-  }
-
-  .poster-title {
-    font-size: 46px;
-  }
-
-  .poster-section h4 {
-    font-size: 56px;
-  }
-
-  .poster-item strong {
-    font-size: 28px;
-  }
-
-  .poster-item p,
-  .poster-review p {
-    font-size: 22px;
+  .template-entertainment-item {
+    margin-bottom: 0.7rem;
   }
 
   .addon-controls {

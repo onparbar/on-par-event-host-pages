@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-SOURCE_GLOBS = ["src/**/*.ts", "src/**/*.tsx"]
+SOURCE_GLOBS = ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css"]
 
 
 def main() -> None:
@@ -12,9 +12,8 @@ def main() -> None:
     for pattern in SOURCE_GLOBS:
         for path in ROOT.glob(pattern):
             text = path.read_text(encoding="utf-8")
-            public_refs.update(
-                re.findall(r'["\'](/(?:floor-plans|entertainment-schedules|itinerary-pdfs|itinerary-assets|data)/[^"\']+)["\']', text)
-            )
+            public_refs.update(re.findall(r'["\'](/(?:floor-plans|entertainment-schedules|itinerary-pdfs|itinerary-assets|data)/[^"\']+)["\']', text))
+            public_refs.update(re.findall(r'url\((?:["\'])?(/(?:floor-plans|entertainment-schedules|itinerary-pdfs|itinerary-assets|data)/[^)"\']+)', text))
 
     missing = []
     for ref in sorted(public_refs):
