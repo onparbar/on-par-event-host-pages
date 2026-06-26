@@ -37,12 +37,12 @@ function compactTimeRange(value: string) {
 
 function titleSize(name: string) {
   if (name.length > 44) {
-    return "3.5rem";
+    return "2.8rem";
   }
   if (name.length > 30) {
-    return "4.2rem";
+    return "3.25rem";
   }
-  return "5.3rem";
+  return "4.15rem";
 }
 
 function entertainmentGroups(event: EventPlan) {
@@ -90,6 +90,10 @@ function ItineraryPoster({ event }: { event: ItineraryAsset }) {
       <h3 className="template-event-value" style={{ fontSize: titleSize(event.name) }}>
         {upper(event.name)}
       </h3>
+
+      <div className="template-section-label template-food-label">Food</div>
+      <div className="template-section-label template-entertainment-label">Entertainment</div>
+      <div className="template-section-label template-drinks-label">Drinks</div>
 
       <div className="template-food-value">
         {foodItems.map((item) => (

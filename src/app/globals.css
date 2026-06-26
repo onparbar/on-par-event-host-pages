@@ -240,48 +240,45 @@ a {
 }
 
 .template-date-mask {
-  top: 18.9%;
-  left: 2.8%;
-  width: 22%;
-  height: 4%;
+  top: 18.45%;
+  left: 2.4%;
+  width: 28%;
+  height: 5.2%;
 }
 
 .template-time-mask {
-  top: 18.9%;
-  left: 73.3%;
-  width: 23%;
-  height: 4%;
+  top: 18.45%;
+  left: 68.5%;
+  width: 29%;
+  height: 5.2%;
 }
 
 .template-event-mask {
-  top: 22.8%;
-  left: 2.6%;
-  width: 94%;
-  height: 7.5%;
+  top: 22.1%;
+  left: 2.2%;
+  width: 95.5%;
+  height: 10.1%;
 }
 
 .template-food-mask {
-  top: 33.9%;
-  left: 2.6%;
-  width: 48%;
-  min-height: 7.6%;
-  height: 9.5%;
+  top: 29.5%;
+  left: 2.2%;
+  width: 67%;
+  height: 15.6%;
 }
 
 .template-entertainment-mask {
-  top: 46.4%;
-  left: 2.6%;
-  width: 83%;
-  min-height: 18%;
-  height: 21%;
+  top: 41.5%;
+  left: 2.2%;
+  width: 92%;
+  height: 25.8%;
 }
 
 .template-drinks-mask {
-  top: 71%;
-  left: 2.6%;
-  width: 91.5%;
-  min-height: 8%;
-  height: 10.8%;
+  top: 66.8%;
+  left: 2.2%;
+  width: 95%;
+  height: 15.9%;
 }
 
 .template-date-value,
@@ -302,9 +299,10 @@ a {
 .template-date-value,
 .template-time-value {
   position: absolute;
-  top: 19.4%;
-  font-size: 3.1rem;
+  top: 19.2%;
+  font-size: 2.15rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .template-date-value {
@@ -318,54 +316,79 @@ a {
 
 .template-event-value {
   position: absolute;
-  top: 23.8%;
+  top: 24.2%;
   left: 3.2%;
-  width: 90%;
-  line-height: 0.92;
+  width: 91%;
+  line-height: 0.9;
   font-weight: 700;
   text-wrap: balance;
 }
 
 .template-food-value,
 .template-entertainment-value,
-.template-drinks-value {
+.template-drinks-value,
+.template-section-label {
   position: absolute;
-  left: 3.6%;
-  width: 90%;
+  left: 3.4%;
+  width: 92%;
+}
+
+.template-section-label {
+  color: #f5f4ec;
+  font-family: Didot, "Bodoni 72", "Times New Roman", serif;
+  font-size: 3.9rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 0.92;
+  z-index: 2;
+  text-transform: uppercase;
+}
+
+.template-food-label {
+  top: 30.05%;
+}
+
+.template-entertainment-label {
+  top: 42.05%;
+}
+
+.template-drinks-label {
+  top: 67.35%;
 }
 
 .template-food-value {
-  top: 35.2%;
+  top: 35.45%;
 }
 
 .template-entertainment-value {
-  top: 47.6%;
+  top: 48.55%;
 }
 
 .template-drinks-value {
-  top: 72.4%;
+  top: 72.55%;
 }
 
 .template-food-value p,
 .template-entertainment-item strong,
 .template-entertainment-item p,
 .template-drinks-value p {
-  font-size: 2.45rem;
+  font-size: 1.58rem;
   font-weight: 700;
+  line-height: 1;
 }
 
 .template-food-value p,
 .template-drinks-value p {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.22rem;
 }
 
 .template-entertainment-item {
-  margin-bottom: 1.2rem;
+  margin-bottom: 0.62rem;
 }
 
 .template-entertainment-item strong {
   display: block;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.08rem;
 }
 
 .itinerary-support-card {
@@ -774,14 +797,18 @@ a {
 @media (max-width: 1080px) {
   .template-date-value,
   .template-time-value {
-    font-size: 2.3rem;
+    font-size: 1.6rem;
+  }
+
+  .template-section-label {
+    font-size: 3rem;
   }
 
   .template-food-value p,
   .template-entertainment-item strong,
   .template-entertainment-item p,
   .template-drinks-value p {
-    font-size: 1.85rem;
+    font-size: 1.28rem;
   }
 
   .event-field-grid,
@@ -803,18 +830,22 @@ a {
 @media (max-width: 680px) {
   .template-date-value,
   .template-time-value {
-    font-size: 1.45rem;
+    font-size: 0.9rem;
+  }
+
+  .template-section-label {
+    font-size: 2rem;
   }
 
   .template-food-value p,
   .template-entertainment-item strong,
   .template-entertainment-item p,
   .template-drinks-value p {
-    font-size: 1.18rem;
+    font-size: 0.76rem;
   }
 
   .template-entertainment-item {
-    margin-bottom: 0.7rem;
+    margin-bottom: 0.32rem;
   }
 
   .addon-controls {
