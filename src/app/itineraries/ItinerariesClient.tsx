@@ -86,8 +86,7 @@ function ItineraryPoster({ event }: { event: ItineraryAsset }) {
       <div className="poster-stripe poster-stripe-c" />
 
       <div className="poster-logo">
-        <span>On Par</span>
-        <small>Entertainment</small>
+        <img alt="On Par Entertainment logo" className="poster-logo-image" src="/itinerary-assets/on-par-logo.png" />
       </div>
 
       <div className="poster-topline">

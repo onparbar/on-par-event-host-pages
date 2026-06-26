@@ -259,21 +259,14 @@ a {
 .poster-logo {
   display: grid;
   justify-items: center;
-  margin-bottom: 34px;
+  margin-bottom: 22px;
   text-align: center;
 }
 
-.poster-logo span {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 64px;
-  line-height: 0.9;
-}
-
-.poster-logo small {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.poster-logo-image {
+  display: block;
+  width: min(100%, 520px);
+  height: auto;
 }
 
 .poster-topline {
@@ -792,12 +785,8 @@ a {
     padding: 32px 24px 30px;
   }
 
-  .poster-logo span {
-    font-size: 44px;
-  }
-
-  .poster-logo small {
-    font-size: 18px;
+  .poster-logo-image {
+    width: min(100%, 360px);
   }
 
   .poster-topline {
