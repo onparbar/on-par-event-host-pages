@@ -102,7 +102,11 @@ function ItineraryPoster({ event }: { event: ItineraryAsset }) {
       <PosterSection heading="Drinks" items={drinkItems} />
 
       <div className="poster-review">
-        <div className="poster-review-badge">On Par</div>
+        <img
+          alt="On Par Google review QR code"
+          className="poster-review-image"
+          src="/itinerary-assets/google-review-qr.png"
+        />
         <p>SCAN TO LEAVE US A GOOGLE REVIEW</p>
       </div>
     </article>
