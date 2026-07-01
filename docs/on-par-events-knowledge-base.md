@@ -2,7 +2,7 @@
 
 Informational knowledge base for event request, booking, planning, and event-output agents.
 
-Last updated: June 25, 2026
+Last updated: July 1, 2026
 
 ## What This Document Is
 
@@ -720,7 +720,7 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 
 - Date/time: Tuesday, July 7, 2026, 4:00 PM - 8:00 PM
 - Guests: 30
-- Area: Main Dining Room
+- Area: VIP 1
 - Food:
   - The Full Course - Food + Beverage
   - Premium Taco Bar
@@ -733,17 +733,18 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Mini Golf, 30 guests, Untimed, 9 holes
 - Special instructions:
   - Need to start around 4:00 PM and end by 8:00 PM.
+  - VIP 1 is listed in the current BEO event summary.
 - Floor-plan interpretation:
-  - Highlight Main Dining Room seating and 1 main food table.
+  - Highlight VIP 1 full support seating and 1 VIP food table.
   - Highlight bowling lanes 1-5 and label 4-8.
   - Mini golf is untimed and does not need a time label.
-- Verification: BEO checked above billing section.
+- Verification: BEO checked above billing section; room assignment updated to VIP 1.
 
 ### LexisNexis Government Markets Meeting
 
 - Date/time: Thursday, July 9, 2026, 6:30 PM - 8:30 PM
 - Guests: 100
-- Area: Main Dining Room
+- Areas: VIP 1, VIP 2
 - Food:
   - The Full Course | TACO BAR - Food + Beverage
   - Veggie Tray
@@ -757,11 +758,13 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Prime Room, 1 room, 7:00 PM - 9:00 PM, 2 hours
 - Special instructions:
   - Booking description asks for bowling, karaoke, and add-on activities for the team.
+  - VIP 1 and VIP 2 are listed in the current BEO event summary.
+  - VIP 1 and VIP 2 do not provide seated capacity for 100 guests; confirm overflow seating approach if operations needs a full seating map.
 - Floor-plan interpretation:
-  - Highlight Main Dining Room seating and 1 main food table.
+  - Highlight VIP 1 and VIP 2 support seating plus both VIP food tables.
   - Highlight bowling lanes 1-7, pool tables 1-3, and shuffleboard tables 1-2 with 2-hour labels.
   - Highlight Prime Room and label 7-9.
-- Verification: BEO checked above billing section.
+- Verification: BEO checked above billing section; room assignment updated to VIP 1 and VIP 2.
 
 ### Oculii
 

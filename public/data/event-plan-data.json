@@ -84,7 +84,7 @@
       "time": "4:00 PM - 8:00 PM",
       "guest_count": 30,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1"
       ],
       "color": "#2f8f46",
       "food": [
@@ -110,10 +110,11 @@
           "duration": "9 holes"
         }
       ],
-      "verification_status": "BEO checked above billing section",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-07_work-event-for-30-co-workers_beo.txt",
       "special_instructions": [
-        "Need to start around 4:00 PM and end by 8:00 PM."
+        "Need to start around 4:00 PM and end by 8:00 PM.",
+        "VIP 1 is listed in the current BEO event summary."
       ]
     },
     {
@@ -124,7 +125,8 @@
       "time": "6:30 PM - 8:30 PM",
       "guest_count": 100,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1",
+        "VIP 2"
       ],
       "color": "#2f8f46",
       "food": [
@@ -161,10 +163,12 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-09_lexisnexis-government-markets-meeting_beo.txt",
       "special_instructions": [
-        "Booking description asks for bowling, karaoke, and add-on activities for the team."
+        "Booking description asks for bowling, karaoke, and add-on activities for the team.",
+        "VIP 1 and VIP 2 are listed in the current BEO event summary.",
+        "VIP 1 and VIP 2 do not provide seated capacity for 100 guests; confirm overflow seating approach if operations needs a full seating map."
       ]
     },
     {
