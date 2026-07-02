@@ -332,7 +332,8 @@
       "time": "6:30 PM - 9:00 PM",
       "guest_count": 110,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1",
+        "VIP 2"
       ],
       "color": "#2f8f46",
       "food": [
@@ -369,7 +370,7 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; Prime Room time not listed on this BEO",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; Prime Room time not listed on this BEO",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-15_lexisnexis-07-15-2026_beo.txt",
       "special_instructions": [
         "Booking description requests the same games, karaoke, and food as the July 9, 2026 event."
