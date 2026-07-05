@@ -791,7 +791,7 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 ### Core4ce
 
 - Date/time: Friday, July 10, 2026, 5:30 PM - 7:30 PM
-- Guests: 170
+- Guests: 82
 - Areas: VIP 1, VIP 2
 - Food:
   - The Front Nine | TACO BAR - Food Only
@@ -800,14 +800,14 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 - Entertainment:
   - Darts, 3 lanes, Time not listed on BEO, 2 hours
   - Duckpin Bowling, 12 lanes, Time not listed on BEO, 2 hours
-  - Mini Golf, 100 guests, Untimed, 9 holes
+  - Mini Golf, 50 guests, Untimed, 9 holes
   - Pool Table, 2 tables, Time not listed on BEO, 2 hours
   - Neo Shuffleboard, 1 table, Time not listed on BEO, 2 hours
 - Special instructions:
-  - API guest count is blank; using the 170-person food package quantity from the BEO for planning.
-  - VIP 1 and VIP 2 do not provide seated capacity for 170 guests; confirm overflow approach if operations needs a full seating map.
+  - API guest count is blank; using the 82-person food package quantity from the BEO for planning.
+  - VIP 1 and VIP 2 do not provide seated capacity for 82 guests; confirm overflow approach if operations needs a full seating map.
 - Floor-plan interpretation:
-  - Highlight VIP 1 and VIP 2 support seating plus both VIP food tables.
+  - Highlight VIP 1 and VIP 2 support seating plus one VIP food table.
   - Highlight darts lanes 1-3, all 12 bowling lanes, pool tables 1-2, and shuffleboard table 1 with 2-hour labels.
   - Mini golf is untimed; guest quantity exceeds the listed room seating footprint and should remain flagged.
 - Verification: BEO checked above billing section; guest count inferred from BEO food quantity and seating-capacity mismatch flagged.

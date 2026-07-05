@@ -235,7 +235,7 @@
       "date": "2026-07-10",
       "day": "Friday",
       "time": "5:30 PM - 7:30 PM",
-      "guest_count": 170,
+      "guest_count": 82,
       "rooms": [
         "VIP 1",
         "VIP 2"
@@ -262,7 +262,7 @@
         },
         {
           "name": "Mini Golf",
-          "quantity": "100 guests",
+          "quantity": "50 guests",
           "time": "Untimed",
           "duration": "9 holes"
         },
@@ -282,8 +282,8 @@
       "verification_status": "BEO checked above billing section; guest count inferred from BEO food quantity and seating-capacity mismatch flagged",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-10_core4ce_beo.txt",
       "special_instructions": [
-        "API guest count is blank; using the 170-person food package quantity from the BEO for planning.",
-        "VIP 1 and VIP 2 do not provide seated capacity for 170 guests; confirm overflow approach if operations needs a full seating map."
+        "API guest count is blank; using the 82-person food package quantity from the BEO for planning.",
+        "VIP 1 and VIP 2 do not provide seated capacity for 82 guests; confirm overflow approach if operations needs a full seating map."
       ]
     },
     {
