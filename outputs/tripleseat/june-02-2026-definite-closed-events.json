@@ -1,0 +1,717 @@
+{
+  "count": 2,
+  "end": "06/02/2026",
+  "events": [
+    {
+      "account": {
+        "id": 44534821,
+        "name": "GAF Roofing"
+      },
+      "account_id": 44534821,
+      "attachments": [],
+      "booking": {
+        "account": {
+          "id": 44534821,
+          "name": "GAF Roofing"
+        },
+        "booking_forecast": 0,
+        "category_forecasts": null,
+        "contact": {
+          "account_id": 44534821,
+          "first_name": "Camden",
+          "id": 59049091,
+          "last_name": "Cotter",
+          "websites": [
+            {
+              "id": 103885494,
+              "url": ""
+            }
+          ]
+        },
+        "created_at": "2026-06-04T12:21:25-04:00",
+        "created_by": 303000,
+        "creator": {
+          "created_at": "10/31/2023 9:17 AM",
+          "customer_id": 12195,
+          "first_name": "On Par ",
+          "id": 303000,
+          "last_name": "Events",
+          "login_at": "7/2/2026 4:37 PM",
+          "login_count": 309,
+          "title": "Event Coordinator",
+          "updated_at": "7/2/2026 4:37 PM"
+        },
+        "custom_fields": [],
+        "customer_id": 12195,
+        "definite_date": "2026-06-09",
+        "deleted_at": null,
+        "documents": [],
+        "end_date": "2026-06-02",
+        "event_ids": [
+          60315142
+        ],
+        "id": 56909079,
+        "location": {
+          "addresses": [
+            {
+              "address1": "4464 Indian Ripple Rd.",
+              "address2": "",
+              "address_type": "Main",
+              "city": "Beavercreek",
+              "country": "United States",
+              "id": 78144137,
+              "state": "OH",
+              "zip_code": "45440"
+            }
+          ],
+          "customer_id": 12195,
+          "id": 26059,
+          "name": "On Par Entertainment",
+          "site_id": 13194
+        },
+        "location_id": 26059,
+        "lost_date": null,
+        "market_segment": null,
+        "name": "GAF Partners Meeting",
+        "owned_by": 303000,
+        "owner": {
+          "created_at": "10/31/2023 9:17 AM",
+          "customer_id": 12195,
+          "first_name": "On Par ",
+          "id": 303000,
+          "last_name": "Events",
+          "login_at": "7/2/2026 4:37 PM",
+          "login_count": 309,
+          "title": "Event Coordinator",
+          "updated_at": "7/2/2026 4:37 PM"
+        },
+        "post_as": "GAF Partners Meeting",
+        "secondary_contacts": [],
+        "selected_lead_sources": [
+          {
+            "lead_source_id": null,
+            "lead_source_name": null,
+            "lead_source_other": null
+          }
+        ],
+        "site_id": 13194,
+        "start_date": "2026-06-02",
+        "status": "CLOSED",
+        "status_changes": [
+          {
+            "created_at": "6/4/2026 12:21 PM",
+            "created_by": 303000,
+            "previous_status": null,
+            "status": ""
+          },
+          {
+            "created_at": "6/9/2026 11:29 AM",
+            "created_by": 303000,
+            "previous_status": "DEFINITE",
+            "status": "CLOSED"
+          },
+          {
+            "created_at": "6/9/2026 11:29 AM",
+            "created_by": 303000,
+            "previous_status": "PROSPECT",
+            "status": "DEFINITE"
+          },
+          {
+            "created_at": "6/4/2026 12:21 PM",
+            "created_by": 303000,
+            "previous_status": null,
+            "status": "PROSPECT"
+          }
+        ],
+        "tentative_date": null,
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
+        "updated_at": "2026-06-09T11:29:59-04:00",
+        "updated_by": 303000,
+        "updator": {
+          "created_at": "10/31/2023 9:17 AM",
+          "customer_id": 12195,
+          "first_name": "On Par ",
+          "id": 303000,
+          "last_name": "Events",
+          "login_at": "7/2/2026 4:37 PM",
+          "login_count": 309,
+          "title": "Event Coordinator",
+          "updated_at": "7/2/2026 4:37 PM"
+        }
+      },
+      "booking_id": 56909079,
+      "category_totals": [
+        {
+          "name": "Bowling",
+          "total": "180.0"
+        },
+        {
+          "name": "Neo Shuffleboard",
+          "total": "60.0"
+        },
+        {
+          "name": "Pool Tables",
+          "total": "48.0"
+        },
+        {
+          "name": "Food Packages",
+          "total": "1799.6"
+        }
+      ],
+      "contact": {
+        "account_id": 44534821,
+        "first_name": "Camden",
+        "id": 59049091,
+        "last_name": "Cotter",
+        "websites": [
+          {
+            "id": 103885494,
+            "url": ""
+          }
+        ]
+      },
+      "contact_id": 59049091,
+      "created_at": "6/4/2026 12:21 PM",
+      "created_by": 303000,
+      "creator": {
+        "created_at": "10/31/2023 9:17 AM",
+        "customer_id": 12195,
+        "first_name": "On Par ",
+        "id": 303000,
+        "last_name": "Events",
+        "login_at": "7/2/2026 4:37 PM",
+        "login_count": 309,
+        "title": "Event Coordinator",
+        "updated_at": "7/2/2026 4:37 PM"
+      },
+      "custom_fields": [
+        {
+          "custom_field_id": 112666,
+          "custom_field_name": "Deposit Due Date",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_deposit_due_date",
+          "id": 515164022,
+          "value": ""
+        },
+        {
+          "custom_field_id": 112667,
+          "custom_field_name": "Balance Due Date",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_balance_due_date",
+          "id": 515164023,
+          "value": ""
+        },
+        {
+          "custom_field_id": 158500,
+          "custom_field_name": "Party Theme",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_party_theme",
+          "id": 515164024,
+          "value": ""
+        }
+      ],
+      "customer_id": 12195,
+      "deleted_at": null,
+      "delivery_instructions": "",
+      "delivery_provider": null,
+      "description": "Business celebration with trophies, food/drink, and networking,",
+      "document_ids": "Contract & Event Order: 39116315",
+      "documents": [
+        {
+          "deleted_at": null,
+          "id": 39116315,
+          "template_document_id": 48074,
+          "title": "Contract & Event Order: 39116315",
+          "views": [
+            {
+              "name": "Banquet Event Order",
+              "url": "https://portal.tripleseat.com/doc/c10b564c3c877b426b9c609e7a81a54c9747209b/234052"
+            }
+          ]
+        }
+      ],
+      "end_date": "2026-06-02",
+      "end_time": "6/2/2026 9:00 PM",
+      "event_date": "6/2/2026",
+      "event_date_iso8601": "2026-06-02",
+      "event_end": "6/2/2026 9:00 PM",
+      "event_end_iso8601": "2026-06-02T21:00:00-04:00",
+      "event_end_time": "9:00 PM",
+      "event_end_time_with_teardown_time": "9:00 PM",
+      "event_end_utc": "2026-06-03T01:00:00Z",
+      "event_end_with_teardown_iso8601": "2026-06-02T21:00:00-04:00",
+      "event_start": "6/2/2026 6:00 PM",
+      "event_start_iso8601": "2026-06-02T18:00:00-04:00",
+      "event_start_time": "6:00 PM",
+      "event_start_time_with_setup_time": "6:00 PM",
+      "event_start_utc": "2026-06-02T22:00:00Z",
+      "event_start_with_setup_iso8601": "2026-06-02T18:00:00-04:00",
+      "event_style": "onpremise",
+      "event_timezone": "Eastern Time (US & Canada)",
+      "event_type": null,
+      "event_type_id": null,
+      "guaranteed_guest_count": null,
+      "guest_count": 40,
+      "id": 60315142,
+      "lead": {
+        "additional_information": "Business celebration with trophies, food/drink, and networking,",
+        "company": "GAF Roofing",
+        "contact_preference": null,
+        "converted_at": "6/4/2026 12:00 AM",
+        "created_at": "6/2/2026 2:41 PM",
+        "deleted_at": null,
+        "event_style": null,
+        "first_name": "Camden",
+        "id": 53256510,
+        "last_name": "Cotter",
+        "lead_form_id": 32906,
+        "owned_by": null,
+        "referral_source_id": 6366,
+        "referral_source_other": "",
+        "updated_at": "6/4/2026 12:21 PM"
+      },
+      "location": {
+        "addresses": [
+          {
+            "address1": "4464 Indian Ripple Rd.",
+            "address2": "",
+            "address_type": "Main",
+            "city": "Beavercreek",
+            "country": "United States",
+            "id": 78144137,
+            "state": "OH",
+            "zip_code": "45440"
+          }
+        ],
+        "customer_id": 12195,
+        "id": 26059,
+        "name": "On Par Entertainment",
+        "site_id": 13194
+      },
+      "location_id": 26059,
+      "managers": [],
+      "managing_user_ids": [],
+      "name": "GAF Partners Meeting",
+      "offsite_address": {
+        "address1": "",
+        "address2": "",
+        "address_type": "Delivery",
+        "city": "",
+        "country": null,
+        "id": 148255635,
+        "state": "",
+        "zip_code": ""
+      },
+      "owned_by": 303000,
+      "owner": {
+        "created_at": "10/31/2023 9:17 AM",
+        "customer_id": 12195,
+        "first_name": "On Par ",
+        "id": 303000,
+        "last_name": "Events",
+        "login_at": "7/2/2026 4:37 PM",
+        "login_count": 309,
+        "title": "Event Coordinator",
+        "updated_at": "7/2/2026 4:37 PM"
+      },
+      "post_as": "GAF Partners Meeting",
+      "referred_by": "Walk In",
+      "room_ids": [
+        463311
+      ],
+      "rooms": [
+        {
+          "capacity": null,
+          "customer_id": 12195,
+          "description": "",
+          "id": 463311,
+          "is_unassigned": false,
+          "location_id": 26059,
+          "name": "VIP 1",
+          "site_id": 13194
+        }
+      ],
+      "secondary_contacts": [],
+      "selected_gratuity": null,
+      "selected_lead_sources": [
+        {
+          "lead_source_id": 2,
+          "lead_source_name": "Tripleseat Web Lead",
+          "lead_source_other": ""
+        }
+      ],
+      "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
+      "site_id": 13194,
+      "start_date": "2026-06-02",
+      "start_time": "6/2/2026 6:00 PM",
+      "status": "CLOSED",
+      "status_changes": [
+        {
+          "created_at": "6/9/2026 11:29 AM",
+          "created_by": 303000,
+          "previous_status": "DEFINITE",
+          "status": "CLOSED"
+        },
+        {
+          "created_at": "6/9/2026 11:29 AM",
+          "created_by": 303000,
+          "previous_status": "PROSPECT",
+          "status": "DEFINITE"
+        },
+        {
+          "created_at": "6/4/2026 12:21 PM",
+          "created_by": 303000,
+          "previous_status": null,
+          "status": "PROSPECT"
+        }
+      ],
+      "teardown_time": 0,
+      "unassigned": false,
+      "updated_at": "7/2/2026 4:11 PM",
+      "updated_by": 303000,
+      "updator": {
+        "created_at": "10/31/2023 9:17 AM",
+        "customer_id": 12195,
+        "first_name": "On Par ",
+        "id": 303000,
+        "last_name": "Events",
+        "login_at": "7/2/2026 4:37 PM",
+        "login_count": 309,
+        "title": "Event Coordinator",
+        "updated_at": "7/2/2026 4:37 PM"
+      }
+    },
+    {
+      "account": {
+        "id": 44402784,
+        "name": "Julia "
+      },
+      "account_id": 44402784,
+      "attachments": [],
+      "booking": {
+        "account": {
+          "id": 44402784,
+          "name": "Julia "
+        },
+        "booking_forecast": 0,
+        "category_forecasts": null,
+        "contact": {
+          "account_id": 44402784,
+          "first_name": "Julia",
+          "id": 58868783,
+          "last_name": "",
+          "websites": [
+            {
+              "id": 103572316,
+              "url": ""
+            }
+          ]
+        },
+        "created_at": "2026-05-27T17:31:23-04:00",
+        "created_by": 315840,
+        "creator": {
+          "created_at": "1/18/2024 7:38 PM",
+          "customer_id": 12195,
+          "first_name": "Daniel ",
+          "id": 315840,
+          "last_name": "Huiet",
+          "login_at": "6/10/2026 1:33 PM",
+          "login_count": 157,
+          "title": "Owner",
+          "updated_at": "6/10/2026 1:33 PM"
+        },
+        "custom_fields": [],
+        "customer_id": 12195,
+        "definite_date": "2026-05-27",
+        "deleted_at": null,
+        "documents": [],
+        "end_date": "2026-06-02",
+        "event_ids": [
+          60101907
+        ],
+        "id": 56718381,
+        "location": {
+          "addresses": [
+            {
+              "address1": "4464 Indian Ripple Rd.",
+              "address2": "",
+              "address_type": "Main",
+              "city": "Beavercreek",
+              "country": "United States",
+              "id": 78144137,
+              "state": "OH",
+              "zip_code": "45440"
+            }
+          ],
+          "customer_id": 12195,
+          "id": 26059,
+          "name": "On Par Entertainment",
+          "site_id": 13194
+        },
+        "location_id": 26059,
+        "lost_date": null,
+        "market_segment": null,
+        "name": "No host social 250 Julia 937-815-8871",
+        "owned_by": 315840,
+        "owner": {
+          "created_at": "1/18/2024 7:38 PM",
+          "customer_id": 12195,
+          "first_name": "Daniel ",
+          "id": 315840,
+          "last_name": "Huiet",
+          "login_at": "6/10/2026 1:33 PM",
+          "login_count": 157,
+          "title": "Owner",
+          "updated_at": "6/10/2026 1:33 PM"
+        },
+        "post_as": "No host social 250 Julia 937-815-8871",
+        "secondary_contacts": [],
+        "selected_lead_sources": [
+          {
+            "lead_source_id": null,
+            "lead_source_name": null,
+            "lead_source_other": null
+          }
+        ],
+        "site_id": 13194,
+        "start_date": "2026-06-02",
+        "status": "CLOSED",
+        "status_changes": [
+          {
+            "created_at": "5/27/2026 5:31 PM",
+            "created_by": 315840,
+            "previous_status": null,
+            "status": ""
+          },
+          {
+            "created_at": "6/3/2026 1:05 PM",
+            "created_by": 480801,
+            "previous_status": "DEFINITE",
+            "status": "CLOSED"
+          },
+          {
+            "created_at": "5/27/2026 5:31 PM",
+            "created_by": 315840,
+            "previous_status": null,
+            "status": "DEFINITE"
+          }
+        ],
+        "tentative_date": null,
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
+        "updated_at": "2026-06-03T13:05:43-04:00",
+        "updated_by": 480801,
+        "updator": {
+          "created_at": "5/21/2026 1:08 PM",
+          "customer_id": 12195,
+          "first_name": "Marketing",
+          "id": 480801,
+          "last_name": "OPE",
+          "login_at": "7/2/2026 4:10 PM",
+          "login_count": 37,
+          "title": "Marketing",
+          "updated_at": "7/2/2026 4:10 PM"
+        }
+      },
+      "booking_id": 56718381,
+      "category_totals": [],
+      "contact": {
+        "account_id": 44402784,
+        "first_name": "Julia",
+        "id": 58868783,
+        "last_name": "",
+        "websites": [
+          {
+            "id": 103572316,
+            "url": ""
+          }
+        ]
+      },
+      "contact_id": 58868783,
+      "created_at": "5/27/2026 5:31 PM",
+      "created_by": 315840,
+      "creator": {
+        "created_at": "1/18/2024 7:38 PM",
+        "customer_id": 12195,
+        "first_name": "Daniel ",
+        "id": 315840,
+        "last_name": "Huiet",
+        "login_at": "6/10/2026 1:33 PM",
+        "login_count": 157,
+        "title": "Owner",
+        "updated_at": "6/10/2026 1:33 PM"
+      },
+      "custom_fields": [
+        {
+          "custom_field_id": 112666,
+          "custom_field_name": "Deposit Due Date",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_deposit_due_date",
+          "id": 512846102,
+          "value": ""
+        },
+        {
+          "custom_field_id": 112667,
+          "custom_field_name": "Balance Due Date",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_balance_due_date",
+          "id": 512846103,
+          "value": ""
+        },
+        {
+          "custom_field_id": 158500,
+          "custom_field_name": "Party Theme",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_party_theme",
+          "id": 512846104,
+          "value": ""
+        }
+      ],
+      "customer_id": 12195,
+      "deleted_at": null,
+      "delivery_instructions": "",
+      "delivery_provider": null,
+      "description": "",
+      "document_ids": "",
+      "documents": [],
+      "end_date": "2026-06-02",
+      "end_time": "6/2/2026 9:00 PM",
+      "event_date": "6/2/2026",
+      "event_date_iso8601": "2026-06-02",
+      "event_end": "6/2/2026 9:00 PM",
+      "event_end_iso8601": "2026-06-02T21:00:00-04:00",
+      "event_end_time": "9:00 PM",
+      "event_end_time_with_teardown_time": "9:00 PM",
+      "event_end_utc": "2026-06-03T01:00:00Z",
+      "event_end_with_teardown_iso8601": "2026-06-02T21:00:00-04:00",
+      "event_start": "6/2/2026 6:00 PM",
+      "event_start_iso8601": "2026-06-02T18:00:00-04:00",
+      "event_start_time": "6:00 PM",
+      "event_start_time_with_setup_time": "6:00 PM",
+      "event_start_utc": "2026-06-02T22:00:00Z",
+      "event_start_with_setup_iso8601": "2026-06-02T18:00:00-04:00",
+      "event_style": "onpremise",
+      "event_timezone": "Eastern Time (US & Canada)",
+      "event_type": null,
+      "event_type_id": null,
+      "guaranteed_guest_count": null,
+      "guest_count": null,
+      "id": 60101907,
+      "location": {
+        "addresses": [
+          {
+            "address1": "4464 Indian Ripple Rd.",
+            "address2": "",
+            "address_type": "Main",
+            "city": "Beavercreek",
+            "country": "United States",
+            "id": 78144137,
+            "state": "OH",
+            "zip_code": "45440"
+          }
+        ],
+        "customer_id": 12195,
+        "id": 26059,
+        "name": "On Par Entertainment",
+        "site_id": 13194
+      },
+      "location_id": 26059,
+      "managers": [],
+      "managing_user_ids": [],
+      "name": "No host social 250 Julia 937-815-8871",
+      "offsite_address": {
+        "address1": "",
+        "address2": "",
+        "address_type": "Delivery",
+        "city": "",
+        "country": null,
+        "id": 147685241,
+        "state": "",
+        "zip_code": ""
+      },
+      "owned_by": 315840,
+      "owner": {
+        "created_at": "1/18/2024 7:38 PM",
+        "customer_id": 12195,
+        "first_name": "Daniel ",
+        "id": 315840,
+        "last_name": "Huiet",
+        "login_at": "6/10/2026 1:33 PM",
+        "login_count": 157,
+        "title": "Owner",
+        "updated_at": "6/10/2026 1:33 PM"
+      },
+      "post_as": "No host social 250 Julia 937-815-8871",
+      "referred_by": null,
+      "room_ids": [
+        317727
+      ],
+      "rooms": [
+        {
+          "capacity": null,
+          "customer_id": 12195,
+          "description": "",
+          "id": 317727,
+          "is_unassigned": false,
+          "location_id": 26059,
+          "name": "Main Dining Room",
+          "site_id": 13194
+        }
+      ],
+      "secondary_contacts": [],
+      "selected_gratuity": null,
+      "selected_lead_sources": [
+        {
+          "lead_source_id": null,
+          "lead_source_name": null,
+          "lead_source_other": ""
+        }
+      ],
+      "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
+      "site_id": 13194,
+      "start_date": "2026-06-02",
+      "start_time": "6/2/2026 6:00 PM",
+      "status": "CLOSED",
+      "status_changes": [
+        {
+          "created_at": "6/3/2026 1:05 PM",
+          "created_by": 480801,
+          "previous_status": "DEFINITE",
+          "status": "CLOSED"
+        },
+        {
+          "created_at": "5/27/2026 5:31 PM",
+          "created_by": 315840,
+          "previous_status": null,
+          "status": "DEFINITE"
+        }
+      ],
+      "teardown_time": 0,
+      "unassigned": false,
+      "updated_at": "6/3/2026 1:05 PM",
+      "updated_by": 480801,
+      "updator": {
+        "created_at": "5/21/2026 1:08 PM",
+        "customer_id": 12195,
+        "first_name": "Marketing",
+        "id": 480801,
+        "last_name": "OPE",
+        "login_at": "7/2/2026 4:10 PM",
+        "login_count": 37,
+        "title": "Marketing",
+        "updated_at": "7/2/2026 4:10 PM"
+      }
+    }
+  ],
+  "source": "Tripleseat /v1/events",
+  "start": "06/02/2026",
+  "statuses": [
+    "DEFINITE",
+    "CLOSED"
+  ]
+}
