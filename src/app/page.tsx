@@ -33,6 +33,10 @@ export default function HomePage() {
             <strong>Event Checklists</strong>
             <span>Switch between event checklist pages and add-on sheets.</span>
           </Link>
+          <Link className="home-link" href="/admin">
+            <strong>Admin</strong>
+            <span>Edit floor plans and entertainment schedules without changing the employee-facing display pages.</span>
+          </Link>
         </nav>
       </main>
     </>
@@ -48,6 +52,7 @@ function Header() {
         <Link href="/entertainment-schedules">Entertainment Schedules</Link>
         <Link href="/itineraries">Itineraries</Link>
         <Link href="/checklists">Checklists</Link>
+        <Link href="/admin">Admin</Link>
       </nav>
     </header>
   );

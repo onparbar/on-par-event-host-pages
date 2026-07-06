@@ -43,6 +43,7 @@ function Header() {
         <Link href="/entertainment-schedules">Entertainment Schedules</Link>
         <Link href="/itineraries">Itineraries</Link>
         <Link href="/checklists">Checklists</Link>
+        <Link href="/admin">Admin</Link>
       </nav>
     </header>
   );

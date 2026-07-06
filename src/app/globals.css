@@ -782,6 +782,232 @@ a {
   font-size: 19px;
 }
 
+.editable-asset-section {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-page {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-section-card {
+  margin-bottom: 0;
+}
+
+.editable-asset-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.editable-asset-note {
+  max-width: 340px;
+}
+
+.asset-editor-toolbar,
+.editor-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.editor-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9faf8;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.editor-tool.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: #eef5ee;
+}
+
+.editor-tool.danger {
+  color: #8a1c1c;
+}
+
+.editor-status {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.asset-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 0.95fr);
+  gap: 18px;
+}
+
+.asset-editor-stage-card,
+.editor-panel-card {
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.asset-editor-stage-card {
+  padding: 14px;
+}
+
+.asset-editor-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.asset-editor-stage.tool-highlight,
+.asset-editor-stage.tool-cover {
+  cursor: crosshair;
+}
+
+.asset-editor-image {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.asset-overlay {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  color: #202326;
+  cursor: grab;
+  text-align: center;
+}
+
+.asset-overlay:focus-visible {
+  outline: 2px solid #0b5fff;
+  outline-offset: 2px;
+}
+
+.asset-overlay.selected {
+  box-shadow: 0 0 0 3px rgba(11, 95, 255, 0.22);
+}
+
+.asset-overlay:active {
+  cursor: grabbing;
+}
+
+.overlay-cover {
+  border-style: dashed;
+}
+
+.overlay-draft {
+  pointer-events: none;
+}
+
+.asset-overlay-text {
+  display: inline-block;
+  max-width: 100%;
+  font-weight: 700;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.asset-overlay-handle {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #0b5fff;
+  border-radius: 999px;
+  background: #fff;
+  cursor: nwse-resize;
+}
+
+.asset-editor-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.editor-panel-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.editor-help-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.editor-help-list li {
+  margin-bottom: 8px;
+}
+
+.editor-form-card {
+  gap: 14px;
+}
+
+.editor-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.editor-form-row-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.editor-field {
+  display: grid;
+  gap: 6px;
+}
+
+.editor-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.editor-field input,
+.editor-field select {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.editor-field input[type="text"],
+.editor-field input[type="number"],
+.editor-field select {
+  padding: 10px 12px;
+}
+
+.editor-field input[type="color"] {
+  padding: 4px;
+}
+
+.editor-field input[type="range"] {
+  padding: 0 8px;
+}
+
 @media (max-width: 760px) {
   .topbar,
   .intro {
@@ -813,7 +1039,10 @@ a {
 
   .event-field-grid,
   .notes-grid,
-  .addon-layout {
+  .addon-layout,
+  .asset-editor-layout,
+  .editor-form-row,
+  .editor-form-row-compact {
     grid-template-columns: 1fr;
   }
 
@@ -821,7 +1050,8 @@ a {
     position: static;
   }
 
-  .checklist-actions {
+  .checklist-actions,
+  .editable-asset-heading {
     align-items: stretch;
     flex-direction: column;
   }
