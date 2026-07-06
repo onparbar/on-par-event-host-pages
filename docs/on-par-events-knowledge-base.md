@@ -770,21 +770,21 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 
 - Date/time: Friday, July 10, 2026, 2:00 PM - 4:00 PM
 - Guests: 23
-- Area: VIP 1
+- Area: VIP 2
 - Food:
   - Veggie Tray
 - Drinks:
   - No drink package listed on extracted BEO
 - Entertainment:
-  - Darts, 1 lane, Time not listed on BEO, 2 hours
-  - Duckpin Bowling, 2 lanes, Time not listed on BEO, 2 hours
-  - Pool Table, 1 table, Time not listed on BEO, 2 hours
-  - Neo Shuffleboard, 1 table, Time not listed on BEO, 2 hours
-  - Gem Room, 1 room, Time not listed on BEO, 2 hours
+  - Darts, 1 lane, 2:00 PM - 4:00 PM, 2 hours
+  - Duckpin Bowling, 2 lanes, 2:00 PM - 4:00 PM, 2 hours
+  - Pool Table, 1 table, 2:00 PM - 4:00 PM, 2 hours
+  - Neo Shuffleboard, 1 table, 2:00 PM - 4:00 PM, 2 hours
+  - Gem Room, 1 room, 2:00 PM - 4:00 PM, 2 hours
   - Mini Golf, 18 guests, Untimed, All 3 courses
 - Floor-plan interpretation:
-  - Highlight VIP 1 full support seating and 1 VIP food table.
-  - Highlight darts lane 1, bowling lanes 1-2, pool table 1, shuffleboard table 1, and Gem Room with 2-hour labels.
+  - Highlight VIP 2 with its bowling-side support table and 1 VIP food table.
+  - Highlight darts lane 1, bowling lanes 1-2, pool table 1, shuffleboard table 1, and Gem Room with 2:00 PM - 4:00 PM labels.
   - Mini golf is untimed.
 - Verification: BEO checked above billing section.
 
@@ -792,7 +792,7 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 
 - Date/time: Friday, July 10, 2026, 5:30 PM - 7:30 PM
 - Guests: 82
-- Areas: VIP 1, VIP 2
+- Area: VIP 1
 - Food:
   - The Front Nine | TACO BAR - Food Only
 - Drinks:
@@ -805,9 +805,9 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Neo Shuffleboard, 1 table, Time not listed on BEO, 2 hours
 - Special instructions:
   - API guest count is blank; using the 82-person food package quantity from the BEO for planning.
-  - VIP 1 and VIP 2 do not provide seated capacity for 82 guests; confirm overflow approach if operations needs a full seating map.
+  - VIP 1 support seating does not provide seated capacity for 82 guests; confirm overflow approach if operations needs a full seating map.
 - Floor-plan interpretation:
-  - Highlight VIP 1 and VIP 2 support seating plus one VIP food table.
+  - Highlight VIP 1 full support seating and surrounding tables plus one VIP food table.
   - Highlight darts lanes 1-3, all 12 bowling lanes, pool tables 1-2, and shuffleboard table 1 with 2-hour labels.
   - Mini golf is untimed; guest quantity exceeds the listed room seating footprint and should remain flagged.
 - Verification: BEO checked above billing section; guest count inferred from BEO food quantity and seating-capacity mismatch flagged.

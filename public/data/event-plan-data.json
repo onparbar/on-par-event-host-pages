@@ -179,7 +179,7 @@
       "time": "2:00 PM - 4:00 PM",
       "guest_count": 23,
       "rooms": [
-        "VIP 1"
+        "VIP 2"
       ],
       "color": "#f97316",
       "food": [
@@ -192,31 +192,31 @@
         {
           "name": "Darts",
           "quantity": "1 lane",
-          "time": "Time not listed on BEO",
+          "time": "2:00 PM - 4:00 PM",
           "duration": "2 hours"
         },
         {
           "name": "Duckpin Bowling",
           "quantity": "2 lanes",
-          "time": "Time not listed on BEO",
+          "time": "2:00 PM - 4:00 PM",
           "duration": "2 hours"
         },
         {
           "name": "Pool Table",
           "quantity": "1 table",
-          "time": "Time not listed on BEO",
+          "time": "2:00 PM - 4:00 PM",
           "duration": "2 hours"
         },
         {
           "name": "Neo Shuffleboard",
           "quantity": "1 table",
-          "time": "Time not listed on BEO",
+          "time": "2:00 PM - 4:00 PM",
           "duration": "2 hours"
         },
         {
           "name": "Gem Room",
           "quantity": "1 room",
-          "time": "Time not listed on BEO",
+          "time": "2:00 PM - 4:00 PM",
           "duration": "2 hours"
         },
         {
@@ -237,8 +237,7 @@
       "time": "5:30 PM - 7:30 PM",
       "guest_count": 82,
       "rooms": [
-        "VIP 1",
-        "VIP 2"
+        "VIP 1"
       ],
       "color": "#0891b2",
       "food": [
