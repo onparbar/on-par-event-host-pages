@@ -729,14 +729,14 @@ This matrix summarizes the current deployable event data. Always re-check Triple
 - Drinks:
   - Food + Beverage package
 - Entertainment:
-  - Duckpin Bowling, 5 lanes, 4:00 PM - 8:00 PM, 4 hours
+  - Duckpin Bowling, 5 lanes, 5:00 PM - 6:00 PM, 1 hour
   - Mini Golf, 30 guests, Untimed, 9 holes
 - Special instructions:
   - Need to start around 4:00 PM and end by 8:00 PM.
   - VIP 1 is listed in the current BEO event summary.
 - Floor-plan interpretation:
   - Highlight VIP 1 full support seating and 1 VIP food table.
-  - Highlight bowling lanes 1-5 and label 4-8.
+  - Highlight bowling lanes 1-5 and label 5-6.
   - Mini golf is untimed and does not need a time label.
 - Verification: BEO checked above billing section; room assignment updated to VIP 1.
 
