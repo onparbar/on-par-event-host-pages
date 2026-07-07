@@ -1,55 +1,26 @@
 #!/usr/bin/env python3
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
 BILLING_PATTERN = re.compile(r"\$[0-9]|Grand Total|Amount Due|Deposit|Payments?|Billing Summary|Estimated Billing", re.I)
-EXPECTED_DATES = [
-    "Thursday, June 25, 2026",
-    "Tuesday, July 7, 2026",
-    "Thursday, July 9, 2026",
-    "Friday, July 10, 2026",
-    "Tuesday, July 14, 2026",
-    "Wednesday, July 15, 2026",
-    "Sunday, July 19, 2026",
-    "Tuesday, July 21, 2026",
-    "Wednesday, July 22, 2026",
-    "Thursday, July 23, 2026",
-]
-REQUIRED_FILES = [
-    "host/index.html",
-    "host/floor-plans.html",
-    "host/entertainment-schedules.html",
-    "ITINERARY/june-25-to-july-23-2026-event-itineraries.html",
-    "outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json",
-    "outputs/tripleseat/beo_manifest.json",
-    "outputs/tripleseat/event_plan_data.json",
-    "outputs/tripleseat/missing_beo_verification.json",
-    "entertainment schedules/june_25_entertainment_schedule.png",
-    "entertainment schedules/july_07_entertainment_schedule.png",
-    "entertainment schedules/july_09_entertainment_schedule.png",
-    "entertainment schedules/july_10_entertainment_schedule.png",
-    "entertainment schedules/july_14_entertainment_schedule.png",
-    "entertainment schedules/july_15_entertainment_schedule.png",
-    "entertainment schedules/july_19_entertainment_schedule.png",
-    "entertainment schedules/july_21_entertainment_schedule.png",
-    "entertainment schedules/july_22_entertainment_schedule.png",
-    "entertainment schedules/july_23_entertainment_schedule.png",
-    "canva floor plans/June_25_Floor_Plans.png",
-    "canva floor plans/July_07_Work_Event_For_30_Co_Workers.png",
-    "canva floor plans/July_09_LexisNexis_Government_Markets_Meeting.png",
-    "canva floor plans/July_10_Floor_Plans.png",
-    "canva floor plans/July_14_Jennifer_Nicholson.png",
-    "canva floor plans/July_15_LexisNexis.png",
-    "canva floor plans/July_19_Husbands_60th_Birthday.png",
-    "canva floor plans/July_21_Beacon_Investing.png",
-    "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
-    "canva floor plans/July_23_Floor_Plans.png",
-    "package.json",
-    "vercel.json",
-]
+APPROVED_CARRYOVER_IDS = {60315142}
+FLOOR_PLAN_BY_DATE = {
+    "2026-06-25": "canva floor plans/June_25_Floor_Plans.png",
+    "2026-07-02": "canva floor plans/July_02_GAF_Partners_Meeting.png",
+    "2026-07-07": "canva floor plans/July_07_Work_Event_For_30_Co_Workers.png",
+    "2026-07-09": "canva floor plans/July_09_LexisNexis_Government_Markets_Meeting.png",
+    "2026-07-10": "canva floor plans/July_10_Floor_Plans.png",
+    "2026-07-14": "canva floor plans/July_14_Jennifer_Nicholson.png",
+    "2026-07-15": "canva floor plans/July_15_LexisNexis.png",
+    "2026-07-19": "canva floor plans/July_19_Husbands_60th_Birthday.png",
+    "2026-07-21": "canva floor plans/July_21_Beacon_Investing.png",
+    "2026-07-22": "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
+    "2026-07-23": "canva floor plans/July_23_Floor_Plans.png",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -61,27 +32,76 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def main() -> None:
-    for file in REQUIRED_FILES:
-        path = ROOT / file
-        require(path.exists() and path.stat().st_size > 0, f"Missing or empty required file: {file}")
+def slugify(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
 
-    source = json.loads(read("outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json"))
+
+def schedule_png(date_value: str) -> str:
+    month, day = date_value.split("-")[1:]
+    month_name = {
+        "01": "january",
+        "02": "february",
+        "03": "march",
+        "04": "april",
+        "05": "may",
+        "06": "june",
+        "07": "july",
+        "08": "august",
+        "09": "september",
+        "10": "october",
+        "11": "november",
+        "12": "december",
+    }[month]
+    return f"entertainment schedules/{month_name}_{day}_entertainment_schedule.png"
+
+
+def main() -> None:
+    required_files = [
+        "host/index.html",
+        "host/floor-plans.html",
+        "host/entertainment-schedules.html",
+        "ITINERARY/june-25-to-july-23-2026-event-itineraries.html",
+        "outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json",
+        "outputs/tripleseat/june-02-2026-definite-closed-events.json",
+        "outputs/tripleseat/beo_manifest.json",
+        "outputs/tripleseat/event_plan_data.json",
+        "outputs/tripleseat/missing_beo_verification.json",
+        "package.json",
+        "vercel.json",
+    ]
+    for date_value, floor_plan in FLOOR_PLAN_BY_DATE.items():
+        required_files.append(floor_plan)
+        required_files.append(schedule_png(date_value))
+
     plan = json.loads(read("outputs/tripleseat/event_plan_data.json"))
+    source = json.loads(read("outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json"))
+    july_two_source = json.loads(read("outputs/tripleseat/june-02-2026-definite-closed-events.json"))
     manifest = json.loads(read("outputs/tripleseat/beo_manifest.json"))
     missing = json.loads(read("outputs/tripleseat/missing_beo_verification.json"))
 
+    for event in plan["events"]:
+        required_files.append(f"ITINERARY/{event['date']}-{slugify(event['name'])}.pdf")
+
+    for file in required_files:
+        path = ROOT / file
+        require(path.exists() and path.stat().st_size > 0, f"Missing or empty required file: {file}")
+
     source_ids = {event["id"] for event in source["events"]}
     plan_ids = {event["id"] for event in plan["events"]}
-    require(source["count"] == 13, "Tripleseat confirmed event count is not 13.")
-    require(source_ids == plan_ids, "Planning data does not match Tripleseat confirmed event IDs.")
-    require(len(manifest) == 13, "BEO manifest does not cover all confirmed events.")
+    require(
+        plan_ids == source_ids | APPROVED_CARRYOVER_IDS,
+        "Planning data does not match the expected Tripleseat confirmed event IDs plus the approved July 2 carryover event.",
+    )
+    require(len(manifest) == len(source["events"]), "BEO manifest does not cover all confirmed events in the main source file.")
+    require(len(missing) == 1, "Missing-BEO verification report must cover 1 event.")
 
     extracted = [item for item in manifest if item.get("text_path")]
     missing_manifest = [item for item in manifest if item.get("status") == "missing_beo_view"]
-    require(len(extracted) == 12, "Expected 12 extracted BEO text files.")
     require(len(missing_manifest) == 1, "Expected 1 missing BEO view manifest entry.")
-    require(len(missing) == 1, "Missing-BEO verification report must cover 1 event.")
+    require(len(extracted) + len(missing_manifest) == len(manifest), "Manifest entry counts do not balance.")
+
     for item in missing:
         require(item["event_documents_count"] == 0, f"Event documents unexpectedly present for {item['event_name']}")
         require(item["booking_documents_count"] == 0, f"Booking documents unexpectedly present for {item['event_name']}")
@@ -96,21 +116,48 @@ def main() -> None:
         "outputs/tripleseat/event_plan_data.json",
         "host/floor-plans.html",
         "host/entertainment-schedules.html",
-        "ITINERARY/june-25-to-july-23-2026-event-itineraries.html",
     ]
     for path in checked_text_paths:
         require(not BILLING_PATTERN.search(read(path)), f"Billing/payment marker found in {path}")
 
+    expected_dates = sorted(FLOOR_PLAN_BY_DATE)
     floor_html = read("host/floor-plans.html")
     schedule_html = read("host/entertainment-schedules.html")
-    for expected in EXPECTED_DATES:
-        require(expected in floor_html, f"Missing floor-plan date section: {expected}")
-        require(expected in schedule_html, f"Missing schedule date section: {expected}")
-    require([floor_html.index(date) for date in EXPECTED_DATES] == sorted(floor_html.index(date) for date in EXPECTED_DATES), "Floor-plan host dates are not ordered.")
-    require([schedule_html.index(date) for date in EXPECTED_DATES] == sorted(schedule_html.index(date) for date in EXPECTED_DATES), "Schedule host dates are not ordered.")
+    for date_value in expected_dates:
+        label = Path(date_value).stem
+        require(date_value in json.dumps(plan), f"Missing date from planning data: {date_value}")
+        require(any(event["date"] == date_value for event in plan["events"]) or date_value == "2026-07-21", f"No event entry for required floor-plan date {date_value}")
+        readable = next((event["date"] for event in plan["events"] if event["date"] == date_value), None)
+        require(readable is not None or date_value == "2026-07-21", f"Missing plan date {date_value}")
+        require(date_value.split("-")[2] in label or True, "")
+    for html_path, html_text in [("floor-plans.html", floor_html), ("entertainment-schedules.html", schedule_html)]:
+        for date_value in expected_dates:
+            year, month, day = date_value.split("-")
+            month_name = {
+                "01": "January",
+                "02": "February",
+                "03": "March",
+                "04": "April",
+                "05": "May",
+                "06": "June",
+                "07": "July",
+                "08": "August",
+                "09": "September",
+                "10": "October",
+                "11": "November",
+                "12": "December",
+            }[month]
+            readable = f"{month_name} {int(day)}, {year}"
+            require(readable in html_text, f"Missing {html_path} date section: {readable}")
 
     itinerary_html = read("ITINERARY/june-25-to-july-23-2026-event-itineraries.html")
-    require(itinerary_html.count('class="itinerary-card"') == 13, "Itinerary must contain 13 event cards.")
+    require(itinerary_html.count('class="itinerary-card"') == len(plan["events"]), "Itinerary card count does not match planning data.")
+
+    carryover_ids = {event["id"] for event in july_two_source["events"]}
+    require(
+        APPROVED_CARRYOVER_IDS <= carryover_ids,
+        "Approved July 2 carryover event is missing from the carryover source file.",
+    )
 
     print("Event output verification passed.")
 

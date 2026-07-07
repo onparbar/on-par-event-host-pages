@@ -77,8 +77,63 @@
       ]
     },
     {
+      "id": 60315142,
+      "name": "GAF Partners Meeting",
+      "date": "2026-07-02",
+      "day": "Thursday",
+      "time": "6:00 PM - 9:00 PM",
+      "guest_count": 40,
+      "rooms": [
+        "Big Show",
+        "Karaoke"
+      ],
+      "color": "#0f766e",
+      "food": [
+        "The Full Course | WING BAR - Food + Beverage"
+      ],
+      "drink_options": [
+        "Food + Beverage package",
+        "Soft drinks included",
+        "Big Show private self-pour taps"
+      ],
+      "entertainment": [
+        {
+          "name": "The Big Show",
+          "quantity": "1 private space",
+          "time": "7:00 PM - 9:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "3 lanes",
+          "time": "7:00 PM - 9:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Pool Table",
+          "quantity": "2 tables",
+          "time": "7:00 PM - 9:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Neo Shuffleboard",
+          "quantity": "1 table",
+          "time": "7:00 PM - 9:00 PM",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "June 2, 2026 Tripleseat BEO checked above billing section; date changed to July 2, 2026 and planning placement overridden to Big Show/karaoke per request",
+      "beo_text": "outputs/tripleseat/june-02-2026-beo-text/2026-06-02_gaf-partners-meeting_beo.txt",
+      "special_instructions": [
+        "Original June 2 BEO listed VIP 1; today's host package places the group in Big Show/karaoke per request.",
+        "Business celebration with trophies, food/drink, and networking.",
+        "Guaranteed seating accommodations for 2 hours.",
+        "Mark Wing Bar food setup in the public karaoke space."
+      ]
+    },
+    {
       "id": 60384590,
-      "name": "Work event for 30 co-workers",
+      "name": "First Student",
       "date": "2026-07-07",
       "day": "Tuesday",
       "time": "4:00 PM - 8:00 PM",
@@ -107,14 +162,75 @@
           "name": "Mini Golf",
           "quantity": "30 guests",
           "time": "Untimed",
-          "duration": "9 holes"
+          "duration": "Course count not listed on BEO"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-07_work-event-for-30-co-workers_beo.txt",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; bowling time is not listed on the current BEO",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-07_first-student_beo.txt",
       "special_instructions": [
         "Need to start around 4:00 PM and end by 8:00 PM.",
-        "VIP 1 is listed in the current BEO event summary."
+        "VIP 1 is listed in the current BEO event summary.",
+        "The current BEO does not list a bowling time; the itinerary keeps the existing 5:00 PM - 6:00 PM host schedule as a fallback reference."
+      ]
+    },
+    {
+      "id": 59403257,
+      "name": "Taylor Healthcare Retirement Party",
+      "date": "2026-07-09",
+      "day": "Thursday",
+      "time": "4:30 PM - 7:30 PM",
+      "guest_count": 30,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#f97316",
+      "food": [
+        "The Front Nine | Taco Bar - Food Only",
+        "Tater Keg Platter",
+        "Wing Platter",
+        "Chicken Tender Platter",
+        "Mozzarella Sticks"
+      ],
+      "drink_options": [
+        "Soft drinks included"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "2 lanes",
+          "time": "5:00 PM - 7:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "3 lanes",
+          "time": "5:00 PM - 7:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Mini Golf",
+          "quantity": "30 guests",
+          "time": "Untimed",
+          "duration": "9 holes"
+        },
+        {
+          "name": "Pool Table",
+          "quantity": "1 table",
+          "time": "5:00 PM - 7:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Neo Shuffleboard",
+          "quantity": "1 table",
+          "time": "5:00 PM - 7:00 PM",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; pool table duration conflicts with the listed BEO time range",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-09_taylor-healthcare-retirement-party_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The pool table line says 1 table for 3 hours, but the BEO time shown is 5:00 PM - 7:00 PM; using the explicit time range."
       ]
     },
     {
@@ -123,7 +239,7 @@
       "date": "2026-07-09",
       "day": "Thursday",
       "time": "6:30 PM - 8:30 PM",
-      "guest_count": 100,
+      "guest_count": 102,
       "rooms": [
         "VIP 1",
         "VIP 2"
@@ -141,45 +257,45 @@
         {
           "name": "Duckpin Bowling",
           "quantity": "7 lanes",
-          "time": "Time not listed on BEO",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Pool Table",
           "quantity": "3 tables",
-          "time": "Time not listed on BEO",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Neo Shuffleboard",
           "quantity": "2 tables",
-          "time": "Time not listed on BEO",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Prime Room",
           "quantity": "1 room",
-          "time": "7:00 PM - 9:00 PM",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; entertainment times now listed on the current BEO",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-09_lexisnexis-government-markets-meeting_beo.txt",
       "special_instructions": [
         "Booking description asks for bowling, karaoke, and add-on activities for the team.",
         "VIP 1 and VIP 2 are listed in the current BEO event summary.",
-        "VIP 1 and VIP 2 do not provide seated capacity for 100 guests; confirm overflow seating approach if operations needs a full seating map."
+        "VIP 1 and VIP 2 do not provide seated capacity for 102 guests; confirm overflow seating approach if operations needs a full seating map."
       ]
     },
     {
       "id": 57263228,
-      "name": "Oculii",
+      "name": "Ambarella Oculii",
       "date": "2026-07-10",
       "day": "Friday",
       "time": "2:00 PM - 4:00 PM",
       "guest_count": 23,
       "rooms": [
-        "VIP 2"
+        "VIP 1"
       ],
       "color": "#f97316",
       "food": [
@@ -209,7 +325,7 @@
         },
         {
           "name": "Neo Shuffleboard",
-          "quantity": "1 table",
+          "quantity": "1 lane",
           "time": "2:00 PM - 4:00 PM",
           "duration": "2 hours"
         },
@@ -226,8 +342,11 @@
           "duration": "All 3 courses"
         }
       ],
-      "verification_status": "BEO checked above billing section",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-10_oculii_beo.txt"
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-10_ambarella-oculii_beo.txt",
+      "special_instructions": [
+        "VIP 1 is listed in the current BEO event summary."
+      ]
     },
     {
       "id": 59771572,
@@ -237,51 +356,53 @@
       "time": "5:30 PM - 7:30 PM",
       "guest_count": 82,
       "rooms": [
-        "VIP 1"
+        "VIP 1",
+        "VIP 2"
       ],
       "color": "#0891b2",
       "food": [
         "The Front Nine | TACO BAR - Food Only"
       ],
       "drink_options": [
+        "The Back Nine - Beverage Only",
         "Soft drinks included"
       ],
       "entertainment": [
         {
           "name": "Darts",
-          "quantity": "3 lanes",
-          "time": "Time not listed on BEO",
+          "quantity": "4 lanes",
+          "time": "5:30 PM - 7:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Duckpin Bowling",
-          "quantity": "12 lanes",
-          "time": "Time not listed on BEO",
+          "quantity": "10 lanes",
+          "time": "5:30 PM - 7:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Mini Golf",
-          "quantity": "50 guests",
+          "quantity": "60 guests",
           "time": "Untimed",
           "duration": "9 holes"
         },
         {
           "name": "Pool Table",
           "quantity": "2 tables",
-          "time": "Time not listed on BEO",
+          "time": "5:30 PM - 7:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Neo Shuffleboard",
-          "quantity": "1 table",
-          "time": "Time not listed on BEO",
+          "quantity": "2 lanes",
+          "time": "5:30 PM - 7:30 PM",
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; guest count inferred from BEO food quantity and seating-capacity mismatch flagged",
+      "verification_status": "BEO checked above billing section; guest count inferred from package quantity; room assignment updated to VIP 1 and VIP 2",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-10_core4ce_beo.txt",
       "special_instructions": [
-        "API guest count is blank; using the 82-person food package quantity from the BEO for planning.",
+        "API guest count is blank; using the 82-person package quantity from the BEO for planning.",
         "VIP 1 and VIP 2 do not provide seated capacity for 82 guests; confirm overflow approach if operations needs a full seating map."
       ]
     },
@@ -328,7 +449,7 @@
       "name": "LexisNexis 07/15/2026",
       "date": "2026-07-15",
       "day": "Wednesday",
-      "time": "6:30 PM - 9:00 PM",
+      "time": "6:30 PM - 8:30 PM",
       "guest_count": 110,
       "rooms": [
         "VIP 1",
@@ -347,29 +468,29 @@
         {
           "name": "Duckpin Bowling",
           "quantity": "7 lanes",
-          "time": "Time not listed on BEO",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Pool Table",
           "quantity": "3 tables",
-          "time": "Time not listed on BEO",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Neo Shuffleboard",
           "quantity": "2 tables",
-          "time": "Time not listed on BEO",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Prime Room",
           "quantity": "1 room",
-          "time": "Time not listed on BEO",
+          "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; Prime Room time not listed on this BEO",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; entertainment times now listed on the current BEO",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-15_lexisnexis-07-15-2026_beo.txt",
       "special_instructions": [
         "Booking description requests the same games, karaoke, and food as the July 9, 2026 event."

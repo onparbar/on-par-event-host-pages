@@ -1,5 +1,5 @@
 {
-  "count": 13,
+  "count": 14,
   "end": "07/25/2026",
   "events": [
     {
@@ -772,10 +772,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "post_as": "Work event for 30 co-workers",
         "secondary_contacts": [],
@@ -798,7 +798,9 @@
           }
         ],
         "tentative_date": null,
-        "updated_at": "2026-06-08T10:32:01-04:00",
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
+        "updated_at": "2026-07-06T12:40:00-04:00",
         "updated_by": 303000,
         "updator": {
           "created_at": "10/31/2023 9:17 AM",
@@ -806,10 +808,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         }
       },
       "booking_id": 56971364,
@@ -937,7 +939,7 @@
       "location_id": 26059,
       "managers": [],
       "managing_user_ids": [],
-      "name": "Work event for 30 co-workers",
+      "name": "First Student",
       "offsite_address": {
         "address1": "",
         "address2": "",
@@ -955,25 +957,25 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
-      "post_as": "Work event for 30 co-workers",
+      "post_as": "First Student",
       "referred_by": "",
       "room_ids": [
-        317727
+        463311
       ],
       "rooms": [
         {
           "capacity": null,
           "customer_id": 12195,
           "description": "",
-          "id": 317727,
+          "id": 463311,
           "is_unassigned": false,
           "location_id": 26059,
-          "name": "Main Dining Room",
+          "name": "VIP 1",
           "site_id": 13194
         }
       ],
@@ -987,6 +989,8 @@
         }
       ],
       "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
       "site_id": 13194,
       "start_date": "2026-07-07",
       "start_time": "7/7/2026 4:00 PM",
@@ -1007,7 +1011,7 @@
       ],
       "teardown_time": 0,
       "unassigned": false,
-      "updated_at": "6/8/2026 10:32 AM",
+      "updated_at": "7/6/2026 12:42 PM",
       "updated_by": 303000,
       "updator": {
         "created_at": "10/31/2023 9:17 AM",
@@ -1015,10 +1019,392 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
+      }
+    },
+    {
+      "account": {
+        "id": 43785923,
+        "name": "Taylor Healthcare"
+      },
+      "account_id": 43785923,
+      "attachments": [],
+      "booking": {
+        "account": {
+          "id": 43785923,
+          "name": "Taylor Healthcare"
+        },
+        "booking_forecast": 0,
+        "category_forecasts": null,
+        "contact": {
+          "account_id": 43785923,
+          "first_name": "Danielle",
+          "id": 58069191,
+          "last_name": "Thompson",
+          "websites": [
+            {
+              "id": 102154394,
+              "url": ""
+            }
+          ]
+        },
+        "created_at": "2026-05-01T15:45:42-04:00",
+        "created_by": 315840,
+        "creator": {
+          "created_at": "1/18/2024 7:38 PM",
+          "customer_id": 12195,
+          "first_name": "Daniel ",
+          "id": 315840,
+          "last_name": "Huiet",
+          "login_at": "6/10/2026 1:33 PM",
+          "login_count": 157,
+          "title": "Owner",
+          "updated_at": "6/10/2026 1:33 PM"
+        },
+        "custom_fields": [],
+        "customer_id": 12195,
+        "definite_date": "2026-07-06",
+        "deleted_at": null,
+        "documents": [],
+        "end_date": "2026-07-09",
+        "event_ids": [
+          59403257
+        ],
+        "id": 56095678,
+        "location": {
+          "addresses": [
+            {
+              "address1": "4464 Indian Ripple Rd.",
+              "address2": "",
+              "address_type": "Main",
+              "city": "Beavercreek",
+              "country": "United States",
+              "id": 78144137,
+              "state": "OH",
+              "zip_code": "45440"
+            }
+          ],
+          "customer_id": 12195,
+          "id": 26059,
+          "name": "On Par Entertainment",
+          "site_id": 13194
+        },
+        "location_id": 26059,
+        "lost_date": null,
+        "market_segment": null,
+        "name": "Taylor Healthcare Retirement Party",
+        "owned_by": 315840,
+        "owner": {
+          "created_at": "1/18/2024 7:38 PM",
+          "customer_id": 12195,
+          "first_name": "Daniel ",
+          "id": 315840,
+          "last_name": "Huiet",
+          "login_at": "6/10/2026 1:33 PM",
+          "login_count": 157,
+          "title": "Owner",
+          "updated_at": "6/10/2026 1:33 PM"
+        },
+        "post_as": "Taylor Healthcare Retirement Party",
+        "secondary_contacts": [],
+        "selected_lead_sources": [
+          {
+            "lead_source_id": null,
+            "lead_source_name": null,
+            "lead_source_other": null
+          }
+        ],
+        "site_id": 13194,
+        "start_date": "2026-07-09",
+        "status": "DEFINITE",
+        "status_changes": [
+          {
+            "created_at": "5/1/2026 3:45 PM",
+            "created_by": 315840,
+            "previous_status": null,
+            "status": ""
+          },
+          {
+            "created_at": "7/6/2026 11:43 AM",
+            "created_by": 303000,
+            "previous_status": "PROSPECT",
+            "status": "DEFINITE"
+          },
+          {
+            "created_at": "5/1/2026 3:45 PM",
+            "created_by": 315840,
+            "previous_status": null,
+            "status": "PROSPECT"
+          }
+        ],
+        "tentative_date": null,
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
+        "updated_at": "2026-07-06T11:43:23-04:00",
+        "updated_by": 303000,
+        "updator": {
+          "created_at": "10/31/2023 9:17 AM",
+          "customer_id": 12195,
+          "first_name": "On Par ",
+          "id": 303000,
+          "last_name": "Events",
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
+          "title": "Event Coordinator",
+          "updated_at": "7/6/2026 4:16 PM"
+        }
+      },
+      "booking_id": 56095678,
+      "category_totals": [
+        {
+          "name": "Food Platters",
+          "total": "720.0"
+        },
+        {
+          "name": "Food Packages",
+          "total": "749.7"
+        },
+        {
+          "name": "Bowling",
+          "total": "180.0"
+        },
+        {
+          "name": "Mini Golf",
+          "total": "270.0"
+        },
+        {
+          "name": "Darts",
+          "total": "120.0"
+        },
+        {
+          "name": "Neo Shuffleboard",
+          "total": "60.0"
+        },
+        {
+          "name": "Pool Tables",
+          "total": "36.0"
+        }
+      ],
+      "contact": {
+        "account_id": 43785923,
+        "first_name": "Danielle",
+        "id": 58069191,
+        "last_name": "Thompson",
+        "websites": [
+          {
+            "id": 102154394,
+            "url": ""
+          }
+        ]
+      },
+      "contact_id": 58069191,
+      "created_at": "5/1/2026 3:45 PM",
+      "created_by": 315840,
+      "creator": {
+        "created_at": "1/18/2024 7:38 PM",
+        "customer_id": 12195,
+        "first_name": "Daniel ",
+        "id": 315840,
+        "last_name": "Huiet",
+        "login_at": "6/10/2026 1:33 PM",
+        "login_count": 157,
+        "title": "Owner",
+        "updated_at": "6/10/2026 1:33 PM"
+      },
+      "custom_fields": [
+        {
+          "custom_field_id": 112666,
+          "custom_field_name": "Deposit Due Date",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_deposit_due_date",
+          "id": 503889636,
+          "value": ""
+        },
+        {
+          "custom_field_id": 112667,
+          "custom_field_name": "Balance Due Date",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_balance_due_date",
+          "id": 503889637,
+          "value": ""
+        },
+        {
+          "custom_field_id": 158500,
+          "custom_field_name": "Party Theme",
+          "custom_field_required": false,
+          "custom_field_slug": "cf_party_theme",
+          "id": 503889638,
+          "value": ""
+        }
+      ],
+      "customer_id": 12195,
+      "deleted_at": null,
+      "delivery_instructions": "",
+      "delivery_provider": null,
+      "description": "",
+      "document_ids": "Contract & Event Order: 39540696",
+      "documents": [
+        {
+          "deleted_at": null,
+          "id": 39540696,
+          "template_document_id": 48074,
+          "title": "Contract & Event Order: 39540696",
+          "views": [
+            {
+              "name": "Banquet Event Order",
+              "url": "https://portal.tripleseat.com/doc/e40408f6f63972aa23383f1e8ba1b0f9ff1a8f71/234052"
+            }
+          ]
+        }
+      ],
+      "end_date": "2026-07-09",
+      "end_time": "7/9/2026 7:30 PM",
+      "event_date": "7/9/2026",
+      "event_date_iso8601": "2026-07-09",
+      "event_end": "7/9/2026 7:30 PM",
+      "event_end_iso8601": "2026-07-09T19:30:00-04:00",
+      "event_end_time": "7:30 PM",
+      "event_end_time_with_teardown_time": "7:30 PM",
+      "event_end_utc": "2026-07-09T23:30:00Z",
+      "event_end_with_teardown_iso8601": "2026-07-09T19:30:00-04:00",
+      "event_start": "7/9/2026 4:30 PM",
+      "event_start_iso8601": "2026-07-09T16:30:00-04:00",
+      "event_start_time": "4:30 PM",
+      "event_start_time_with_setup_time": "4:30 PM",
+      "event_start_utc": "2026-07-09T20:30:00Z",
+      "event_start_with_setup_iso8601": "2026-07-09T16:30:00-04:00",
+      "event_style": "onpremise",
+      "event_timezone": "Eastern Time (US & Canada)",
+      "event_type": null,
+      "event_type_id": null,
+      "guaranteed_guest_count": null,
+      "guest_count": null,
+      "id": 59403257,
+      "lead": {
+        "additional_information": "",
+        "company": "Taylor Healthcare",
+        "contact_preference": null,
+        "converted_at": "5/1/2026 12:00 AM",
+        "created_at": "5/1/2026 3:20 PM",
+        "deleted_at": null,
+        "event_style": null,
+        "first_name": "Danielle",
+        "id": 52406290,
+        "last_name": "Thompson",
+        "lead_form_id": 32906,
+        "owned_by": null,
+        "referral_source_id": null,
+        "referral_source_other": "",
+        "updated_at": "5/1/2026 3:45 PM"
+      },
+      "location": {
+        "addresses": [
+          {
+            "address1": "4464 Indian Ripple Rd.",
+            "address2": "",
+            "address_type": "Main",
+            "city": "Beavercreek",
+            "country": "United States",
+            "id": 78144137,
+            "state": "OH",
+            "zip_code": "45440"
+          }
+        ],
+        "customer_id": 12195,
+        "id": 26059,
+        "name": "On Par Entertainment",
+        "site_id": 13194
+      },
+      "location_id": 26059,
+      "managers": [],
+      "managing_user_ids": [],
+      "name": "Taylor Healthcare Retirement Party",
+      "offsite_address": {
+        "address1": "",
+        "address2": "",
+        "address_type": "Delivery",
+        "city": "",
+        "country": null,
+        "id": 145400439,
+        "state": "",
+        "zip_code": ""
+      },
+      "owned_by": 315840,
+      "owner": {
+        "created_at": "1/18/2024 7:38 PM",
+        "customer_id": 12195,
+        "first_name": "Daniel ",
+        "id": 315840,
+        "last_name": "Huiet",
+        "login_at": "6/10/2026 1:33 PM",
+        "login_count": 157,
+        "title": "Owner",
+        "updated_at": "6/10/2026 1:33 PM"
+      },
+      "post_as": "Taylor Healthcare Retirement Party",
+      "referred_by": null,
+      "room_ids": [
+        317727
+      ],
+      "rooms": [
+        {
+          "capacity": null,
+          "customer_id": 12195,
+          "description": "",
+          "id": 317727,
+          "is_unassigned": false,
+          "location_id": 26059,
+          "name": "Main Dining Room",
+          "site_id": 13194
+        }
+      ],
+      "secondary_contacts": [],
+      "selected_gratuity": null,
+      "selected_lead_sources": [
+        {
+          "lead_source_id": 2,
+          "lead_source_name": "Tripleseat Web Lead",
+          "lead_source_other": ""
+        }
+      ],
+      "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
+      "site_id": 13194,
+      "start_date": "2026-07-09",
+      "start_time": "7/9/2026 4:30 PM",
+      "status": "DEFINITE",
+      "status_changes": [
+        {
+          "created_at": "7/6/2026 11:43 AM",
+          "created_by": 303000,
+          "previous_status": "PROSPECT",
+          "status": "DEFINITE"
+        },
+        {
+          "created_at": "5/1/2026 3:45 PM",
+          "created_by": 315840,
+          "previous_status": null,
+          "status": "PROSPECT"
+        }
+      ],
+      "teardown_time": 0,
+      "unassigned": false,
+      "updated_at": "7/6/2026 12:54 PM",
+      "updated_by": 303000,
+      "updator": {
+        "created_at": "10/31/2023 9:17 AM",
+        "customer_id": 12195,
+        "first_name": "On Par ",
+        "id": 303000,
+        "last_name": "Events",
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
+        "title": "Event Coordinator",
+        "updated_at": "7/6/2026 4:16 PM"
       }
     },
     {
@@ -1055,10 +1441,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "custom_fields": [],
         "customer_id": 12195,
@@ -1099,10 +1485,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "post_as": "LexisNexis Government Markets Meeting",
         "secondary_contacts": [],
@@ -1137,7 +1523,9 @@
           }
         ],
         "tentative_date": null,
-        "updated_at": "2026-06-10T10:06:01-04:00",
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
+        "updated_at": "2026-07-06T14:24:34-04:00",
         "updated_by": 303000,
         "updator": {
           "created_at": "10/31/2023 9:17 AM",
@@ -1145,17 +1533,17 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         }
       },
       "booking_id": 56820474,
       "category_totals": [
         {
           "name": "Food Packages",
-          "total": "4499.0"
+          "total": "4588.98"
         },
         {
           "name": "Neo Shuffleboard",
@@ -1199,10 +1587,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "custom_fields": [
         {
@@ -1271,7 +1659,7 @@
       "event_type": null,
       "event_type_id": null,
       "guaranteed_guest_count": null,
-      "guest_count": 100,
+      "guest_count": 102,
       "id": 60209969,
       "lead": {
         "additional_information": "We have hosted events at On Par in the past and are looking to do something similar where we reserve a few bowling lanes, a kareoke room and a few other things and let our team have fun, eat and drink.  ",
@@ -1329,25 +1717,36 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "post_as": "LexisNexis Government Markets Meeting",
       "referred_by": null,
       "room_ids": [
-        317727
+        463311,
+        463312
       ],
       "rooms": [
         {
           "capacity": null,
           "customer_id": 12195,
           "description": "",
-          "id": 317727,
+          "id": 463311,
           "is_unassigned": false,
           "location_id": 26059,
-          "name": "Main Dining Room",
+          "name": "VIP 1",
+          "site_id": 13194
+        },
+        {
+          "capacity": null,
+          "customer_id": 12195,
+          "description": "",
+          "id": 463312,
+          "is_unassigned": false,
+          "location_id": 26059,
+          "name": "VIP 2",
           "site_id": 13194
         }
       ],
@@ -1361,6 +1760,8 @@
         }
       ],
       "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
       "site_id": 13194,
       "start_date": "2026-07-09",
       "start_time": "7/9/2026 6:30 PM",
@@ -1381,7 +1782,7 @@
       ],
       "teardown_time": 0,
       "unassigned": false,
-      "updated_at": "6/10/2026 10:07 AM",
+      "updated_at": "7/6/2026 2:26 PM",
       "updated_by": 303000,
       "updator": {
         "created_at": "10/31/2023 9:17 AM",
@@ -1389,10 +1790,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       }
     },
     {
@@ -1429,10 +1830,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "custom_fields": [],
         "customer_id": 12195,
@@ -1473,10 +1874,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "post_as": "Ling Huang",
         "secondary_contacts": [],
@@ -1511,6 +1912,8 @@
           }
         ],
         "tentative_date": null,
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
         "updated_at": "2026-03-04T15:17:19-05:00",
         "updated_by": 303000,
         "updator": {
@@ -1519,10 +1922,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         }
       },
       "booking_id": 54128402,
@@ -1577,10 +1980,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "custom_fields": [
         {
@@ -1689,7 +2092,7 @@
       "location_id": 26059,
       "managers": [],
       "managing_user_ids": [],
-      "name": "Oculii",
+      "name": "Ambarella Oculii",
       "offsite_address": {
         "address1": "",
         "address2": "",
@@ -1707,12 +2110,12 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
-      "post_as": "Oculii",
+      "post_as": "Ambarella Oculii",
       "referred_by": null,
       "room_ids": [
         463311
@@ -1739,6 +2142,8 @@
         }
       ],
       "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
       "site_id": 13194,
       "start_date": "2026-07-10",
       "start_time": "7/10/2026 2:00 PM",
@@ -1759,7 +2164,7 @@
       ],
       "teardown_time": 0,
       "unassigned": false,
-      "updated_at": "6/24/2026 12:33 PM",
+      "updated_at": "7/6/2026 12:56 PM",
       "updated_by": 303000,
       "updator": {
         "created_at": "10/31/2023 9:17 AM",
@@ -1767,10 +2172,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       }
     },
     {
@@ -1889,6 +2294,8 @@
           }
         ],
         "tentative_date": null,
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
         "updated_at": "2026-06-12T12:56:00-04:00",
         "updated_by": 303000,
         "updator": {
@@ -1897,29 +2304,29 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         }
       },
       "booking_id": 56424114,
       "category_totals": [
         {
           "name": "Bowling",
-          "total": "960.0"
+          "total": "800.0"
         },
         {
           "name": "Mini Golf",
-          "total": "900.0"
+          "total": "540.0"
         },
         {
           "name": "Darts",
-          "total": "240.0"
+          "total": "320.0"
         },
         {
           "name": "Neo Shuffleboard",
-          "total": "80.0"
+          "total": "160.0"
         },
         {
           "name": "Pool Tables",
@@ -1927,7 +2334,11 @@
         },
         {
           "name": "Food Packages",
-          "total": "4248.3"
+          "total": "2049.18"
+        },
+        {
+          "name": "Beverage",
+          "total": "1640.0"
         }
       ],
       "contact": {
@@ -2107,6 +2518,8 @@
         }
       ],
       "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
       "site_id": 13194,
       "start_date": "2026-07-10",
       "start_time": "7/10/2026 5:30 PM",
@@ -2127,7 +2540,7 @@
       ],
       "teardown_time": 0,
       "unassigned": false,
-      "updated_at": "6/12/2026 12:56 PM",
+      "updated_at": "7/6/2026 10:29 AM",
       "updated_by": 303000,
       "updator": {
         "created_at": "10/31/2023 9:17 AM",
@@ -2135,10 +2548,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       }
     },
     {
@@ -2175,10 +2588,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "custom_fields": [],
         "customer_id": 12195,
@@ -2219,10 +2632,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "post_as": "Jennifer Nicholson",
         "secondary_contacts": [],
@@ -2281,6 +2694,8 @@
           }
         ],
         "tentative_date": "2026-03-31",
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
         "updated_at": "2026-05-13T15:41:37-04:00",
         "updated_by": 315840,
         "updator": {
@@ -2335,10 +2750,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "custom_fields": [
         {
@@ -2448,10 +2863,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "post_as": "Jennifer Nicholson",
       "referred_by": null,
@@ -2480,6 +2895,8 @@
         }
       ],
       "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
       "site_id": 13194,
       "start_date": "2026-07-14",
       "start_time": "7/14/2026 6:30 PM",
@@ -2572,10 +2989,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "custom_fields": [],
         "customer_id": 12195,
@@ -2616,10 +3033,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "post_as": "Company Event - fun offsite activities for a group of 110.",
         "secondary_contacts": [],
@@ -2654,7 +3071,9 @@
           }
         ],
         "tentative_date": null,
-        "updated_at": "2026-06-17T12:01:30-04:00",
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
+        "updated_at": "2026-07-06T14:27:35-04:00",
         "updated_by": 303000,
         "updator": {
           "created_at": "10/31/2023 9:17 AM",
@@ -2662,10 +3081,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         }
       },
       "booking_id": 57132529,
@@ -2716,10 +3135,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "custom_fields": [
         {
@@ -2768,15 +3187,15 @@
         }
       ],
       "end_date": "2026-07-15",
-      "end_time": "7/15/2026 9:00 PM",
+      "end_time": "7/15/2026 8:30 PM",
       "event_date": "7/15/2026",
       "event_date_iso8601": "2026-07-15",
-      "event_end": "7/15/2026 9:00 PM",
-      "event_end_iso8601": "2026-07-15T21:00:00-04:00",
-      "event_end_time": "9:00 PM",
-      "event_end_time_with_teardown_time": "9:00 PM",
-      "event_end_utc": "2026-07-16T01:00:00Z",
-      "event_end_with_teardown_iso8601": "2026-07-15T21:00:00-04:00",
+      "event_end": "7/15/2026 8:30 PM",
+      "event_end_iso8601": "2026-07-15T20:30:00-04:00",
+      "event_end_time": "8:30 PM",
+      "event_end_time_with_teardown_time": "8:30 PM",
+      "event_end_utc": "2026-07-16T00:30:00Z",
+      "event_end_with_teardown_iso8601": "2026-07-15T20:30:00-04:00",
       "event_start": "7/15/2026 6:30 PM",
       "event_start_iso8601": "2026-07-15T18:30:00-04:00",
       "event_start_time": "6:30 PM",
@@ -2846,25 +3265,36 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "post_as": "LexisNexis 07/15/2026",
       "referred_by": null,
       "room_ids": [
-        317727
+        463311,
+        463312
       ],
       "rooms": [
         {
           "capacity": null,
           "customer_id": 12195,
           "description": "",
-          "id": 317727,
+          "id": 463311,
           "is_unassigned": false,
           "location_id": 26059,
-          "name": "Main Dining Room",
+          "name": "VIP 1",
+          "site_id": 13194
+        },
+        {
+          "capacity": null,
+          "customer_id": 12195,
+          "description": "",
+          "id": 463312,
+          "is_unassigned": false,
+          "location_id": 26059,
+          "name": "VIP 2",
           "site_id": 13194
         }
       ],
@@ -2878,6 +3308,8 @@
         }
       ],
       "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
       "site_id": 13194,
       "start_date": "2026-07-15",
       "start_time": "7/15/2026 6:30 PM",
@@ -2898,7 +3330,7 @@
       ],
       "teardown_time": 0,
       "unassigned": false,
-      "updated_at": "6/17/2026 12:01 PM",
+      "updated_at": "7/6/2026 2:28 PM",
       "updated_by": 303000,
       "updator": {
         "created_at": "10/31/2023 9:17 AM",
@@ -2906,10 +3338,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       }
     },
     {
@@ -2980,10 +3412,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         },
         "post_as": "Husband\u2019s 60th birthday",
         "secondary_contacts": [],
@@ -3000,6 +3432,8 @@
           }
         ],
         "tentative_date": null,
+        "total_food_and_beverage_min": 0.0,
+        "total_rental_fee": 0.0,
         "updated_at": "2026-01-05T11:40:03-05:00",
         "updated_by": 303000,
         "updator": {
@@ -3008,10 +3442,10 @@
           "first_name": "On Par ",
           "id": 303000,
           "last_name": "Events",
-          "login_at": "6/24/2026 12:23 PM",
-          "login_count": 297,
+          "login_at": "7/6/2026 2:23 PM",
+          "login_count": 314,
           "title": "Event Coordinator",
-          "updated_at": "6/24/2026 4:29 PM"
+          "updated_at": "7/6/2026 4:16 PM"
         }
       },
       "booking_id": 52690592,
@@ -3145,10 +3579,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       },
       "post_as": "Husband\u2019s 60th birthday",
       "referred_by": "Drive by",
@@ -3177,6 +3611,8 @@
         }
       ],
       "setup_time": 0,
+      "setup_type_id": null,
+      "setup_type_name": null,
       "site_id": 13194,
       "start_date": "2026-07-19",
       "start_time": "7/19/2026 1:00 PM",
@@ -3205,10 +3641,10 @@
         "first_name": "On Par ",
         "id": 303000,
         "last_name": "Events",
-        "login_at": "6/24/2026 12:23 PM",
-        "login_count": 297,
+        "login_at": "7/6/2026 2:23 PM",
+        "login_count": 314,
         "title": "Event Coordinator",
-        "updated_at": "6/24/2026 4:29 PM"
+        "updated_at": "7/6/2026 4:16 PM"
       }
     },
     {

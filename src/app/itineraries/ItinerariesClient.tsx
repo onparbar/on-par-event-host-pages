@@ -72,9 +72,22 @@ function entertainmentGroups(event: EventPlan) {
   });
 }
 
+function itineraryDrinkLines(event: EventPlan) {
+  const lines = ["FREE SODA AND JUICE FOR ALL GUESTS!"];
+  const hasDrinkCards =
+    event.food.some((item) => /full course/i.test(item)) ||
+    event.drink_options.some((item) => /back nine|food \+ beverage|drink card/i.test(item));
+
+  if (hasDrinkCards) {
+    lines.push(`$20.00 PREPAID DRINK CARDS FOR ${event.guest_count} GUESTS!`);
+  }
+
+  return lines;
+}
+
 function ItineraryPoster({ event }: { event: ItineraryAsset }) {
   const foodItems = event.food.map((item) => upper(item));
-  const drinkItems = event.drink_options.map((item) => upper(item));
+  const drinkItems = itineraryDrinkLines(event).map((item) => upper(item));
   const entertainmentItems = entertainmentGroups(event);
 
   return (

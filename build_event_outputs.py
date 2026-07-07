@@ -47,6 +47,7 @@ SCHEDULE_BANDS = {
 
 FLOOR_PLAN_BY_DATE = {
     "2026-06-25": "canva floor plans/June_25_Floor_Plans.png",
+    "2026-07-02": "canva floor plans/July_02_GAF_Partners_Meeting.png",
     "2026-07-07": "canva floor plans/July_07_Work_Event_For_30_Co_Workers.png",
     "2026-07-09": "canva floor plans/July_09_LexisNexis_Government_Markets_Meeting.png",
     "2026-07-10": "canva floor plans/July_10_Floor_Plans.png",
@@ -170,6 +171,8 @@ def schedule_block_rows(item: dict) -> tuple[str, list[str]] | None:
     if "shuffleboard" in name:
         count = min(max(quantity, 1), 2)
         return "shuffleboard", [f"lane {index}" for index in range(1, count + 1)]
+    if "big show" in name:
+        return "karaoke", ["disco", "gem", "royal", "prime", "ocean"]
     if "disco" in name:
         return "karaoke", ["disco"]
     if "gem" in name:
@@ -200,6 +203,18 @@ def schedule_blocks_for_event(event: dict) -> list[dict]:
             }
         )
     return blocks
+
+
+def itinerary_drinks(event: dict) -> list[str]:
+    lines = ["Free soda and juice for all guests!"]
+    has_drink_cards = any("full course" in item.lower() for item in event.get("food") or []) or any(
+        marker in item.lower()
+        for item in event.get("drink_options") or []
+        for marker in ("back nine", "food + beverage", "drink card")
+    )
+    if has_drink_cards:
+        lines.append(f"$20.00 prepaid drink cards for {event['guest_count']} guests!")
+    return lines
 
 
 def schedule_rect(block: dict) -> tuple[float, float, float, float]:
@@ -350,7 +365,7 @@ def build_itinerary(events: list[dict]) -> Path:
     cards = []
     for event in sorted(events, key=lambda item: (item["date"], item["time"], item["name"])):
         food = "".join(f"<li>{html.escape(item)}</li>" for item in event.get("food") or [])
-        drinks = "".join(f"<li>{html.escape(item)}</li>" for item in event.get("drink_options") or [])
+        drinks = "".join(f"<li>{html.escape(item)}</li>" for item in itinerary_drinks(event))
         entertainment = event.get("entertainment") or []
         entertainment_html = "".join(
             f"<li>{html.escape(item['name'])}: {html.escape(item.get('quantity',''))}, {html.escape(item.get('time',''))}, {html.escape(item.get('duration',''))}</li>"

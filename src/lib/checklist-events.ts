@@ -1,4 +1,5 @@
 import sourceData from "../../outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json";
+import juneTwoSourceData from "../../outputs/tripleseat/june-02-2026-definite-closed-events.json";
 import { events, formatEventDate, type EventPlan } from "@/lib/events";
 
 type TripleseatContact = {
@@ -33,7 +34,10 @@ function contactName(contact?: TripleseatContact) {
 }
 
 const sourceById = new Map<number, TripleseatEvent>(
-  ((sourceData as { events: TripleseatEvent[] }).events || []).map((event) => [event.id, event]),
+  [
+    ...((sourceData as { events: TripleseatEvent[] }).events || []),
+    ...((juneTwoSourceData as { events: TripleseatEvent[] }).events || []),
+  ].map((event) => [event.id, event]),
 );
 
 export const checklistEvents: ChecklistEvent[] = events.map((event) => {
