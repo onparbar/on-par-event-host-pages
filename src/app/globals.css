@@ -1109,6 +1109,17 @@ a {
   margin: 0;
 }
 
+.base-map-card {
+  display: grid;
+  gap: 10px;
+}
+
+.base-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .editor-form-card {
   gap: 14px;
 }

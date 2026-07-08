@@ -16,6 +16,7 @@ export type AdminState = {
   archivedAssetKeys: string[];
   archivedEventIds: number[];
   overlaysByAsset: Record<string, AdminAssetOverlay[]>;
+  baseImageByAsset: Record<string, string>;
 };
 
 export function emptyAdminState(): AdminState {
@@ -23,5 +24,6 @@ export function emptyAdminState(): AdminState {
     archivedAssetKeys: [],
     archivedEventIds: [],
     overlaysByAsset: {},
+    baseImageByAsset: {},
   };
 }

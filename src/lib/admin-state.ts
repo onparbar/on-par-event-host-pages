@@ -29,6 +29,12 @@ function parseAdminState(value: unknown): AdminState {
             ]),
           )
         : {},
+    baseImageByAsset:
+      candidate.baseImageByAsset && typeof candidate.baseImageByAsset === "object"
+        ? Object.fromEntries(
+            Object.entries(candidate.baseImageByAsset).filter((entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string"),
+          )
+        : {},
   };
 }
 

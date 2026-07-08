@@ -21,6 +21,8 @@ type AdminClientProps = {
 
 type AdminTab = "assets" | "completed";
 
+const BLANK_FLOOR_MAP_IMAGE = "/floor-plans/blank-floor-map.png";
+
 function Header() {
   return (
     <header className="topbar">
@@ -126,6 +128,16 @@ export default function AdminClient({ initialState, records, today }: AdminClien
     window.location.reload();
   }
 
+  function updateFloorPlanBaseImage(assetKey: string, nextImage: string) {
+    setAdminState((current) => ({
+      ...current,
+      baseImageByAsset: {
+        ...current.baseImageByAsset,
+        [assetKey]: nextImage,
+      },
+    }));
+  }
+
   function archiveDate(date: string, nextArchived: boolean) {
     const floorPlan = floorPlans.find((item) => item.date === date);
     const schedule = entertainmentSchedules.find((item) => item.date === date);
@@ -194,6 +206,8 @@ export default function AdminClient({ initialState, records, today }: AdminClien
             {floorPlans.map((plan) => {
               const isEnded = plan.date < today;
               const isArchived = adminState.archivedAssetKeys.includes(plan.image);
+              const publishedImage = adminState.baseImageByAsset[plan.image] ?? plan.image;
+              const usingBlankMap = publishedImage === BLANK_FLOOR_MAP_IMAGE;
               return (
                 <EditableAssetSection
                   archiveAction={
@@ -206,10 +220,35 @@ export default function AdminClient({ initialState, records, today }: AdminClien
                   }
                   archived={isArchived}
                   asset={plan}
+                  image={publishedImage}
                   helperNote={
                     isEnded ? "Ended dates can be removed from the public host here and restored later if needed." : undefined
                   }
                   key={`admin-floor-${plan.date}`}
+                  managementSlot={
+                    <div className="base-map-card">
+                      <span className="eyebrow">Published Base Map</span>
+                      <div className="base-map-actions">
+                        <button
+                          className={`editor-tool${!usingBlankMap ? " active" : ""}`}
+                          onClick={() => updateFloorPlanBaseImage(plan.image, plan.image)}
+                          type="button"
+                        >
+                          Use Event Map
+                        </button>
+                        <button
+                          className={`editor-tool${usingBlankMap ? " active" : ""}`}
+                          onClick={() => updateFloorPlanBaseImage(plan.image, BLANK_FLOOR_MAP_IMAGE)}
+                          type="button"
+                        >
+                          Use Blank Map
+                        </button>
+                      </div>
+                      <p className="meta">
+                        Switch to the blank map when you need full control over every highlight. Then add only the seating and notes you want published.
+                      </p>
+                    </div>
+                  }
                   onOverlaysChange={(overlays) =>
                     setAdminState((current) => ({
                       ...current,
@@ -221,7 +260,13 @@ export default function AdminClient({ initialState, records, today }: AdminClien
                   }
                   overlays={adminState.overlaysByAsset[plan.image] ?? []}
                   persistenceMode="remote"
-                  subtitle={isEnded ? "This date has ended. Use the archive button to remove the floor plan, entertainment schedule, and itineraries from the public host." : "Admin editor for floor-plan revisions and live published overlays."}
+                  subtitle={
+                    isEnded
+                      ? "This date has ended. Use the archive button to remove the floor plan, entertainment schedule, and itineraries from the public host."
+                      : usingBlankMap
+                        ? "Blank floor map is active for this date. Everything guests see now comes from your editable highlights."
+                        : "Admin editor for floor-plan revisions and live published overlays."
+                  }
                   title={plan.label}
                 />
               );

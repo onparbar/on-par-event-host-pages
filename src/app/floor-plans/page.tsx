@@ -33,7 +33,11 @@ export default async function FloorPlansPage() {
                 </span>
               ))}
             </div>
-            <AssetImageWithOverlays alt={`Floor plan for ${plan.label}`} image={plan.image} overlays={adminState.overlaysByAsset[plan.image] ?? []} />
+            <AssetImageWithOverlays
+              alt={`Floor plan for ${plan.label}`}
+              image={adminState.baseImageByAsset[plan.image] ?? plan.image}
+              overlays={adminState.overlaysByAsset[plan.image] ?? []}
+            />
           </section>
         ))}
       </main>

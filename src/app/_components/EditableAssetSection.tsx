@@ -39,6 +39,7 @@ type EditableAssetSectionProps = {
   asset: DateAsset;
   title: string;
   subtitle?: string;
+  image?: string;
   overlays?: AssetOverlay[];
   onOverlaysChange?: (overlays: AssetOverlay[]) => void;
   persistenceMode?: "local" | "remote";
@@ -48,6 +49,7 @@ type EditableAssetSectionProps = {
   };
   archived?: boolean;
   helperNote?: ReactNode;
+  managementSlot?: ReactNode;
 };
 
 const MIN_OVERLAY_SIZE = 1;
@@ -157,12 +159,14 @@ export default function EditableAssetSection({
   asset,
   title,
   subtitle,
+  image,
   overlays: controlledOverlays,
   onOverlaysChange,
   persistenceMode = "local",
   archiveAction,
   archived = false,
   helperNote,
+  managementSlot,
 }: EditableAssetSectionProps) {
   const [tool, setTool] = useState<AssetEditorTool>("select");
   const [overlays, setOverlays] = useState<AssetOverlay[]>([]);
@@ -174,6 +178,7 @@ export default function EditableAssetSection({
   const lastSyncedOverlaysRef = useRef("");
   const storageKey = useMemo(() => `on-par-asset-overlays:v1:${asset.image}`, [asset.image]);
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedId) ?? null;
+  const imageSource = image ?? asset.image;
   const saveNote =
     persistenceMode === "remote"
       ? "Edits here publish to the admin-backed event host. Use Cover to hide baked-in marks, then add fresh highlights on top."
@@ -502,7 +507,7 @@ export default function EditableAssetSection({
             ref={stageRef}
             role="presentation"
           >
-            <img className="asset-image asset-editor-image" ref={imageRef} src={asset.image} alt={`${title} for ${asset.label}`} />
+            <img className="asset-image asset-editor-image" ref={imageRef} src={imageSource} alt={`${title} for ${asset.label}`} />
 
             {overlays.map((overlay) => (
               <button
@@ -557,6 +562,7 @@ export default function EditableAssetSection({
               Current tool: <strong>{tool}</strong>
             </p>
             {archived ? <p className="admin-archived-note">This date is currently removed from the public event host.</p> : null}
+            {managementSlot}
           </div>
 
           {selectedOverlay ? (

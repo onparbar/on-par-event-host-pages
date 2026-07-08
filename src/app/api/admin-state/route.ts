@@ -28,6 +28,12 @@ function normalizeState(value: unknown): AdminState {
             ]),
           )
         : {},
+    baseImageByAsset:
+      state.baseImageByAsset && typeof state.baseImageByAsset === "object"
+        ? Object.fromEntries(
+            Object.entries(state.baseImageByAsset).filter((entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string"),
+          )
+        : {},
   };
 }
 
