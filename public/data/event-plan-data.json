@@ -528,7 +528,7 @@
       "time": "5:30 PM - 7:30 PM",
       "guest_count": 13,
       "rooms": [
-        "Main Dining Room"
+        "VIP 2"
       ],
       "color": "#0891b2",
       "food": [
@@ -538,7 +538,11 @@
         "No BEO document view returned by Tripleseat API"
       ],
       "entertainment": [],
-      "verification_status": "API event and booking fields checked; no BEO document view returned"
+      "verification_status": "API event and booking fields checked; no BEO document view returned; room assignment updated to VIP 2",
+      "special_instructions": [
+        "No BEO document view returned by Tripleseat API.",
+        "VIP 2 is listed in the current API room assignment."
+      ]
     },
     {
       "id": 60657281,
@@ -548,7 +552,7 @@
       "time": "4:00 PM - 6:00 PM",
       "guest_count": 50,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1"
       ],
       "color": "#2f8f46",
       "food": [
@@ -577,8 +581,12 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-22_north-dayton-school-of-discovery-staff-engagement-event_beo.txt"
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; entertainment times are not listed on the current BEO",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-22_north-dayton-school-of-discovery-staff-engagement-event_beo.txt",
+      "special_instructions": [
+        "VIP 1 is listed in the current BEO event summary.",
+        "The current BEO lists entertainment quantities and durations, but not exact start times."
+      ]
     },
     {
       "id": 60082920,
