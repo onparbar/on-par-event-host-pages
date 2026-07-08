@@ -163,6 +163,21 @@ export default function ChecklistsPage() {
     };
   }, []);
 
+  const visibleEvents = checklistEvents.filter((event) => metaByEvent[event.id]?.status !== "submitted");
+
+  useEffect(() => {
+    if (!visibleEvents.length) {
+      if (activeEventId !== 0) {
+        setActiveEventId(0);
+      }
+      return;
+    }
+
+    if (!visibleEvents.some((event) => event.id === activeEventId)) {
+      setActiveEventId(visibleEvents[0].id);
+    }
+  }, [activeEventId, visibleEvents]);
+
   const saveDrafts = useEffectEvent(async (eventIds: number[]) => {
     const revisionSnapshot = Object.fromEntries(eventIds.map((eventId) => [eventId, revisionByEventRef.current[eventId] ?? 0]));
 
@@ -289,10 +304,31 @@ export default function ChecklistsPage() {
     }
   });
 
-  const activeEvent = checklistEvents.find((event) => event.id === activeEventId) ?? checklistEvents[0];
+  const activeEvent = visibleEvents.find((event) => event.id === activeEventId) ?? visibleEvents[0];
   const activeChecklist = activeEvent ? checklistsByEvent[activeEvent.id] : undefined;
   const activeMeta = activeEvent ? metaByEvent[activeEvent.id] : undefined;
   const activeSaveState = activeEvent ? saveStateByEvent[activeEvent.id] : "idle";
+
+  if (!visibleEvents.length) {
+    return (
+      <>
+        <Header />
+        <main className="page checklist-page">
+          <section className="intro">
+            <div>
+              <h2>Digital Event Checklists</h2>
+              <p>All submitted checklists have been moved off the main dashboard and into Admin under Completed Checklists.</p>
+            </div>
+            <div className="checklist-meta-card">
+              <span className="eyebrow">Checklist Queue</span>
+              <strong>No active checklist events</strong>
+              <span className="meta">Only draft and in-progress events stay on this page.</span>
+            </div>
+          </section>
+        </main>
+      </>
+    );
+  }
 
   if (!activeEvent || !activeChecklist || !activeMeta) {
     return null;
@@ -333,7 +369,7 @@ export default function ChecklistsPage() {
         <section className="intro">
           <div>
             <h2>Digital Event Checklists</h2>
-            <p>Each event has its own checklist page and add-on page. Drafts save to Supabase and final checklists can be submitted here.</p>
+            <p>Each event has its own checklist page and add-on page. Drafts save to Supabase and submitted checklists move to Admin.</p>
           </div>
           <div className="checklist-meta-card">
             <span className="eyebrow">Current Event</span>
@@ -346,7 +382,7 @@ export default function ChecklistsPage() {
         </section>
 
         <section className="event-tab-strip" aria-label="Event checklist tabs">
-          {checklistEvents.map((event) => {
+          {visibleEvents.map((event) => {
             const eventState = checklistsByEvent[event.id];
             const eventMeta = metaByEvent[event.id];
             const eventProgress = eventCompletion(eventState);
