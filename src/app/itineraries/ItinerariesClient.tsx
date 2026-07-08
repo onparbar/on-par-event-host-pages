@@ -135,9 +135,9 @@ function ItineraryPoster({ event }: { event: ItineraryAsset }) {
   );
 }
 
-export default function ItinerariesClient() {
-  const [activeEventId, setActiveEventId] = useState<number>(itineraries[0]?.id ?? 0);
-  const activeEvent = itineraries.find((event) => event.id === activeEventId) ?? itineraries[0];
+export default function ItinerariesClient({ items = itineraries }: { items?: ItineraryAsset[] }) {
+  const [activeEventId, setActiveEventId] = useState<number>(items[0]?.id ?? 0);
+  const activeEvent = items.find((event) => event.id === activeEventId) ?? items[0];
 
   if (!activeEvent) {
     return null;
@@ -155,7 +155,7 @@ export default function ItinerariesClient() {
         </section>
 
         <section className="event-tab-strip" aria-label="Itinerary event tabs">
-          {itineraries.map((event) => {
+          {items.map((event) => {
             const isActive = event.id === activeEvent.id;
             return (
               <button

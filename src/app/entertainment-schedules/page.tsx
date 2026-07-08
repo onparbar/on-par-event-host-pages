@@ -1,11 +1,18 @@
 import Link from "next/link";
+import AssetImageWithOverlays from "@/app/_components/AssetImageWithOverlays";
+import { loadAdminState } from "@/lib/admin-state";
 import { entertainmentSchedules } from "@/lib/events";
 
 export const metadata = {
   title: "Entertainment Schedules | On Par Event Host",
 };
 
-export default function EntertainmentSchedulesPage() {
+export const dynamic = "force-dynamic";
+
+export default async function EntertainmentSchedulesPage() {
+  const adminState = await loadAdminState();
+  const visibleSchedules = entertainmentSchedules.filter((schedule) => !adminState.archivedAssetKeys.includes(schedule.image));
+
   return (
     <>
       <Header />
@@ -16,7 +23,7 @@ export default function EntertainmentSchedulesPage() {
             <p>Template schedule exports, ordered by date.</p>
           </div>
         </section>
-        {entertainmentSchedules.map((schedule) => (
+        {visibleSchedules.map((schedule) => (
           <section className="asset-section" key={schedule.date}>
             <h3>{schedule.label}</h3>
             {schedule.source ? <p className="meta">{schedule.source}</p> : null}
@@ -27,7 +34,11 @@ export default function EntertainmentSchedulesPage() {
                 </span>
               ))}
             </div>
-            <img className="asset-image" src={schedule.image} alt={`Entertainment schedule for ${schedule.label}`} />
+            <AssetImageWithOverlays
+              alt={`Entertainment schedule for ${schedule.label}`}
+              image={schedule.image}
+              overlays={adminState.overlaysByAsset[schedule.image] ?? []}
+            />
           </section>
         ))}
       </main>

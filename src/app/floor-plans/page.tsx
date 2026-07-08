@@ -1,11 +1,18 @@
 import Link from "next/link";
+import AssetImageWithOverlays from "@/app/_components/AssetImageWithOverlays";
+import { loadAdminState } from "@/lib/admin-state";
 import { floorPlans } from "@/lib/events";
 
 export const metadata = {
   title: "Floor Plans | On Par Event Host",
 };
 
-export default function FloorPlansPage() {
+export const dynamic = "force-dynamic";
+
+export default async function FloorPlansPage() {
+  const adminState = await loadAdminState();
+  const visiblePlans = floorPlans.filter((plan) => !adminState.archivedAssetKeys.includes(plan.image));
+
   return (
     <>
       <Header />
@@ -16,7 +23,7 @@ export default function FloorPlansPage() {
             <p>Current floor maps, ordered by event date.</p>
           </div>
         </section>
-        {floorPlans.map((plan) => (
+        {visiblePlans.map((plan) => (
           <section className="asset-section" key={plan.date}>
             <h3>{plan.label}</h3>
             <div className="event-row">
@@ -26,7 +33,7 @@ export default function FloorPlansPage() {
                 </span>
               ))}
             </div>
-            <img className="asset-image" src={plan.image} alt={`Floor plan for ${plan.label}`} />
+            <AssetImageWithOverlays alt={`Floor plan for ${plan.label}`} image={plan.image} overlays={adminState.overlaysByAsset[plan.image] ?? []} />
           </section>
         ))}
       </main>

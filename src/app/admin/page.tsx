@@ -1,65 +1,36 @@
-import Link from "next/link";
-import EditableAssetSection from "@/app/_components/EditableAssetSection";
-import { entertainmentSchedules, floorPlans } from "@/lib/events";
+import { cookies } from "next/headers";
+import AdminAccessGate from "./AdminAccessGate";
+import AdminClient from "./AdminClient";
+import { hasAdminSession } from "@/lib/admin-auth";
+import { loadAdminState, loadChecklistRecords } from "@/lib/admin-state";
 
 export const metadata = {
   title: "Admin | On Par Event Host",
 };
 
-export default function AdminPage() {
-  return (
-    <>
-      <Header />
-      <main className="page admin-page">
-        <section className="intro">
-          <div>
-            <h2>Admin</h2>
-            <p>Edit floor plans and entertainment schedules here without changing the employee-facing display pages.</p>
-          </div>
-        </section>
+export const dynamic = "force-dynamic";
 
-        <section className="asset-section admin-section-card">
-          <h3>Floor Plan Editor</h3>
-          <p className="meta">Use highlights for new reservations, or Cover blocks to hide baked-in marks before redrawing them.</p>
-        </section>
-        {floorPlans.map((plan) => (
-          <EditableAssetSection
-            asset={plan}
-            key={`admin-floor-${plan.date}`}
-            subtitle="Admin editor for floor-plan revisions and PNG exports."
-            title={plan.label}
-          />
-        ))}
+function easternToday() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
 
-        <section className="asset-section admin-section-card">
-          <h3>Entertainment Schedule Editor</h3>
-          <p className="meta">Adjust schedule blocks, labels, and callouts here without adding editing tools to the employee schedule view.</p>
-        </section>
-        {entertainmentSchedules.map((schedule) => (
-          <EditableAssetSection
-            asset={schedule}
-            key={`admin-schedule-${schedule.date}`}
-            subtitle={schedule.source ?? "Admin editor for entertainment schedule revisions."}
-            title={schedule.label}
-          />
-        ))}
-      </main>
-    </>
-  );
+  const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
-function Header() {
-  return (
-    <header className="topbar">
-      <h1 className="brand">On Par Admin</h1>
-      <nav className="nav" aria-label="Primary navigation">
-        <Link href="/">Home</Link>
-        <Link href="/floor-plans">Floor Plans</Link>
-        <Link href="/entertainment-schedules">Entertainment Schedules</Link>
-        <Link href="/itineraries">Itineraries</Link>
-        <Link href="/checklists">Checklists</Link>
-        <Link href="/admin">Admin</Link>
-      </nav>
-    </header>
-  );
+export default async function AdminPage() {
+  const cookieStore = await cookies();
+
+  if (!hasAdminSession(cookieStore)) {
+    return <AdminAccessGate />;
+  }
+
+  const [initialState, records] = await Promise.all([loadAdminState(), loadChecklistRecords()]);
+  const today = easternToday();
+
+  return <AdminClient initialState={initialState} records={records} today={today} />;
 }

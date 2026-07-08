@@ -1,25 +1,13 @@
 "use client";
 
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AdminAssetOverlay } from "@/lib/admin-types";
 import type { DateAsset } from "@/lib/events";
 
 type AssetEditorKind = "highlight" | "cover";
 type AssetEditorTool = "select" | AssetEditorKind;
-
-type AssetOverlay = {
-  id: string;
-  kind: AssetEditorKind;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  fill: string;
-  opacity: number;
-  text: string;
-  textColor: string;
-  fontSize: number;
-};
+type AssetOverlay = AdminAssetOverlay;
 
 type DragInteraction =
   | {
@@ -51,6 +39,15 @@ type EditableAssetSectionProps = {
   asset: DateAsset;
   title: string;
   subtitle?: string;
+  overlays?: AssetOverlay[];
+  onOverlaysChange?: (overlays: AssetOverlay[]) => void;
+  persistenceMode?: "local" | "remote";
+  archiveAction?: {
+    label: string;
+    onClick: () => void;
+  };
+  archived?: boolean;
+  helperNote?: ReactNode;
 };
 
 const MIN_OVERLAY_SIZE = 1;
@@ -152,7 +149,21 @@ function moveOverlay(overlays: AssetOverlay[], overlayId: string, direction: "fo
   return overlays;
 }
 
-export default function EditableAssetSection({ asset, title, subtitle }: EditableAssetSectionProps) {
+function serializeOverlays(overlays: AssetOverlay[]) {
+  return JSON.stringify(overlays);
+}
+
+export default function EditableAssetSection({
+  asset,
+  title,
+  subtitle,
+  overlays: controlledOverlays,
+  onOverlaysChange,
+  persistenceMode = "local",
+  archiveAction,
+  archived = false,
+  helperNote,
+}: EditableAssetSectionProps) {
   const [tool, setTool] = useState<AssetEditorTool>("select");
   const [overlays, setOverlays] = useState<AssetOverlay[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -160,10 +171,23 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
   const [hasLoaded, setHasLoaded] = useState(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const lastSyncedOverlaysRef = useRef("");
   const storageKey = useMemo(() => `on-par-asset-overlays:v1:${asset.image}`, [asset.image]);
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedId) ?? null;
+  const saveNote =
+    persistenceMode === "remote"
+      ? "Edits here publish to the admin-backed event host. Use Cover to hide baked-in marks, then add fresh highlights on top."
+      : "Edits save in this browser. Use Cover to hide baked-in marks, then add fresh highlights on top.";
 
   useEffect(() => {
+    if (persistenceMode === "remote") {
+      const nextOverlays = controlledOverlays ?? [];
+      lastSyncedOverlaysRef.current = serializeOverlays(nextOverlays);
+      setOverlays(nextOverlays);
+      setHasLoaded(true);
+      return;
+    }
+
     try {
       const raw = window.localStorage.getItem(storageKey);
       if (raw) {
@@ -177,12 +201,24 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
     } finally {
       setHasLoaded(true);
     }
-  }, [storageKey]);
+  }, [controlledOverlays, persistenceMode, storageKey]);
 
   useEffect(() => {
     if (!hasLoaded) {
       return;
     }
+
+    if (persistenceMode === "remote") {
+      const signature = serializeOverlays(overlays);
+      if (signature === lastSyncedOverlaysRef.current) {
+        return;
+      }
+      lastSyncedOverlaysRef.current = signature;
+      onOverlaysChange?.(overlays);
+      return;
+    }
+
+    onOverlaysChange?.(overlays);
 
     if (!overlays.length) {
       window.localStorage.removeItem(storageKey);
@@ -190,7 +226,26 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
     }
 
     window.localStorage.setItem(storageKey, JSON.stringify(overlays));
-  }, [hasLoaded, overlays, storageKey]);
+  }, [hasLoaded, onOverlaysChange, overlays, persistenceMode, storageKey]);
+
+  useEffect(() => {
+    function handleDeleteKey(event: KeyboardEvent) {
+      if (!selectedId || (event.key !== "Backspace" && event.key !== "Delete")) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+
+      setOverlays((current) => current.filter((overlay) => overlay.id !== selectedId));
+      setSelectedId(null);
+    }
+
+    window.addEventListener("keydown", handleDeleteKey);
+    return () => window.removeEventListener("keydown", handleDeleteKey);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!interaction || !stageRef.current) {
@@ -394,7 +449,7 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
           <h3>{title}</h3>
           {subtitle ? <p className="meta">{subtitle}</p> : null}
         </div>
-        <p className="meta editable-asset-note">Edits save in this browser. Use Cover to hide baked-in marks, then add fresh highlights on top.</p>
+        <p className="meta editable-asset-note">{saveNote}</p>
       </div>
 
       <div className="event-row">
@@ -431,6 +486,11 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
         >
           Reset Edits
         </button>
+        {archiveAction ? (
+          <button className={`editor-tool${archived ? " danger" : ""}`} onClick={archiveAction.onClick} type="button">
+            {archiveAction.label}
+          </button>
+        ) : null}
         <span className="editor-status">{overlays.length} saved edit{overlays.length === 1 ? "" : "s"}</span>
       </div>
 
@@ -456,6 +516,7 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
                   width: `${overlay.width}%`,
                   height: `${overlay.height}%`,
                   backgroundColor: overlay.fill,
+                  borderColor: overlay.fill,
                   opacity: overlay.opacity,
                   color: overlay.textColor,
                   fontSize: `${overlay.fontSize}px`,
@@ -495,6 +556,7 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
             <p className="meta">
               Current tool: <strong>{tool}</strong>
             </p>
+            {archived ? <p className="admin-archived-note">This date is currently removed from the public event host.</p> : null}
           </div>
 
           {selectedOverlay ? (
@@ -645,7 +707,7 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
                   }}
                   type="button"
                 >
-                  Delete
+                  Delete Selected Highlight
                 </button>
               </div>
             </div>
@@ -657,9 +719,44 @@ export default function EditableAssetSection({ asset, title, subtitle }: Editabl
                 <li>Click any saved box to move it. Drag the corner handle to resize it.</li>
                 <li>Add labels like `VIP 2`, `F`, or `2-4 PM` from the inspector.</li>
                 <li>`Download PNG` exports the image with your current browser edits flattened in.</li>
+                <li>Press `Delete` or `Backspace` while a highlight is selected to remove it quickly.</li>
               </ul>
             </div>
           )}
+
+          <div className="editor-panel-card">
+            <span className="eyebrow">Saved Highlights</span>
+            {overlays.length ? (
+              <div className="saved-overlay-list">
+                {overlays.map((overlay, index) => (
+                  <div className="saved-overlay-row" key={overlay.id}>
+                    <button
+                      className={`saved-overlay-select${selectedId === overlay.id ? " active" : ""}`}
+                      onClick={() => setSelectedId(overlay.id)}
+                      type="button"
+                    >
+                      {overlay.text || `${overlay.kind === "cover" ? "Cover" : "Highlight"} ${index + 1}`}
+                    </button>
+                    <button
+                      className="saved-overlay-delete"
+                      onClick={() => {
+                        setOverlays((current) => current.filter((item) => item.id !== overlay.id));
+                        if (selectedId === overlay.id) {
+                          setSelectedId(null);
+                        }
+                      }}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="meta">No saved highlights on this asset yet.</p>
+            )}
+            {helperNote ? <div className="admin-helper-note">{helperNote}</div> : null}
+          </div>
         </aside>
       </div>
     </section>

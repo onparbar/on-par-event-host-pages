@@ -1,8 +1,16 @@
 import Link from "next/link";
+import { loadAdminState } from "@/lib/admin-state";
 import { entertainmentSchedules, events, floorPlans } from "@/lib/events";
 import { checklistEvents } from "@/lib/checklist-events";
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const adminState = await loadAdminState();
+  const visibleFloorPlans = floorPlans.filter((plan) => !adminState.archivedAssetKeys.includes(plan.image));
+  const visibleSchedules = entertainmentSchedules.filter((schedule) => !adminState.archivedAssetKeys.includes(schedule.image));
+  const visibleEvents = events.filter((event) => !adminState.archivedEventIds.includes(event.id));
+
   return (
     <>
       <Header />
@@ -11,8 +19,8 @@ export default function HomePage() {
           <div>
             <h2>Event host pages</h2>
             <p>
-              {events.length} verified events, {floorPlans.length} floor-plan dates,{" "}
-              {entertainmentSchedules.length} entertainment schedule dates, and {checklistEvents.length} checklist tabs.
+              {visibleEvents.length} active events, {visibleFloorPlans.length} floor-plan dates,{" "}
+              {visibleSchedules.length} entertainment schedule dates, and {checklistEvents.length} checklist tabs.
             </p>
           </div>
         </section>
