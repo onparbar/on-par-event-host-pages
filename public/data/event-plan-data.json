@@ -445,6 +445,52 @@
       ]
     },
     {
+      "id": 61072003,
+      "name": "Large group outing",
+      "date": "2026-07-15",
+      "day": "Wednesday",
+      "time": "5:30 PM - 7:30 PM",
+      "guest_count": 60,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#f97316",
+      "food": [
+        "Wing Platter",
+        "Chicken Tender Platter",
+        "Mozzarella Sticks"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "2 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "3 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Mini Golf",
+          "quantity": "10 guests",
+          "time": "Untimed",
+          "duration": "9 holes"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; entertainment times are not listed on the current BEO",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-15_large-group-outing_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The current BEO lists entertainment quantities and durations, but not exact start times."
+      ]
+    },
+    {
       "id": 60562595,
       "name": "LexisNexis 07/15/2026",
       "date": "2026-07-15",
@@ -589,6 +635,45 @@
       ]
     },
     {
+      "id": 61185846,
+      "name": "Motility Team Event",
+      "date": "2026-07-22",
+      "day": "Wednesday",
+      "time": "6:00 PM - 8:00 PM",
+      "guest_count": 19,
+      "rooms": [
+        "VIP 1"
+      ],
+      "color": "#0891b2",
+      "food": [
+        "The Full Course - Food + Beverage",
+        "Premium Taco Bar"
+      ],
+      "drink_options": [
+        "Food + Beverage package"
+      ],
+      "entertainment": [
+        {
+          "name": "Mini Golf",
+          "quantity": "19 guests",
+          "time": "Untimed",
+          "duration": "Course count not listed on BEO"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "2 lanes",
+          "time": "Time not listed on BEO",
+          "duration": ""
+        }
+      ],
+      "verification_status": "BEO checked above billing section; entertainment times are not listed on the current BEO",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-22_motility-team-event_beo.txt",
+      "special_instructions": [
+        "VIP 1 is listed in the current BEO event summary.",
+        "The current BEO lists bowling quantity but does not show exact bowling timing or duration."
+      ]
+    },
+    {
       "id": 60082920,
       "name": "Danis 07/23/2026",
       "date": "2026-07-23",
@@ -630,6 +715,53 @@
       "beo_text": "outputs/tripleseat/beo_text/2026-07-23_danis-07-23-2026_beo.txt"
     },
     {
+      "id": 60452178,
+      "name": "Branch Picnic",
+      "date": "2026-07-23",
+      "day": "Thursday",
+      "time": "2:00 PM - 4:30 PM",
+      "guest_count": 50,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#2f8f46",
+      "food": [
+        "Wing Platter",
+        "Chicken Tender Platter",
+        "Veggie Tray",
+        "Fry Platter"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Pool Table",
+          "quantity": "3 tables",
+          "time": "Time not listed on BEO",
+          "duration": "1 hour"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "1 hour"
+        },
+        {
+          "name": "Mini Golf",
+          "quantity": "20 guests",
+          "time": "Untimed",
+          "duration": "9 holes"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; entertainment times are not listed on the current BEO",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-23_branch-picnic_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The current BEO lists entertainment quantities and durations, but not exact start times."
+      ]
+    },
+    {
       "id": 58375613,
       "name": "GS1",
       "date": "2026-07-23",
@@ -637,7 +769,8 @@
       "time": "2:00 PM - 5:00 PM",
       "guest_count": 118,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1",
+        "VIP 2"
       ],
       "color": "#0891b2",
       "food": [
@@ -681,8 +814,11 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-23_gs1_beo.txt"
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-23_gs1_beo.txt",
+      "special_instructions": [
+        "VIP 1 and VIP 2 are listed in the current BEO event summary."
+      ]
     }
   ]
 }

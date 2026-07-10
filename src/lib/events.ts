@@ -104,7 +104,7 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-15": {
     image: "/entertainment-schedules/july-15-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 7, 2026",
+    source: "Tripleseat BEO/API pull July 10, 2026",
   },
   "2026-07-19": {
     image: "/entertainment-schedules/july-19-entertainment-schedule.png",
@@ -116,11 +116,11 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-22": {
     image: "/entertainment-schedules/july-22-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull June 25, 2026",
+    source: "Tripleseat BEO/API pull July 10, 2026",
   },
   "2026-07-23": {
     image: "/entertainment-schedules/july-23-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull June 25, 2026",
+    source: "Tripleseat BEO/API pull July 10, 2026",
   },
 };
 
