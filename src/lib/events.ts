@@ -40,6 +40,101 @@ type DateConfig = {
 
 const baseEvents = (eventPlanData as { events: EventPlan[] }).events;
 
+const eventOverrides: Record<number, Partial<EventPlan>> = {
+  57207639: {
+    time: "6:00 PM - 10:00 PM",
+    rooms: ["Big Show", "Disco Inferno"],
+    food: ["The Front Nine | TACO BAR", "Dessert Platter", "Pretzel Bite Platter"],
+    entertainment: [
+      {
+        name: "The Big Show",
+        quantity: "1 private space",
+        time: "6:00 PM - 8:00 PM",
+        duration: "2 hours",
+      },
+      {
+        name: "Disco Inferno",
+        quantity: "1 room",
+        time: "8:00 PM - 10:00 PM",
+        duration: "2 hours",
+      },
+    ],
+    special_instructions: [
+      "Food setup is inside the Big Show area.",
+      "Big Show reserved from 6:00 PM - 8:00 PM.",
+      "Disco Inferno reserved from 8:00 PM - 10:00 PM.",
+    ],
+    verification_status:
+      "Host update applied: dessert platter replaces cookies; Big Show runs 6:00 PM - 8:00 PM with food inside Big Show; Disco Inferno runs 8:00 PM - 10:00 PM.",
+  },
+  61072003: {
+    entertainment: [
+      {
+        name: "Darts",
+        quantity: "2 lanes",
+        time: "Time not listed on BEO",
+        duration: "2 hours",
+      },
+      {
+        name: "Duckpin Bowling",
+        quantity: "3 lanes",
+        time: "5:30 PM - 7:30 PM",
+        duration: "2 hours",
+      },
+      {
+        name: "Mini Golf",
+        quantity: "10 guests",
+        time: "Untimed",
+        duration: "9 holes",
+      },
+    ],
+    special_instructions: [
+      "Main Dining Room is listed in the current BEO event summary.",
+      "Floor plan uses 7 total tables including the food table: the 3 tables above the current food table plus the 3 GEG tables.",
+      "Bowling moved to lanes 10-12 from 5:30 PM - 7:30 PM.",
+    ],
+    verification_status:
+      "Host update applied: floor plan reduced to 7 tables including food; bowling moved to lanes 10-12 from 5:30 PM - 7:30 PM.",
+  },
+  60562595: {
+    rooms: ["VIP 1", "VIP 2", "Gem Room"],
+    entertainment: [
+      {
+        name: "Duckpin Bowling",
+        quantity: "6 lanes",
+        time: "6:30 PM - 8:30 PM",
+        duration: "2 hours",
+      },
+      {
+        name: "Darts",
+        quantity: "2 lanes",
+        time: "6:30 PM - 8:30 PM",
+        duration: "2 hours",
+      },
+      {
+        name: "Pool Table",
+        quantity: "3 tables",
+        time: "6:30 PM - 8:30 PM",
+        duration: "2 hours",
+      },
+      {
+        name: "Neo Shuffleboard",
+        quantity: "2 tables",
+        time: "6:30 PM - 8:30 PM",
+        duration: "2 hours",
+      },
+      {
+        name: "Gem Room",
+        quantity: "1 room",
+        time: "6:30 PM - 8:30 PM",
+        duration: "2 hours",
+      },
+    ],
+    verification_status:
+      "Host update applied: bowling reduced to lanes 1-6, darts moved to lanes 4-5, and Gem Room replaces Prime Room from 6:30 PM - 8:30 PM.",
+  },
+};
+
 const hostedOnlyEvents: EventPlan[] = [
   {
     id: 58984337,
@@ -108,13 +203,16 @@ const hostedOnlyEvents: EventPlan[] = [
       "5:00 PM - 6:00 PM setup uses 3 tables for school supplies and backpack assembly.",
       "Entire building reserved from 6:00 PM - 1:00 AM per BEO special instructions.",
       "Food quantity on the BEO is 250 while the event summary guest count is 190.",
+      "Floor plan food setup uses both VIP food tables.",
     ],
     verification_status:
       "BEO checked above billing section; event is treated as a full-building buyout; entertainment timing set to 6:00 PM - 12:00 AM per latest host update.",
   },
 ];
 
-export const events = [...baseEvents, ...hostedOnlyEvents].sort((a, b) => {
+const mergedBaseEvents = baseEvents.map((event) => (eventOverrides[event.id] ? { ...event, ...eventOverrides[event.id] } : event));
+
+export const events = [...mergedBaseEvents, ...hostedOnlyEvents].sort((a, b) => {
   const timeA = new Date(`${a.date}T12:00:00Z`).getTime();
   const timeB = new Date(`${b.date}T12:00:00Z`).getTime();
   if (timeA !== timeB) return timeA - timeB;
