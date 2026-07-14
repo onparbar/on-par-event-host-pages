@@ -41,32 +41,6 @@ type DateConfig = {
 const baseEvents = (eventPlanData as { events: EventPlan[] }).events;
 
 const eventOverrides: Record<number, Partial<EventPlan>> = {
-  57207639: {
-    time: "6:00 PM - 10:00 PM",
-    rooms: ["Big Show", "Disco Inferno"],
-    food: ["The Front Nine | TACO BAR", "Dessert Platter", "Pretzel Bite Platter"],
-    entertainment: [
-      {
-        name: "The Big Show",
-        quantity: "1 private space",
-        time: "6:00 PM - 8:00 PM",
-        duration: "2 hours",
-      },
-      {
-        name: "Disco Inferno",
-        quantity: "1 room",
-        time: "8:00 PM - 10:00 PM",
-        duration: "2 hours",
-      },
-    ],
-    special_instructions: [
-      "Food setup is inside the Big Show area.",
-      "Big Show reserved from 6:00 PM - 8:00 PM.",
-      "Disco Inferno reserved from 8:00 PM - 10:00 PM.",
-    ],
-    verification_status:
-      "Host update applied: dessert platter replaces cookies; Big Show runs 6:00 PM - 8:00 PM with food inside Big Show; Disco Inferno runs 8:00 PM - 10:00 PM.",
-  },
   61072003: {
     entertainment: [
       {
@@ -95,43 +69,6 @@ const eventOverrides: Record<number, Partial<EventPlan>> = {
     ],
     verification_status:
       "Host update applied: floor plan reduced to 7 tables including food; bowling moved to lanes 10-12 from 5:30 PM - 7:30 PM.",
-  },
-  60562595: {
-    rooms: ["VIP 1", "VIP 2", "Gem Room"],
-    entertainment: [
-      {
-        name: "Duckpin Bowling",
-        quantity: "6 lanes",
-        time: "6:30 PM - 8:30 PM",
-        duration: "2 hours",
-      },
-      {
-        name: "Darts",
-        quantity: "2 lanes",
-        time: "6:30 PM - 8:30 PM",
-        duration: "2 hours",
-      },
-      {
-        name: "Pool Table",
-        quantity: "3 tables",
-        time: "6:30 PM - 8:30 PM",
-        duration: "2 hours",
-      },
-      {
-        name: "Neo Shuffleboard",
-        quantity: "2 tables",
-        time: "6:30 PM - 8:30 PM",
-        duration: "2 hours",
-      },
-      {
-        name: "Gem Room",
-        quantity: "1 room",
-        time: "6:30 PM - 8:30 PM",
-        duration: "2 hours",
-      },
-    ],
-    verification_status:
-      "Host update applied: bowling reduced to lanes 1-6, darts moved to lanes 4-5, and Gem Room replaces Prime Room from 6:30 PM - 8:30 PM.",
   },
 };
 
@@ -252,9 +189,10 @@ const floorPlanByDate: Record<string, DateConfig> = {
   "2026-07-15": { image: "/floor-plans/july-15-lexisnexis.png" },
   "2026-07-17": { image: "/floor-plans/july-17-fanning-howey.png" },
   "2026-07-19": { image: "/floor-plans/july-19-husbands-60th-birthday.png" },
-  "2026-07-21": { image: "/floor-plans/july-21-beacon-investing.png" },
+  "2026-07-21": { image: "/floor-plans/july-21-corporate-event.png" },
   "2026-07-22": { image: "/floor-plans/july-22-north-dayton-school-of-discovery.png" },
   "2026-07-23": { image: "/floor-plans/july-23-floor-plans.png" },
+  "2026-07-25": { image: "/floor-plans/july-25-floor-plans.png" },
 };
 
 const entertainmentScheduleByDate: Record<string, DateConfig> = {
@@ -280,11 +218,11 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-14": {
     image: "/entertainment-schedules/july-14-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull June 25, 2026",
+    source: "Tripleseat BEO/API pull July 14, 2026",
   },
   "2026-07-15": {
     image: "/entertainment-schedules/july-15-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 10, 2026",
+    source: "Tripleseat BEO/API pull July 14, 2026",
   },
   "2026-07-17": {
     image: "/entertainment-schedules/july-17-entertainment-schedule.png",
@@ -292,19 +230,23 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-19": {
     image: "/entertainment-schedules/july-19-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 7, 2026",
+    source: "Tripleseat BEO/API pull July 14, 2026",
   },
   "2026-07-21": {
     image: "/entertainment-schedules/july-21-entertainment-schedule.png",
-    source: "Tripleseat API pull June 25, 2026; no BEO view returned",
+    source: "Tripleseat BEO/API pull July 14, 2026",
   },
   "2026-07-22": {
     image: "/entertainment-schedules/july-22-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 10, 2026",
+    source: "Tripleseat BEO/API pull July 14, 2026",
   },
   "2026-07-23": {
     image: "/entertainment-schedules/july-23-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 10, 2026",
+    source: "Tripleseat BEO/API pull July 14, 2026",
+  },
+  "2026-07-25": {
+    image: "/entertainment-schedules/july-25-entertainment-schedule.png",
+    source: "Tripleseat BEO/API pull July 14, 2026",
   },
 };
 

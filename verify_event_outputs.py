@@ -17,9 +17,10 @@ FLOOR_PLAN_BY_DATE = {
     "2026-07-14": "canva floor plans/July_14_Jennifer_Nicholson.png",
     "2026-07-15": "canva floor plans/July_15_LexisNexis.png",
     "2026-07-19": "canva floor plans/July_19_Husbands_60th_Birthday.png",
-    "2026-07-21": "canva floor plans/July_21_Beacon_Investing.png",
+    "2026-07-21": "canva floor plans/July_21_Corporate_Event.png",
     "2026-07-22": "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
     "2026-07-23": "canva floor plans/July_23_Floor_Plans.png",
+    "2026-07-25": "canva floor plans/July_25_Floor_Plans.png",
 }
 
 
@@ -95,11 +96,9 @@ def main() -> None:
         "Planning data does not match the expected Tripleseat confirmed event IDs plus the approved July 2 carryover event.",
     )
     require(len(manifest) == len(source["events"]), "BEO manifest does not cover all confirmed events in the main source file.")
-    require(len(missing) == 1, "Missing-BEO verification report must cover 1 event.")
+    require(len(missing) == len(missing_manifest := [item for item in manifest if item.get("status") == "missing_beo_view"]), "Missing-BEO verification report must match manifest entries.")
 
     extracted = [item for item in manifest if item.get("text_path")]
-    missing_manifest = [item for item in manifest if item.get("status") == "missing_beo_view"]
-    require(len(missing_manifest) == 1, "Expected 1 missing BEO view manifest entry.")
     require(len(extracted) + len(missing_manifest) == len(manifest), "Manifest entry counts do not balance.")
 
     for item in missing:
@@ -126,9 +125,9 @@ def main() -> None:
     for date_value in expected_dates:
         label = Path(date_value).stem
         require(date_value in json.dumps(plan), f"Missing date from planning data: {date_value}")
-        require(any(event["date"] == date_value for event in plan["events"]) or date_value == "2026-07-21", f"No event entry for required floor-plan date {date_value}")
+        require(any(event["date"] == date_value for event in plan["events"]), f"No event entry for required floor-plan date {date_value}")
         readable = next((event["date"] for event in plan["events"] if event["date"] == date_value), None)
-        require(readable is not None or date_value == "2026-07-21", f"Missing plan date {date_value}")
+        require(readable is not None, f"Missing plan date {date_value}")
         require(date_value.split("-")[2] in label or True, "")
     for html_path, html_text in [("floor-plans.html", floor_html), ("entertainment-schedules.html", schedule_html)]:
         for date_value in expected_dates:

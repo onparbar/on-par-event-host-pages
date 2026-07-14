@@ -411,37 +411,49 @@
       "name": "Jennifer Nicholson",
       "date": "2026-07-14",
       "day": "Tuesday",
-      "time": "6:30 PM - 9:30 PM",
-      "guest_count": 30,
+      "time": "6:00 PM - 9:00 PM",
+      "guest_count": 22,
       "rooms": [
         "Big Show",
         "Gem Room",
-        "Royal Room"
+        "Disco Inferno"
       ],
       "color": "#a855f7",
       "food": [
-        "The Front Nine w/COOKIES | TACO BAR - Food + COOKIES",
-        "Pretzel Bite Platter"
+        "The Front Nine w/COOKIES | TACO BAR - Food + desserts"
       ],
       "drink_options": [
         "The Back Nine - Beverage Only",
-        "Soft drinks free of charge"
+        "Soft drinks included"
       ],
       "entertainment": [
         {
+          "name": "The Big Show",
+          "quantity": "1 private space",
+          "time": "6:00 PM - 8:00 PM",
+          "duration": "2 hours"
+        },
+        {
           "name": "Gem Room",
           "quantity": "1 room",
-          "time": "6:30 PM - 9:30 PM",
-          "duration": "3 hours"
+          "time": "8:00 PM - 10:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Disco Inferno",
+          "quantity": "1 room",
+          "time": "8:00 PM - 9:30 PM",
+          "duration": "1.5 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; Big Show/Gem/Royal room setup details flagged",
+      "verification_status": "BEO checked above billing section; guest count, food setup, and karaoke timing updated; Gem Room timing extends past the event summary end and remains flagged.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-14_jennifer-nicholson_beo.txt",
       "special_instructions": [
         "Black bean and lettuce.",
-        "Food setup in Royal Room from 6:30 PM - 7:30 PM.",
-        "Presentation at 7:00 PM.",
-        "Entertainment from 8:00 PM - 9:30 PM."
+        "Using the main public karaoke space from 6:00 PM - 8:00 PM.",
+        "Food setup in public karaoke from 6:00 PM - 8:00 PM.",
+        "Presentation from 6:00 PM - 8:00 PM.",
+        "The current BEO also mentions a public stage/Gem Room charge from 8:00 PM - 10:00 PM while the event summary ends at 9:00 PM."
       ]
     },
     {
@@ -499,11 +511,15 @@
       "guest_count": 110,
       "rooms": [
         "VIP 1",
-        "VIP 2"
+        "VIP 2",
+        "Gem Room"
       ],
       "color": "#2f8f46",
       "food": [
         "The Full Course | TACO BAR - Food + Beverage",
+        "Tater Keg Platter",
+        "Mozzarella Sticks",
+        "Dessert Platter",
         "Veggie Tray"
       ],
       "drink_options": [
@@ -513,7 +529,13 @@
       "entertainment": [
         {
           "name": "Duckpin Bowling",
-          "quantity": "7 lanes",
+          "quantity": "6 lanes",
+          "time": "6:30 PM - 8:30 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Darts",
+          "quantity": "2 lanes",
           "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         },
@@ -530,16 +552,16 @@
           "duration": "2 hours"
         },
         {
-          "name": "Prime Room",
+          "name": "Gem Room",
           "quantity": "1 room",
           "time": "6:30 PM - 8:30 PM",
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; entertainment times now listed on the current BEO",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; Gem Room replaces Prime Room and entertainment times are now listed on the current BEO.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-15_lexisnexis-07-15-2026_beo.txt",
       "special_instructions": [
-        "Booking description requests the same games, karaoke, and food as the July 9, 2026 event."
+        "Add 2 small tables for the 2 veggie trays and dessert."
       ]
     },
     {
@@ -567,27 +589,48 @@
       ]
     },
     {
-      "id": 58856139,
-      "name": "Beacon Investing",
+      "id": 61044514,
+      "name": "Corporate Event",
       "date": "2026-07-21",
       "day": "Tuesday",
-      "time": "5:30 PM - 7:30 PM",
-      "guest_count": 13,
+      "time": "5:00 PM - 7:00 PM",
+      "guest_count": 25,
       "rooms": [
-        "VIP 2"
+        "Main Dining Room"
       ],
       "color": "#0891b2",
       "food": [
-        "No BEO document view returned by Tripleseat API"
+        "The Full Course | TACO BAR - Food + Beverage"
       ],
       "drink_options": [
-        "No BEO document view returned by Tripleseat API"
+        "Food + Beverage package",
+        "Soft drinks included"
       ],
-      "entertainment": [],
-      "verification_status": "API event and booking fields checked; no BEO document view returned; room assignment updated to VIP 2",
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "5:30 PM - 7:30 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Darts",
+          "quantity": "3 lanes",
+          "time": "7:30 PM - 9:30 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Pool Table",
+          "quantity": "3 tables",
+          "time": "7:30 PM - 9:30 PM",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; July 21 event replaced Beacon Investing and entertainment add-ons extend past the event summary end time.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-21_corporate-event_beo.txt",
       "special_instructions": [
-        "No BEO document view returned by Tripleseat API.",
-        "VIP 2 is listed in the current API room assignment."
+        "Main Dining Room is listed in the current BEO event summary.",
+        "Bowling runs 5:30 PM - 7:30 PM while darts and pool run 7:30 PM - 9:30 PM on the current BEO."
       ]
     },
     {
@@ -818,6 +861,76 @@
       "beo_text": "outputs/tripleseat/beo_text/2026-07-23_gs1_beo.txt",
       "special_instructions": [
         "VIP 1 and VIP 2 are listed in the current BEO event summary."
+      ]
+    },
+    {
+      "id": 61184653,
+      "name": "40th birthday party",
+      "date": "2026-07-25",
+      "day": "Saturday",
+      "time": "3:00 PM - 5:00 PM",
+      "guest_count": 30,
+      "rooms": [
+        "VIP 1"
+      ],
+      "color": "#f97316",
+      "food": [
+        "Appetizer Bar"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "1 lane",
+          "time": "Time not listed on BEO",
+          "duration": ""
+        },
+        {
+          "name": "Mini Golf",
+          "quantity": "30 guests",
+          "time": "Untimed",
+          "duration": "9 holes"
+        },
+        {
+          "name": "Darts",
+          "quantity": "1 lane",
+          "time": "Time not listed on BEO",
+          "duration": ""
+        }
+      ],
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; entertainment times are not listed on the current Event Order.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-25_40th-birthday-party_beo.txt",
+      "special_instructions": [
+        "VIP 1 is listed in the current Event Order summary.",
+        "The current Event Order lists bowling and darts but does not show exact entertainment timing or duration."
+      ]
+    },
+    {
+      "id": 57693121,
+      "name": "20 Year Beavercreek Reunion",
+      "date": "2026-07-25",
+      "day": "Saturday",
+      "time": "6:00 PM - 10:00 PM",
+      "guest_count": 120,
+      "rooms": [
+        "VIP 1",
+        "VIP 2"
+      ],
+      "color": "#2f8f46",
+      "food": [
+        "The Front Nine | TACO BAR - Food Only"
+      ],
+      "drink_options": [
+        "Soft drinks included"
+      ],
+      "entertainment": [],
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-25_20-year-beavercreek-reunion_beo.txt",
+      "special_instructions": [
+        "VIP 1 and VIP 2 are listed in the current BEO event summary.",
+        "VIP 1 and VIP 2 do not provide seated capacity for 120 guests; confirm overflow seating approach if operations needs a full seating map."
       ]
     }
   ]

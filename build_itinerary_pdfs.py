@@ -105,6 +105,8 @@ def entertainment_sections(event: dict) -> list[tuple[str, str]]:
             detail = f"{quantity} FOR {duration} | {compact_time(time)}"
         elif time and "untimed" in time.lower():
             detail = f"{quantity} | UNTIMED"
+        elif time and "time not listed" in time.lower():
+            detail = f"{quantity} | TIME NOT LISTED ON BEO"
         elif duration:
             detail = f"{quantity} FOR {duration} | TIME NOT LISTED ON BEO"
         else:

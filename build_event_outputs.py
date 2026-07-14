@@ -54,9 +54,10 @@ FLOOR_PLAN_BY_DATE = {
     "2026-07-14": "canva floor plans/July_14_Jennifer_Nicholson.png",
     "2026-07-15": "canva floor plans/July_15_LexisNexis.png",
     "2026-07-19": "canva floor plans/July_19_Husbands_60th_Birthday.png",
-    "2026-07-21": "canva floor plans/July_21_Beacon_Investing.png",
+    "2026-07-21": "canva floor plans/July_21_Corporate_Event.png",
     "2026-07-22": "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
     "2026-07-23": "canva floor plans/July_23_Floor_Plans.png",
+    "2026-07-25": "canva floor plans/July_25_Floor_Plans.png",
 }
 
 

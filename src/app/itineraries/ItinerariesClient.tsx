@@ -61,6 +61,10 @@ function entertainmentGroups(event: EventPlan) {
 
     if (item.time && !/time not listed|untimed/i.test(item.time)) {
       detailParts.push(compactTimeRange(item.time));
+    } else if (item.time && /untimed/i.test(item.time)) {
+      detailParts.push("UNTIMED");
+    } else if (item.time && /time not listed/i.test(item.time)) {
+      detailParts.push("TIME NOT LISTED ON BEO");
     } else if (item.duration) {
       detailParts.push(upper(item.duration));
     }
