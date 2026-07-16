@@ -193,6 +193,7 @@ const floorPlanByDate: Record<string, DateConfig> = {
   "2026-07-22": { image: "/floor-plans/july-22-north-dayton-school-of-discovery.png" },
   "2026-07-23": { image: "/floor-plans/july-23-floor-plans.png" },
   "2026-07-25": { image: "/floor-plans/july-25-floor-plans.png" },
+  "2026-07-29": { image: "/floor-plans/july-29-work-outing-networking.png" },
 };
 
 const entertainmentScheduleByDate: Record<string, DateConfig> = {
@@ -247,6 +248,10 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   "2026-07-25": {
     image: "/entertainment-schedules/july-25-entertainment-schedule.png",
     source: "Tripleseat BEO/API pull July 14, 2026",
+  },
+  "2026-07-29": {
+    image: "/entertainment-schedules/july-29-entertainment-schedule.png",
+    source: "Tripleseat BEO/API pull July 16, 2026; entertainment times missing on BEO",
   },
 };
 

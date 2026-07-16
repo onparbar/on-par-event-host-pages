@@ -34,7 +34,7 @@ def load_font(path: str, size: int) -> ImageFont.ImageFont:
 
 
 def slugify(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value)
+    normalized = unicodedata.normalize("NFKD", value.replace("’", "'").replace("‘", "'"))
     ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
     return slug or "event"

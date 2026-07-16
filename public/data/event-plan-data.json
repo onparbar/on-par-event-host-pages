@@ -566,7 +566,7 @@
     },
     {
       "id": 55716141,
-      "name": "Husband's 60th birthday",
+      "name": "Husband’s Surprise 60th birthday",
       "date": "2026-07-19",
       "day": "Sunday",
       "time": "1:00 PM - 3:00 PM",
@@ -583,7 +583,7 @@
       ],
       "entertainment": [],
       "verification_status": "BEO checked above billing section; food package label missing from document text",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-19_husband-s-60th-birthday_beo.txt",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-19_husband-s-surprise-60th-birthday_beo.txt",
       "special_instructions": [
         "The extracted BEO shows Taco Bar under food-bar choices but does not show the package label."
       ]
@@ -931,6 +931,46 @@
       "special_instructions": [
         "VIP 1 and VIP 2 are listed in the current BEO event summary.",
         "VIP 1 and VIP 2 do not provide seated capacity for 120 guests; confirm overflow seating approach if operations needs a full seating map."
+      ]
+    },
+    {
+      "id": 60525457,
+      "name": "Work outing/networking",
+      "date": "2026-07-29",
+      "day": "Wednesday",
+      "time": "5:30 PM - 7:30 PM",
+      "guest_count": 25,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#a855f7",
+      "food": [
+        "The Full Course | TACO BAR - Food + Beverage"
+      ],
+      "drink_options": [
+        "Food + Beverage package",
+        "Soft drinks included"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "Qty 3 on BEO",
+          "time": "Time not listed on BEO",
+          "duration": "Bowling quantity/timing unclear on BEO"
+        },
+        {
+          "name": "Neo Shuffleboard",
+          "quantity": "1 table",
+          "time": "Time not listed on BEO",
+          "duration": "Duration not listed on BEO"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new July 29 event added; entertainment times are not listed on the current BEO and bowling quantity is unclear.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-29_work-outing-networking_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The current BEO lists bowling quantity as 3 and Neo Shuffleboard quantity as 1, but does not show exact entertainment timing.",
+        "Bowling quantity and timing are unclear on the current BEO; itinerary and schedule should treat entertainment timing as missing."
       ]
     }
   ]

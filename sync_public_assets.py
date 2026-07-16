@@ -29,6 +29,7 @@ STATIC_ASSET_MAP = {
     "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png": "public/floor-plans/july-22-north-dayton-school-of-discovery.png",
     "canva floor plans/July_23_Floor_Plans.png": "public/floor-plans/july-23-floor-plans.png",
     "canva floor plans/July_25_Floor_Plans.png": "public/floor-plans/july-25-floor-plans.png",
+    "canva floor plans/July_29_Work_Outing_Networking.png": "public/floor-plans/july-29-work-outing-networking.png",
     "entertainment schedules/may_30_entertainment_schedule.png": "public/entertainment-schedules/may-30-entertainment-schedule.png",
     "entertainment schedules/may_31_entertainment_schedule.png": "public/entertainment-schedules/may-31-entertainment-schedule.png",
     "entertainment schedules/june_05_entertainment_schedule.png": "public/entertainment-schedules/june-05-entertainment-schedule.png",
@@ -53,12 +54,13 @@ STATIC_ASSET_MAP = {
     "entertainment schedules/july_22_entertainment_schedule.png": "public/entertainment-schedules/july-22-entertainment-schedule.png",
     "entertainment schedules/july_23_entertainment_schedule.png": "public/entertainment-schedules/july-23-entertainment-schedule.png",
     "entertainment schedules/july_25_entertainment_schedule.png": "public/entertainment-schedules/july-25-entertainment-schedule.png",
+    "entertainment schedules/july_29_entertainment_schedule.png": "public/entertainment-schedules/july-29-entertainment-schedule.png",
     "outputs/tripleseat/event_plan_data.json": "public/data/event-plan-data.json",
 }
 
 
 def slugify(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value)
+    normalized = unicodedata.normalize("NFKD", value.replace("’", "'").replace("‘", "'"))
     ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
     return re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
 
