@@ -15,6 +15,10 @@ type TripleseatEvent = {
   };
 };
 
+const hostedEventPocById: Record<number, string> = {
+  58984337: "Rose Lefeld",
+};
+
 export type ChecklistEvent = EventPlan & {
   dateLabel: string;
   poc: string;
@@ -45,6 +49,7 @@ export const checklistEvents: ChecklistEvent[] = events.map((event) => {
   const poc =
     contactName(sourceEvent?.booking?.contact) ||
     contactName(sourceEvent?.contact) ||
+    hostedEventPocById[event.id] ||
     "No Tripleseat contact listed";
 
   return {

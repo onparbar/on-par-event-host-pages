@@ -72,7 +72,80 @@ const eventOverrides: Record<number, Partial<EventPlan>> = {
   },
 };
 
-const hostedOnlyEvents: EventPlan[] = [];
+const hostedOnlyEvents: EventPlan[] = [
+  {
+    id: 58984337,
+    name: "Fanning Howey (corporate anniversary/work outing)",
+    date: "2026-07-17",
+    day: "Friday",
+    time: "6:00 PM - 12:00 AM",
+    guest_count: 190,
+    rooms: ["Full Building Buyout", "Main Dining Room", "Big Show"],
+    color: "#2f8f46",
+    food: [
+      "The Full Course | TACO BAR - Food + Beverage + Cookies",
+      "Wing Platter",
+      "Fry Platter",
+    ],
+    drink_options: [
+      "Food + Beverage package",
+      "Soft drinks included",
+      "Big Show private self-pour taps",
+    ],
+    entertainment: [
+      {
+        name: "Darts",
+        quantity: "5 lanes",
+        time: "6:00 PM - 12:00 AM",
+        duration: "6 hours",
+      },
+      {
+        name: "Duckpin Bowling",
+        quantity: "12 lanes",
+        time: "6:00 PM - 12:00 AM",
+        duration: "6 hours",
+      },
+      {
+        name: "Mini Golf",
+        quantity: "250 guests",
+        time: "6:00 PM - 12:00 AM",
+        duration: "9 holes",
+      },
+      {
+        name: "Pool Tables",
+        quantity: "3 tables",
+        time: "6:00 PM - 12:00 AM",
+        duration: "6 hours",
+      },
+      {
+        name: "Neo Shuffleboard",
+        quantity: "2 lanes",
+        time: "6:00 PM - 12:00 AM",
+        duration: "6 hours",
+      },
+      {
+        name: "The Big Show",
+        quantity: "1 private space",
+        time: "6:00 PM - 12:00 AM",
+        duration: "6 hours",
+      },
+      {
+        name: "Karaoke Rooms",
+        quantity: "5 rooms",
+        time: "6:00 PM - 12:00 AM",
+        duration: "6 hours",
+      },
+    ],
+    special_instructions: [
+      "5:00 PM - 6:00 PM setup uses 3 tables for school supplies and backpack assembly.",
+      "Entire building reserved from 6:00 PM - 1:00 AM per BEO special instructions.",
+      "Food quantity on the BEO is 250 while the event summary guest count is 190.",
+      "Floor plan food setup uses both VIP food tables.",
+    ],
+    verification_status:
+      "BEO checked above billing section; event is treated as a full-building buyout; entertainment timing set to 6:00 PM - 12:00 AM per latest host update.",
+  },
+];
 
 const mergedBaseEvents = baseEvents.map((event) => (eventOverrides[event.id] ? { ...event, ...eventOverrides[event.id] } : event));
 
@@ -114,6 +187,7 @@ const floorPlanByDate: Record<string, DateConfig> = {
   "2026-07-10": { image: "/floor-plans/july-10-floor-plans.png" },
   "2026-07-14": { image: "/floor-plans/july-14-jennifer-nicholson.png" },
   "2026-07-15": { image: "/floor-plans/july-15-lexisnexis.png" },
+  "2026-07-17": { image: "/floor-plans/july-17-fanning-howey.png" },
   "2026-07-19": { image: "/floor-plans/july-19-husbands-60th-birthday.png" },
   "2026-07-21": { image: "/floor-plans/july-21-key-sight.png" },
   "2026-07-22": { image: "/floor-plans/july-22-north-dayton-school-of-discovery.png" },
@@ -151,6 +225,10 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   "2026-07-15": {
     image: "/entertainment-schedules/july-15-entertainment-schedule.png",
     source: "Tripleseat BEO/API pull July 14, 2026",
+  },
+  "2026-07-17": {
+    image: "/entertainment-schedules/july-17-entertainment-schedule.png",
+    source: "Tripleseat BEO/API pull July 17, 2026; full-building buyout host update",
   },
   "2026-07-19": {
     image: "/entertainment-schedules/july-19-entertainment-schedule.png",
