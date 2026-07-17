@@ -17,11 +17,12 @@ FLOOR_PLAN_BY_DATE = {
     "2026-07-14": "canva floor plans/July_14_Jennifer_Nicholson.png",
     "2026-07-15": "canva floor plans/July_15_LexisNexis.png",
     "2026-07-19": "canva floor plans/July_19_Husbands_60th_Birthday.png",
-    "2026-07-21": "canva floor plans/July_21_Corporate_Event.png",
+    "2026-07-21": "canva floor plans/July_21_Key_Sight.png",
     "2026-07-22": "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
     "2026-07-23": "canva floor plans/July_23_Floor_Plans.png",
     "2026-07-25": "canva floor plans/July_25_Floor_Plans.png",
     "2026-07-29": "canva floor plans/July_29_Work_Outing_Networking.png",
+    "2026-07-30": "canva floor plans/July_30_University_Of_Dayton_EdD_Program.png",
 }
 
 
@@ -64,7 +65,7 @@ def main() -> None:
         "host/index.html",
         "host/floor-plans.html",
         "host/entertainment-schedules.html",
-        "ITINERARY/june-25-to-july-23-2026-event-itineraries.html",
+        "ITINERARY/june-25-to-july-30-2026-event-itineraries.html",
         "outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json",
         "outputs/tripleseat/june-02-2026-definite-closed-events.json",
         "outputs/tripleseat/beo_manifest.json",
@@ -150,7 +151,7 @@ def main() -> None:
             readable = f"{month_name} {int(day)}, {year}"
             require(readable in html_text, f"Missing {html_path} date section: {readable}")
 
-    itinerary_html = read("ITINERARY/june-25-to-july-23-2026-event-itineraries.html")
+    itinerary_html = read("ITINERARY/june-25-to-july-30-2026-event-itineraries.html")
     require(itinerary_html.count('class="itinerary-card"') == len(plan["events"]), "Itinerary card count does not match planning data.")
 
     carryover_ids = {event["id"] for event in july_two_source["events"]}

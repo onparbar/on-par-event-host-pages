@@ -25,11 +25,12 @@ STATIC_ASSET_MAP = {
     "canva floor plans/July_14_Jennifer_Nicholson.png": "public/floor-plans/july-14-jennifer-nicholson.png",
     "canva floor plans/July_15_LexisNexis.png": "public/floor-plans/july-15-lexisnexis.png",
     "canva floor plans/July_19_Husbands_60th_Birthday.png": "public/floor-plans/july-19-husbands-60th-birthday.png",
-    "canva floor plans/July_21_Corporate_Event.png": "public/floor-plans/july-21-corporate-event.png",
+    "canva floor plans/July_21_Key_Sight.png": "public/floor-plans/july-21-key-sight.png",
     "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png": "public/floor-plans/july-22-north-dayton-school-of-discovery.png",
     "canva floor plans/July_23_Floor_Plans.png": "public/floor-plans/july-23-floor-plans.png",
     "canva floor plans/July_25_Floor_Plans.png": "public/floor-plans/july-25-floor-plans.png",
     "canva floor plans/July_29_Work_Outing_Networking.png": "public/floor-plans/july-29-work-outing-networking.png",
+    "canva floor plans/July_30_University_Of_Dayton_EdD_Program.png": "public/floor-plans/july-30-university-of-dayton-edd-program.png",
     "entertainment schedules/may_30_entertainment_schedule.png": "public/entertainment-schedules/may-30-entertainment-schedule.png",
     "entertainment schedules/may_31_entertainment_schedule.png": "public/entertainment-schedules/may-31-entertainment-schedule.png",
     "entertainment schedules/june_05_entertainment_schedule.png": "public/entertainment-schedules/june-05-entertainment-schedule.png",
@@ -55,6 +56,7 @@ STATIC_ASSET_MAP = {
     "entertainment schedules/july_23_entertainment_schedule.png": "public/entertainment-schedules/july-23-entertainment-schedule.png",
     "entertainment schedules/july_25_entertainment_schedule.png": "public/entertainment-schedules/july-25-entertainment-schedule.png",
     "entertainment schedules/july_29_entertainment_schedule.png": "public/entertainment-schedules/july-29-entertainment-schedule.png",
+    "entertainment schedules/july_30_entertainment_schedule.png": "public/entertainment-schedules/july-30-entertainment-schedule.png",
     "outputs/tripleseat/event_plan_data.json": "public/data/event-plan-data.json",
 }
 

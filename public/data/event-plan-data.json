@@ -590,13 +590,13 @@
     },
     {
       "id": 61044514,
-      "name": "Corporate Event",
+      "name": "Key Sight",
       "date": "2026-07-21",
       "day": "Tuesday",
       "time": "5:00 PM - 7:00 PM",
       "guest_count": 25,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1"
       ],
       "color": "#0891b2",
       "food": [
@@ -626,10 +626,10 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; July 21 event replaced Beacon Investing and entertainment add-ons extend past the event summary end time.",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-21_corporate-event_beo.txt",
+      "verification_status": "BEO checked above billing section; event renamed to Key Sight, room assignment updated to VIP 1, and entertainment add-ons extend past the event summary end time.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-21_key-sight_beo.txt",
       "special_instructions": [
-        "Main Dining Room is listed in the current BEO event summary.",
+        "VIP 1 is listed in the current BEO event summary.",
         "Bowling runs 5:30 PM - 7:30 PM while darts and pool run 7:30 PM - 9:30 PM on the current BEO."
       ]
     },
@@ -685,7 +685,7 @@
       "time": "6:00 PM - 8:00 PM",
       "guest_count": 19,
       "rooms": [
-        "VIP 1"
+        "VIP 2"
       ],
       "color": "#0891b2",
       "food": [
@@ -698,7 +698,7 @@
       "entertainment": [
         {
           "name": "Mini Golf",
-          "quantity": "19 guests",
+          "quantity": "20 guests",
           "time": "Untimed",
           "duration": "Course count not listed on BEO"
         },
@@ -709,11 +709,11 @@
           "duration": ""
         }
       ],
-      "verification_status": "BEO checked above billing section; entertainment times are not listed on the current BEO",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 2; entertainment times are not listed on the current Event Order.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-22_motility-team-event_beo.txt",
       "special_instructions": [
-        "VIP 1 is listed in the current BEO event summary.",
-        "The current BEO lists bowling quantity but does not show exact bowling timing or duration."
+        "VIP 2 is listed in the current Event Order summary.",
+        "The current Event Order lists bowling quantity but does not show exact bowling timing or duration."
       ]
     },
     {
@@ -722,7 +722,7 @@
       "date": "2026-07-23",
       "day": "Thursday",
       "time": "1:00 PM - 3:00 PM",
-      "guest_count": 23,
+      "guest_count": 25,
       "rooms": [
         "Main Dining Room"
       ],
@@ -738,24 +738,29 @@
         {
           "name": "Darts",
           "quantity": "2 lanes",
-          "time": "Time not listed on BEO",
+          "time": "1:30 PM - 3:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Duckpin Bowling",
           "quantity": "2 lanes",
-          "time": "Time not listed on BEO",
+          "time": "1:30 PM - 3:30 PM",
           "duration": "2 hours"
         },
         {
           "name": "Neo Shuffleboard",
           "quantity": "2 tables",
-          "time": "Time not listed on BEO",
+          "time": "1:30 PM - 3:30 PM",
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; bowling quantity interpreted from lane-hours line",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-23_danis-07-23-2026_beo.txt"
+      "verification_status": "BEO checked above billing section; guest count updated to 25 and entertainment times are now listed on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-23_danis-07-23-2026_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "Darts, bowling, and Neo Shuffleboard all run 1:30 PM - 3:30 PM on the current BEO.",
+        "Duckpin bowling quantity is interpreted from the 4 lane-hours line on the BEO."
+      ]
     },
     {
       "id": 60452178,
@@ -941,7 +946,7 @@
       "time": "5:30 PM - 7:30 PM",
       "guest_count": 25,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1"
       ],
       "color": "#a855f7",
       "food": [
@@ -965,12 +970,52 @@
           "duration": "Duration not listed on BEO"
         }
       ],
-      "verification_status": "BEO checked above billing section; new July 29 event added; entertainment times are not listed on the current BEO and bowling quantity is unclear.",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; entertainment times are not listed on the current BEO and bowling quantity is unclear.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-29_work-outing-networking_beo.txt",
       "special_instructions": [
-        "Main Dining Room is listed in the current BEO event summary.",
+        "VIP 1 is listed in the current BEO event summary.",
         "The current BEO lists bowling quantity as 3 and Neo Shuffleboard quantity as 1, but does not show exact entertainment timing.",
         "Bowling quantity and timing are unclear on the current BEO; itinerary and schedule should treat entertainment timing as missing."
+      ]
+    },
+    {
+      "id": 60525079,
+      "name": "University of Dayton EdD Program",
+      "date": "2026-07-30",
+      "day": "Thursday",
+      "time": "7:00 PM - 9:00 PM",
+      "guest_count": 44,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#0891b2",
+      "food": [
+        "The Full Course w/Assorted Desserts | APPETIZER BAR - Food + Beverage + COOKIES",
+        "Veggie Tray"
+      ],
+      "drink_options": [
+        "Food + Beverage package",
+        "Soft drinks included"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "2 lanes",
+          "time": "7:00 PM - 9:00 PM",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "1 lane",
+          "time": "7:00 PM - 9:00 PM",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new July 30 event added.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-30_university-of-dayton-edd-program_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "Tax exempt."
       ]
     }
   ]

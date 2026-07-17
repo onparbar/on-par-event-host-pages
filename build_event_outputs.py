@@ -54,11 +54,12 @@ FLOOR_PLAN_BY_DATE = {
     "2026-07-14": "canva floor plans/July_14_Jennifer_Nicholson.png",
     "2026-07-15": "canva floor plans/July_15_LexisNexis.png",
     "2026-07-19": "canva floor plans/July_19_Husbands_60th_Birthday.png",
-    "2026-07-21": "canva floor plans/July_21_Corporate_Event.png",
+    "2026-07-21": "canva floor plans/July_21_Key_Sight.png",
     "2026-07-22": "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
     "2026-07-23": "canva floor plans/July_23_Floor_Plans.png",
     "2026-07-25": "canva floor plans/July_25_Floor_Plans.png",
     "2026-07-29": "canva floor plans/July_29_Work_Outing_Networking.png",
+    "2026-07-30": "canva floor plans/July_30_University_Of_Dayton_EdD_Program.png",
 }
 
 
@@ -388,7 +389,7 @@ def build_itinerary(events: list[dict]) -> Path:
       </article>"""
         )
     body = f'    <section><div class="itinerary-grid">\n{"".join(cards)}\n    </div></section>'
-    out = ITINERARY_DIR / "june-25-to-july-23-2026-event-itineraries.html"
+    out = ITINERARY_DIR / "june-25-to-july-30-2026-event-itineraries.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html_page("On Par Event Itineraries", body), encoding="utf-8")
     return out
