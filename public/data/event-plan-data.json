@@ -791,9 +791,15 @@
           "duration": "1 hour"
         },
         {
+          "name": "Darts",
+          "quantity": "2 lanes",
+          "time": "3:30 PM - 4:30 PM",
+          "duration": "1 hour"
+        },
+        {
           "name": "Duckpin Bowling",
-          "quantity": "4 lanes",
-          "time": "2:30 PM - 3:30 PM",
+          "quantity": "2 lanes",
+          "time": "3:30 PM - 4:30 PM",
           "duration": "1 hour"
         },
         {
@@ -803,12 +809,13 @@
           "duration": "9 holes"
         }
       ],
-      "verification_status": "BEO checked above billing section; host lane assignments applied and Branch Picnic pool tables reduced to 2.",
+      "verification_status": "BEO checked above billing section; host override applied with Branch Picnic on darts lanes 1-2 and bowling lanes 11-12 from 3:30 PM - 4:30 PM, and pool tables reduced to 2.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-23_branch-picnic_beo.txt",
       "special_instructions": [
         "Main Dining Room is listed in the current BEO event summary.",
-        "Pool tables and duckpin bowling both run 2:30 PM - 3:30 PM on the current BEO.",
-        "Duckpin bowling uses lanes 7-10 and pool tables are reduced to 2 for the host setup.",
+        "Pool tables run 2:30 PM - 3:30 PM on the current BEO.",
+        "Host override moves Branch Picnic to darts lanes 1-2 and duckpin bowling lanes 11-12 from 3:30 PM - 4:30 PM.",
+        "Pool tables are reduced to 2 for the host setup.",
         "Mini golf remains untimed on the current BEO."
       ]
     },
@@ -883,7 +890,7 @@
         },
         {
           "name": "Duckpin Bowling",
-          "quantity": "6 lanes",
+          "quantity": "10 lanes",
           "time": "2:30 PM - 4:30 PM",
           "duration": "2 hours"
         },
@@ -906,17 +913,17 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; host darts and bowling lane assignments applied.",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; host darts and bowling lane assignments applied with bowling lanes 1-10.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-23_gs1_beo.txt",
       "special_instructions": [
         "VIP 1 and VIP 2 are listed in the current BEO event summary.",
         "Darts use lanes 3, 4, and 5 from 2:30 PM - 4:30 PM for the host setup.",
-        "Duckpin bowling uses lanes 1-6 from 2:30 PM - 4:30 PM for the host setup."
+        "Duckpin bowling uses lanes 1-10 from 2:30 PM - 4:30 PM for the host setup."
       ]
     },
     {
       "id": 61184653,
-      "name": "40th birthday party",
+      "name": "Surprise 40th Birthday Party for Michael",
       "date": "2026-07-25",
       "day": "Saturday",
       "time": "3:00 PM - 5:00 PM",
@@ -951,10 +958,11 @@
           "duration": ""
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; entertainment times are not listed on the current Event Order.",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; host label updated for Michael's surprise 40th birthday party; entertainment times are not listed on the current Event Order.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-25_40th-birthday-party_beo.txt",
       "special_instructions": [
         "VIP 1 is listed in the current Event Order summary.",
+        "Tripleseat currently names this event only as 40th birthday party; host pages identify it as Surprise 40th Birthday Party for Michael per organizer update.",
         "The current Event Order lists bowling and darts but does not show exact entertainment timing or duration."
       ]
     },

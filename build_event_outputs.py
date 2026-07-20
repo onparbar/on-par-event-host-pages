@@ -49,12 +49,13 @@ SCHEDULE_ROW_OVERRIDES = {
         "duckpin bowling": ["lane 11", "lane 12"],
     },
     60452178: {
+        "darts": ["lane 1", "lane 2"],
         "pool table": ["table 1", "table 2"],
-        "duckpin bowling": ["lane 7", "lane 8", "lane 9", "lane 10"],
+        "duckpin bowling": ["lane 11", "lane 12"],
     },
     58375613: {
         "darts": ["lane 3", "lane 4", "lane 5"],
-        "duckpin bowling": ["lane 1", "lane 2", "lane 3", "lane 4", "lane 5", "lane 6"],
+        "duckpin bowling": ["lane 1", "lane 2", "lane 3", "lane 4", "lane 5", "lane 6", "lane 7", "lane 8", "lane 9", "lane 10"],
     },
 }
 
