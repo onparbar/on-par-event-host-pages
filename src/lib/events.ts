@@ -36,6 +36,7 @@ export type ItineraryAsset = EventPlan & {
 type DateConfig = {
   image: string;
   source?: string;
+  events?: string[];
 };
 
 const baseEvents = (eventPlanData as { events: EventPlan[] }).events;
@@ -192,6 +193,10 @@ const floorPlanByDate: Record<string, DateConfig> = {
   "2026-07-21": { image: "/floor-plans/july-21-key-sight.png" },
   "2026-07-22": { image: "/floor-plans/july-22-north-dayton-school-of-discovery.png" },
   "2026-07-23": { image: "/floor-plans/july-23-floor-plans.png" },
+  "2026-07-24": {
+    image: "/floor-plans/july-24-sizzlin-summer-singles-mixer.png",
+    events: ["Sizzlin' Summer Singles Mixer"],
+  },
   "2026-07-25": { image: "/floor-plans/july-25-floor-plans.png" },
   "2026-07-29": { image: "/floor-plans/july-29-work-outing-networking.png" },
   "2026-07-30": { image: "/floor-plans/july-30-university-of-dayton-edd-program.png" },
@@ -265,7 +270,7 @@ function buildDateAssets(configByDate: Record<string, DateConfig>): DateAsset[] 
     date,
     label: dateLabel(date),
     image: config.image,
-    events: events.filter((event) => event.date === date).map((event) => event.name),
+    events: config.events ?? events.filter((event) => event.date === date).map((event) => event.name),
     source: config.source,
   }));
 }
