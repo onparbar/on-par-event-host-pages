@@ -282,6 +282,16 @@ export const itineraries: ItineraryAsset[] = events.map((event) => ({
 
 export const floorPlans: DateAsset[] = buildDateAssets(floorPlanByDate);
 
+export const floorPlanSpecialPages: DateAsset[] = [
+  {
+    date: "2026-07-25",
+    label: "Saturday, July 25, 2026",
+    image: "/floor-plans/july-25-christmas-in-july.png",
+    events: ["Christmas in July"],
+    source: "Saturday special page kept separate from the July 25 event floor map",
+  },
+];
+
 export const entertainmentSchedules: DateAsset[] = buildDateAssets(entertainmentScheduleByDate);
 
 export function formatEventDate(value: string) {

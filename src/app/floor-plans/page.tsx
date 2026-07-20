@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AssetImageWithOverlays from "@/app/_components/AssetImageWithOverlays";
 import { loadAdminState } from "@/lib/admin-state";
-import { floorPlans } from "@/lib/events";
+import { floorPlans, floorPlanSpecialPages } from "@/lib/events";
 
 export const metadata = {
   title: "Floor Plans | On Par Event Host",
@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function FloorPlansPage() {
   const adminState = await loadAdminState();
   const visiblePlans = floorPlans.filter((plan) => !adminState.archivedAssetKeys.includes(plan.image));
+  const visibleSpecialPages = floorPlanSpecialPages.filter((plan) => !adminState.archivedAssetKeys.includes(plan.image));
 
   return (
     <>
@@ -23,6 +24,24 @@ export default async function FloorPlansPage() {
             <p>Current floor maps, ordered by event date.</p>
           </div>
         </section>
+        {visibleSpecialPages.map((plan) => (
+          <section className="asset-section" key={`special-${plan.image}`}>
+            <h3>{plan.label} Special Page</h3>
+            <p className="asset-note">Separate from the Saturday event floor map.</p>
+            <div className="event-row">
+              {plan.events.map((event) => (
+                <span className="event-chip" key={event}>
+                  {event}
+                </span>
+              ))}
+            </div>
+            <AssetImageWithOverlays
+              alt={`Special Saturday page for ${plan.label}`}
+              image={adminState.baseImageByAsset[plan.image] ?? plan.image}
+              overlays={adminState.overlaysByAsset[plan.image] ?? []}
+            />
+          </section>
+        ))}
         {visiblePlans.map((plan) => (
           <section className="asset-section" key={plan.date}>
             <h3>{plan.label}</h3>
