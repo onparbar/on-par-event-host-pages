@@ -240,11 +240,11 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-22": {
     image: "/entertainment-schedules/july-22-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 17, 2026; some entertainment times missing on BEO",
+    source: "Tripleseat BEO/API pull July 20, 2026; Motility entertainment times are still missing and North Dayton timing conflicts with reserved-hour quantities on the BEO",
   },
   "2026-07-23": {
     image: "/entertainment-schedules/july-23-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 17, 2026; some entertainment times missing on BEO",
+    source: "Tripleseat BEO/API pull July 20, 2026",
   },
   "2026-07-25": {
     image: "/entertainment-schedules/july-25-entertainment-schedule.png",
@@ -256,7 +256,7 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-30": {
     image: "/entertainment-schedules/july-30-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 17, 2026",
+    source: "Tripleseat BEO/API pull July 20, 2026; 178th Force Support Squadron entertainment times are missing on the BEO",
   },
 };
 

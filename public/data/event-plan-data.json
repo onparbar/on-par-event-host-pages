@@ -639,7 +639,7 @@
       "date": "2026-07-22",
       "day": "Wednesday",
       "time": "4:00 PM - 6:00 PM",
-      "guest_count": 50,
+      "guest_count": 40,
       "rooms": [
         "VIP 1"
       ],
@@ -654,27 +654,28 @@
         {
           "name": "Darts",
           "quantity": "2 lanes",
-          "time": "Time not listed on BEO",
-          "duration": "1 hour"
+          "time": "4:30 PM - 5:30 PM",
+          "duration": "2 hours"
         },
         {
           "name": "Duckpin Bowling",
           "quantity": "2 lanes",
-          "time": "Time not listed on BEO",
-          "duration": "1 hour"
+          "time": "4:30 PM - 5:30 PM",
+          "duration": "2 hours"
         },
         {
           "name": "Neo Shuffleboard",
           "quantity": "1 table",
-          "time": "Time not listed on BEO",
+          "time": "4:30 PM - 5:30 PM",
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; entertainment times are not listed on the current BEO",
+      "verification_status": "BEO checked above billing section; guest count updated to 40 and entertainment times are now listed on the current BEO, but the listed 4:30 PM - 5:30 PM range conflicts with the reserved-hour quantities.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-22_north-dayton-school-of-discovery-staff-engagement-event_beo.txt",
       "special_instructions": [
         "VIP 1 is listed in the current BEO event summary.",
-        "The current BEO lists entertainment quantities and durations, but not exact start times."
+        "The current BEO shows darts, bowling, and Neo Shuffleboard from 4:30 PM - 5:30 PM.",
+        "The explicit 4:30 PM - 5:30 PM entertainment range conflicts with the reserved-hour quantities shown on the current BEO."
       ]
     },
     {
@@ -786,13 +787,13 @@
         {
           "name": "Pool Table",
           "quantity": "3 tables",
-          "time": "Time not listed on BEO",
+          "time": "2:30 PM - 3:30 PM",
           "duration": "1 hour"
         },
         {
           "name": "Duckpin Bowling",
           "quantity": "4 lanes",
-          "time": "Time not listed on BEO",
+          "time": "2:30 PM - 3:30 PM",
           "duration": "1 hour"
         },
         {
@@ -802,11 +803,53 @@
           "duration": "9 holes"
         }
       ],
-      "verification_status": "BEO checked above billing section; entertainment times are not listed on the current BEO",
+      "verification_status": "BEO checked above billing section; pool and bowling times are now listed on the current BEO.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-23_branch-picnic_beo.txt",
       "special_instructions": [
         "Main Dining Room is listed in the current BEO event summary.",
-        "The current BEO lists entertainment quantities and durations, but not exact start times."
+        "Pool tables and duckpin bowling both run 2:30 PM - 3:30 PM on the current BEO.",
+        "Mini golf remains untimed on the current BEO."
+      ]
+    },
+    {
+      "id": 61136352,
+      "name": "178th Force Support Squadron",
+      "date": "2026-07-30",
+      "day": "Thursday",
+      "time": "11:30 AM - 3:00 PM",
+      "guest_count": 45,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#f97316",
+      "food": [
+        "Tater Keg Platter",
+        "Wing Platter",
+        "Chicken Tender Platter",
+        "Veggie Tray"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "2 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new July 30 event added and entertainment times are not listed on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-30_178th-force-support-squadron_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The current BEO lists darts and bowling as 2-hour reservations, but does not show exact entertainment start times."
       ]
     },
     {
