@@ -44,6 +44,19 @@ SCHEDULE_BANDS = {
     "karaoke": {"top": 823, "row_height": 27.5, "names": ["disco", "gem", "royal", "prime", "ocean"]},
     "shuffleboard": {"top": 998, "row_height": 27.5, "names": ["lane 1", "lane 2"]},
 }
+SCHEDULE_ROW_OVERRIDES = {
+    60082920: {
+        "duckpin bowling": ["lane 11", "lane 12"],
+    },
+    60452178: {
+        "pool table": ["table 1", "table 2"],
+        "duckpin bowling": ["lane 7", "lane 8", "lane 9", "lane 10"],
+    },
+    58375613: {
+        "darts": ["lane 3", "lane 4", "lane 5"],
+        "duckpin bowling": ["lane 1", "lane 2", "lane 3", "lane 4", "lane 5", "lane 6"],
+    },
+}
 
 FLOOR_PLAN_BY_DATE = {
     "2026-06-25": "canva floor plans/June_25_Floor_Plans.png",
@@ -197,6 +210,11 @@ def schedule_blocks_for_event(event: dict) -> list[dict]:
         if not time_parts or not row_info:
             continue
         category, rows = row_info
+        override_rows = (
+            SCHEDULE_ROW_OVERRIDES.get(event.get("id"), {}).get((item.get("name") or "").lower())
+        )
+        if override_rows:
+            rows = override_rows
         blocks.append(
             {
                 "category": category,
