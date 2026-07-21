@@ -245,15 +245,19 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-22": {
     image: "/entertainment-schedules/july-22-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 20, 2026; Motility entertainment times are still missing and North Dayton timing conflicts with reserved-hour quantities on the BEO",
+    source: "Tripleseat BEO/API pull July 21, 2026; Motility guest count updated to 20 and Motility entertainment times are still missing on the BEO",
   },
   "2026-07-23": {
     image: "/entertainment-schedules/july-23-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 20, 2026",
+    source: "Tripleseat BEO/API pull July 21, 2026; GS1 desserts and special instructions updated",
+  },
+  "2026-07-24": {
+    image: "/entertainment-schedules/july-24-entertainment-schedule.png",
+    source: "Tripleseat BEO/API pull July 21, 2026",
   },
   "2026-07-25": {
     image: "/entertainment-schedules/july-25-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 14, 2026",
+    source: "Tripleseat BEO/API pull July 21, 2026; Michael's bowling and darts quantities updated and entertainment times are still missing on the BEO",
   },
   "2026-07-29": {
     image: "/entertainment-schedules/july-29-entertainment-schedule.png",

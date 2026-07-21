@@ -2,7 +2,7 @@
 
 Informational knowledge base for event request, booking, planning, and event-output agents.
 
-Last updated: July 1, 2026
+Last updated: July 21, 2026
 
 ## What This Document Is
 
@@ -942,6 +942,7 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - The Front Nine | TACO BAR - Food Only
   - Tater Keg Platter
   - Veggie Tray
+  - Assorted Desserts
 - Drinks:
   - The Back Nine - Beverage Only
   - Soft drinks included
@@ -955,7 +956,26 @@ This matrix summarizes the current deployable event data. Always re-check Triple
   - Highlight Main Dining Room seating and 2 main food tables because the guest count is over 100.
   - Highlight darts lanes 1-3, bowling lanes 1-10, pool table 1, and Gem Room with 2:30-4:30 labels.
   - Mini golf is untimed and should remain unlabeled on the floor map.
-- Verification: BEO checked above billing section.
+- Special instructions:
+  - A couple celiac disease guests can order menu items for free for up to 6 people.
+- Verification: BEO checked above billing section; dessert and celiac notes updated.
+
+### Sizzlin' Summer Singles Mixer
+
+- Date/time: Friday, July 24, 2026, 7:00 PM - 9:00 PM
+- Guests: 20
+- Areas: VIP 1, VIP 2
+- Food:
+  - The Front Nine | APPETIZER BAR - Food Only
+- Drinks:
+  - Soft drinks included
+  - Complimentary Champagne
+- Entertainment:
+  - Duckpin Bowling, 4 lanes, 8:00 PM - 9:00 PM, 1 hour
+- Floor-plan interpretation:
+  - Highlight VIP 1 and VIP 2 support seating plus 1 VIP food table.
+  - Highlight bowling lanes 1-4 with an 8:00-9:00 PM label.
+- Verification: BEO checked above billing section; new July 24 event added.
 
 ## Missing Information Flags
 

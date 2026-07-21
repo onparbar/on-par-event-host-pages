@@ -78,6 +78,15 @@ function entertainmentGroups(event: EventPlan) {
 
 function itineraryDrinkLines(event: EventPlan) {
   const lines = ["FREE SODA AND JUICE FOR ALL GUESTS!"];
+  event.drink_options.forEach((item) => {
+    if (/back nine|food \+ beverage|drink card/i.test(item)) {
+      return;
+    }
+    if (/soft drinks included|soft drinks free of charge/i.test(item)) {
+      return;
+    }
+    lines.push(item.toUpperCase());
+  });
   const hasDrinkCards =
     event.food.some((item) => /full course/i.test(item)) ||
     event.drink_options.some((item) => /back nine|food \+ beverage|drink card/i.test(item));

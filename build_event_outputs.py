@@ -71,6 +71,7 @@ FLOOR_PLAN_BY_DATE = {
     "2026-07-21": "canva floor plans/July_21_Key_Sight.png",
     "2026-07-22": "canva floor plans/July_22_North_Dayton_School_Of_Discovery.png",
     "2026-07-23": "canva floor plans/July_23_Floor_Plans.png",
+    "2026-07-24": "canva floor plans/July_24_Sizzlin_Summer_Singles_Mixer.png",
     "2026-07-25": "canva floor plans/July_25_Floor_Plans.png",
     "2026-07-29": "canva floor plans/July_29_Work_Outing_Networking.png",
     "2026-07-30": "canva floor plans/July_30_University_Of_Dayton_EdD_Program.png",
@@ -229,6 +230,13 @@ def schedule_blocks_for_event(event: dict) -> list[dict]:
 
 def itinerary_drinks(event: dict) -> list[str]:
     lines = ["Free soda and juice for all guests!"]
+    for item in event.get("drink_options") or []:
+        lower = item.lower()
+        if any(marker in lower for marker in ("food + beverage package", "the back nine", "drink card")):
+            continue
+        if "soft drinks included" in lower or "soft drinks free of charge" in lower:
+            continue
+        lines.append(item)
     has_drink_cards = any("full course" in item.lower() for item in event.get("food") or []) or any(
         marker in item.lower()
         for item in event.get("drink_options") or []

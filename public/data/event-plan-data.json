@@ -684,7 +684,7 @@
       "date": "2026-07-22",
       "day": "Wednesday",
       "time": "6:00 PM - 8:00 PM",
-      "guest_count": 19,
+      "guest_count": 20,
       "rooms": [
         "VIP 2"
       ],
@@ -710,7 +710,7 @@
           "duration": ""
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 2; entertainment times are not listed on the current Event Order.",
+      "verification_status": "BEO checked above billing section; guest count updated to 20, room assignment updated to VIP 2, and entertainment times are not listed on the current Event Order.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-22_motility-team-event_beo.txt",
       "special_instructions": [
         "VIP 2 is listed in the current Event Order summary.",
@@ -820,47 +820,6 @@
       ]
     },
     {
-      "id": 61136352,
-      "name": "178th Force Support Squadron",
-      "date": "2026-07-30",
-      "day": "Thursday",
-      "time": "11:30 AM - 3:00 PM",
-      "guest_count": 45,
-      "rooms": [
-        "Main Dining Room"
-      ],
-      "color": "#f97316",
-      "food": [
-        "Tater Keg Platter",
-        "Wing Platter",
-        "Chicken Tender Platter",
-        "Veggie Tray"
-      ],
-      "drink_options": [
-        "No drink package listed on extracted BEO"
-      ],
-      "entertainment": [
-        {
-          "name": "Darts",
-          "quantity": "2 lanes",
-          "time": "Time not listed on BEO",
-          "duration": "2 hours"
-        },
-        {
-          "name": "Duckpin Bowling",
-          "quantity": "4 lanes",
-          "time": "Time not listed on BEO",
-          "duration": "2 hours"
-        }
-      ],
-      "verification_status": "BEO checked above billing section; new July 30 event added and entertainment times are not listed on the current BEO.",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-30_178th-force-support-squadron_beo.txt",
-      "special_instructions": [
-        "Main Dining Room is listed in the current BEO event summary.",
-        "The current BEO lists darts and bowling as 2-hour reservations, but does not show exact entertainment start times."
-      ]
-    },
-    {
       "id": 58375613,
       "name": "GS1",
       "date": "2026-07-23",
@@ -875,7 +834,8 @@
       "food": [
         "The Front Nine | TACO BAR - Food Only",
         "Tater Keg Platter",
-        "Veggie Tray"
+        "Veggie Tray",
+        "Assorted Desserts"
       ],
       "drink_options": [
         "The Back Nine - Beverage Only",
@@ -913,12 +873,48 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; host darts and bowling lane assignments applied with bowling lanes 1-10.",
+      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1 and VIP 2; host darts and bowling lane assignments applied with bowling lanes 1-10; special instructions and dessert selections updated.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-23_gs1_beo.txt",
       "special_instructions": [
         "VIP 1 and VIP 2 are listed in the current BEO event summary.",
         "Darts use lanes 3, 4, and 5 from 2:30 PM - 4:30 PM for the host setup.",
-        "Duckpin bowling uses lanes 1-10 from 2:30 PM - 4:30 PM for the host setup."
+        "Duckpin bowling uses lanes 1-10 from 2:30 PM - 4:30 PM for the host setup.",
+        "The current BEO adds a celiac note allowing up to 6 menu orders for affected guests."
+      ]
+    },
+    {
+      "id": 61464395,
+      "name": "Sizzlin' Summer Singles Mixer",
+      "date": "2026-07-24",
+      "day": "Friday",
+      "time": "7:00 PM - 9:00 PM",
+      "guest_count": 20,
+      "rooms": [
+        "VIP 1",
+        "VIP 2"
+      ],
+      "color": "#f97316",
+      "food": [
+        "The Front Nine | APPETIZER BAR - Food Only"
+      ],
+      "drink_options": [
+        "Soft drinks included",
+        "Complimentary Champagne"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "8:00 PM - 9:00 PM",
+          "duration": "1 hour"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new July 24 event added.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-24_sizzlin-summer-singles-mixer_beo.txt",
+      "special_instructions": [
+        "VIP 1 and VIP 2 are listed in the current BEO event summary.",
+        "Complimentary Champagne is listed in the beverage section.",
+        "Bowling runs 8:00 PM - 9:00 PM on the current BEO."
       ]
     },
     {
@@ -941,7 +937,7 @@
       "entertainment": [
         {
           "name": "Duckpin Bowling",
-          "quantity": "1 lane",
+          "quantity": "2 lanes",
           "time": "Time not listed on BEO",
           "duration": ""
         },
@@ -953,17 +949,16 @@
         },
         {
           "name": "Darts",
-          "quantity": "1 lane",
+          "quantity": "2 lanes",
           "time": "Time not listed on BEO",
           "duration": ""
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; host label updated for Michael's surprise 40th birthday party; entertainment times are not listed on the current Event Order.",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-25_40th-birthday-party_beo.txt",
+      "verification_status": "BEO checked above billing section; event name now matches the Michael host label; room assignment updated to VIP 1; bowling and darts quantities updated to 2 lanes each; entertainment times are not listed on the current Event Order.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-25_surprise-40th-birthday-party-for-michael_beo.txt",
       "special_instructions": [
         "VIP 1 is listed in the current Event Order summary.",
-        "Tripleseat currently names this event only as 40th birthday party; host pages identify it as Surprise 40th Birthday Party for Michael per organizer update.",
-        "The current Event Order lists bowling and darts but does not show exact entertainment timing or duration."
+        "The current Event Order lists 2 bowling lanes and 2 darts lanes, but does not show exact entertainment timing or duration."
       ]
     },
     {
@@ -1030,6 +1025,47 @@
         "VIP 1 is listed in the current BEO event summary.",
         "The current BEO lists bowling quantity as 3 and Neo Shuffleboard quantity as 1, but does not show exact entertainment timing.",
         "Bowling quantity and timing are unclear on the current BEO; itinerary and schedule should treat entertainment timing as missing."
+      ]
+    },
+    {
+      "id": 61136352,
+      "name": "178th Force Support Squadron",
+      "date": "2026-07-30",
+      "day": "Thursday",
+      "time": "11:30 AM - 3:00 PM",
+      "guest_count": 45,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#f97316",
+      "food": [
+        "Tater Keg Platter",
+        "Wing Platter",
+        "Chicken Tender Platter",
+        "Veggie Tray"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "2 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new July 30 event added and entertainment times are not listed on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-30_178th-force-support-squadron_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The current BEO lists darts and bowling as 2-hour reservations, but does not show exact entertainment start times."
       ]
     },
     {

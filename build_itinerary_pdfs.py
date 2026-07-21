@@ -69,6 +69,13 @@ def draw_lines(draw: ImageDraw.ImageDraw, lines: list[str], font: ImageFont.Imag
 
 def drink_lines(event: dict) -> list[str]:
     lines = ["Free soda and juice for all guests!"]
+    for item in event.get("drink_options") or []:
+        lower = item.lower()
+        if any(marker in lower for marker in ("food + beverage package", "the back nine", "drink card")):
+            continue
+        if "soft drinks included" in lower or "soft drinks free of charge" in lower:
+            continue
+        lines.append(item)
     has_drink_cards = any("full course" in item.lower() for item in event.get("food") or []) or any(
         marker in item.lower()
         for item in event.get("drink_options") or []
