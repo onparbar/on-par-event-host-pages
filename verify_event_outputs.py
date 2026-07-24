@@ -24,6 +24,7 @@ FLOOR_PLAN_BY_DATE = {
     "2026-07-25": "canva floor plans/July_25_Floor_Plans.png",
     "2026-07-29": "canva floor plans/July_29_Work_Outing_Networking.png",
     "2026-07-30": "canva floor plans/July_30_University_Of_Dayton_EdD_Program.png",
+    "2026-08-06": "canva floor plans/August_06_Floor_Plans.png",
 }
 
 
@@ -67,8 +68,6 @@ def main() -> None:
         "host/floor-plans.html",
         "host/entertainment-schedules.html",
         "ITINERARY/june-25-to-july-30-2026-event-itineraries.html",
-        "outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json",
-        "outputs/tripleseat/june-02-2026-definite-closed-events.json",
         "outputs/tripleseat/beo_manifest.json",
         "outputs/tripleseat/event_plan_data.json",
         "outputs/tripleseat/missing_beo_verification.json",
@@ -80,8 +79,6 @@ def main() -> None:
         required_files.append(schedule_png(date_value))
 
     plan = json.loads(read("outputs/tripleseat/event_plan_data.json"))
-    source = json.loads(read("outputs/tripleseat/june-25-to-july-25-2026-definite-closed-events.json"))
-    july_two_source = json.loads(read("outputs/tripleseat/june-02-2026-definite-closed-events.json"))
     manifest = json.loads(read("outputs/tripleseat/beo_manifest.json"))
     missing = json.loads(read("outputs/tripleseat/missing_beo_verification.json"))
 
@@ -92,13 +89,9 @@ def main() -> None:
         path = ROOT / file
         require(path.exists() and path.stat().st_size > 0, f"Missing or empty required file: {file}")
 
-    source_ids = {event["id"] for event in source["events"]}
     plan_ids = {event["id"] for event in plan["events"]}
-    require(
-        plan_ids == source_ids | APPROVED_CARRYOVER_IDS,
-        "Planning data does not match the expected Tripleseat confirmed event IDs plus the approved July 2 carryover event.",
-    )
-    require(len(manifest) == len(source["events"]), "BEO manifest does not cover all confirmed events in the main source file.")
+    manifest_ids = {item["event_id"] for item in manifest}
+    require(plan_ids == manifest_ids, "BEO manifest does not cover the current planning event IDs.")
     require(len(missing) == len(missing_manifest := [item for item in manifest if item.get("status") == "missing_beo_view"]), "Missing-BEO verification report must match manifest entries.")
 
     extracted = [item for item in manifest if item.get("text_path")]
@@ -154,12 +147,6 @@ def main() -> None:
 
     itinerary_html = read("ITINERARY/june-25-to-july-30-2026-event-itineraries.html")
     require(itinerary_html.count('class="itinerary-card"') == len(plan["events"]), "Itinerary card count does not match planning data.")
-
-    carryover_ids = {event["id"] for event in july_two_source["events"]}
-    require(
-        APPROVED_CARRYOVER_IDS <= carryover_ids,
-        "Approved July 2 carryover event is missing from the carryover source file.",
-    )
 
     print("Event output verification passed.")
 

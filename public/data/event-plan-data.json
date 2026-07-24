@@ -566,7 +566,7 @@
     },
     {
       "id": 55716141,
-      "name": "Husband’s Surprise 60th birthday",
+      "name": "Husband\u2019s Surprise 60th birthday",
       "date": "2026-07-19",
       "day": "Sunday",
       "time": "1:00 PM - 3:00 PM",
@@ -888,7 +888,7 @@
       "date": "2026-07-24",
       "day": "Friday",
       "time": "7:00 PM - 9:00 PM",
-      "guest_count": 20,
+      "guest_count": 24,
       "rooms": [
         "VIP 1",
         "VIP 2"
@@ -909,7 +909,7 @@
           "duration": "1 hour"
         }
       ],
-      "verification_status": "BEO checked above billing section; new July 24 event added.",
+      "verification_status": "BEO checked above billing section; guest count updated to 24.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-24_sizzlin-summer-singles-mixer_beo.txt",
       "special_instructions": [
         "VIP 1 and VIP 2 are listed in the current BEO event summary.",
@@ -989,7 +989,7 @@
     },
     {
       "id": 60525457,
-      "name": "Work outing/networking",
+      "name": "Winsupply 07/29/2026",
       "date": "2026-07-29",
       "day": "Wednesday",
       "time": "5:30 PM - 7:30 PM",
@@ -1008,23 +1008,23 @@
       "entertainment": [
         {
           "name": "Duckpin Bowling",
-          "quantity": "Qty 3 on BEO",
-          "time": "Time not listed on BEO",
-          "duration": "Bowling quantity/timing unclear on BEO"
+          "quantity": "3 lanes",
+          "time": "6:00 PM - 7:00 PM",
+          "duration": "1 hour"
         },
         {
           "name": "Neo Shuffleboard",
           "quantity": "1 table",
           "time": "Time not listed on BEO",
-          "duration": "Duration not listed on BEO"
+          "duration": "1 hour"
         }
       ],
-      "verification_status": "BEO checked above billing section; room assignment updated to VIP 1; entertainment times are not listed on the current BEO and bowling quantity is unclear.",
-      "beo_text": "outputs/tripleseat/beo_text/2026-07-29_work-outing-networking_beo.txt",
+      "verification_status": "BEO checked above billing section; event renamed to Winsupply 07/29/2026, bowling now runs 6:00 PM - 7:00 PM, and Neo Shuffleboard timing is still missing on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-07-29_winsupply-07-29-2026_beo.txt",
       "special_instructions": [
         "VIP 1 is listed in the current BEO event summary.",
-        "The current BEO lists bowling quantity as 3 and Neo Shuffleboard quantity as 1, but does not show exact entertainment timing.",
-        "Bowling quantity and timing are unclear on the current BEO; itinerary and schedule should treat entertainment timing as missing."
+        "Bowling runs 6:00 PM - 7:00 PM on the current BEO.",
+        "The current BEO lists 1 Neo Shuffleboard table for 1 hour, but does not show an exact start time."
       ]
     },
     {
@@ -1051,21 +1051,21 @@
         {
           "name": "Darts",
           "quantity": "2 lanes",
-          "time": "Time not listed on BEO",
+          "time": "12:00 PM - 2:00 PM",
           "duration": "2 hours"
         },
         {
           "name": "Duckpin Bowling",
           "quantity": "4 lanes",
-          "time": "Time not listed on BEO",
+          "time": "12:00 PM - 2:00 PM",
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; new July 30 event added and entertainment times are not listed on the current BEO.",
+      "verification_status": "BEO checked above billing section; darts and bowling now run 12:00 PM - 2:00 PM on the current BEO.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-30_178th-force-support-squadron_beo.txt",
       "special_instructions": [
         "Main Dining Room is listed in the current BEO event summary.",
-        "The current BEO lists darts and bowling as 2-hour reservations, but does not show exact entertainment start times."
+        "Darts and bowling both run 12:00 PM - 2:00 PM on the current BEO."
       ]
     },
     {
@@ -1106,6 +1106,85 @@
       "special_instructions": [
         "Main Dining Room is listed in the current BEO event summary.",
         "Tax exempt."
+      ]
+    },
+    {
+      "id": 61346994,
+      "name": "Silfex Supply Chain Team-Building Event",
+      "date": "2026-08-06",
+      "day": "Thursday",
+      "time": "12:30 PM - 3:30 PM",
+      "guest_count": 15,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#2f8f46",
+      "food": [
+        "The Front Nine | TACO BAR - Food Only",
+        "Veggie Tray",
+        "Mozzarella Sticks"
+      ],
+      "drink_options": [
+        "Soft drinks included"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "1 lane",
+          "time": "Time not listed on BEO",
+          "duration": "1 hour"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new August 6 event added and bowling time is not listed on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-08-06_silfex-supply-chain-team-building-event_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The Taco Bar quantity on the current BEO is 14 while the event summary guest count is 15.",
+        "The current BEO lists 1 bowling lane for 1 hour, but does not show an exact entertainment start time."
+      ]
+    },
+    {
+      "id": 61354606,
+      "name": "Work outing",
+      "date": "2026-08-06",
+      "day": "Thursday",
+      "time": "6:00 PM - 9:00 PM",
+      "guest_count": 30,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#f97316",
+      "food": [
+        "The Front Nine | TACO BAR - Food Only"
+      ],
+      "drink_options": [
+        "Soft drinks included"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "3 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Pool Tables",
+          "quantity": "1 table",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Neo Shuffleboard",
+          "quantity": "1 table",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new August 6 event added and entertainment times are not listed on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-08-06_work-outing_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "Bowling, pool, and Neo Shuffleboard are listed as 2-hour reservations, but the current BEO does not show exact start times."
       ]
     }
   ]

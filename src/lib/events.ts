@@ -200,6 +200,7 @@ const floorPlanByDate: Record<string, DateConfig> = {
   "2026-07-25": { image: "/floor-plans/july-25-floor-plans.png" },
   "2026-07-29": { image: "/floor-plans/july-29-work-outing-networking.png" },
   "2026-07-30": { image: "/floor-plans/july-30-university-of-dayton-edd-program.png" },
+  "2026-08-06": { image: "/floor-plans/august-06-floor-plans.png" },
 };
 
 const entertainmentScheduleByDate: Record<string, DateConfig> = {
@@ -253,7 +254,7 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-24": {
     image: "/entertainment-schedules/july-24-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 21, 2026",
+    source: "Tripleseat BEO/API pull July 24, 2026; Sizzlin' Summer Singles Mixer guest count updated to 24",
   },
   "2026-07-25": {
     image: "/entertainment-schedules/july-25-entertainment-schedule.png",
@@ -261,11 +262,15 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-29": {
     image: "/entertainment-schedules/july-29-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 17, 2026; entertainment times missing on BEO",
+    source: "Tripleseat BEO/API pull July 24, 2026; Winsupply bowling now runs 6:00 PM - 7:00 PM and Neo Shuffleboard timing is still missing on the BEO",
   },
   "2026-07-30": {
     image: "/entertainment-schedules/july-30-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 20, 2026; 178th Force Support Squadron entertainment times are missing on the BEO",
+    source: "Tripleseat BEO/API pull July 24, 2026; 178th Force Support Squadron entertainment now runs 12:00 PM - 2:00 PM",
+  },
+  "2026-08-06": {
+    image: "/entertainment-schedules/august-06-entertainment-schedule.png",
+    source: "Tripleseat BEO/API pull July 24, 2026; two August 6 events added and entertainment start times are missing or unclear on both BEOs",
   },
 };
 

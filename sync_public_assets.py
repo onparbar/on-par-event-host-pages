@@ -32,6 +32,7 @@ STATIC_ASSET_MAP = {
     "canva floor plans/July_25_Floor_Plans.png": "public/floor-plans/july-25-floor-plans.png",
     "canva floor plans/July_29_Work_Outing_Networking.png": "public/floor-plans/july-29-work-outing-networking.png",
     "canva floor plans/July_30_University_Of_Dayton_EdD_Program.png": "public/floor-plans/july-30-university-of-dayton-edd-program.png",
+    "canva floor plans/August_06_Floor_Plans.png": "public/floor-plans/august-06-floor-plans.png",
     "entertainment schedules/may_30_entertainment_schedule.png": "public/entertainment-schedules/may-30-entertainment-schedule.png",
     "entertainment schedules/may_31_entertainment_schedule.png": "public/entertainment-schedules/may-31-entertainment-schedule.png",
     "entertainment schedules/june_05_entertainment_schedule.png": "public/entertainment-schedules/june-05-entertainment-schedule.png",
@@ -59,6 +60,7 @@ STATIC_ASSET_MAP = {
     "entertainment schedules/july_25_entertainment_schedule.png": "public/entertainment-schedules/july-25-entertainment-schedule.png",
     "entertainment schedules/july_29_entertainment_schedule.png": "public/entertainment-schedules/july-29-entertainment-schedule.png",
     "entertainment schedules/july_30_entertainment_schedule.png": "public/entertainment-schedules/july-30-entertainment-schedule.png",
+    "entertainment schedules/august_06_entertainment_schedule.png": "public/entertainment-schedules/august-06-entertainment-schedule.png",
     "outputs/tripleseat/event_plan_data.json": "public/data/event-plan-data.json",
 }
 
