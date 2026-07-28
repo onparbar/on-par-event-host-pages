@@ -1,7 +1,7 @@
 {
   "date_range": {
     "start": "2026-06-25",
-    "end": "2026-07-23"
+    "end": "2026-08-08"
   },
   "events": [
     {
@@ -1185,6 +1185,151 @@
       "special_instructions": [
         "Main Dining Room is listed in the current BEO event summary.",
         "Bowling, pool, and Neo Shuffleboard are listed as 2-hour reservations, but the current BEO does not show exact start times."
+      ]
+    },
+    {
+      "id": 60984263,
+      "name": "25th Anniversary",
+      "date": "2026-08-07",
+      "day": "Friday",
+      "time": "4:00 PM - 8:00 PM",
+      "guest_count": 250,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#2f8f46",
+      "food": [
+        "No food package listed on extracted BEO"
+      ],
+      "drink_options": [
+        "No drink package listed on extracted BEO"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "4 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "4 hours"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "4 hours"
+        },
+        {
+          "name": "Pool Tables",
+          "quantity": "3 tables",
+          "time": "Time not listed on BEO",
+          "duration": "4 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new August 7 event added, entertainment quantities were interpreted from lane-hour totals, and exact start times are not listed on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-08-07_25th-anniversary_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current BEO event summary.",
+        "The current BEO shows 16 dart lane-hours, 16 bowling lane-hours, and 12 pool table-hours for this 4:00 PM - 8:00 PM event, so planning uses 4 dart lanes, 4 bowling lanes, and 3 pool tables.",
+        "The current BEO does not show exact entertainment start times.",
+        "Guest count is 250 while the current BEO only lists Main Dining Room; confirm any overflow seating approach if operations needs a fuller seating map."
+      ]
+    },
+    {
+      "id": 60627029,
+      "name": "We are celebrating our Wedding with friends and family!",
+      "date": "2026-08-07",
+      "day": "Friday",
+      "time": "6:30 PM - 12:00 AM",
+      "guest_count": 50,
+      "rooms": [
+        "Main Dining Room"
+      ],
+      "color": "#f97316",
+      "food": [
+        "The Full Course | APPETIZER BAR - Food + Beverage",
+        "Dessert"
+      ],
+      "drink_options": [
+        "Food + Beverage package"
+      ],
+      "entertainment": [
+        {
+          "name": "Darts",
+          "quantity": "1 lane",
+          "time": "Time not listed on BEO",
+          "duration": "Duration not listed on BEO"
+        },
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "1 lane",
+          "time": "Time not listed on BEO",
+          "duration": "Duration not listed on BEO"
+        },
+        {
+          "name": "Mini Golf",
+          "quantity": "50 guests",
+          "time": "Untimed",
+          "duration": "Course count not listed on BEO"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new August 7 event added and entertainment times are not listed on the current Event Order.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-08-07_we-are-celebrating-our-wedding-with-friends-and-family_beo.txt",
+      "special_instructions": [
+        "Main Dining Room is listed in the current Event Order summary.",
+        "The current Event Order lists 1 bowling lane, 1 darts lane, and 50 mini golf guests, but it does not show exact entertainment start times.",
+        "The current Event Order lists The Full Course, Appetizer Bar, and Dessert."
+      ]
+    },
+    {
+      "id": 58790225,
+      "name": "Thompson Hine Dayton Summer Picnic",
+      "date": "2026-08-08",
+      "day": "Saturday",
+      "time": "6:00 PM - 8:00 PM",
+      "guest_count": 70,
+      "rooms": [
+        "VIP 1",
+        "Big Show"
+      ],
+      "color": "#0891b2",
+      "food": [
+        "The Front Nine | TACO BAR - Food Only"
+      ],
+      "drink_options": [
+        "Soft drinks included",
+        "Big Show private self-pour taps"
+      ],
+      "entertainment": [
+        {
+          "name": "Duckpin Bowling",
+          "quantity": "4 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Pool Tables",
+          "quantity": "2 tables",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "Neo Shuffleboard",
+          "quantity": "2 lanes",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        },
+        {
+          "name": "The Big Show",
+          "quantity": "1 private space",
+          "time": "Time not listed on BEO",
+          "duration": "2 hours"
+        }
+      ],
+      "verification_status": "BEO checked above billing section; new August 8 event added and entertainment start times are not listed on the current BEO.",
+      "beo_text": "outputs/tripleseat/beo_text/2026-08-08_thompson-hine-dayton-summer-picnic_beo.txt",
+      "special_instructions": [
+        "VIP 1 and Big Show are listed in the current BEO event summary.",
+        "The current BEO lists 4 bowling lanes, 2 pool tables, 2 Neo Shuffleboard lanes, and The Big Show for 2 hours, but it does not show exact entertainment start times.",
+        "The Big Show private space rental includes 5 karaoke rooms and private self-pour taps."
       ]
     }
   ]

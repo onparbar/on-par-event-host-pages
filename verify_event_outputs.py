@@ -25,6 +25,8 @@ FLOOR_PLAN_BY_DATE = {
     "2026-07-29": "canva floor plans/July_29_Work_Outing_Networking.png",
     "2026-07-30": "canva floor plans/July_30_University_Of_Dayton_EdD_Program.png",
     "2026-08-06": "canva floor plans/August_06_Floor_Plans.png",
+    "2026-08-07": "canva floor plans/August_07_Floor_Plans.png",
+    "2026-08-08": "canva floor plans/August_08_Thompson_Hine_Dayton_Summer_Picnic.png",
 }
 
 

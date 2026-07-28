@@ -201,6 +201,8 @@ const floorPlanByDate: Record<string, DateConfig> = {
   "2026-07-29": { image: "/floor-plans/july-29-work-outing-networking.png" },
   "2026-07-30": { image: "/floor-plans/july-30-university-of-dayton-edd-program.png" },
   "2026-08-06": { image: "/floor-plans/august-06-floor-plans.png" },
+  "2026-08-07": { image: "/floor-plans/august-07-floor-plans.png" },
+  "2026-08-08": { image: "/floor-plans/august-08-thompson-hine-dayton-summer-picnic.png" },
 };
 
 const entertainmentScheduleByDate: Record<string, DateConfig> = {
@@ -271,6 +273,14 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   "2026-08-06": {
     image: "/entertainment-schedules/august-06-entertainment-schedule.png",
     source: "Tripleseat BEO/API pull July 24, 2026; two August 6 events added and entertainment start times are missing or unclear on both BEOs",
+  },
+  "2026-08-07": {
+    image: "/entertainment-schedules/august-07-entertainment-schedule.png",
+    source: "Tripleseat BEO/API pull July 28, 2026; two August 7 events added and entertainment start times are not listed on either BEO",
+  },
+  "2026-08-08": {
+    image: "/entertainment-schedules/august-08-entertainment-schedule.png",
+    source: "Tripleseat BEO/API pull July 28, 2026; Thompson Hine Dayton Summer Picnic added and entertainment start times are not listed on the current BEO",
   },
 };
 

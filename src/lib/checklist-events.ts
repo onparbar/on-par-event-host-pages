@@ -17,6 +17,9 @@ type TripleseatEvent = {
 
 const hostedEventPocById: Record<number, string> = {
   58984337: "Rose Lefeld",
+  58790225: "Kayci Zamarelli",
+  60627029: "Katie West",
+  60984263: "Kristine Berni",
 };
 
 export type ChecklistEvent = EventPlan & {
