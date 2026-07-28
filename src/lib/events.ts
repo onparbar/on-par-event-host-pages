@@ -37,6 +37,11 @@ type DateConfig = {
   image: string;
   source?: string;
   events?: string[];
+  label?: string;
+};
+
+type DatedConfig = DateConfig & {
+  date: string;
 };
 
 const baseEvents = (eventPlanData as { events: EventPlan[] }).events;
@@ -180,30 +185,40 @@ function dateLabel(value: string) {
   }).format(new Date(`${value}T12:00:00Z`));
 }
 
-const floorPlanByDate: Record<string, DateConfig> = {
-  "2026-06-25": { image: "/floor-plans/june-25-floor-plans.png" },
-  "2026-07-02": { image: "/floor-plans/july-02-gaf-partners-meeting.png" },
-  "2026-07-07": { image: "/floor-plans/july-07-work-event-for-30-co-workers.png" },
-  "2026-07-09": { image: "/floor-plans/july-09-lexisnexis-government-markets-meeting.png" },
-  "2026-07-10": { image: "/floor-plans/july-10-floor-plans.png" },
-  "2026-07-14": { image: "/floor-plans/july-14-jennifer-nicholson.png" },
-  "2026-07-15": { image: "/floor-plans/july-15-lexisnexis.png" },
-  "2026-07-17": { image: "/floor-plans/july-17-fanning-howey.png" },
-  "2026-07-19": { image: "/floor-plans/july-19-husbands-60th-birthday.png" },
-  "2026-07-21": { image: "/floor-plans/july-21-key-sight.png" },
-  "2026-07-22": { image: "/floor-plans/july-22-north-dayton-school-of-discovery.png" },
-  "2026-07-23": { image: "/floor-plans/july-23-floor-plans.png" },
-  "2026-07-24": {
+const floorPlanConfigs: DatedConfig[] = [
+  { date: "2026-06-25", image: "/floor-plans/june-25-floor-plans.png" },
+  { date: "2026-07-02", image: "/floor-plans/july-02-gaf-partners-meeting.png" },
+  { date: "2026-07-07", image: "/floor-plans/july-07-work-event-for-30-co-workers.png" },
+  { date: "2026-07-09", image: "/floor-plans/july-09-lexisnexis-government-markets-meeting.png" },
+  { date: "2026-07-10", image: "/floor-plans/july-10-floor-plans.png" },
+  { date: "2026-07-14", image: "/floor-plans/july-14-jennifer-nicholson.png" },
+  { date: "2026-07-15", image: "/floor-plans/july-15-lexisnexis.png" },
+  { date: "2026-07-17", image: "/floor-plans/july-17-fanning-howey.png" },
+  { date: "2026-07-19", image: "/floor-plans/july-19-husbands-60th-birthday.png" },
+  { date: "2026-07-21", image: "/floor-plans/july-21-key-sight.png" },
+  { date: "2026-07-22", image: "/floor-plans/july-22-north-dayton-school-of-discovery.png" },
+  { date: "2026-07-23", image: "/floor-plans/july-23-floor-plans.png" },
+  {
+    date: "2026-07-24",
     image: "/floor-plans/july-24-sizzlin-summer-singles-mixer.png",
     events: ["Sizzlin' Summer Singles Mixer"],
   },
-  "2026-07-25": { image: "/floor-plans/july-25-floor-plans.png" },
-  "2026-07-29": { image: "/floor-plans/july-29-work-outing-networking.png" },
-  "2026-07-30": { image: "/floor-plans/july-30-university-of-dayton-edd-program.png" },
-  "2026-08-06": { image: "/floor-plans/august-06-floor-plans.png" },
-  "2026-08-07": { image: "/floor-plans/august-07-floor-plans.png" },
-  "2026-08-08": { image: "/floor-plans/august-08-thompson-hine-dayton-summer-picnic.png" },
-};
+  { date: "2026-07-25", image: "/floor-plans/july-25-floor-plans.png" },
+  { date: "2026-07-29", image: "/floor-plans/july-29-work-outing-networking.png" },
+  {
+    date: "2026-07-30",
+    image: "/floor-plans/july-30-178th-force-support-squadron.png",
+    events: ["178th Force Support Squadron"],
+  },
+  {
+    date: "2026-07-30",
+    image: "/floor-plans/july-30-university-of-dayton-edd-program-vip1.png",
+    events: ["University of Dayton EdD Program"],
+  },
+  { date: "2026-08-06", image: "/floor-plans/august-06-floor-plans.png" },
+  { date: "2026-08-07", image: "/floor-plans/august-07-floor-plans.png" },
+  { date: "2026-08-08", image: "/floor-plans/august-08-thompson-hine-dayton-summer-picnic.png" },
+];
 
 const entertainmentScheduleByDate: Record<string, DateConfig> = {
   "2026-06-25": {
@@ -268,7 +283,7 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
   "2026-07-30": {
     image: "/entertainment-schedules/july-30-entertainment-schedule.png",
-    source: "Tripleseat BEO/API pull July 24, 2026; 178th Force Support Squadron entertainment now runs 12:00 PM - 2:00 PM",
+    source: "Tripleseat BEO/API pull July 28, 2026; both July 30 events moved to VIP 1 and 178th Force Support Squadron entertainment still runs 12:00 PM - 2:00 PM",
   },
   "2026-08-06": {
     image: "/entertainment-schedules/august-06-entertainment-schedule.png",
@@ -284,14 +299,18 @@ const entertainmentScheduleByDate: Record<string, DateConfig> = {
   },
 };
 
-function buildDateAssets(configByDate: Record<string, DateConfig>): DateAsset[] {
-  return Object.entries(configByDate).map(([date, config]) => ({
+function buildDateAsset(date: string, config: DateConfig): DateAsset {
+  return {
     date,
-    label: dateLabel(date),
+    label: config.label ?? dateLabel(date),
     image: config.image,
     events: config.events ?? events.filter((event) => event.date === date).map((event) => event.name),
     source: config.source,
-  }));
+  };
+}
+
+function buildDateAssets(configByDate: Record<string, DateConfig>): DateAsset[] {
+  return Object.entries(configByDate).map(([date, config]) => buildDateAsset(date, config));
 }
 
 export const itineraries: ItineraryAsset[] = events.map((event) => ({
@@ -299,7 +318,7 @@ export const itineraries: ItineraryAsset[] = events.map((event) => ({
   pdf: itineraryPdfPath(event),
 }));
 
-export const floorPlans: DateAsset[] = buildDateAssets(floorPlanByDate);
+export const floorPlans: DateAsset[] = floorPlanConfigs.map(({ date, ...config }) => buildDateAsset(date, config));
 
 export const floorPlanSpecialPages: DateAsset[] = [
   {

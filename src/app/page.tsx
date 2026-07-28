@@ -19,7 +19,7 @@ export default async function HomePage() {
           <div>
             <h2>Event host pages</h2>
             <p>
-              {visibleEvents.length} active events, {visibleFloorPlans.length} floor-plan dates,{" "}
+              {visibleEvents.length} active events, {visibleFloorPlans.length} floor-plan pages,{" "}
               {visibleSchedules.length} entertainment schedule dates, and {checklistEvents.length} checklist tabs.
             </p>
           </div>

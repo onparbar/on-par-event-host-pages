@@ -1035,7 +1035,7 @@
       "time": "11:30 AM - 3:00 PM",
       "guest_count": 45,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1"
       ],
       "color": "#f97316",
       "food": [
@@ -1061,10 +1061,10 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; darts and bowling now run 12:00 PM - 2:00 PM on the current BEO.",
+      "verification_status": "BEO checked above billing section; event moved to VIP 1 and darts and bowling now run 12:00 PM - 2:00 PM on the current BEO.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-30_178th-force-support-squadron_beo.txt",
       "special_instructions": [
-        "Main Dining Room is listed in the current BEO event summary.",
+        "VIP 1 is listed in the current BEO event summary.",
         "Darts and bowling both run 12:00 PM - 2:00 PM on the current BEO."
       ]
     },
@@ -1076,7 +1076,7 @@
       "time": "7:00 PM - 9:00 PM",
       "guest_count": 44,
       "rooms": [
-        "Main Dining Room"
+        "VIP 1"
       ],
       "color": "#0891b2",
       "food": [
@@ -1101,10 +1101,10 @@
           "duration": "2 hours"
         }
       ],
-      "verification_status": "BEO checked above billing section; new July 30 event added.",
+      "verification_status": "BEO checked above billing section; event moved to VIP 1 on the current BEO.",
       "beo_text": "outputs/tripleseat/beo_text/2026-07-30_university-of-dayton-edd-program_beo.txt",
       "special_instructions": [
-        "Main Dining Room is listed in the current BEO event summary.",
+        "VIP 1 is listed in the current BEO event summary.",
         "Tax exempt."
       ]
     },

@@ -43,7 +43,7 @@ export default async function FloorPlansPage() {
           </section>
         ))}
         {visiblePlans.map((plan) => (
-          <section className="asset-section" key={plan.date}>
+          <section className="asset-section" key={plan.image}>
             <h3>{plan.label}</h3>
             <div className="event-row">
               {plan.events.map((event) => (
