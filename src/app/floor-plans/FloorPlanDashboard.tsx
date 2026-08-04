@@ -417,7 +417,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     setRequestState("saving");
     setMessage(
       action === "refresh"
-        ? "Refreshing safe Tripleseat fields…"
+        ? "Synchronizing live Tripleseat fields…"
         : action === "generate"
           ? "Generating deterministic suggestions…"
           : action === "approve"
@@ -440,7 +440,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         action === "approve"
           ? "Floor plan approved and saved."
           : action === "refresh"
-            ? "Tripleseat refresh complete. Review highlighted changes before approval."
+            ? "Live Tripleseat sync complete and saved. Review highlighted changes before approval."
             : `Floor plan ${action === "generate" ? "generated" : `${action}d`} and saved as version ${next.plan.version}.`,
       );
     } catch (error) {
@@ -756,8 +756,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       actions={plan ? <PortalStatusBadge tone={statusTone(plan.status)}>{plan.status}</PortalStatusBadge> : null}
       allowFullscreen
       mainClassName="floor-plan-editor-page"
-      sectionSubtitle="Venue planning"
-      sectionTitle="Floor Plans"
+      sectionSubtitle="Live Tripleseat planning"
+      sectionTitle="Admin Floor Plans"
     >
       <section className="floor-plan-toolbar" aria-label="Floor plan controls">
         <div className="floor-plan-date-controls">
@@ -767,7 +767,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           <button onClick={() => changeDate(todayInEntertainmentTimeZone())} type="button">Today</button>
         </div>
         <div className="floor-plan-primary-actions">
-          <button disabled={requestState === "saving"} onClick={() => void runAction("refresh")} type="button">Refresh from Tripleseat</button>
+          <button disabled={requestState === "saving"} onClick={() => void runAction("refresh")} type="button">Sync Live from Tripleseat</button>
           {requestState === "error" && message.includes("Reconnect Tripleseat") ? <a className="button-link" href="/api/kitchen/oauth/start">Reconnect Tripleseat</a> : null}
           <select aria-label="Regeneration mode" onChange={(event) => setGenerationMode(event.target.value as FloorPlanGenerationMode)} value={generationMode}>
             <option value="fill-missing">Keep manual edits; fill missing</option>

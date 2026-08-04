@@ -572,19 +572,22 @@ export async function approveFloorPlan(
   return getFloorPlanDay(date, storage);
 }
 
-export async function refreshFloorPlanSources(date: string) {
+export async function refreshFloorPlanSources(
+  date: string,
+  storage: FloorPlanStorage = getFloorPlanStorage(),
+) {
   await syncEventPlanWindow(
     { startDate: date, endDate: date },
     { legacyPlans: [] },
   );
   await syncEntertainmentDay(date);
-  const storage = getFloorPlanStorage();
   const plan = await reconciledPlan(date, storage);
-  if (await storage.get(date)) {
-    await storage.save(
-      { ...plan, lastTripleseatSyncAt: new Date().toISOString() },
-      "Refreshed safe Tripleseat floor-plan fields.",
-    );
+  if (!plan.events.length) {
+    throw new Error("No Tripleseat event plan is available for this date.");
   }
+  await storage.save(
+    { ...plan, lastTripleseatSyncAt: new Date().toISOString() },
+    "Synchronized live Tripleseat floor-plan fields.",
+  );
   return getFloorPlanDay(date, storage);
 }

@@ -62,7 +62,7 @@ describe("floor-plan dashboard organization", () => {
     ]);
   });
 
-  it("renders each plan as a dropdown with the shared highlight editor", () => {
+  it("renders each plan as a read-only dropdown without editing controls", () => {
     const plan = organizeFloorPlanAssets(
       [nextPlan],
       [],
@@ -73,15 +73,15 @@ describe("floor-plan dashboard organization", () => {
         asset: plan,
         isOpen: true,
         onOpenChange: () => {},
-        onOverlaysChange: () => {},
         overlays: [],
       }),
     );
 
     expect(html).toContain("<details open=\"\"");
     expect(html).toContain("Next Event");
-    expect(html).toContain("Add Highlight");
-    expect(html).toContain("Add Cover");
-    expect(html).toContain("Download PNG");
+    expect(html).toContain("Published floor plan");
+    expect(html).not.toContain("Add Highlight");
+    expect(html).not.toContain("Add Cover");
+    expect(html).not.toContain("Reset Edits");
   });
 });

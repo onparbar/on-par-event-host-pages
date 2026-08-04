@@ -13,7 +13,11 @@ import {
   type TripleseatAdapter,
 } from "@/lib/kitchen/tripleseat";
 
-import { generateFloorPlan, getFloorPlanDay } from "../service";
+import {
+  generateFloorPlan,
+  getFloorPlanDay,
+  refreshFloorPlanSources,
+} from "../service";
 import { MemoryFloorPlanStorage } from "../storage";
 
 function source(): TripleseatEventPlanSource {
@@ -163,5 +167,33 @@ describe("Floor Plan Tripleseat source enforcement", () => {
       "Redacted Direct Tripleseat Event",
     ]);
     expect(payload.plan.reservations.length).toBeGreaterThan(0);
+  });
+
+  it("persists a newly live-synced date before any floor-plan generation", async () => {
+    const requestedRanges: string[][] = [];
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(
+      adapter(async (startDate, endDate) => {
+        requestedRanges.push([startDate, endDate]);
+        return [source()];
+      }),
+    );
+
+    const payload = await refreshFloorPlanSources(
+      "2026-08-06",
+      floorPlanStorage,
+    );
+
+    expect(requestedRanges).toEqual([["2026-08-06", "2026-08-06"]]);
+    expect(payload.plan.events.map((event) => event.name)).toEqual([
+      "Redacted Direct Tripleseat Event",
+    ]);
+    expect(payload.plan.lastTripleseatSyncAt).not.toBeNull();
+    expect(await floorPlanStorage.get("2026-08-06")).toMatchObject({
+      eventDate: "2026-08-06",
+      lastTripleseatSyncAt: payload.plan.lastTripleseatSyncAt,
+    });
   });
 });
