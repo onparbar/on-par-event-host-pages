@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const syncRollingEventPlans = vi.fn();
+const maintainTwoWeekFloorPlanHorizon = vi.fn();
 const hasAdminSession = vi.fn();
 const cookies = vi.fn();
 
 vi.mock("@/lib/event-plans/sync", () => ({
   syncRollingEventPlans,
+}));
+vi.mock("@/lib/floor-plans/service", () => ({
+  maintainTwoWeekFloorPlanHorizon,
 }));
 vi.mock("@/lib/admin-auth", () => ({
   hasAdminSession,
@@ -30,6 +34,18 @@ describe("event-plan sync route", () => {
         eventCount: 2,
       },
     });
+    maintainTwoWeekFloorPlanHorizon.mockResolvedValue({
+      startDate: "2026-08-04",
+      endDate: "2026-08-18",
+      results: [
+        {
+          date: "2026-08-05",
+          status: "generated",
+          eventCount: 1,
+          planStatus: "Needs Review",
+        },
+      ],
+    });
   });
 
   it("allows Vercel Cron with the configured bearer secret", async () => {
@@ -46,8 +62,13 @@ describe("event-plan sync route", () => {
     await expect(response.json()).resolves.toMatchObject({
       sourceMode: "live",
       eventCount: 2,
+      floorPlans: {
+        startDate: "2026-08-04",
+        endDate: "2026-08-18",
+      },
     });
     expect(syncRollingEventPlans).toHaveBeenCalledOnce();
+    expect(maintainTwoWeekFloorPlanHorizon).toHaveBeenCalledOnce();
   });
 
   it("rejects a missing or incorrect cron secret", async () => {
@@ -60,6 +81,7 @@ describe("event-plan sync route", () => {
 
     expect(response.status).toBe(401);
     expect(syncRollingEventPlans).not.toHaveBeenCalled();
+    expect(maintainTwoWeekFloorPlanHorizon).not.toHaveBeenCalled();
   });
 
   it("allows an authenticated manual refresh", async () => {
@@ -69,6 +91,7 @@ describe("event-plan sync route", () => {
 
     expect(response.status).toBe(200);
     expect(syncRollingEventPlans).toHaveBeenCalledOnce();
+    expect(maintainTwoWeekFloorPlanHorizon).toHaveBeenCalledOnce();
   });
 
   it("rejects an unauthenticated manual refresh", async () => {
@@ -78,5 +101,6 @@ describe("event-plan sync route", () => {
 
     expect(response.status).toBe(401);
     expect(syncRollingEventPlans).not.toHaveBeenCalled();
+    expect(maintainTwoWeekFloorPlanHorizon).not.toHaveBeenCalled();
   });
 });

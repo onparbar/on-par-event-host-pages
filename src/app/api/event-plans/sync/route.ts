@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { hasAdminSession } from "@/lib/admin-auth";
 import { syncRollingEventPlans } from "@/lib/event-plans/sync";
+import { maintainTwoWeekFloorPlanHorizon } from "@/lib/floor-plans/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,10 +36,12 @@ function unauthorized() {
 async function runSync() {
   try {
     const result = await syncRollingEventPlans();
+    const floorPlans = await maintainTwoWeekFloorPlanHorizon();
     return NextResponse.json({
       sourceMode: result.sourceMode,
       eventCount: result.plans.length,
       sync: result.sync,
+      floorPlans,
     });
   } catch (error) {
     const message =

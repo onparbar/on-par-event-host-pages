@@ -128,28 +128,31 @@ function eventBaseReservations(
   existing: readonly FloorPlanReservation[],
 ) {
   const unavailable = unavailableAreaIds(plan, event, existing);
-  const contractedArea = event.contractedAreaIds.find(
+  const contractedAreas = event.contractedAreaIds.filter(
+    (areaId) => areaId !== "facility" && getFloorPlanArea(areaId),
+  );
+  const primaryContractedArea = contractedAreas.find(
     (areaId) => seatingTablesForArea(areaId).length > 0,
-  ) ?? event.contractedAreaIds[0] ?? null;
+  ) ?? contractedAreas[0] ?? null;
   const generated: FloorPlanReservation[] = [];
 
   if (event.fullBuyout) {
     generated.push(reservation(event, "facility", "room", "FULL BUYOUT"));
   }
-  if (contractedArea && contractedArea !== "facility") {
+  for (const contractedArea of contractedAreas) {
     const contracted = getFloorPlanArea(contractedArea);
     if (contracted?.type === "room") {
       generated.push(reservation(event, contracted.id, "room", contracted.shortLabel));
     }
-    const availableTables = seatingTablesForArea(contractedArea).filter(
-      (table) => !unavailable.has(table.id),
-    );
-    for (const table of selectSmallestTableCombination(availableTables, event.guestCount)) {
-      generated.push(reservation(event, table.id, "seating", table.shortLabel));
-    }
+  }
+  const availableTables = contractedAreas.flatMap((areaId) =>
+    seatingTablesForArea(areaId).filter((table) => !unavailable.has(table.id)),
+  );
+  for (const table of selectSmallestTableCombination(availableTables, event.guestCount)) {
+    generated.push(reservation(event, table.id, "seating", table.shortLabel));
   }
 
-  const foodCandidate = (contractedArea ? foodTablesNearArea(contractedArea) : foodTablesNearArea("main-dining"))
+  const foodCandidate = (primaryContractedArea ? foodTablesNearArea(primaryContractedArea) : foodTablesNearArea("main-dining"))
     .find((table) => !unavailable.has(table.id));
   if (foodCandidate) {
     generated.push(reservation(event, foodCandidate.id, "food-table", "F"));

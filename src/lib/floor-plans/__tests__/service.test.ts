@@ -202,6 +202,56 @@ describe("Floor Plan Tripleseat source enforcement", () => {
     });
   });
 
+  it("excludes PROSPECT and LOST events from operational floor plans", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(
+      adapter(async () => [
+        source(),
+        source({
+          eventId: "62001002",
+          eventName: "Redacted Prospect Event",
+          status: "PROSPECT",
+        }),
+        source({
+          eventId: "62001003",
+          eventName: "Redacted Lost Event",
+          status: "LOST",
+        }),
+      ]),
+    );
+
+    const payload = await refreshFloorPlanSources(
+      "2026-08-06",
+      floorPlanStorage,
+    );
+
+    expect(payload.plan.events.map((event) => event.name)).toEqual([
+      "Redacted Direct Tripleseat Event",
+    ]);
+  });
+
+  it("removes saved holds when the Tripleseat event is no longer DEFINITE", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source()]));
+    await generateFloorPlan("2026-08-06", "fill-missing", floorPlanStorage);
+
+    setTripleseatAdapterForTests(
+      adapter(async () => [source({ status: "LOST" })]),
+    );
+
+    await expect(
+      refreshFloorPlanSources("2026-08-06", floorPlanStorage),
+    ).rejects.toThrow("No Tripleseat event plan is available for this date.");
+    expect(await floorPlanStorage.get("2026-08-06")).toMatchObject({
+      events: [],
+      reservations: [],
+    });
+  });
+
   it("repairs visually similar saved event colors during live sync", async () => {
     const floorPlanStorage = new MemoryFloorPlanStorage();
     const sources = [

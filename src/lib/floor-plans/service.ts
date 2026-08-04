@@ -4,7 +4,12 @@ import {
   updateEntertainmentReservation,
 } from "@/lib/entertainment/sync";
 import { isHexColor } from "@/lib/entertainment/resources";
-import { parseTimeRange, isValidEntertainmentDate } from "@/lib/entertainment/time";
+import {
+  addCalendarDays,
+  parseTimeRange,
+  isValidEntertainmentDate,
+  todayInEntertainmentTimeZone,
+} from "@/lib/entertainment/time";
 import type { EntertainmentReservation } from "@/lib/entertainment/types";
 import { buildEventPlan } from "@/lib/event-plans/domain";
 import { getEventPlanStorage } from "@/lib/event-plans/storage";
@@ -129,7 +134,12 @@ async function sourceEventsForDate(date: string) {
         source: asRecord(row.sourceSnapshot),
       }))
     : [];
-  return rows;
+  return {
+    rows: rows.filter(
+      (row) => sourceValue(row.source, "status")?.toUpperCase() === "DEFINITE",
+    ),
+    sourceRowCount: stored.length,
+  };
 }
 
 function createPlan(date: string, events: FloorPlanEvent[]) {
@@ -176,10 +186,11 @@ function sourceChanged(previous: FloorPlanEvent, current: FloorPlanEvent) {
 }
 
 async function reconciledPlan(date: string, storage: FloorPlanStorage) {
-  const [saved, sourceRows] = await Promise.all([
+  const [saved, sourceResult] = await Promise.all([
     storage.get(date),
     sourceEventsForDate(date),
   ]);
+  const sourceRows = sourceResult.rows;
   const planId = saved?.id ?? `floor-plan-${date}`;
   const currentEvents: FloorPlanEvent[] = [];
   for (const [index, row] of sourceRows.entries()) {
@@ -204,7 +215,16 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
     );
   }
   if (!saved) return createPlan(date, currentEvents);
-  if (currentEvents.length === 0) return saved;
+  if (currentEvents.length === 0) {
+    return sourceResult.sourceRowCount > 0
+      ? {
+          ...saved,
+          events: [],
+          reservations: [],
+          status: floorPlanStatusAfterSourceChange(saved.status, saved.events.length > 0),
+        }
+      : saved;
+  }
 
   const currentIds = new Set(currentEvents.map((event) => event.id));
   const retainedReservations = saved.reservations.filter((reservation) =>
@@ -289,17 +309,29 @@ export async function getFloorPlanDay(
   };
 }
 
-export async function generateFloorPlan(
+async function generateFloorPlanFromStoredSources(
   date: string,
   mode: FloorPlanGenerationMode,
-  storage: FloorPlanStorage = getFloorPlanStorage(),
+  storage: FloorPlanStorage,
 ) {
-  await syncEventPlanWindow(
-    { startDate: date, endDate: date },
-    { legacyPlans: [] },
-  );
+  const savedBeforeGeneration = await storage.get(date);
   const plan = await reconciledPlan(date, storage);
   if (plan.events.length === 0) {
+    if (
+      savedBeforeGeneration &&
+      (savedBeforeGeneration.events.length > 0 ||
+        savedBeforeGeneration.reservations.length > 0)
+    ) {
+      await storage.save(
+        {
+          ...plan,
+          events: [],
+          reservations: [],
+          lastTripleseatSyncAt: new Date().toISOString(),
+        },
+        "Removed floor-plan holds without a DEFINITE Tripleseat event.",
+      );
+    }
     throw new Error("No Tripleseat event plan is available for this date.");
   }
   const generated = {
@@ -319,8 +351,83 @@ export async function generateFloorPlan(
   } catch {
     sharedReservations = (await getEntertainmentDay(date).catch(() => null))?.reservations ?? [];
   }
-  await alignGeneratedEntertainment(generated, sharedReservations);
-  return getFloorPlanDay(date, storage);
+  let alignmentWarning: string | null = null;
+  try {
+    await alignGeneratedEntertainment(generated, sharedReservations);
+  } catch (error) {
+    alignmentWarning = error instanceof Error
+      ? error.message
+      : "Entertainment reservations could not be aligned with the generated floor plan.";
+  }
+  const payload = await getFloorPlanDay(date, storage);
+  return alignmentWarning
+    ? {
+        ...payload,
+        warnings: [
+          ...payload.warnings,
+          `Entertainment alignment needs review: ${alignmentWarning}`,
+        ],
+      }
+    : payload;
+}
+
+export async function generateFloorPlan(
+  date: string,
+  mode: FloorPlanGenerationMode,
+  storage: FloorPlanStorage = getFloorPlanStorage(),
+) {
+  await syncEventPlanWindow(
+    { startDate: date, endDate: date },
+    { legacyPlans: [] },
+  );
+  return generateFloorPlanFromStoredSources(date, mode, storage);
+}
+
+export async function maintainTwoWeekFloorPlanHorizon(
+  now = new Date(),
+  storage: FloorPlanStorage = getFloorPlanStorage(),
+) {
+  const startDate = todayInEntertainmentTimeZone(now);
+  const endDate = addCalendarDays(startDate, 14);
+  const results: Array<{
+    date: string;
+    status: "generated" | "skipped" | "error";
+    eventCount: number;
+    planStatus?: FloorPlanStatus;
+    message?: string;
+  }> = [];
+
+  for (let offset = 0; offset <= 14; offset += 1) {
+    const date = addCalendarDays(startDate, offset);
+    try {
+      const generated = await generateFloorPlanFromStoredSources(
+        date,
+        "fill-missing",
+        storage,
+      );
+      const validated = await validateAndSaveFloorPlan(date, storage);
+      results.push({
+        date,
+        status: "generated",
+        eventCount: generated.plan.events.length,
+        planStatus: validated.plan.status,
+      });
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Floor-plan generation failed.";
+      results.push({
+        date,
+        status: message === "No Tripleseat event plan is available for this date."
+          ? "skipped"
+          : "error",
+        eventCount: 0,
+        message,
+      });
+    }
+  }
+
+  return { startDate, endDate, results };
 }
 
 function sharedReservationMatchesEvent(
@@ -596,6 +703,7 @@ export async function refreshFloorPlanSources(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
 ) {
+  const savedBeforeRefresh = await storage.get(date);
   await syncEventPlanWindow(
     { startDate: date, endDate: date },
     { legacyPlans: [] },
@@ -603,6 +711,21 @@ export async function refreshFloorPlanSources(
   await syncEntertainmentDay(date);
   const plan = await reconciledPlan(date, storage);
   if (!plan.events.length) {
+    if (
+      savedBeforeRefresh &&
+      (savedBeforeRefresh.events.length > 0 ||
+        savedBeforeRefresh.reservations.length > 0)
+    ) {
+      await storage.save(
+        {
+          ...plan,
+          events: [],
+          reservations: [],
+          lastTripleseatSyncAt: new Date().toISOString(),
+        },
+        "Removed floor-plan holds without a DEFINITE Tripleseat event.",
+      );
+    }
     throw new Error("No Tripleseat event plan is available for this date.");
   }
   await storage.save(

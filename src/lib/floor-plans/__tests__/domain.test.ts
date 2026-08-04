@@ -197,6 +197,36 @@ describe("floor-plan capacities and generation", () => {
     ).toBe(true);
   });
 
+  it("highlights every contracted room and combines their seating inventory", () => {
+    const source = plan([
+      floorPlanEvent({
+        contractedAreaIds: ["vip-1", "vip-2"],
+        guestCount: 45,
+        source: {
+          rooms: ["VIP 1", "VIP 2"],
+          food: [],
+          entertainment: [],
+          operationalNotes: [],
+          reviewReasons: [],
+        },
+      }),
+    ]);
+    const generated = generateFloorPlanReservations(source, "fill-missing");
+    const rooms = generated
+      .filter((item) => item.reservationType === "room")
+      .map((item) => item.areaId);
+    const tables = generated
+      .filter((item) => item.reservationType === "seating")
+      .map((item) => getFloorPlanArea(item.areaId)!)
+      .filter(Boolean);
+
+    expect(rooms).toEqual(["vip-1", "vip-2"]);
+    expect(seatingCapacity(tables)).toBeGreaterThanOrEqual(45);
+    expect(
+      tables.every((item) => ["vip-1", "vip-2"].includes(item.parentAreaId ?? "")),
+    ).toBe(true);
+  });
+
   it("assigns exactly one designated ADA food table per event", () => {
     const generated = generateFloorPlanReservations(plan(), "fill-missing");
     const food = generated.filter((item) => item.reservationType === "food-table");
