@@ -5105,6 +5105,87 @@ a {
   gap: 14px;
 }
 
+.floor-plan-group {
+  display: grid;
+  gap: 14px;
+}
+
+.floor-plan-group-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.floor-plan-group-heading h2 {
+  margin: 5px 0 0;
+  color: var(--ope-forest);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.45rem, 2.5vw, 2rem);
+}
+
+.floor-plan-group-heading p {
+  margin: 0;
+  color: var(--portal-muted-text);
+  font-size: 0.86rem;
+}
+
+.floor-plan-empty-card {
+  color: var(--portal-muted-text);
+  line-height: 1.5;
+}
+
+.floor-plan-archive {
+  margin-top: 24px;
+  overflow: hidden;
+  border: 1px solid var(--portal-border);
+  border-radius: var(--portal-radius-lg);
+  background: var(--portal-surface);
+  box-shadow: var(--portal-shadow-sm);
+}
+
+.floor-plan-archive > summary {
+  display: flex;
+  min-height: 78px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.floor-plan-archive > summary::-webkit-details-marker {
+  display: none;
+}
+
+.floor-plan-archive > summary:hover {
+  background: var(--portal-surface-muted);
+}
+
+.floor-plan-archive > summary strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--ope-forest);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.35rem;
+}
+
+.floor-plan-archive-count {
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: var(--portal-surface-muted);
+  color: var(--ope-muted-green);
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.floor-plan-archive > .floor-plan-display-list {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--portal-border);
+  background: #f3f5f1;
+}
+
 .portal-card.floor-plan-display-card {
   overflow: hidden;
   padding: 0;
@@ -5228,6 +5309,11 @@ a {
   padding: 0 18px 18px;
   border-top: 1px solid var(--portal-border);
   background: #f8f9f6;
+}
+
+.floor-plan-card-body > .editable-asset-section {
+  margin: 16px 0 0;
+  box-shadow: none;
 }
 
 .floor-plan-event-row {
@@ -5640,6 +5726,12 @@ a {
     gap: 11px;
     padding: 12px;
     grid-template-columns: 72px minmax(0, 1fr) auto;
+  }
+
+  .floor-plan-group-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
   }
 
   .floor-plan-date-block {
