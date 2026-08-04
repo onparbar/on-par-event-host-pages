@@ -85,7 +85,12 @@ function isFoodCategory(value: string | null | undefined) {
     category === "food" ||
     category === "menu" ||
     category.startsWith("food ") ||
-    category.endsWith(" food")
+    category.endsWith(" food") ||
+    category === "dessert" ||
+    category === "desserts" ||
+    category === "taco bar" ||
+    category === "wing bar" ||
+    category === "appetizer bar"
   );
 }
 
@@ -279,6 +284,43 @@ function textualDuration(value: string) {
   return `${match[1]} ${normalizedUnit}`;
 }
 
+function isLaneRentalDurationDetail(
+  value: string,
+  category: EntertainmentCategory,
+) {
+  if (category !== "bowling" && category !== "darts") {
+    return false;
+  }
+  const activity = category === "bowling" ? "bowling" : "dart";
+  return new RegExp(
+    `\\b\\d+(?:\\.\\d+)?\\s*hours?\\s+${activity}\\s+lane\\s+rental\\b`,
+  ).test(normalizedText(value));
+}
+
+function extraLaneHours(
+  value: string,
+  category: EntertainmentCategory,
+) {
+  if (category !== "bowling" && category !== "darts") {
+    return null;
+  }
+  const activity =
+    category === "bowling" ? "(?:duckpin\\s+)?bowling" : "darts?";
+  const match = normalizedText(value).match(
+    new RegExp(`\\b(?:(\\d+)\\s+)?extra\\s+hours?\\s+of\\s+${activity}\\b`),
+  );
+  return match ? Number(match[1] ?? 1) : null;
+}
+
+function addHoursToDuration(value: string, additionalHours: number) {
+  const match = value.match(/^(\d+(?:\.\d+)?)\s+hours?$/);
+  if (!match || !Number.isInteger(additionalHours) || additionalHours <= 0) {
+    return null;
+  }
+  const totalHours = Number(match[1]) + additionalHours;
+  return `${totalHours} hour${totalHours === 1 ? "" : "s"}`;
+}
+
 function entertainmentName(
   category: EntertainmentCategory,
   exactResourceIds: readonly string[],
@@ -341,7 +383,13 @@ export type EventPlanEntertainmentEvidence = {
 
 function mapEntertainment(source: TripleseatEventPlanSource) {
   const reviewReasons: string[] = [];
-  const mappedItems: EventPlanEntertainmentEvidence[] = [];
+  const mappedItems: Array<
+    EventPlanEntertainmentEvidence & {
+      category: EntertainmentCategory;
+      numericQuantity: number | null;
+      sourceName: string;
+    }
+  > = [];
 
   const selectionItems = source.selections.flatMap((selection, index) => {
     const normalized = normalizeKitchenSelection(selection);
@@ -406,21 +454,52 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const duration = range
       ? formattedDuration(range.startAt, range.endAt)
       : textualDuration(text) ?? "Duration not listed on BEO";
+    const structuredRange = item.startAt && item.endAt
+      ? `Start ${item.startAt}; end ${item.endAt}`
+      : null;
+    const candidateSourceText = [item.description || item.name, structuredRange]
+      .filter(Boolean)
+      .join(" · ");
+    const previous = mappedItems.at(-1);
+    const quantitiesMatch =
+      previous != null &&
+      (previous.numericQuantity == null ||
+        quantity == null ||
+        previous.numericQuantity === quantity);
+    const canMergeWithPrevious =
+      previous != null &&
+      previous.category === category &&
+      previous.sourceType === candidate.sourceType &&
+      quantitiesMatch &&
+      range == null;
+    const appendEvidence = () => {
+      if (!previous) return;
+      previous.sourceText = uniqueText([
+        previous.sourceText,
+        `${item.sourceId}: ${candidateSourceText}`,
+      ]).join(" · ");
+    };
 
-    if (quantity == null && exactResourceIds.length === 0) {
-      reviewReasons.push(
-        `Entertainment quantity is missing for "${cleanText(item.name)}".`,
-      );
+    if (
+      canMergeWithPrevious &&
+      previous.item.duration === "Duration not listed on BEO" &&
+      duration !== "Duration not listed on BEO" &&
+      isLaneRentalDurationDetail(text, category)
+    ) {
+      previous.item.duration = duration;
+      appendEvidence();
+      continue;
     }
-    if (!range) {
-      reviewReasons.push(
-        `Entertainment time is missing for "${cleanText(item.name)}".`,
-      );
-    }
-    if (duration === "Duration not listed on BEO") {
-      reviewReasons.push(
-        `Entertainment duration is missing for "${cleanText(item.name)}".`,
-      );
+
+    const additionalHours = extraLaneHours(text, category);
+    const extendedDuration =
+      canMergeWithPrevious && additionalHours != null
+        ? addHoursToDuration(previous.item.duration, additionalHours)
+        : null;
+    if (previous && extendedDuration) {
+      previous.item.duration = extendedDuration;
+      appendEvidence();
+      continue;
     }
 
     const mappedItem = {
@@ -431,16 +510,14 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
         : "Time not listed on BEO",
       duration,
     } satisfies EventPlanEntertainmentItem;
-    const structuredRange = item.startAt && item.endAt
-      ? `Start ${item.startAt}; end ${item.endAt}`
-      : null;
     mappedItems.push({
       item: mappedItem,
       sourceId: item.sourceId,
-      sourceText: [item.description || item.name, structuredRange]
-        .filter(Boolean)
-        .join(" · "),
+      sourceText: candidateSourceText,
       sourceType: candidate.sourceType,
+      category,
+      numericQuantity: quantity,
+      sourceName: cleanText(item.name),
     });
   }
 
@@ -455,9 +532,33 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     seen.add(key);
     return true;
   });
+  for (const mapped of uniqueMappedItems) {
+    if (mapped.item.quantity === "Quantity not listed on BEO") {
+      reviewReasons.push(
+        `Entertainment quantity is missing for "${mapped.sourceName}".`,
+      );
+    }
+    if (mapped.item.time === "Time not listed on BEO") {
+      reviewReasons.push(
+        `Entertainment time is missing for "${mapped.sourceName}".`,
+      );
+    }
+    if (mapped.item.duration === "Duration not listed on BEO") {
+      reviewReasons.push(
+        `Entertainment duration is missing for "${mapped.sourceName}".`,
+      );
+    }
+  }
   return {
     items: uniqueMappedItems.map(({ item }) => item),
-    evidence: uniqueMappedItems,
+    evidence: uniqueMappedItems.map(
+      ({ item, sourceId, sourceText, sourceType }) => ({
+        item,
+        sourceId,
+        sourceText,
+        sourceType,
+      }),
+    ),
     reviewReasons: uniqueText(reviewReasons),
   };
 }

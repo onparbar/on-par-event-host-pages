@@ -1036,7 +1036,10 @@ export function generateKitchenChecklist(
     .filter(
       (selection) =>
         selection.quantityProvided &&
-        !selection.kinds.some((kind) => kind.startsWith("package:")),
+        (selection.normalizedName === "dessert platter" ||
+          selection.normalizedName === "dessert tray" ||
+          selection.normalizedName.startsWith("assorted desserts") ||
+          selection.normalizedName.startsWith("assorted deserts")),
     )
     .reduce((sum, selection) => sum + selection.quantity, 0);
   const calculatedDessertCount = validGuestCount(effectiveGuestCount)

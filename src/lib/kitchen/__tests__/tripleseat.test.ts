@@ -184,6 +184,12 @@ describe("Tripleseat adapter security and normalization", () => {
                     quantity: 2,
                     category: { name: "Food Platters" },
                   },
+                  {
+                    id: 504,
+                    description: "Cookies — Premium, generously sized cookies designed to be shared.",
+                    quantity: 48,
+                    category: { name: "Dessert" },
+                  },
                 ],
               },
             ],
@@ -257,6 +263,7 @@ describe("Tripleseat adapter security and normalization", () => {
       "Taco Bar",
       "Tater Keg Platter",
       "Darts",
+      "Cookies — Premium, generously sized cookies designed to be shared.",
     ]);
     expect(events[0].selections[2]).toMatchObject({
       quantity: 2,
@@ -279,6 +286,15 @@ describe("Tripleseat adapter security and normalization", () => {
           warning.selectionName === "Darts",
       ),
     ).toBe(false);
+    expect(
+      checklist.sections
+        .flatMap((section) => section.rows)
+        .find((row) => row.key === "dessert-platter"),
+    ).toMatchObject({
+      foodName: "Assorted Desserts",
+      quantity: 2,
+      unit: "pretzel plates",
+    });
     expect(events[0].specialNotes).toEqual([]);
     expect(events[0].foodNotes).toEqual([
       expect.objectContaining({

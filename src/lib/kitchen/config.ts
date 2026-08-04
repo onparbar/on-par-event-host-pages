@@ -281,7 +281,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-04.1",
+  ruleVersion: "ope-kitchen-2026-08-04.2",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {

@@ -298,6 +298,59 @@ describe("Tripleseat EventPlan mapping", () => {
     ]);
   });
 
+  it("combines one base bowling hour and one extra hour into one two-hour lane reservation", () => {
+    const plan = buildEventPlan(
+      source({
+        documentItems: [
+          {
+            sourceId: "bowling-parent",
+            name: "Duckpin Bowling Lanes",
+            description: "Duckpin Bowling Lanes",
+            categoryName: "Bowling",
+            quantity: 1,
+            startAt: null,
+            endAt: null,
+          },
+          {
+            sourceId: "bowling-base-hour",
+            name: "1 Hour Bowling Lane Rental - Friday-Saturday (6 players/lane)",
+            description: "1 Hour Bowling Lane Rental - Friday-Saturday (6 players/lane)",
+            categoryName: "Bowling",
+            quantity: 1,
+            startAt: null,
+            endAt: null,
+          },
+          {
+            sourceId: "bowling-extra-hour",
+            name: "Extra Hour of Bowling - Friday-Saturday",
+            description: "Extra Hour of Bowling - Friday-Saturday",
+            categoryName: "Bowling",
+            quantity: 1,
+            startAt: null,
+            endAt: null,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.entertainment).toEqual([
+      {
+        name: "Duckpin Bowling",
+        quantity: "1 lane",
+        time: "Time not listed on BEO",
+        duration: "2 hours",
+      },
+    ]);
+    expect(plan.review_reasons).toContain(
+      'Entertainment time is missing for "Duckpin Bowling Lanes".',
+    );
+    expect(plan.review_reasons).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Entertainment duration is missing"),
+      ]),
+    );
+  });
+
   it("marks missing and ambiguous structured values for review without guessing", () => {
     const plan = buildEventPlan(
       source({

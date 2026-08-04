@@ -1505,6 +1505,11 @@ describe("classification, aliases, and review behavior", () => {
           {
             name: "Appetizer Bar — A curated selection of elevated bites, designed for effortless group enjoyment.",
           },
+          {
+            name: "Cookies — Premium, generously sized cookies designed to be shared.",
+            quantity: 50,
+            sourceCategory: "Dessert",
+          },
         ],
         {
           eventName:
@@ -1516,6 +1521,11 @@ describe("classification, aliases, and review behavior", () => {
     expect(wedding.packageMarkers).toEqual(["the-full-course"]);
     expect(wedding.selectedBars).toEqual(["appetizer"]);
     expect(row(wedding, "appetizer-tater-kegs").quantity).toBe(84);
+    expect(row(wedding, "dessert-platter")).toMatchObject({
+      foodName: "Assorted Desserts",
+      quantity: 2,
+      unit: "pretzel plates",
+    });
     expect(warningCodes(wedding)).not.toContain("UNKNOWN_FOOD_ITEM");
   });
 

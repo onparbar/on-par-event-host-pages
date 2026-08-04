@@ -326,15 +326,25 @@ function categoryName(value: unknown) {
   return asString(value);
 }
 
+function isFoodDocumentCategory(value: string) {
+  const normalized = normalizedSelectionName(value);
+  return (
+    normalized.startsWith("food") ||
+    normalized === "dessert" ||
+    normalized === "desserts" ||
+    normalized === "taco bar" ||
+    normalized === "wing bar" ||
+    normalized === "appetizer bar"
+  );
+}
+
 function documentLineItemCategory(value: unknown) {
   const record = asRecord(value);
   if (!record) {
     const displayName = asString(value);
     return {
       displayName,
-      isFood:
-        displayName != null &&
-        normalizedSelectionName(displayName).startsWith("food"),
+      isFood: displayName != null && isFoodDocumentCategory(displayName),
     };
   }
 
@@ -344,9 +354,7 @@ function documentLineItemCategory(value: unknown) {
     displayName:
       name || asString(record.display_name) || internalName,
     isFood: [name, internalName].some(
-      (candidate) =>
-        candidate != null &&
-        normalizedSelectionName(candidate).startsWith("food"),
+      (candidate) => candidate != null && isFoodDocumentCategory(candidate),
     ),
   };
 }

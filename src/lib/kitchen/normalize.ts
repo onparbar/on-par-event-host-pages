@@ -189,6 +189,13 @@ function isAssortedDessertPlatter(normalizedName: string) {
   );
 }
 
+function isCookieDessert(normalizedName: string) {
+  return (
+    normalizedName === "cookies" ||
+    normalizedName.startsWith("cookies ")
+  );
+}
+
 function inferFoodFlag(
   selection: KitchenSourceSelection,
 ): boolean | null {
@@ -202,7 +209,12 @@ function inferFoodFlag(
   if (
     category === "food" ||
     category === "menu" ||
-    category.startsWith("food ")
+    category.startsWith("food ") ||
+    category === "dessert" ||
+    category === "desserts" ||
+    category === "taco bar" ||
+    category === "wing bar" ||
+    category === "appetizer bar"
   ) {
     return true;
   }
@@ -231,6 +243,9 @@ export function normalizeKitchenSelection(
     normalizedCategory === "food platters" &&
     isAssortedDessertPlatter(normalizedName)
   ) {
+    categoryAware.push("dessert");
+  }
+  if (isCookieDessert(normalizedName)) {
     categoryAware.push("dessert");
   }
   const kinds = uniqueKinds([

@@ -580,7 +580,7 @@ describe("Supabase kitchen storage authentication", () => {
       .flatMap((section) => section.rows)
       .find((item) => item.key === "taco-chicken");
 
-    expect(day.events[0].ruleVersion).toBe("ope-kitchen-2026-08-04.1");
+    expect(day.events[0].ruleVersion).toBe("ope-kitchen-2026-08-04.2");
     expect(currentChicken).toMatchObject({
       quantity: 5,
       numberOfPans: 2,
