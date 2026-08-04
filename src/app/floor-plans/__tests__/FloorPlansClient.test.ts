@@ -1,10 +1,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DateAsset } from "@/lib/events";
 import {
   FloorPlanCard,
   organizeFloorPlanAssets,
+  syncFloorPlanFromTripleseat,
 } from "../FloorPlansClient";
 
 const pastPlan: DateAsset = {
@@ -73,12 +74,14 @@ describe("floor-plan dashboard organization", () => {
         asset: plan,
         isOpen: true,
         onOpenChange: () => {},
+        onSync: () => {},
         overlays: [],
       }),
     );
 
     expect(html).toContain("<details open=\"\"");
     expect(html).toContain("Next Event");
+    expect(html).toContain("Sync live from Tripleseat");
     for (const editorCopy of [
       "Add Highlight",
       "Add Cover",
@@ -90,5 +93,35 @@ describe("floor-plan dashboard organization", () => {
     ]) {
       expect(html).not.toContain(editorCopy);
     }
+  });
+
+  it("runs the real Tripleseat floor-plan refresh action for the selected date", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          date: nextPlan.date,
+          plan: {
+            eventDate: nextPlan.date,
+            events: [],
+            lastTripleseatSyncAt: "2026-08-04T16:00:00.000Z",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    const result = await syncFloorPlanFromTripleseat(
+      nextPlan.date,
+      fetchImpl as typeof fetch,
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/floor-plans", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ date: nextPlan.date, action: "refresh" }),
+    });
+    expect(result.plan.lastTripleseatSyncAt).toBe(
+      "2026-08-04T16:00:00.000Z",
+    );
   });
 });

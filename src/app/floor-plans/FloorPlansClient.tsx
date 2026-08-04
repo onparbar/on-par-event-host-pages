@@ -10,11 +10,39 @@ import {
 } from "@/app/_components/PortalShell";
 import type { AdminAssetOverlay, AdminState } from "@/lib/admin-types";
 import type { DateAsset } from "@/lib/events";
+import type {
+  FloorPlanDayPayload,
+  FloorPlanEvent,
+} from "@/lib/floor-plans/types";
 
 export type FloorPlanDisplayAsset = DateAsset & {
   archiveReason: "manual" | "past" | null;
   specialPage: boolean;
 };
+
+type FloorPlanLiveState = {
+  payload: FloorPlanDayPayload | null;
+  status: "idle" | "syncing" | "success" | "error";
+  message: string;
+};
+
+export async function syncFloorPlanFromTripleseat(
+  date: string,
+  fetchImpl: typeof fetch = fetch,
+) {
+  const response = await fetchImpl("/api/floor-plans", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ date, action: "refresh" }),
+  });
+  const result = (await response.json().catch(() => null)) as
+    | (FloorPlanDayPayload & { error?: string })
+    | null;
+  if (!response.ok || !result?.plan) {
+    throw new Error(result?.error || "Unable to sync this floor plan from Tripleseat.");
+  }
+  return result;
+}
 
 export function organizeFloorPlanAssets(
   plans: DateAsset[],
@@ -75,18 +103,43 @@ function dateBlock(date: string) {
   };
 }
 
+function eventTime(event: FloorPlanEvent) {
+  if (!event.startAt || !event.endAt) return "Time needs review";
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+  });
+  return `${formatter.format(new Date(event.startAt))} – ${formatter.format(new Date(event.endAt))}`;
+}
+
+function syncTime(value: string | null) {
+  if (!value) return "Not synced yet";
+  return `Last synced ${new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  }).format(new Date(value))}`;
+}
+
 export function FloorPlanCard({
   asset,
   isOpen,
+  liveState,
   onOpenChange,
+  onSync,
   overlays,
 }: {
   asset: FloorPlanDisplayAsset;
   isOpen: boolean;
+  liveState?: FloorPlanLiveState;
   onOpenChange: (open: boolean) => void;
+  onSync: () => void;
   overlays: AdminAssetOverlay[];
 }) {
   const date = dateBlock(asset.date);
+  const liveEvents = liveState?.payload?.plan.events ?? null;
+  const displayedEvents = liveEvents?.map((event) => event.name) ?? asset.events;
   const badge = asset.specialPage
     ? "Special page"
     : asset.archiveReason === "manual"
@@ -108,7 +161,7 @@ export function FloorPlanCard({
           </span>
           <span className="floor-plan-card-heading">
             <strong>{asset.label}</strong>
-            <span>{asset.events.join(" · ") || "No event name listed"}</span>
+            <span>{displayedEvents.join(" · ") || "No event name listed"}</span>
           </span>
           <PortalStatusBadge
             tone={asset.archiveReason ? "neutral" : "success"}
@@ -127,7 +180,45 @@ export function FloorPlanCard({
               <p className="floor-plan-special-note">
                 This published special page is kept separate from the main event floor map.
               </p>
-            ) : null}
+            ) : (
+              <>
+                <div className="floor-plan-live-sync-bar">
+                  <div>
+                    <strong>Tripleseat live details</strong>
+                    <span aria-live="polite">
+                      {liveState?.status === "syncing"
+                        ? "Refreshing event details from Tripleseat…"
+                        : liveState?.message || "Refresh event names, times, guest counts, and reserved sections."}
+                    </span>
+                  </div>
+                  <button
+                    className="floor-plan-live-sync-button"
+                    disabled={liveState?.status === "syncing"}
+                    onClick={onSync}
+                    type="button"
+                  >
+                    {liveState?.status === "syncing"
+                      ? "Syncing…"
+                      : "Sync live from Tripleseat"}
+                  </button>
+                </div>
+                {liveEvents?.length ? (
+                  <div className="floor-plan-event-row" aria-label="Live Tripleseat events">
+                    {liveEvents.map((event) => (
+                      <article
+                        className="floor-plan-event-chip"
+                        key={event.id}
+                        style={{ "--event-color": event.color } as React.CSSProperties}
+                      >
+                        <strong>{event.name}</strong>
+                        <span>{event.guestCount} guests · {eventTime(event)}</span>
+                        <span>{event.source.rooms.join(", ") || "Reserved section needs review"}</span>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
             <div className="floor-plan-image-frame">
               <AssetImageWithOverlays
                 alt={`Floor plan for ${asset.label}`}
@@ -166,10 +257,42 @@ export default function FloorPlansClient({
   const [openAssetKey, setOpenAssetKey] = useState<string | null>(
     organized.defaultAssetKey,
   );
+  const [liveByDate, setLiveByDate] = useState<Record<string, FloorPlanLiveState>>({});
 
   async function handleLogout() {
     await fetch("/api/admin-session", { method: "DELETE" });
     window.location.reload();
+  }
+
+  async function handleLiveSync(date: string) {
+    setLiveByDate((current) => ({
+      ...current,
+      [date]: {
+        payload: current[date]?.payload ?? null,
+        status: "syncing",
+        message: "",
+      },
+    }));
+    try {
+      const payload = await syncFloorPlanFromTripleseat(date);
+      setLiveByDate((current) => ({
+        ...current,
+        [date]: {
+          payload,
+          status: "success",
+          message: `${syncTime(payload.plan.lastTripleseatSyncAt)} · ${payload.plan.events.length} event${payload.plan.events.length === 1 ? "" : "s"} updated`,
+        },
+      }));
+    } catch (error) {
+      setLiveByDate((current) => ({
+        ...current,
+        [date]: {
+          payload: current[date]?.payload ?? null,
+          status: "error",
+          message: error instanceof Error ? error.message : "Unable to sync this floor plan from Tripleseat.",
+        },
+      }));
+    }
   }
 
   function renderPlan(asset: FloorPlanDisplayAsset) {
@@ -178,11 +301,13 @@ export default function FloorPlansClient({
         asset={asset}
         isOpen={openAssetKey === asset.image}
         key={`${asset.specialPage ? "special" : "plan"}-${asset.image}`}
+        liveState={liveByDate[asset.date]}
         onOpenChange={(open) =>
           setOpenAssetKey((current) =>
             open ? asset.image : current === asset.image ? null : current,
           )
         }
+        onSync={() => void handleLiveSync(asset.date)}
         overlays={initialState.overlaysByAsset[asset.image] ?? []}
       />
     );

@@ -5327,6 +5327,53 @@ a {
   box-shadow: none;
 }
 
+.floor-plan-live-sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+}
+
+.floor-plan-live-sync-bar > div {
+  display: grid;
+  gap: 3px;
+}
+
+.floor-plan-live-sync-bar strong {
+  color: var(--ope-forest);
+  font-size: 0.88rem;
+}
+
+.floor-plan-live-sync-bar span {
+  color: var(--portal-muted-text);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.floor-plan-live-sync-button {
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 10px 15px;
+  border: 1px solid var(--ope-action-green);
+  border-radius: var(--portal-radius-sm);
+  background: var(--ope-action-green);
+  color: var(--ope-white);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.floor-plan-live-sync-button:hover:not(:disabled) {
+  background: #1f5d1c;
+}
+
+.floor-plan-live-sync-button:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
 .floor-plan-event-row {
   display: flex;
   flex-wrap: wrap;
@@ -5340,7 +5387,7 @@ a {
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid #d5ddd5;
-  border-left: 5px solid var(--ope-sage);
+  border-left: 5px solid var(--event-color, var(--ope-sage));
   border-radius: 9px;
   background: var(--portal-surface);
   color: var(--ope-forest);
@@ -5778,6 +5825,15 @@ a {
 
   .floor-plan-card-body {
     padding: 0 10px 10px;
+  }
+
+  .floor-plan-live-sync-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .floor-plan-live-sync-button {
+    width: 100%;
   }
 
   .floor-plan-event-chip {
