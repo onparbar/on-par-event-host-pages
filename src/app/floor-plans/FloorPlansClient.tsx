@@ -123,11 +123,11 @@ export function FloorPlanCard({
         </summary>
         {isOpen ? (
           <div className="floor-plan-card-body">
-            <p className="floor-plan-special-note">
-              {asset.specialPage
-                ? "This published special page is kept separate from the main event floor map."
-                : "Published floor plan. Highlight editing and Tripleseat synchronization are available to administrators only."}
-            </p>
+            {asset.specialPage ? (
+              <p className="floor-plan-special-note">
+                This published special page is kept separate from the main event floor map.
+              </p>
+            ) : null}
             <div className="floor-plan-image-frame">
               <AssetImageWithOverlays
                 alt={`Floor plan for ${asset.label}`}

@@ -79,9 +79,16 @@ describe("floor-plan dashboard organization", () => {
 
     expect(html).toContain("<details open=\"\"");
     expect(html).toContain("Next Event");
-    expect(html).toContain("Published floor plan");
-    expect(html).not.toContain("Add Highlight");
-    expect(html).not.toContain("Add Cover");
-    expect(html).not.toContain("Reset Edits");
+    for (const editorCopy of [
+      "Add Highlight",
+      "Add Cover",
+      "Reset Edits",
+      "Editor controls",
+      "Highlight editing",
+      "Tripleseat synchronization",
+      "how to edit",
+    ]) {
+      expect(html).not.toContain(editorCopy);
+    }
   });
 });
