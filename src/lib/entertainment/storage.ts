@@ -45,6 +45,7 @@ export interface EntertainmentStorage {
   startSync(date: string): Promise<void>;
   saveSync(input: SaveSyncInput): Promise<void>;
   failSync(date: string, message: string): Promise<void>;
+  saveEventSnapshot(event: EntertainmentEventSnapshot): Promise<void>;
   saveManualReservation(
     reservation: EntertainmentReservation,
     audit: EntertainmentAuditEntry,
@@ -648,6 +649,18 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
       body: JSON.stringify(auditToRow(audit)),
     });
   }
+
+  async saveEventSnapshot(event: EntertainmentEventSnapshot) {
+    await this.emptyRequest(
+      "entertainment_event_snapshots",
+      new URLSearchParams({ on_conflict: "event_id" }),
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(eventToRow(event)),
+      },
+    );
+  }
 }
 
 export class MemoryEntertainmentStorage implements EntertainmentStorage {
@@ -787,6 +800,18 @@ export class MemoryEntertainmentStorage implements EntertainmentStorage {
       structuredClone(audit),
       ...(this.audits.get(reservation.id) ?? []),
     ]);
+  }
+
+  async saveEventSnapshot(event: EntertainmentEventSnapshot) {
+    for (const [date, events] of this.events) {
+      const remaining = events.filter((item) => item.eventId !== event.eventId);
+      if (remaining.length !== events.length) {
+        this.events.set(date, remaining);
+      }
+    }
+    const values = this.events.get(event.operatingDate) ?? [];
+    values.push(structuredClone(event));
+    this.events.set(event.operatingDate, values);
   }
 }
 

@@ -11,6 +11,7 @@ import {
   eventColorAndSource,
   mergeReservationsForSync,
   validateReservationTimes,
+  type BuiltSchedule,
   type LocalEntertainmentEvent,
 } from "./domain";
 import { getLocalEntertainmentEvents } from "./floor-plan";
@@ -221,6 +222,55 @@ function manualEventSnapshots(
   );
 }
 
+function eventIdentityValues(event: EntertainmentEventSnapshot) {
+  return [event.eventId, event.localEventId, event.tripleseatEventId].filter(
+    (value): value is string => Boolean(value),
+  );
+}
+
+function reservationMatchesEventId(
+  reservation: EntertainmentReservation,
+  eventId: string,
+) {
+  return [reservation.localEventId, reservation.tripleseatEventId].some(
+    (value) => value === eventId,
+  );
+}
+
+function preserveManualEventColors(
+  built: BuiltSchedule,
+  existingEvents: readonly EntertainmentEventSnapshot[],
+): BuiltSchedule {
+  const manualColors = new Map<string, string>();
+  for (const event of existingEvents) {
+    if (event.colorSource !== "manual") continue;
+    for (const identity of eventIdentityValues(event)) {
+      manualColors.set(identity, event.eventColor);
+    }
+  }
+  const colorForReservation = (reservation: EntertainmentReservation) =>
+    [reservation.localEventId, reservation.tripleseatEventId]
+      .filter((value): value is string => Boolean(value))
+      .map((identity) => manualColors.get(identity))
+      .find((color): color is string => Boolean(color));
+  return {
+    events: built.events.map((event) => {
+      const eventColor = eventIdentityValues(event)
+        .map((identity) => manualColors.get(identity))
+        .find((color): color is string => Boolean(color));
+      return eventColor
+        ? { ...event, eventColor, colorSource: "manual" }
+        : event;
+    }),
+    reservations: built.reservations.map((reservation) => {
+      const eventColor = colorForReservation(reservation);
+      return eventColor
+        ? { ...reservation, eventColor, colorSource: "manual" }
+        : reservation;
+    }),
+  };
+}
+
 export async function getEntertainmentDay(
   date: string,
   options: EntertainmentDependencies = {},
@@ -231,7 +281,8 @@ export async function getEntertainmentDay(
   const stored = await storage.getDay(date);
   const diagnostics = adapter.getDiagnostics();
   const reservations = stored.reservations.filter(
-    (reservation) => reservation.active,
+    (reservation) =>
+      reservation.active && reservation.resourceCategory !== "mini-golf",
   );
   const events = [
     ...stored.events,
@@ -335,12 +386,15 @@ export async function syncEntertainmentDay(
       sourceEvents = mockSourceEvents(date, context.localEvents);
     }
     const now = new Date().toISOString();
-    const built = buildEntertainmentSchedule({
-      sourceEvents,
-      localEvents: context.localEvents,
-      existingReservations: stored.reservations,
-      now,
-    });
+    const built = preserveManualEventColors(
+      buildEntertainmentSchedule({
+        sourceEvents,
+        localEvents: context.localEvents,
+        existingReservations: stored.reservations,
+        now,
+      }),
+      stored.events,
+    );
     const merged = mergeReservationsForSync(
       stored.reservations,
       built.reservations,
@@ -438,6 +492,11 @@ function mutationFields(input: ReservationMutationInput) {
   if (!resource) {
     throw new Error("Unknown entertainment resource.");
   }
+  if (resource.category === "mini-golf") {
+    throw new Error(
+      "Mini golf is open play and does not require an Entertainment Schedule reservation.",
+    );
+  }
   const startAt = stringField(input.startAt, "Start time", 40);
   const endAt = stringField(input.endAt, "End time", 40);
   validateReservationTimes(startAt, endAt);
@@ -493,6 +552,65 @@ function auditEntry(
     intentionalConflict,
     createdAt: reservation.updatedAt,
   };
+}
+
+async function applyEventColorOverride({
+  storage,
+  operatingDate,
+  eventId,
+  eventColor,
+  excludeReservationId,
+  reason,
+  now,
+}: {
+  storage: EntertainmentStorage;
+  operatingDate: string;
+  eventId: string;
+  eventColor: string;
+  excludeReservationId: string;
+  reason: string;
+  now: string;
+}) {
+  const day = await storage.getDay(operatingDate);
+  const event = day.events.find((candidate) =>
+    eventIdentityValues(candidate).includes(eventId),
+  );
+  if (event) {
+    await storage.saveEventSnapshot({
+      ...event,
+      eventColor,
+      colorSource: "manual",
+      syncedAt: now,
+    });
+  }
+  const related = day.reservations.filter(
+    (reservation) =>
+      reservation.id !== excludeReservationId &&
+      reservationMatchesEventId(reservation, eventId) &&
+      (reservation.eventColor !== eventColor ||
+        reservation.colorSource !== "manual"),
+  );
+  await Promise.all(
+    related.map(async (existing) => {
+      const reservation = {
+        ...existing,
+        eventColor,
+        colorSource: "manual" as const,
+        updatedAt: now,
+        updatedBy: "authenticated-event-host-staff",
+      };
+      await storage.saveManualReservation(
+        reservation,
+        auditEntry(
+          reservation,
+          "manual-update",
+          existing,
+          reason || "Changed the event color.",
+          false,
+        ),
+      );
+    }),
+  );
 }
 
 async function assertNoUnconfirmedConflict(
@@ -633,6 +751,21 @@ export async function updateEntertainmentReservation(
       intentionalConflict,
     ),
   );
+  if (
+    values.eventId &&
+    (existing.eventColor !== reservation.eventColor ||
+      existing.colorSource !== "manual")
+  ) {
+    await applyEventColorOverride({
+      storage,
+      operatingDate: reservation.operatingDate,
+      eventId: values.eventId,
+      eventColor: reservation.eventColor,
+      excludeReservationId: reservation.id,
+      reason: values.reason,
+      now,
+    });
+  }
   return reservation;
 }
 

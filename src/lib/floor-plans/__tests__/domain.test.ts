@@ -304,7 +304,7 @@ describe("time and buyout conflicts", () => {
 });
 
 describe("validation, lifecycle, and shared records", () => {
-  it("does not require a timed mini-golf label", () => {
+  it("does not require an Entertainment Schedule reservation for mini golf", () => {
     const event = floorPlanEvent({
       source: {
         rooms: ["Main Dining Room"],
@@ -316,10 +316,11 @@ describe("validation, lifecycle, and shared records", () => {
     });
     const validation = validateFloorPlan(
       plan([event]),
-      [entertainmentReservation()],
+      [],
       [],
       [],
     );
+    expect(validation.find((item) => item.code === "ENTERTAINMENT_QUANTITY")?.status).toBe("Passed");
     expect(validation.find((item) => item.code === "ENTERTAINMENT_TIME")?.status).toBe("Passed");
   });
 

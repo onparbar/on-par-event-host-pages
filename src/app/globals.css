@@ -7155,7 +7155,26 @@ a {
 
 @media screen and (min-width: 981px) {
   .kitchen-event-checklist-grid-multiple .kitchen-checklist-heading {
-    min-height: 70px;
+    min-height: 118px;
+    grid-template-columns: repeat(2, minmax(100px, 0.55fr)) minmax(0, 1fr);
+  }
+
+  .kitchen-event-checklist-grid-multiple .kitchen-checklist-event-name {
+    grid-column: 1 / -1;
+  }
+
+  .kitchen-event-checklist-grid-multiple .kitchen-event-name-line {
+    flex-wrap: wrap;
+  }
+
+  .kitchen-event-checklist-grid-multiple .kitchen-checklist-event-name h2 {
+    flex: 1 1 260px;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .kitchen-event-checklist-grid-multiple .kitchen-checklist-brand-actions {
+    justify-content: flex-end;
   }
 
   .kitchen-event-checklist-grid-multiple .kitchen-checklist-event-name,
@@ -7163,10 +7182,6 @@ a {
   .kitchen-event-checklist-grid-multiple .kitchen-checklist-brand-actions,
   .kitchen-event-checklist-grid-multiple .kitchen-checklist-schedule > div {
     padding: 7px 9px;
-  }
-
-  .kitchen-event-checklist-grid-multiple .kitchen-checklist-event-name h2 {
-    font-size: clamp(0.98rem, 1.25vw, 1.28rem);
   }
 
   .kitchen-event-checklist-grid-multiple .kitchen-print-logo {

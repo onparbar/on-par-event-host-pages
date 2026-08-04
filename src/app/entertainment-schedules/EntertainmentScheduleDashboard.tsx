@@ -13,6 +13,7 @@ import {
 import {
   ENTERTAINMENT_CATEGORY_LABELS,
   ENTERTAINMENT_RESOURCES,
+  ENTERTAINMENT_SCHEDULE_CATEGORIES,
   getEntertainmentResource,
   resourcesForCategory,
   textColorForBackground,
@@ -45,12 +46,7 @@ const OPERATING_MINUTES = 15 * 60;
 const RESOURCE_ROW_HEIGHT = 28;
 const RESERVATION_SLOT_HEIGHT = 24;
 const CATEGORY_ORDER: EntertainmentCategory[] = [
-  "bowling",
-  "darts",
-  "pool",
-  "shuffleboard",
-  "mini-golf",
-  "private-rooms",
+  ...ENTERTAINMENT_SCHEDULE_CATEGORIES,
 ];
 
 type ScheduleFilter =
@@ -424,7 +420,6 @@ function ReservationModal({
           <label className="entertainment-field">
             <span>Event color</span>
             <input
-              disabled={Boolean(value.eventId)}
               onChange={(event) =>
                 setValue((current) => ({
                   ...current,
@@ -1396,7 +1391,6 @@ export default function EntertainmentScheduleDashboard({
               ["darts", "Darts"],
               ["pool", "Pool"],
               ["shuffleboard", "Shuffleboard"],
-              ["mini-golf", "Mini Golf"],
               ["private-rooms", "Private Rooms"],
             ].map(([value, label]) => (
               <button

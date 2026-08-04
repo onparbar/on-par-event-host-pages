@@ -18,9 +18,13 @@ import {
   getFloorPlanDay,
   refreshFloorPlanSources,
 } from "../service";
+import { floorPlanEventColorsAreDistinct } from "../configuration/colors";
 import { MemoryFloorPlanStorage } from "../storage";
+import { FLOOR_PLAN_RULE_VERSION } from "../types";
 
-function source(): TripleseatEventPlanSource {
+function source(
+  overrides: Partial<TripleseatEventPlanSource> = {},
+): TripleseatEventPlanSource {
   return {
     eventId: "62001001",
     bookingId: "71001001",
@@ -61,6 +65,7 @@ function source(): TripleseatEventPlanSource {
       },
     ],
     sourceUpdatedAt: "2026-08-03T15:00:00Z",
+    ...overrides,
   };
 }
 
@@ -195,5 +200,47 @@ describe("Floor Plan Tripleseat source enforcement", () => {
       eventDate: "2026-08-06",
       lastTripleseatSyncAt: payload.plan.lastTripleseatSyncAt,
     });
+  });
+
+  it("repairs visually similar saved event colors during live sync", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    const sources = [
+      source(),
+      source({
+        eventId: "62001002",
+        bookingId: "71001002",
+        eventName: "Second Redacted Tripleseat Event",
+        eventStartAt: "2026-08-06T20:00:00-04:00",
+        eventEndAt: "2026-08-06T22:00:00-04:00",
+      }),
+    ];
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => sources));
+
+    const initial = await refreshFloorPlanSources(
+      "2026-08-06",
+      floorPlanStorage,
+    );
+    await floorPlanStorage.save(
+      {
+        ...initial.plan,
+        events: initial.plan.events.map((event, index) => ({
+          ...event,
+          color: index === 0 ? "#0F766E" : "#047857",
+        })),
+      },
+      "Test fixture with visually similar event colors.",
+    );
+
+    const refreshed = await refreshFloorPlanSources(
+      "2026-08-06",
+      floorPlanStorage,
+    );
+    const colors = refreshed.plan.events.map((event) => event.color);
+
+    expect(colors).toHaveLength(2);
+    expect(floorPlanEventColorsAreDistinct(colors[0], colors[1])).toBe(true);
+    expect(refreshed.plan.ruleVersion).toBe(FLOOR_PLAN_RULE_VERSION);
   });
 });

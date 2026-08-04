@@ -3,6 +3,7 @@ import {
   deterministicEventColor,
   exactResourceIdsForText,
   getEntertainmentResource,
+  isEntertainmentScheduleCategory,
   isAmbiguousLaneText,
   isHexColor,
   quantityForText,
@@ -318,20 +319,33 @@ export function buildEntertainmentSchedule({
 
     const relevantSourceItems = source.items.filter((item) => {
       const text = itemText(item);
-      return canonicalCategoryForText(text) != null || isAmbiguousLaneText(text);
+      const category = canonicalCategoryForText(text);
+      return (
+        (category != null && isEntertainmentScheduleCategory(category)) ||
+        isAmbiguousLaneText(text)
+      );
     });
+    const localScheduleItems = localEvent
+      ? localFallbackItems(localEvent).filter((item) => {
+          const category = canonicalCategoryForText(itemText(item));
+          return category != null && isEntertainmentScheduleCategory(category);
+        })
+      : [];
     const usingLocalFallback =
       relevantSourceItems.length === 0 &&
-      (localEvent?.entertainment.length ?? 0) > 0;
+      localScheduleItems.length > 0;
     let items = usingLocalFallback
-      ? localFallbackItems(localEvent!)
+      ? localScheduleItems
       : relevantSourceItems;
     items = [...items, ...privateRoomItems(source)];
     if (
       relevantSourceItems.length === 0 &&
       !usingLocalFallback &&
       source.categoryNames.some(
-        (name) => canonicalCategoryForText(name) != null,
+        (name) => {
+          const category = canonicalCategoryForText(name);
+          return category != null && isEntertainmentScheduleCategory(category);
+        },
       )
     ) {
       eventIssues.push({
@@ -355,6 +369,9 @@ export function buildEntertainmentSchedule({
     items.forEach((item) => {
       const text = itemText(item);
       const category = canonicalCategoryForText(text);
+      if (category === "mini-golf") {
+        return;
+      }
       if (!category) {
         if (isAmbiguousLaneText(text)) {
           eventIssues.push({
@@ -383,7 +400,7 @@ export function buildEntertainmentSchedule({
         return;
       }
       const itemIssues: EntertainmentReviewIssue[] = [];
-      if (timing.usedFallback && category !== "mini-golf") {
+      if (timing.usedFallback) {
         itemIssues.push({
           code: "TIME_NEEDS_REVIEW",
           message: `${item.name} uses the event start and end time as a temporary fallback.`,

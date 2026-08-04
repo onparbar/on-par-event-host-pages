@@ -114,6 +114,20 @@ export const ENTERTAINMENT_CATEGORY_LABELS: Record<
   "private-rooms": "Private Rooms",
 };
 
+export const ENTERTAINMENT_SCHEDULE_CATEGORIES = [
+  "bowling",
+  "darts",
+  "pool",
+  "shuffleboard",
+  "private-rooms",
+] as const satisfies readonly EntertainmentCategory[];
+
+export function isEntertainmentScheduleCategory(
+  category: EntertainmentCategory,
+) {
+  return category !== "mini-golf";
+}
+
 const RESOURCE_BY_ID = new Map(
   ENTERTAINMENT_RESOURCES.map((resource) => [resource.id, resource]),
 );

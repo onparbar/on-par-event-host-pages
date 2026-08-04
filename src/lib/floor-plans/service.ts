@@ -15,7 +15,10 @@ import type {
 } from "@/lib/event-plans/types";
 import { resolveAreaAlias } from "./configuration/aliases";
 import { selectEntertainmentResources } from "./configuration/adjacency";
-import { floorPlanEventColor } from "./configuration/colors";
+import {
+  distinctFloorPlanEventColor,
+  floorPlanEventColorsAreDistinct,
+} from "./configuration/colors";
 import { getFloorPlanArea } from "./configuration/areas";
 import { detectFloorPlanConflicts, timeRangesOverlap } from "./conflicts";
 import { generateFloorPlanReservations } from "./generator";
@@ -85,9 +88,11 @@ function normalizedFloorPlanEvent(
     endAt: range.endAt,
     contractedAreaIds,
     unresolvedAreaNames,
-    color: isHexColor(plan.color)
-      ? plan.color.toUpperCase()
-      : floorPlanEventColor(index, usedColors),
+    color: distinctFloorPlanEventColor(
+      isHexColor(plan.color) ? plan.color : null,
+      index,
+      usedColors,
+    ),
     beoLastModifiedAt:
       sourceValue(sourceSnapshot, "sourceUpdatedAt") ??
       plan.source_updated_at ??
@@ -183,14 +188,19 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
     const previous = saved?.events.find(
       (event) => event.tripleseatEventId === current.tripleseatEventId,
     );
+    const color = distinctFloorPlanEventColor(
+      previous && isHexColor(previous.color) ? previous.color : current.color,
+      index,
+      usedColors,
+    );
     currentEvents.push(
       previous
         ? {
             ...current,
             id: previous.id,
-            color: previous.color,
+            color,
           }
-        : current,
+        : { ...current, color },
     );
   }
   if (!saved) return createPlan(date, currentEvents);
@@ -206,6 +216,7 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   }) || saved.events.some((event) => !currentIds.has(event.id));
   return {
     ...saved,
+    ruleVersion: FLOOR_PLAN_RULE_VERSION,
     events: currentEvents,
     reservations: retainedReservations,
     status: floorPlanStatusAfterSourceChange(saved.status, changed),
@@ -323,8 +334,8 @@ function sharedReservationMatchesEvent(
   );
 }
 
-function supportsProximity(category: EntertainmentReservation["resourceCategory"]): category is "bowling" | "darts" | "pool" | "shuffleboard" | "mini-golf" {
-  return category !== "private-rooms";
+function supportsProximity(category: EntertainmentReservation["resourceCategory"]): category is "bowling" | "darts" | "pool" | "shuffleboard" {
+  return category !== "private-rooms" && category !== "mini-golf";
 }
 
 async function alignGeneratedEntertainment(
@@ -485,8 +496,17 @@ export async function saveFloorPlanEdits(
       ? { ...event, color: color.toUpperCase() }
       : event;
   });
-  if (new Set(events.map((event) => event.color)).size !== events.length) {
-    throw new Error("Each event on a date must use a distinct color.");
+  if (
+    events.some((event, index) =>
+      events
+        .slice(0, index)
+        .some(
+          (candidate) =>
+            !floorPlanEventColorsAreDistinct(event.color, candidate.color),
+        ),
+    )
+  ) {
+    throw new Error("Each event on a date must use a visually distinct color.");
   }
   const next = {
     ...plan,
@@ -586,7 +606,11 @@ export async function refreshFloorPlanSources(
     throw new Error("No Tripleseat event plan is available for this date.");
   }
   await storage.save(
-    { ...plan, lastTripleseatSyncAt: new Date().toISOString() },
+    {
+      ...plan,
+      ruleVersion: FLOOR_PLAN_RULE_VERSION,
+      lastTripleseatSyncAt: new Date().toISOString(),
+    },
     "Synchronized live Tripleseat floor-plan fields.",
   );
   return getFloorPlanDay(date, storage);

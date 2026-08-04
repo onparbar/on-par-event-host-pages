@@ -180,6 +180,72 @@ describe("persistent entertainment synchronization", () => {
     );
   });
 
+  it("applies a linked event color to every reservation and keeps it after sync", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const source = sourceEvent();
+    source.items = [
+      {
+        ...source.items[0],
+        name: "Bowling Lanes 1-2",
+        description: "Bowling Lanes 1-2",
+        quantity: 2,
+      },
+    ];
+    const dependencies = {
+      storage,
+      adapter: adapter([source]),
+      localEvents,
+    };
+    const synced = await syncEntertainmentDay(DATE, dependencies);
+    expect(synced.reservations).toHaveLength(2);
+
+    const original = synced.reservations[0];
+    await updateEntertainmentReservation(
+      original.id,
+      {
+        operatingDate: DATE,
+        eventId: original.tripleseatEventId,
+        eventName: original.eventName,
+        resourceId: original.resourceId,
+        startAt: original.startAt,
+        endAt: original.endAt,
+        eventColor: "#7C3AED",
+        reason: "Changed the event highlight color.",
+      },
+      { storage },
+    );
+
+    const updated = await getEntertainmentDay(DATE, dependencies);
+    expect(updated.events[0]).toMatchObject({
+      eventColor: "#7C3AED",
+      colorSource: "manual",
+    });
+    expect(
+      new Set(updated.reservations.map((reservation) => reservation.eventColor)),
+    ).toEqual(new Set(["#7C3AED"]));
+
+    const resynced = await syncEntertainmentDay(DATE, dependencies);
+    expect(
+      new Set(resynced.reservations.map((reservation) => reservation.eventColor)),
+    ).toEqual(new Set(["#7C3AED"]));
+  });
+
+  it("rejects manual Mini Golf reservations because it is open play", async () => {
+    await expect(
+      createManualEntertainmentReservation(
+        {
+          operatingDate: DATE,
+          eventName: "Open Play Event",
+          resourceId: "mini-golf-level-up",
+          startAt: "2026-07-28T21:00:00.000Z",
+          endAt: "2026-07-28T22:00:00.000Z",
+          eventColor: "#1D4ED8",
+        },
+        { storage: new MemoryEntertainmentStorage() },
+      ),
+    ).rejects.toThrow("does not require an Entertainment Schedule reservation");
+  });
+
   it("moves a manual reservation between date buckets without a stale copy", async () => {
     const storage = new MemoryEntertainmentStorage();
     const created = await createManualEntertainmentReservation(

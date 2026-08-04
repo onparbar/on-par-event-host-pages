@@ -329,7 +329,13 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   useEffect(() => {
     setFoodTableMode(Boolean(selectedArea?.canBeFoodTable));
-    setEntertainmentMode(Boolean(selectedArea?.entertainmentResourceId && selectedArea.type !== "room"));
+    setEntertainmentMode(
+      Boolean(
+        selectedArea?.entertainmentResourceId &&
+          selectedArea.type !== "room" &&
+          selectedArea.type !== "mini-golf",
+      ),
+    );
   }, [selectedArea]);
 
   useEffect(() => {
@@ -511,6 +517,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         if (!area || !area.isReservable) continue;
         if (
           area.entertainmentResourceId &&
+          area.type !== "mini-golf" &&
           (area.type !== "room" || entertainmentMode)
         ) {
           await saveEntertainmentAssignment(area, activeEvent);
@@ -899,7 +906,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
             {selectedArea && activeEvent ? (
               <div className="floor-plan-inspector-body">
                 <dl className="floor-plan-detail-list"><div><dt>Type</dt><dd>{selectedArea.type}</dd></div><div><dt>Capacity</dt><dd>{selectedArea.capacity || "Not counted"}</dd></div><div><dt>Parent</dt><dd>{selectedArea.parentAreaId ? getFloorPlanArea(selectedArea.parentAreaId)?.name ?? selectedArea.parentAreaId : "—"}</dd></div><div><dt>Assigned event</dt><dd>{activePlanReservation || activeEntertainmentReservation ? activeEvent.name : "Unassigned for selected event"}</dd></div></dl>
-                {selectedArea.entertainmentResourceId ? <><label className="floor-plan-toggle-field"><input checked={entertainmentMode} disabled={selectedArea.type !== "room"} onChange={(event) => setEntertainmentMode(event.target.checked)} type="checkbox" />{selectedArea.type === "room" ? "Also reserve on Entertainment Schedule" : "Shared Entertainment Schedule reservation"}</label><div className="floor-plan-field-group"><label>Reservation start<input onChange={(event) => setEntStart(event.target.value)} type="datetime-local" value={entStart} /></label><label>Reservation end<input onChange={(event) => setEntEnd(event.target.value)} type="datetime-local" value={entEnd} /></label></div></> : null}
+                {selectedArea.entertainmentResourceId && selectedArea.type !== "mini-golf" ? <><label className="floor-plan-toggle-field"><input checked={entertainmentMode} disabled={selectedArea.type !== "room"} onChange={(event) => setEntertainmentMode(event.target.checked)} type="checkbox" />{selectedArea.type === "room" ? "Also reserve on Entertainment Schedule" : "Shared Entertainment Schedule reservation"}</label><div className="floor-plan-field-group"><label>Reservation start<input onChange={(event) => setEntStart(event.target.value)} type="datetime-local" value={entStart} /></label><label>Reservation end<input onChange={(event) => setEntEnd(event.target.value)} type="datetime-local" value={entEnd} /></label></div></> : null}
+                {selectedArea.type === "mini-golf" ? <p className="floor-plan-warning-copy">Mini golf is open play and is not reserved on the Entertainment Schedule.</p> : null}
                 {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />Mark as food table and label F</label> : null}
                 {activePlanReservation ? <div className="floor-plan-field-group"><label>Label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label><label>Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label></div> : <label className="floor-plan-color-field">Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label>}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}

@@ -10,6 +10,7 @@ import {
 } from "../domain";
 import {
   ENTERTAINMENT_RESOURCES,
+  ENTERTAINMENT_SCHEDULE_CATEGORIES,
   canonicalCategoryForText,
   deterministicEventColor,
   exactResourceIdsForText,
@@ -131,6 +132,10 @@ describe("canonical entertainment resources", () => {
     );
     expect(ENTERTAINMENT_RESOURCES[0].canonicalName).toBe("Bowling Lane 1");
     expect(ENTERTAINMENT_RESOURCES.at(-1)?.canonicalName).toBe("The Big Show");
+  });
+
+  it("keeps mini golf out of the reservable schedule categories", () => {
+    expect(ENTERTAINMENT_SCHEDULE_CATEGORIES).not.toContain("mini-golf");
   });
 
   it.each([
@@ -255,6 +260,35 @@ describe("deterministic schedule construction", () => {
     expect(
       new Set(result.reservations.map((item) => item.eventColor)),
     ).toEqual(new Set(["#297025"]));
+  });
+
+  it("does not create reservations or timing warnings for open-play mini golf", () => {
+    const result = buildEntertainmentSchedule({
+      sourceEvents: [
+        sourceEvent({
+          items: [
+            sourceItem({
+              name: "Mini Golf",
+              description: "Mini Golf for event guests",
+              categoryName: "Mini Golf",
+              quantity: 50,
+              startAt: null,
+              endAt: null,
+            }),
+          ],
+          categoryNames: ["Mini Golf"],
+        }),
+      ],
+      localEvents: [localEvent()],
+      now: NOW,
+    });
+
+    expect(result.reservations).toHaveLength(0);
+    expect(result.events[0].reviewIssues).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "TIME_NEEDS_REVIEW" }),
+      ]),
+    );
   });
 
   it("auto-assigns the first contiguous available resources", () => {
