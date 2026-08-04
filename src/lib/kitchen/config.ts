@@ -8,6 +8,7 @@ export type PanCapacityKey =
   | "taterKegs"
   | "chickenTenders"
   | "mozzarellaSticks"
+  | "platterMozzarellaSticks"
   | "wings";
 
 export type PanCapacityRule = {
@@ -164,7 +165,7 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
       "Use the approved per-item prep-pan capacities and keep chafing-display packing separate.",
     referenceRule: "The checklist displays two unlabeled pan-size subcolumns and shows both 1/2 and 1/3 for several rows.",
     currentResolution:
-      "Use confirmed 1/3-pan capacities for wings, tenders, tater kegs, and mozzarella; retain the separate approved chafing rule.",
+      "Use confirmed 1/3-pan capacities for wings, tenders, tater kegs, and Appetizer Bar mozzarella. A Mozzarella Stick Platter uses two 1/2 pans per platter; retain the separate chafing rule.",
     appliesTo: ["wing", "appetizer", "platters"],
   },
   {
@@ -267,7 +268,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
   "platter-chicken-tenders":
     "Chicken Tender Platters contain 50 each; pack up to 25 in each 1/3 pan.",
   "platter-mozzarella-sticks":
-    "Mozzarella Stick Platters contain 4 pounds; pack up to 3 pounds in each 1/3 pan.",
+    "Mozzarella Stick Platters contain 4 pounds; pack each platter into two 1/2 pans.",
   "platter-wings":
     "Wing Platters contain 64 each; pack up to 25 in each 1/3 pan.",
   "platter-veggie-tray":
@@ -281,7 +282,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-04.2",
+  ruleVersion: "ope-kitchen-2026-08-04.3",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -326,6 +327,10 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
     mozzarellaSticks: {
       amountPerPan: 3,
       panSize: "1/3",
+    },
+    platterMozzarellaSticks: {
+      amountPerPan: 2,
+      panSize: "1/2",
     },
     wings: {
       amountPerPan: 25,
@@ -380,7 +385,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         amountPerPlatter: 4,
         unit: "pounds",
         hot: true,
-        panCapacityKey: "mozzarellaSticks",
+        panCapacityKey: "platterMozzarellaSticks",
         sauce: {
           name: "marinara",
           bowlsPerPlatter: null,

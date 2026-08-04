@@ -393,10 +393,11 @@ export function packHotPlatters(
   }
 
   const approved = {
-    2: { panSize: "1/2" as const, chafingDishes: 1 },
-    3: { panSize: "1/3" as const, chafingDishes: 1 },
-    4: { panSize: "1/2" as const, chafingDishes: 2 },
-    6: { panSize: "1/3" as const, chafingDishes: 2 },
+    1: { panCount: 2, panSize: "1/2" as const, chafingDishes: 1 },
+    2: { panCount: 2, panSize: "1/2" as const, chafingDishes: 1 },
+    3: { panCount: 3, panSize: "1/3" as const, chafingDishes: 1 },
+    4: { panCount: 4, panSize: "1/2" as const, chafingDishes: 2 },
+    6: { panCount: 6, panSize: "1/3" as const, chafingDishes: 2 },
   }[totalHotPlatters];
 
   if (!approved) {
@@ -406,14 +407,14 @@ export function packHotPlatters(
       totalHotPlatters,
       panCount: null,
       panSize: null,
-      chafingDishes: null,
+      chafingDishes: Math.ceil(totalHotPlatters / 3),
     };
   }
 
   return {
     status: "approved",
     totalHotPlatters,
-    panCount: totalHotPlatters,
+    panCount: approved.panCount,
     panSize: approved.panSize,
     chafingDishes: approved.chafingDishes,
   };
@@ -1316,10 +1317,7 @@ export function generateKitchenChecklist(
     }
   }
 
-  const hotPlatterChafingDishes =
-    platterPacking.status === "approved"
-      ? platterPacking.chafingDishes
-      : null;
+  const hotPlatterChafingDishes = platterPacking.chafingDishes;
   const totalChafingDishes =
     barChafingDishes == null || hotPlatterChafingDishes == null
       ? null

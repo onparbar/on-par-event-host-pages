@@ -668,6 +668,7 @@ describe("dessert and platter quantities", () => {
       64,
       "Food Platters",
       25,
+      "1/3",
     ],
     [
       "Chicken Tender Platter",
@@ -675,17 +676,26 @@ describe("dessert and platter quantities", () => {
       50,
       "Food Platters",
       25,
+      "1/3",
     ],
     [
       "Mozzarella Sticks",
       "platter-mozzarella-sticks",
       4,
       "Food Platters",
-      3,
+      2,
+      "1/2",
     ],
-    ["Wing Platter", "platter-wings", 64, "Food Platters", 25],
-    ["Veggie Tray", "platter-veggie-tray", 1, "Food Platters", null],
-    ["Fry Platter", "platter-fries", 1, "Food Platters", null],
+    ["Wing Platter", "platter-wings", 64, "Food Platters", 25, "1/3"],
+    [
+      "Veggie Tray",
+      "platter-veggie-tray",
+      1,
+      "Food Platters",
+      null,
+      null,
+    ],
+    ["Fry Platter", "platter-fries", 1, "Food Platters", null, null],
   ] as const;
 
   for (const [
@@ -694,6 +704,7 @@ describe("dessert and platter quantities", () => {
     multiplier,
     sourceCategory,
     panCapacity,
+    panSize,
   ] of platterCases) {
     it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])(
       `multiplies ${name} quantity and packs %i platter(s)`,
@@ -716,9 +727,7 @@ describe("dessert and platter quantities", () => {
             ? null
             : Math.ceil(expectedQuantity / panCapacity),
         );
-        expect(generatedRow.panSize).toBe(
-          panCapacity == null ? null : "1/3",
-        );
+        expect(generatedRow.panSize).toBe(panSize);
       },
     );
   }
@@ -989,8 +998,10 @@ describe("live Event Host add-on calculations", () => {
         "UNRESOLVED_PREP_LEAD",
         "UNCONFIGURED_KITCHEN_MORNING",
         "UNRESOLVED_SAUCE_QUANTITY",
-        "UNAPPROVED_PLATTER_PACKING",
       ]),
+    );
+    expect(warningCodes(checklist)).not.toContain(
+      "UNAPPROVED_PLATTER_PACKING",
     );
     expect(checklist.timing.earliestPrepTime).toBeNull();
     expect(checklist.needsReview).toBe(true);
@@ -1189,15 +1200,45 @@ describe("platter ranch bowls", () => {
 });
 
 describe("platter packing and chafing dishes", () => {
+  it("packs one mozzarella platter into two half pans and one chafing dish", () => {
+    const checklist = generateKitchenChecklist(
+      packageEvent("Taco Bar", 11, [
+        {
+          name: "Mozzarella Sticks",
+          quantity: 1,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    expect(row(checklist, "platter-mozzarella-sticks")).toMatchObject({
+      quantity: 4,
+      unit: "pounds",
+      numberOfPans: 2,
+      panSize: "1/2",
+    });
+    expect(checklist.chafingDishes).toEqual({
+      bars: 1,
+      hotPlatters: 1,
+      total: 2,
+    });
+    expect(warningCodes(checklist)).not.toContain(
+      "UNAPPROVED_PLATTER_PACKING",
+    );
+  });
+
   it.each([
-    [2, "1/2", 1],
-    [3, "1/3", 1],
-    [4, "1/2", 2],
-    [6, "1/3", 2],
+    [1, 2, "1/2", 1],
+    [2, 2, "1/2", 1],
+    [3, 3, "1/3", 1],
+    [4, 4, "1/2", 2],
+    [6, 6, "1/3", 2],
   ] as const)(
     "approves %i same-food hot platters",
     (
       platterCount: number,
+      panCount: number,
       panSize: "1/2" | "1/3",
       chafingDishes: number,
     ) => {
@@ -1208,16 +1249,22 @@ describe("platter packing and chafing dishes", () => {
       ).toEqual({
         status: "approved",
         totalHotPlatters: platterCount,
-        panCount: platterCount,
+        panCount,
         panSize,
         chafingDishes,
       });
     },
   );
 
-  it.each([1, 5, 7, 8, 9, 10])(
-    "flags the unapproved total %i",
-    (platterCount: number) => {
+  it.each([
+    [5, 2],
+    [7, 3],
+    [8, 3],
+    [9, 3],
+    [10, 4],
+  ])(
+    "keeps a numeric chafing count for the unapproved pan layout %i",
+    (platterCount: number, chafingDishes: number) => {
       expect(
         packHotPlatters([
           { key: "platter-wings", platterCount },
@@ -1225,7 +1272,7 @@ describe("platter packing and chafing dishes", () => {
       ).toMatchObject({
         status: "needs-review",
         reason: "unapproved-total",
-        chafingDishes: null,
+        chafingDishes,
       });
     },
   );

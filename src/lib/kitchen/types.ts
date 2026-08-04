@@ -234,7 +234,7 @@ export type PlatterPackingResult =
       totalHotPlatters: number;
       panCount: null;
       panSize: null;
-      chafingDishes: null;
+      chafingDishes: number;
     };
 
 export type KitchenChecklist = {

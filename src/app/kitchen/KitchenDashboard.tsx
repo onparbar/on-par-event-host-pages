@@ -1542,7 +1542,7 @@ export function KitchenChecklistSheet({
         </div>
         <div className="kitchen-checklist-header-fact">
           <span>Chafing dishes</span>
-          <strong>{checklist.chafingDishes.total ?? "Needs review"}</strong>
+          <strong>{checklist.chafingDishes.total ?? "—"}</strong>
         </div>
         <div className="kitchen-checklist-brand-actions">
           <Image
