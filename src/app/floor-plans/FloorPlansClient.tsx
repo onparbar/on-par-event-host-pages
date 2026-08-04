@@ -12,8 +12,10 @@ import type { AdminAssetOverlay, AdminState } from "@/lib/admin-types";
 import type { DateAsset } from "@/lib/events";
 import type {
   FloorPlanDayPayload,
+  FloorPlanDocument,
   FloorPlanEvent,
 } from "@/lib/floor-plans/types";
+import PublishedFloorPlanMap from "./PublishedFloorPlanMap";
 
 export type FloorPlanDisplayAsset = DateAsset & {
   archiveReason: "manual" | "past" | null;
@@ -24,6 +26,11 @@ type FloorPlanLiveState = {
   payload: FloorPlanDayPayload | null;
   status: "idle" | "syncing" | "success" | "error";
   message: string;
+};
+
+export type FloorPlanPublication = {
+  plan: FloorPlanDocument;
+  payload: FloorPlanDayPayload | null;
 };
 
 export async function syncFloorPlanFromTripleseat(
@@ -233,14 +240,115 @@ export function FloorPlanCard({
   );
 }
 
+export function PublishedFloorPlanCard({
+  publication,
+  isOpen,
+  onOpenChange,
+}: {
+  publication: FloorPlanPublication;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { payload, plan } = publication;
+  if (!payload) return null;
+  const date = dateBlock(plan.eventDate);
+  const label = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${plan.eventDate}T12:00:00Z`));
+
+  return (
+    <PortalCard className="floor-plan-display-card">
+      <details
+        onToggle={(event) => onOpenChange(event.currentTarget.open)}
+        open={isOpen}
+      >
+        <summary className="floor-plan-card-summary">
+          <span className="floor-plan-date-block">
+            <small>{date.month}</small>
+            <strong>{date.day}</strong>
+          </span>
+          <span className="floor-plan-card-heading">
+            <strong>{label}</strong>
+            <span>{plan.events.map((event) => event.name).join(" · ")}</span>
+          </span>
+          <PortalStatusBadge tone="success">Published</PortalStatusBadge>
+          <span className="floor-plan-expand-label">
+            <span className="when-closed">View plan</span>
+            <span className="when-open">Close plan</span>
+            <span aria-hidden="true" className="floor-plan-chevron">⌄</span>
+          </span>
+        </summary>
+        {isOpen ? (
+          <div className="floor-plan-card-body">
+            <div className="floor-plan-live-sync-bar">
+              <div>
+                <strong>Approved Event Host floor plan</strong>
+                <span>
+                  Version {plan.version} · Approved {plan.approvedAt
+                    ? new Date(plan.approvedAt).toLocaleString()
+                    : "by Event Host staff"}
+                </span>
+              </div>
+            </div>
+            <PublishedFloorPlanMap payload={payload} />
+          </div>
+        ) : null}
+      </details>
+    </PortalCard>
+  );
+}
+
+export function PendingFloorPlanCard({
+  plan,
+}: {
+  plan: FloorPlanDocument;
+}) {
+  const date = dateBlock(plan.eventDate);
+  const label = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${plan.eventDate}T12:00:00Z`));
+
+  return (
+    <PortalCard className="floor-plan-pending-card">
+      <div className="floor-plan-card-summary">
+        <span className="floor-plan-date-block">
+          <small>{date.month}</small>
+          <strong>{date.day}</strong>
+        </span>
+        <span className="floor-plan-card-heading">
+          <strong>{label}</strong>
+          <span>{plan.events.map((event) => event.name).join(" · ")}</span>
+        </span>
+        <PortalStatusBadge tone="warning">{plan.status}</PortalStatusBadge>
+        <a
+          className="button-link floor-plan-review-link"
+          href={`/admin/floor-plans?date=${encodeURIComponent(plan.eventDate)}`}
+        >
+          Edit and approve
+        </a>
+      </div>
+    </PortalCard>
+  );
+}
+
 export default function FloorPlansClient({
   initialState,
   plans,
+  publications,
   specialPages,
   today,
 }: {
   initialState: AdminState;
   plans: DateAsset[];
+  publications: FloorPlanPublication[];
   specialPages: DateAsset[];
   today: string;
 }) {
@@ -254,8 +362,47 @@ export default function FloorPlansClient({
       ),
     [initialState.archivedAssetKeys, plans, specialPages, today],
   );
+  const approvedPublications = useMemo(
+    () => publications.filter(
+      (publication) =>
+        publication.plan.status === "Approved" && publication.payload,
+    ),
+    [publications],
+  );
+  const pendingPublications = useMemo(
+    () => publications.filter(
+      (publication) =>
+        publication.plan.status !== "Approved" || !publication.payload,
+    ),
+    [publications],
+  );
+  const publishedDates = useMemo(
+    () => new Set(
+      approvedPublications.map((publication) => publication.plan.eventDate),
+    ),
+    [approvedPublications],
+  );
+  const upcoming = useMemo(
+    () => [
+      ...organized.upcoming
+        .filter((asset) => !publishedDates.has(asset.date))
+        .map((asset) => ({
+          date: asset.date,
+          key: asset.image,
+          kind: "static" as const,
+          asset,
+        })),
+      ...approvedPublications.map((publication) => ({
+        date: publication.plan.eventDate,
+        key: `published:${publication.plan.eventDate}`,
+        kind: "published" as const,
+        publication,
+      })),
+    ].sort((left, right) => left.date.localeCompare(right.date)),
+    [approvedPublications, organized.upcoming, publishedDates],
+  );
   const [openAssetKey, setOpenAssetKey] = useState<string | null>(
-    organized.defaultAssetKey,
+    upcoming[0]?.key ?? organized.archived[0]?.image ?? null,
   );
   const [liveByDate, setLiveByDate] = useState<Record<string, FloorPlanLiveState>>({});
 
@@ -313,6 +460,21 @@ export default function FloorPlansClient({
     );
   }
 
+  function renderUpcomingPlan(entry: (typeof upcoming)[number]) {
+    return entry.kind === "static" ? renderPlan(entry.asset) : (
+      <PublishedFloorPlanCard
+        isOpen={openAssetKey === entry.key}
+        key={entry.key}
+        onOpenChange={(open) =>
+          setOpenAssetKey((current) =>
+            open ? entry.key : current === entry.key ? null : current,
+          )
+        }
+        publication={entry.publication}
+      />
+    );
+  }
+
   return (
     <PortalShell
       allowFullscreen
@@ -325,8 +487,13 @@ export default function FloorPlansClient({
         aside={
           <div className="portal-status-row">
             <PortalStatusBadge tone="success">
-              {organized.upcoming.length} upcoming
+              {upcoming.length} upcoming
             </PortalStatusBadge>
+            {pendingPublications.length ? (
+              <PortalStatusBadge tone="warning">
+                {pendingPublications.length} awaiting approval
+              </PortalStatusBadge>
+            ) : null}
             <PortalStatusBadge>
               {organized.archived.length} archived
             </PortalStatusBadge>
@@ -338,6 +505,30 @@ export default function FloorPlansClient({
         title="Floor Plans"
       />
 
+      {pendingPublications.length ? (
+        <section aria-labelledby="pending-floor-plans" className="floor-plan-group floor-plan-pending-group">
+          <div className="floor-plan-group-heading">
+            <div>
+              <span className="portal-eyebrow">Admin review</span>
+              <h2 id="pending-floor-plans">Awaiting approval</h2>
+            </div>
+            <p>Edit highlights in Admin, then Approve to publish the plan below.</p>
+          </div>
+          <div className="floor-plan-display-list">
+            {[...pendingPublications]
+              .sort((left, right) =>
+                left.plan.eventDate.localeCompare(right.plan.eventDate),
+              )
+              .map((publication) => (
+                <PendingFloorPlanCard
+                  key={publication.plan.id}
+                  plan={publication.plan}
+                />
+              ))}
+          </div>
+        </section>
+      ) : null}
+
       <section aria-labelledby="upcoming-floor-plans" className="floor-plan-group">
         <div className="floor-plan-group-heading">
           <div>
@@ -346,9 +537,9 @@ export default function FloorPlansClient({
           </div>
           <p>Plans are ordered by the next event date.</p>
         </div>
-        {organized.upcoming.length ? (
+        {upcoming.length ? (
           <div className="floor-plan-display-list">
-            {organized.upcoming.map(renderPlan)}
+            {upcoming.map(renderUpcomingPlan)}
           </div>
         ) : (
           <PortalCard className="floor-plan-empty-card">
@@ -359,7 +550,7 @@ export default function FloorPlansClient({
 
       <details
         className="floor-plan-archive"
-        open={!organized.upcoming.length}
+        open={!upcoming.length}
       >
         <summary>
           <span>

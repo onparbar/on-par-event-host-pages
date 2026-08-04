@@ -20,6 +20,14 @@ import {
 import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
+import {
+  entertainmentTimingLabel,
+  eventForFloorPlanEntertainment,
+  floorPlanCustomGeometry,
+  floorPlanOverlayLabel,
+  isEntertainmentTimeAnchor,
+  localHighlightIdsForDeletion,
+} from "@/lib/floor-plans/presentation";
 import type {
   FloorPlanArea,
   FloorPlanDayPayload,
@@ -63,21 +71,6 @@ function eventTime(event: Pick<FloorPlanEvent, "startAt" | "endAt">) {
   return event.startAt && event.endAt
     ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}`
     : "Time needs review";
-}
-
-function eventForEntertainment(
-  plan: FloorPlanDocument,
-  reservation: EntertainmentReservation | null,
-) {
-  if (!reservation) return null;
-  return (
-    plan.events.find(
-      (event) =>
-        event.tripleseatEventId === reservation.tripleseatEventId ||
-        event.tripleseatEventId === reservation.localEventId ||
-        event.id === reservation.localEventId,
-    ) ?? null
-  );
 }
 
 function reservationForAreaAndEvent(
@@ -152,101 +145,6 @@ async function floorPlanRequest(date: string, body?: Record<string, unknown>) {
     throw new Error(result?.error || "Unable to load the floor plan.");
   }
   return result;
-}
-
-function floorPlanOverlayLabel(
-  area: FloorPlanArea,
-  local: FloorPlanReservation | null,
-  shared: EntertainmentReservation | null,
-) {
-  if (shared) return area.shortLabel;
-  if (!local) return "";
-  if (local.reservationType === "food-table") return "F";
-  if (area.type === "room" || area.type === "seating-section") {
-    return area.shortLabel || local.label;
-  }
-  return "";
-}
-
-function sameEntertainmentGroup(
-  left: EntertainmentReservation,
-  right: EntertainmentReservation,
-) {
-  return (
-    left.tripleseatEventId === right.tripleseatEventId &&
-    left.localEventId === right.localEventId &&
-    left.resourceCategory === right.resourceCategory &&
-    left.startAt === right.startAt &&
-    left.endAt === right.endAt
-  );
-}
-
-function isEntertainmentTimeAnchor(
-  reservations: readonly EntertainmentReservation[],
-  area: FloorPlanArea,
-  reservation: EntertainmentReservation,
-) {
-  return AREAS.find(
-    (candidate) =>
-      candidate.entertainmentResourceId &&
-      reservations.some(
-        (item) =>
-          item.active &&
-          item.resourceId === candidate.entertainmentResourceId &&
-          sameEntertainmentGroup(item, reservation),
-      ),
-  )?.id === area.id;
-}
-
-function sourceDurationForArea(event: FloorPlanEvent, area: FloorPlanArea) {
-  const pattern =
-    area.type === "bowling"
-      ? /bowling/i
-      : area.type === "darts"
-        ? /dart/i
-        : area.type === "pool"
-          ? /pool/i
-          : area.type === "shuffleboard"
-            ? /shuffle/i
-            : area.type === "mini-golf"
-              ? /mini\s*golf/i
-              : null;
-  if (!pattern) return "";
-  const duration = event.source.entertainment.find((item) =>
-    pattern.test(item.name),
-  )?.duration.trim();
-  if (!duration || /not listed|unknown|tbd/i.test(duration)) return "";
-  return duration
-    .toUpperCase()
-    .replace(/\bHOURS\b/g, "HRS")
-    .replace(/\bHOUR\b/g, "HR");
-}
-
-function entertainmentTimingLabel(
-  reservation: EntertainmentReservation,
-  event: FloorPlanEvent,
-  area: FloorPlanArea,
-) {
-  const needsTimeReview = reservation.reviewIssues.some(
-    (issue) => issue.code === "TIME_NEEDS_REVIEW",
-  );
-  const time = needsTimeReview
-    ? "TIME TBD"
-    : `${formatClock(reservation.startAt)} – ${formatClock(reservation.endAt)}`;
-  const duration = sourceDurationForArea(event, area);
-  return duration ? `${duration} · ${time}` : time;
-}
-
-function customGeometry(
-  reservation: FloorPlanReservation,
-  area: FloorPlanArea,
-) {
-  return reservation.customGeometry ?? {
-    x: area.x,
-    y: area.y,
-    width: Math.max(area.width, 120),
-    height: Math.max(area.height, 44),
-  };
 }
 
 export default function FloorPlanDashboard({ initialDate }: { initialDate: string }) {
@@ -444,7 +342,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       setRequestState("idle");
       setMessage(
         action === "approve"
-          ? "Floor plan approved and saved."
+          ? "Floor plan approved and published to the main Floor Plans page."
           : action === "refresh"
             ? "Live Tripleseat sync complete and saved. Review highlighted changes before approval."
             : `Floor plan ${action === "generate" ? "generated" : `${action}d`} and saved as version ${next.plan.version}.`,
@@ -558,25 +456,32 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (!payload || !plan || !activeEvent || selectedAreaIds.length === 0) return;
     setRequestState("saving");
     try {
-      const removeIds = new Set<string>();
-      for (const areaId of selectedAreaIds) {
-        const area = getFloorPlanArea(areaId);
-        if (!area) continue;
-        const local = reservationForAreaAndEvent(plan, area.id, activeEvent.id);
-        if (local) removeIds.add(local.id);
-        const shared = entertainmentForAreaAndEvent(payload, area, activeEvent);
-        if (shared) {
-          const response = await fetch(
-            `/api/entertainment/reservations/${encodeURIComponent(shared.id)}`,
-            {
-              method: "DELETE",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ reason: "Removed from Event Host Floor Plans" }),
-            },
-          );
-          if (!response.ok) {
-            const result = (await response.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(result?.error || "Unable to remove the shared entertainment reservation.");
+      const removeIds = new Set(
+        localHighlightIdsForDeletion(
+          plan,
+          activeEvent.id,
+          selectedAreaIds,
+          selectedReservationId,
+        ),
+      );
+      if (!selectedReservationId) {
+        for (const areaId of selectedAreaIds) {
+          const area = getFloorPlanArea(areaId);
+          if (!area) continue;
+          const shared = entertainmentForAreaAndEvent(payload, area, activeEvent);
+          if (shared) {
+            const response = await fetch(
+              `/api/entertainment/reservations/${encodeURIComponent(shared.id)}`,
+              {
+                method: "DELETE",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ reason: "Removed from Event Host Floor Plans" }),
+              },
+            );
+            if (!response.ok) {
+              const result = (await response.json().catch(() => null)) as { error?: string } | null;
+              throw new Error(result?.error || "Unable to remove the shared entertainment reservation.");
+            }
           }
         }
       }
@@ -589,7 +494,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       if (removeIds.size) commitPlan(nextPlan);
       await refreshEntertainment(nextPlan);
       setRequestState("idle");
-      setMessage(removeIds.size ? "Assignments removed; save the plan to persist seating changes." : "Shared entertainment assignments removed.");
+      setSelectedReservationId("");
+      setMessage(removeIds.size ? "Highlights deleted; save the plan to persist the change." : "Shared entertainment highlights deleted.");
     } catch (error) {
       setRequestState("error");
       setMessage(error instanceof Error ? error.message : "Unable to remove the selected assignments.");
@@ -618,7 +524,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     });
   }
 
-  function addCustomNote() {
+  function addCustomHighlight() {
     if (!plan || !activeEvent || !selectedArea) return;
     const note: FloorPlanReservation = {
       id: `manual:${activeEvent.id}:custom:${crypto.randomUUID()}`,
@@ -627,7 +533,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       reservationType: "custom",
       startAt: activeEvent.startAt,
       endAt: activeEvent.endAt,
-      label: "New note",
+      label: "New highlight",
       source: "manual",
       lockedByUser: true,
       customGeometry: {
@@ -680,7 +586,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
       if (!area || !event) continue;
       if (reservation.reservationType === "custom") {
-        const geometry = customGeometry(reservation, area);
+        const geometry = floorPlanCustomGeometry(reservation)!;
         drawOverlay({ ...area, ...geometry }, event, reservation.label);
       } else {
         drawOverlay(
@@ -703,7 +609,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     for (const reservation of exportedEntertainment) {
       if (!reservation.active) continue;
       const area = getAreaForEntertainmentResource(reservation.resourceId);
-      const event = eventForEntertainment(plan, reservation);
+      const event = eventForFloorPlanEntertainment(plan, reservation);
       if (!area || !event) continue;
       drawOverlay(area, event, area.shortLabel);
       const groupKey = [
@@ -785,7 +691,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           <button disabled={!dirty || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
-          {plan?.status === "Approved" ? <><button onClick={() => void exportPng()} type="button">Export PNG</button><button onClick={() => window.print()} type="button">Print / PDF</button></> : null}
+          {plan?.status === "Approved" ? <><a className="button-link" href="/floor-plans">View published plan</a><button onClick={() => void exportPng()} type="button">Export PNG</button><button onClick={() => window.print()} type="button">Print / PDF</button></> : null}
         </div>
         <div className={`floor-plan-save-state is-${requestState}`} role="status">
           <strong>{dirty ? "Unsaved" : requestState === "saving" ? "Working" : requestState === "error" ? "Needs attention" : "Saved"}</strong>
@@ -842,11 +748,11 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                   {AREAS.filter((area) => area.id !== "facility" || plan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
                     const local = plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom" && (reservation.floorPlanEventId === activeEventId || !activeEventId)) ?? plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom") ?? null;
                     const shared = area.entertainmentResourceId
-                      ? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId && (eventForEntertainment(plan, reservation)?.id === activeEventId || !activeEventId)) ?? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId) ?? null
+                      ? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId && (eventForFloorPlanEntertainment(plan, reservation)?.id === activeEventId || !activeEventId)) ?? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId) ?? null
                       : null;
                     const assignedEvent = local
                       ? plan.events.find((event) => event.id === local.floorPlanEventId) ?? null
-                      : eventForEntertainment(plan, shared);
+                      : eventForFloorPlanEntertainment(plan, shared);
                     const label = floorPlanOverlayLabel(area, local, shared);
                     const showTimeLabel = Boolean(
                       shared &&
@@ -892,13 +798,13 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                     const area = getFloorPlanArea(reservation.areaId);
                     const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
                     if (!area || !event) return null;
-                    const geometry = customGeometry(reservation, area);
+                    const geometry = floorPlanCustomGeometry(reservation)!;
                     return <button aria-label={`Custom note: ${reservation.label}`} className={`floor-plan-custom-note${selectedReservationId === reservation.id ? " is-selected" : ""}`} key={reservation.id} onClick={() => { setActiveEventId(event.id); setSelectedAreaIds([area.id]); setSelectedReservationId(reservation.id); }} style={{ left: `${(geometry.x / 1920) * 100}%`, top: `${(geometry.y / 1080) * 100}%`, width: `${(geometry.width / 1920) * 100}%`, height: `${(geometry.height / 1080) * 100}%`, backgroundColor: `${event.color}80`, borderColor: event.color, color: readableOverlayText(event.color) }} type="button">{reservation.label}</button>;
                   })}
                 </div>
               </div>
             </div>
-            <p className="floor-plan-map-help">Tap an object to inspect it. Shift-click for multi-select. Permanent map geometry stays fixed; custom notes can be resized in the inspector.</p>
+            <p className="floor-plan-map-help">Select one or more map objects, then use Add highlight or Delete highlight in the inspector. Custom highlights can be renamed and resized directly there.</p>
           </section>
 
           <aside className="floor-plan-inspector" aria-label="Floor plan inspector">
@@ -911,7 +817,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />Mark as food table and label F</label> : null}
                 {activePlanReservation ? <div className="floor-plan-field-group"><label>Label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label><label>Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label></div> : <label className="floor-plan-color-field">Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label>}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}
-                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">Assign selected to {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Remove assignment</button><button onClick={addCustomNote} type="button">Add custom note here</button></div>
+                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">Add highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
                 {activePlanReservation?.reservationType === "custom" && activePlanReservation.customGeometry ? <div className="floor-plan-geometry-grid">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key}<input min={0} onChange={(event) => updateReservation({ customGeometry: { ...activePlanReservation.customGeometry!, [key]: Number(event.target.value) } })} type="number" value={activePlanReservation.customGeometry![key]} /></label>)}</div> : null}
                 <div className={`floor-plan-conflict-state${payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? " is-conflict" : ""}`}>{payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? "Blocking overlap: resolve this assignment before approval." : "No floor-plan overlap detected for this object."}</div>
               </div>

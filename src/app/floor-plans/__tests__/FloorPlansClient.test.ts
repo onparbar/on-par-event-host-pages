@@ -4,9 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { DateAsset } from "@/lib/events";
 import {
   FloorPlanCard,
+  PendingFloorPlanCard,
+  PublishedFloorPlanCard,
   organizeFloorPlanAssets,
   syncFloorPlanFromTripleseat,
 } from "../FloorPlansClient";
+import type {
+  FloorPlanDayPayload,
+  FloorPlanDocument,
+} from "@/lib/floor-plans/types";
 
 const pastPlan: DateAsset = {
   date: "2026-08-03",
@@ -27,6 +33,69 @@ const laterPlan: DateAsset = {
   label: "Saturday, August 8, 2026",
   image: "/floor-plans/later.png",
   events: ["Later Event"],
+};
+
+const interactivePlan: FloorPlanDocument = {
+  id: "floor-plan-2026-08-05",
+  eventDate: "2026-08-05",
+  status: "Approved",
+  version: 4,
+  ruleVersion: "floor-plan-v1.2.0",
+  lastTripleseatSyncAt: "2026-08-04T16:00:00.000Z",
+  createdAt: "2026-08-04T16:00:00.000Z",
+  updatedAt: "2026-08-04T17:00:00.000Z",
+  approvedAt: "2026-08-04T17:00:00.000Z",
+  approvedBy: "authenticated-event-host-staff",
+  events: [
+    {
+      id: "event-august-5",
+      floorPlanId: "floor-plan-2026-08-05",
+      tripleseatEventId: "redacted-august-5",
+      name: "Redacted August 5 Event",
+      status: "DEFINITE",
+      guestCount: 24,
+      startAt: "2026-08-05T15:30:00-04:00",
+      endAt: "2026-08-05T17:30:00-04:00",
+      contractedAreaIds: ["vip-1"],
+      unresolvedAreaNames: [],
+      color: "#297025",
+      beoLastModifiedAt: null,
+      fullBuyout: false,
+      source: {
+        rooms: ["VIP 1"],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    },
+  ],
+  reservations: [
+    {
+      id: "room-highlight",
+      floorPlanEventId: "event-august-5",
+      areaId: "vip-1",
+      reservationType: "room",
+      startAt: "2026-08-05T15:30:00-04:00",
+      endAt: "2026-08-05T17:30:00-04:00",
+      label: "VIP 1",
+      source: "manual",
+      lockedByUser: true,
+    },
+  ],
+};
+
+const interactivePayload: FloorPlanDayPayload = {
+  date: interactivePlan.eventDate,
+  plan: interactivePlan,
+  entertainmentReservations: [],
+  floorPlanConflicts: [],
+  entertainmentConflicts: [],
+  validation: [],
+  revisions: [],
+  persistence: "database",
+  sourceMode: "live",
+  warnings: [],
 };
 
 describe("floor-plan dashboard organization", () => {
@@ -123,5 +192,37 @@ describe("floor-plan dashboard organization", () => {
     expect(result.plan.lastTripleseatSyncAt).toBe(
       "2026-08-04T16:00:00.000Z",
     );
+  });
+
+  it("shows saved unapproved plans as awaiting Admin approval", () => {
+    const html = renderToStaticMarkup(
+      createElement(PendingFloorPlanCard, {
+        plan: { ...interactivePlan, status: "Needs Review" },
+      }),
+    );
+
+    expect(html).toContain("Redacted August 5 Event");
+    expect(html).toContain("Needs Review");
+    expect(html).toContain(
+      "/admin/floor-plans?date=2026-08-05",
+    );
+    expect(html).toContain("Edit and approve");
+  });
+
+  it("renders the approved interactive highlights on the main page", () => {
+    const html = renderToStaticMarkup(
+      createElement(PublishedFloorPlanCard, {
+        publication: {
+          plan: interactivePlan,
+          payload: interactivePayload,
+        },
+        isOpen: true,
+        onOpenChange: () => {},
+      }),
+    );
+
+    expect(html).toContain("Published");
+    expect(html).toContain("Redacted August 5 Event");
+    expect(html).toContain("VIP 1 assigned to Redacted August 5 Event");
   });
 });

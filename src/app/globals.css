@@ -5116,6 +5116,42 @@ a {
   gap: 14px;
 }
 
+.floor-plan-pending-group {
+  margin-bottom: 24px;
+}
+
+.portal-card.floor-plan-pending-card {
+  overflow: hidden;
+  padding: 0;
+  border-color: rgba(179, 120, 20, 0.34);
+  box-shadow: var(--portal-shadow-sm);
+}
+
+.floor-plan-review-link {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.published-floor-plan-map {
+  overflow: auto;
+  width: 100%;
+  margin-top: 14px;
+  border: 1px solid var(--portal-border);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.published-floor-plan-map .floor-plan-map-canvas {
+  width: 100%;
+  min-width: 980px;
+}
+
+.published-floor-plan-area-layer,
+.published-floor-plan-area-layer .floor-plan-area,
+.published-floor-plan-area-layer .floor-plan-custom-note {
+  pointer-events: none;
+}
+
 .floor-plan-group {
   display: grid;
   gap: 14px;
