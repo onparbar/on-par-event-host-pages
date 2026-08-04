@@ -3851,6 +3851,17 @@ a {
   margin-bottom: 0;
 }
 
+.admin-floor-plan-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.admin-floor-plan-heading .button-link {
+  flex: 0 0 auto;
+}
+
 .admin-status-group {
   display: flex;
   flex-wrap: wrap;
@@ -5732,6 +5743,11 @@ a {
     align-items: flex-start;
     flex-direction: column;
     gap: 5px;
+  }
+
+  .admin-floor-plan-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .floor-plan-date-block {

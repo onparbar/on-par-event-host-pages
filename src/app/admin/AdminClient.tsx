@@ -3,6 +3,7 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import EditableAssetSection from "@/app/_components/EditableAssetSection";
+import AdminFloorPlanAssets from "./AdminFloorPlanAssets";
 import {
   PortalPageHeader,
   PortalShell,
@@ -42,6 +43,7 @@ type ChecklistEventSummary = {
 type AdminClientProps = {
   checklistEventSummaries: ChecklistEventSummary[];
   entertainmentSchedules: AdminDateAsset[];
+  floorPlans: AdminDateAsset[];
   initialState: AdminState;
   localPreview: boolean;
   operations: AdminOperationsPayload;
@@ -97,6 +99,7 @@ function completedTaskCount(record: ChecklistRecord) {
 export default function AdminClient({
   checklistEventSummaries,
   entertainmentSchedules,
+  floorPlans,
   initialState,
   localPreview,
   operations,
@@ -104,6 +107,9 @@ export default function AdminClient({
   today,
 }: AdminClientProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("readiness");
+  const [assetEditorMode, setAssetEditorMode] = useState<
+    "entertainment" | "floor-plans"
+  >("floor-plans");
   const [adminState, setAdminState] = useState<AdminState>(initialState);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [evidenceEventId, setEvidenceEventId] = useState<number | null>(null);
@@ -274,10 +280,10 @@ export default function AdminClient({
         ) : null}
 
         <section className="portal-operations-grid" aria-label="Live operations">
-          <Link className="portal-operation-card" href="/floor-plans">
-            <span className="portal-module-kicker">Supabase-backed</span>
+          <Link className="portal-operation-card" href="/admin/floor-plans">
+            <span className="portal-module-kicker">Live Tripleseat sync</span>
             <strong>Floor Plans</strong>
-            <span>Generate, review, validate, approve, and print operational floor plans.</span>
+            <span>Synchronize, edit, validate, approve, and print operational floor plans.</span>
           </Link>
           <Link className="portal-operation-card" href="/entertainment-schedules">
             <span className="portal-module-kicker">Supabase-backed</span>
@@ -315,45 +321,83 @@ export default function AdminClient({
           />
         ) : activeTab === "assets" ? (
           <>
-            <section className="asset-section admin-section-card">
-              <h3>Entertainment Schedule Editor</h3>
-              <p className="meta">Published overlays from here appear on the employee entertainment schedule page without exposing editing controls there.</p>
+            <section className="sheet-tab-strip" aria-label="Asset editor type">
+              <button
+                aria-pressed={assetEditorMode === "floor-plans"}
+                className={`sheet-tab${assetEditorMode === "floor-plans" ? " active" : ""}`}
+                onClick={() => setAssetEditorMode("floor-plans")}
+                type="button"
+              >
+                Floor Plans
+              </button>
+              <button
+                aria-pressed={assetEditorMode === "entertainment"}
+                className={`sheet-tab${assetEditorMode === "entertainment" ? " active" : ""}`}
+                onClick={() => setAssetEditorMode("entertainment")}
+                type="button"
+              >
+                Entertainment Schedules
+              </button>
             </section>
-            {entertainmentSchedules.map((schedule) => {
-              const isEnded = schedule.date < today;
-              const isArchived = adminState.archivedAssetKeys.includes(schedule.image);
-              return (
-                <EditableAssetSection
-                  archiveAction={
-                    isEnded
-                      ? {
-                          label: isArchived ? "Restore Date Assets" : "Delete Ended Event Assets",
-                          onClick: () => archiveDate(schedule.date, !isArchived),
-                        }
-                      : undefined
-                  }
-                  archived={isArchived}
-                  asset={schedule}
-                  helperNote={
-                    isEnded ? "This archive control removes the ended date from published schedules, itineraries, and checklists." : undefined
-                  }
-                  key={`admin-schedule-${schedule.date}`}
-                  onOverlaysChange={(overlays) =>
-                    setAdminState((current) => ({
-                      ...current,
-                      overlaysByAsset: {
-                        ...current.overlaysByAsset,
-                        [schedule.image]: overlays,
-                      },
-                    }))
-                  }
-                  overlays={adminState.overlaysByAsset[schedule.image] ?? []}
-                  persistenceMode="remote"
-                  subtitle={schedule.source ?? "Admin editor for entertainment schedule revisions."}
-                  title={schedule.label}
-                />
-              );
-            })}
+            {assetEditorMode === "floor-plans" ? (
+              <AdminFloorPlanAssets
+                archivedAssetKeys={adminState.archivedAssetKeys}
+                assets={floorPlans}
+                onOverlaysChange={(assetKey, overlays) =>
+                  setAdminState((current) => ({
+                    ...current,
+                    overlaysByAsset: {
+                      ...current.overlaysByAsset,
+                      [assetKey]: overlays,
+                    },
+                  }))
+                }
+                overlaysByAsset={adminState.overlaysByAsset}
+                today={today}
+              />
+            ) : (
+              <>
+                <section className="asset-section admin-section-card">
+                  <h3>Entertainment Schedule Editor</h3>
+                  <p className="meta">Published overlays from here appear on the employee entertainment schedule page without exposing editing controls there.</p>
+                </section>
+                {entertainmentSchedules.map((schedule) => {
+                  const isEnded = schedule.date < today;
+                  const isArchived = adminState.archivedAssetKeys.includes(schedule.image);
+                  return (
+                    <EditableAssetSection
+                      archiveAction={
+                        isEnded
+                          ? {
+                              label: isArchived ? "Restore Date Assets" : "Delete Ended Event Assets",
+                              onClick: () => archiveDate(schedule.date, !isArchived),
+                            }
+                          : undefined
+                      }
+                      archived={isArchived}
+                      asset={schedule}
+                      helperNote={
+                        isEnded ? "This archive control removes the ended date from published schedules, itineraries, and checklists." : undefined
+                      }
+                      key={`admin-schedule-${schedule.date}`}
+                      onOverlaysChange={(overlays) =>
+                        setAdminState((current) => ({
+                          ...current,
+                          overlaysByAsset: {
+                            ...current.overlaysByAsset,
+                            [schedule.image]: overlays,
+                          },
+                        }))
+                      }
+                      overlays={adminState.overlaysByAsset[schedule.image] ?? []}
+                      persistenceMode="remote"
+                      subtitle={schedule.source ?? "Admin editor for entertainment schedule revisions."}
+                      title={schedule.label}
+                    />
+                  );
+                })}
+              </>
+            )}
           </>
         ) : (
           <section className="completed-grid">

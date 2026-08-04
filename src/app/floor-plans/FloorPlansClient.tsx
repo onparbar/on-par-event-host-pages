@@ -1,7 +1,7 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useState } from "react";
-import EditableAssetSection from "@/app/_components/EditableAssetSection";
+import { useMemo, useState } from "react";
+import AssetImageWithOverlays from "@/app/_components/AssetImageWithOverlays";
 import {
   PortalCard,
   PortalPageHeader,
@@ -79,13 +79,11 @@ export function FloorPlanCard({
   asset,
   isOpen,
   onOpenChange,
-  onOverlaysChange,
   overlays,
 }: {
   asset: FloorPlanDisplayAsset;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onOverlaysChange: (overlays: AdminAssetOverlay[]) => void;
   overlays: AdminAssetOverlay[];
 }) {
   const date = dateBlock(asset.date);
@@ -125,19 +123,18 @@ export function FloorPlanCard({
         </summary>
         {isOpen ? (
           <div className="floor-plan-card-body">
-            {asset.specialPage ? (
-              <p className="floor-plan-special-note">
-                This special page is kept separate from the main event floor map.
-              </p>
-            ) : null}
-            <EditableAssetSection
-              asset={asset}
-              onOverlaysChange={onOverlaysChange}
-              overlays={overlays}
-              persistenceMode="remote"
-              subtitle="Add, move, resize, label, cover, or download highlights exactly as you do on the entertainment schedule."
-              title={`${asset.label} Floor Plan`}
-            />
+            <p className="floor-plan-special-note">
+              {asset.specialPage
+                ? "This published special page is kept separate from the main event floor map."
+                : "Published floor plan. Highlight editing and Tripleseat synchronization are available to administrators only."}
+            </p>
+            <div className="floor-plan-image-frame">
+              <AssetImageWithOverlays
+                alt={`Floor plan for ${asset.label}`}
+                image={asset.image}
+                overlays={overlays}
+              />
+            </div>
           </div>
         ) : null}
       </details>
@@ -156,68 +153,23 @@ export default function FloorPlansClient({
   specialPages: DateAsset[];
   today: string;
 }) {
-  const [adminState, setAdminState] = useState(initialState);
-  const [saveState, setSaveState] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
   const organized = useMemo(
     () =>
       organizeFloorPlanAssets(
         plans,
         specialPages,
         today,
-        adminState.archivedAssetKeys,
+        initialState.archivedAssetKeys,
       ),
-    [adminState.archivedAssetKeys, plans, specialPages, today],
+    [initialState.archivedAssetKeys, plans, specialPages, today],
   );
   const [openAssetKey, setOpenAssetKey] = useState<string | null>(
     organized.defaultAssetKey,
   );
 
-  useEffect(() => {
-    if (adminState === initialState) {
-      return;
-    }
-
-    setSaveState("saving");
-    const timeoutId = window.setTimeout(() => {
-      startTransition(async () => {
-        try {
-          const response = await fetch("/api/admin-state", {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ state: adminState }),
-          });
-          if (!response.ok) {
-            throw new Error("Unable to save floor-plan highlights.");
-          }
-          setSaveState("saved");
-          window.setTimeout(() => setSaveState("idle"), 1400);
-        } catch {
-          setSaveState("error");
-        }
-      });
-    }, 500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [adminState, initialState]);
-
   async function handleLogout() {
     await fetch("/api/admin-session", { method: "DELETE" });
     window.location.reload();
-  }
-
-  function updateOverlays(
-    assetKey: string,
-    overlays: AdminAssetOverlay[],
-  ) {
-    setAdminState((current) => ({
-      ...current,
-      overlaysByAsset: {
-        ...current.overlaysByAsset,
-        [assetKey]: overlays,
-      },
-    }));
   }
 
   function renderPlan(asset: FloorPlanDisplayAsset) {
@@ -231,20 +183,10 @@ export default function FloorPlansClient({
             open ? asset.image : current === asset.image ? null : current,
           )
         }
-        onOverlaysChange={(overlays) => updateOverlays(asset.image, overlays)}
-        overlays={adminState.overlaysByAsset[asset.image] ?? []}
+        overlays={initialState.overlaysByAsset[asset.image] ?? []}
       />
     );
   }
-
-  const saveLabel =
-    saveState === "saving"
-      ? "Saving highlights"
-      : saveState === "saved"
-        ? "Highlights saved"
-        : saveState === "error"
-          ? "Save needs attention"
-          : "Highlights sync automatically";
 
   return (
     <PortalShell
@@ -263,22 +205,10 @@ export default function FloorPlansClient({
             <PortalStatusBadge>
               {organized.archived.length} archived
             </PortalStatusBadge>
-            <PortalStatusBadge
-              tone={
-                saveState === "error"
-                  ? "danger"
-                  : saveState === "saving"
-                    ? "warning"
-                    : saveState === "saved"
-                      ? "success"
-                      : "neutral"
-              }
-            >
-              {saveLabel}
-            </PortalStatusBadge>
+            <PortalStatusBadge>View only</PortalStatusBadge>
           </div>
         }
-        description="Open one date at a time to review or edit its seating highlights. The nearest upcoming event opens automatically."
+        description="Open one date at a time to review its published seating highlights. The nearest upcoming event opens automatically."
         eyebrow="Event Operations"
         title="Floor Plans"
       />

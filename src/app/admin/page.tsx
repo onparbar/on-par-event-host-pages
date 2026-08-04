@@ -5,7 +5,11 @@ import { hasAdminSession } from "@/lib/admin-auth";
 import { loadAdminState, loadChecklistRecords } from "@/lib/admin-state";
 import { emptyAdminState } from "@/lib/admin-types";
 import { checklistEvents } from "@/lib/checklist-events";
-import { entertainmentSchedules } from "@/lib/events";
+import {
+  entertainmentSchedules,
+  floorPlans,
+  floorPlanSpecialPages,
+} from "@/lib/events";
 import { loadAdminOperations } from "@/lib/admin-operations-loader";
 
 export const metadata = {
@@ -60,6 +64,7 @@ export default async function AdminPage() {
     <AdminClient
       checklistEventSummaries={checklistEventSummaries}
       entertainmentSchedules={entertainmentSchedules}
+      floorPlans={[...floorPlans, ...floorPlanSpecialPages]}
       initialState={initialState}
       localPreview={process.env.NODE_ENV !== "production"}
       operations={operations}
