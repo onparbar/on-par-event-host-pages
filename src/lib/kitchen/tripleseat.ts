@@ -372,7 +372,6 @@ function normalizeMenuSelectionRecord(
     quantity: asNumber(record.quantity),
     sourceId: asString(record.id) ?? asString(record.menu_item_id),
     sourceCategory,
-    ...(sourceCategory ? {} : { isFood: true }),
   };
 }
 

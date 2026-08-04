@@ -608,6 +608,34 @@ describe("Appetizer Bar", () => {
 });
 
 describe("dessert and platter quantities", () => {
+  it("uses the explicit Assorted Deserts contract quantity as pretzel plates", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "Assorted DesertsA shareable assortment of eight sweet treats, featuring a delicious mix of rich, fruity, and classic dessert favorites.",
+            quantity: 4,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+        ],
+        { guestCount: 35 },
+      ),
+    );
+
+    expect(row(checklist, "dessert-platter")).toMatchObject({
+      foodName: "Assorted Desserts",
+      quantity: 4,
+      unit: "pretzel plates",
+      numberOfPans: null,
+      panSize: null,
+    });
+    expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
+    expect(
+      checklist.referenceConflicts.map((conflict) => conflict.code),
+    ).not.toContain("DESSERT_30_VS_35");
+  });
+
   it.each([
     [1, 1],
     [35, 1],
@@ -1444,6 +1472,65 @@ describe("classification, aliases, and review behavior", () => {
       "CONFLICTING_QUANTITY",
     );
   });
+
+  it("recognizes the August 7 Direct Book package and bar descriptions", () => {
+    const parkerLord = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "The Full Course - Food + $20 Drink Cards",
+            quantity: 18,
+          },
+          {
+            name: "Premium Taco Bar — A refined, build-your-own experience featuring fresh, high-quality ingredients.",
+          },
+          { name: "Duckpin Bowling Lanes", quantity: 1 },
+          { name: "Dartsee-Darts", quantity: 1 },
+        ],
+        { eventName: "Parker Lord 08/07/2026", guestCount: 18 },
+      ),
+    );
+    expect(parkerLord.packageMarkers).toEqual(["the-full-course"]);
+    expect(parkerLord.selectedBars).toEqual(["taco"]);
+    expect(row(parkerLord, "taco-beef").quantity).toBe(5);
+    expect(warningCodes(parkerLord)).not.toContain("UNKNOWN_FOOD_ITEM");
+
+    const wedding = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "The Full Course - Food + $20 Drink Cards",
+            quantity: 50,
+          },
+          {
+            name: "Appetizer Bar — A curated selection of elevated bites, designed for effortless group enjoyment.",
+          },
+        ],
+        {
+          eventName:
+            "We are celebrating our Wedding with friends and family!",
+          guestCount: 50,
+        },
+      ),
+    );
+    expect(wedding.packageMarkers).toEqual(["the-full-course"]);
+    expect(wedding.selectedBars).toEqual(["appetizer"]);
+    expect(row(wedding, "appetizer-tater-kegs").quantity).toBe(84);
+    expect(warningCodes(wedding)).not.toContain("UNKNOWN_FOOD_ITEM");
+  });
+
+  it.each([
+    ["Premium Taco Bar — Contract description", "bar:taco"],
+    ["Wing Bar — Contract description", "bar:wing"],
+    ["Appetizer Bar — Contract description", "bar:appetizer"],
+  ] as const)(
+    "maps the full-contract bar label %s",
+    (name, expectedKind) => {
+      expect(
+        normalizeKitchenSelection({ name, isFood: true }).kinds,
+      ).toContain(expectedKind);
+    },
+  );
 
   it("maps plain Mozzarella Sticks only in the Food Platters category", () => {
     expect(

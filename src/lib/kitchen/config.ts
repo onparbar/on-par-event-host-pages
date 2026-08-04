@@ -237,7 +237,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
   Record<KitchenFoodKey, string>
 > = {
   "dessert-platter":
-    "Dessert platter; prepare one platter per 35 guests when dessert is selected.",
+    "Assorted desserts arranged on one pretzel plate per contracted platter.",
   "taco-beef":
     "Seasoned Taco Bar beef; prepare 5 pounds for each approved batch.",
   "taco-chicken":
@@ -281,7 +281,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-07-29.5",
+  ruleVersion: "ope-kitchen-2026-08-04.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {

@@ -81,7 +81,7 @@ export type { SoundAlertState } from "../../lib/kitchen/alert-sound";
 const categoryOrder: KitchenCategory[] = ["dessert", "taco", "wing", "appetizer", "platters", "sauces"];
 
 const categoryLabels: Record<KitchenCategory, string> = {
-  dessert: "Dessert Platter",
+  dessert: "Assorted Desserts",
   taco: "Taco Bar",
   wing: "Wing Bar",
   appetizer: "Appetizer Bar",

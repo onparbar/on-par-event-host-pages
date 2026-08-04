@@ -34,7 +34,7 @@ const CATEGORY_ORDER: readonly KitchenCategory[] = [
 ];
 
 const CATEGORY_LABELS: Readonly<Record<KitchenCategory, string>> = {
-  dessert: "Dessert Platter",
+  dessert: "Assorted Desserts",
   taco: "Taco Bar",
   wing: "Wing Bar",
   appetizer: "Appetizer Bar",
@@ -1032,19 +1032,32 @@ export function generateKitchenChecklist(
   const dessertSelections = selectionsWithKind(selections, "dessert").filter(
     (selection) => validSelectionQuantity(selection.quantity),
   );
+  const explicitDessertCount = dessertSelections
+    .filter(
+      (selection) =>
+        selection.quantityProvided &&
+        !selection.kinds.some((kind) => kind.startsWith("package:")),
+    )
+    .reduce((sum, selection) => sum + selection.quantity, 0);
+  const calculatedDessertCount = validGuestCount(effectiveGuestCount)
+    ? Math.ceil(
+        effectiveGuestCount / config.dessertGuestsPerPlatter,
+      )
+    : null;
+  const dessertCount =
+    explicitDessertCount > 0
+      ? explicitDessertCount
+      : calculatedDessertCount;
   if (
     dessertSelections.length > 0 &&
-    validGuestCount(effectiveGuestCount)
+    dessertCount != null
   ) {
-    const dessertCount = Math.ceil(
-      effectiveGuestCount / config.dessertGuestsPerPlatter,
-    );
     addRow({
       key: "dessert-platter",
       category: "dessert",
-      foodName: "Dessert Platter",
+      foodName: "Assorted Desserts",
       quantity: dessertCount,
-      unit: "platters",
+      unit: "pretzel plates",
       numberOfPans: null,
       panSize: null,
       prepTiming: {
@@ -1052,26 +1065,9 @@ export function generateKitchenChecklist(
         minutes: config.prepLeadMinutes.dessert,
       },
     });
-    const explicitDessertCount = dessertSelections
-      .filter(
-        (selection) =>
-          selection.quantityProvided &&
-          !selection.kinds.some((kind) => kind.startsWith("package:")),
-      )
-      .reduce((sum, selection) => sum + selection.quantity, 0);
-    if (
-      explicitDessertCount > 0 &&
-      explicitDessertCount !== dessertCount
-    ) {
-      addWarning(warnings, warningKeys, {
-        code: "CONFLICTING_QUANTITY",
-        message: `The source explicitly lists ${explicitDessertCount} dessert platter(s), while the current written rule calculates ${dessertCount}.`,
-        requiresReview: true,
-        scope: "item",
-        itemKey: "dessert-platter",
-      });
+    if (explicitDessertCount === 0) {
+      activateConflict("DESSERT_30_VS_35", true);
     }
-    activateConflict("DESSERT_30_VS_35", true);
   }
 
   const platterCounts = new Map<PlatterSelectionKind, number>();

@@ -115,6 +115,7 @@ function compositeKinds(
 
   if (
     normalizedName.startsWith("the full course |") ||
+    normalizedName.startsWith("the full course - ") ||
     normalizedName.startsWith("the full course w/") ||
     normalizedName.startsWith("the full course with ")
   ) {
@@ -124,6 +125,7 @@ function compositeKinds(
 
   if (
     normalizedName.startsWith("the front nine |") ||
+    normalizedName.startsWith("the front nine - ") ||
     normalizedName.startsWith("the front nine w/") ||
     normalizedName.startsWith("the front nine with ")
   ) {
@@ -163,7 +165,28 @@ function compositeKinds(
     kinds.push("dessert");
   }
 
+  const descriptiveBarPrefixes = [
+    ["taco bar - ", "bar:taco"],
+    ["premium taco bar - ", "bar:taco"],
+    ["wing bar - ", "bar:wing"],
+    ["premium wing bar - ", "bar:wing"],
+    ["appetizer bar - ", "bar:appetizer"],
+    ["premium appetizer bar - ", "bar:appetizer"],
+  ] as const;
+  for (const [prefix, kind] of descriptiveBarPrefixes) {
+    if (normalizedName.startsWith(prefix)) {
+      kinds.push(kind);
+    }
+  }
+
   return uniqueKinds(kinds);
+}
+
+function isAssortedDessertPlatter(normalizedName: string) {
+  return (
+    normalizedName.startsWith("assorted desserts") ||
+    normalizedName.startsWith("assorted deserts")
+  );
 }
 
 function inferFoodFlag(
@@ -197,11 +220,19 @@ export function normalizeKitchenSelection(
     ? normalizeKitchenText(selection.sourceCategory)
     : "";
   const exact = EXACT_SELECTION_ALIASES[normalizedName] ?? [];
-  const categoryAware =
+  const categoryAware: NormalizedSelectionKind[] = [];
+  if (
     MOZZARELLA_PLATTER_SELECTION_NAMES.has(normalizedName) &&
     normalizedCategory === "food platters"
-      ? (["platter:mozzarella-sticks"] as const)
-      : [];
+  ) {
+    categoryAware.push("platter:mozzarella-sticks");
+  }
+  if (
+    normalizedCategory === "food platters" &&
+    isAssortedDessertPlatter(normalizedName)
+  ) {
+    categoryAware.push("dessert");
+  }
   const kinds = uniqueKinds([
     ...exact,
     ...categoryAware,
