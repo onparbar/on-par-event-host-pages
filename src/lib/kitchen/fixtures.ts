@@ -1,0 +1,228 @@
+import type { KitchenSourceEvent } from "./types";
+
+const MOCK_DATE = "2026-07-28";
+
+export const MOCK_KITCHEN_EVENTS: readonly KitchenSourceEvent[] = [
+  {
+    eventId: "mock-taco-001",
+    bookingId: "mock-booking-001",
+    eventName: "Redacted Taco Package",
+    localDate: MOCK_DATE,
+    startTime: "11:30",
+    endTime: "13:30",
+    guestCount: 48,
+    status: "Definite",
+    room: "Mock Room A",
+    selections: [
+      {
+        name: "The Full Course | TACO BAR - Food + Beverage",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+      {
+        name: "Lettuce Wraps",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+    ],
+    specialNotes: [],
+    sourceUpdatedAt: "2026-07-28T12:00:00Z",
+    sourceState: "fresh",
+  },
+  {
+    eventId: "mock-wing-002",
+    bookingId: "mock-booking-002",
+    eventName: "Redacted Wing Package",
+    localDate: MOCK_DATE,
+    startTime: "13:00",
+    endTime: "15:00",
+    guestCount: 75,
+    status: "Definite",
+    room: "Mock Room B",
+    selections: [
+      {
+        name: "The Front Nine",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+      {
+        name: "Wing Bar",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+    ],
+    specialNotes: [],
+    sourceUpdatedAt: "2026-07-28T12:05:00Z",
+    sourceState: "fresh",
+  },
+  {
+    eventId: "mock-appetizer-003",
+    bookingId: "mock-booking-003",
+    eventName: "Redacted Appetizer Package",
+    localDate: MOCK_DATE,
+    startTime: "14:30",
+    endTime: "16:30",
+    guestCount: 126,
+    status: "Definite",
+    room: "Mock Room C",
+    selections: [
+      {
+        name: "The Full Course",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+      {
+        name: "Appetizer Bar",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+    ],
+    specialNotes: [],
+    sourceUpdatedAt: "2026-07-28T12:10:00Z",
+    sourceState: "fresh",
+  },
+  {
+    eventId: "mock-platter-004",
+    bookingId: "mock-booking-004",
+    eventName: "Redacted Platter-Only Event",
+    localDate: MOCK_DATE,
+    startTime: "16:00",
+    endTime: "18:00",
+    guestCount: 32,
+    status: "Definite",
+    room: "Mock Room D",
+    selections: [
+      {
+        name: "Mozzarella Sticks",
+        quantity: 2,
+        sourceCategory: "Food Platters",
+        isFood: true,
+      },
+      {
+        name: "Veggie Tray",
+        quantity: 1,
+        sourceCategory: "Food Platters",
+        isFood: true,
+      },
+    ],
+    specialNotes: [],
+    sourceUpdatedAt: "2026-07-28T12:15:00Z",
+    sourceState: "fresh",
+  },
+  {
+    eventId: "mock-mixed-005",
+    bookingId: "mock-booking-005",
+    eventName: "Redacted Mixed Bar and Platters",
+    localDate: MOCK_DATE,
+    startTime: "17:00",
+    endTime: "19:30",
+    guestCount: 80,
+    status: "Definite",
+    room: "Mock Room E",
+    selections: [
+      {
+        name: "The Full Course | TACO BAR - Food + Beverage",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+      {
+        name: "Wing Platter",
+        quantity: 2,
+        sourceCategory: "Food Platters",
+        isFood: true,
+      },
+    ],
+    specialNotes: [],
+    sourceUpdatedAt: "2026-07-28T12:20:00Z",
+    sourceState: "fresh",
+  },
+  {
+    eventId: "mock-dessert-006",
+    bookingId: "mock-booking-006",
+    eventName: "Redacted Dessert Event",
+    localDate: MOCK_DATE,
+    startTime: "18:30",
+    endTime: "20:30",
+    guestCount: 70,
+    status: "Definite",
+    room: "Mock Room F",
+    selections: [
+      {
+        name: "Chicken Tender Platter",
+        quantity: 2,
+        sourceCategory: "Food Platters",
+        isFood: true,
+      },
+      {
+        name: "Dessert Platter",
+        sourceCategory: "Food",
+        isFood: true,
+      },
+    ],
+    specialNotes: [],
+    sourceUpdatedAt: "2026-07-28T12:25:00Z",
+    sourceState: "fresh",
+  },
+  {
+    eventId: "mock-review-007",
+    bookingId: "mock-booking-007",
+    eventName: "Redacted Unknown Food Review",
+    localDate: MOCK_DATE,
+    startTime: "20:00",
+    endTime: "22:00",
+    guestCount: 40,
+    status: "Definite",
+    room: "Mock Room G",
+    selections: [
+      {
+        name: "Legacy Pretzel Bites",
+        quantity: 1,
+        sourceCategory: "Food",
+        isFood: true,
+      },
+    ],
+    specialNotes: ["Use a service setup that is not represented by the approved rules."],
+    sourceUpdatedAt: "2026-07-28T12:30:00Z",
+    sourceState: "fresh",
+  },
+  {
+    eventId: "mock-no-food-008",
+    bookingId: "mock-booking-008",
+    eventName: "Redacted Definite Event Without Food",
+    localDate: MOCK_DATE,
+    startTime: "21:30",
+    endTime: "23:00",
+    guestCount: 24,
+    status: "Definite",
+    room: "Mock Room H",
+    selections: [
+      {
+        name: "Bowling",
+        quantity: 2,
+        sourceCategory: "Bowling",
+        isFood: false,
+      },
+      {
+        name: "Darts",
+        quantity: 1,
+        sourceCategory: "Darts",
+        isFood: false,
+      },
+    ],
+    specialNotes: [],
+    sourceUpdatedAt: "2026-07-28T12:35:00Z",
+    sourceState: "fresh",
+  },
+] as const;
+
+export function getMockKitchenEventsForDate(
+  localDate: string,
+): KitchenSourceEvent[] {
+  return MOCK_KITCHEN_EVENTS.filter(
+    (event) => event.localDate === localDate,
+  ).map((event) => ({
+    ...event,
+    selections: event.selections.map((selection) => ({ ...selection })),
+    specialNotes: [...(event.specialNotes ?? [])],
+  }));
+}

@@ -2,10 +2,13 @@
   "name": "on-par-event-host-pages",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "verify": "python3 verify_next_assets.py"
   },
   "dependencies": {
@@ -17,6 +20,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.10"
   }
 }

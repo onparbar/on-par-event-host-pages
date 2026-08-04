@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import AssetImageWithOverlays from "@/app/_components/AssetImageWithOverlays";
+import AdminAccessGate from "@/app/admin/AdminAccessGate";
+import { hasAdminSession } from "@/lib/admin-auth";
 import { loadAdminState } from "@/lib/admin-state";
 import { floorPlans, floorPlanSpecialPages } from "@/lib/events";
 
@@ -10,9 +13,14 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function FloorPlansPage() {
+  if (!hasAdminSession(await cookies())) return <AdminAccessGate />;
   const adminState = await loadAdminState();
-  const visiblePlans = floorPlans.filter((plan) => !adminState.archivedAssetKeys.includes(plan.image));
-  const visibleSpecialPages = floorPlanSpecialPages.filter((plan) => !adminState.archivedAssetKeys.includes(plan.image));
+  const visiblePlans = floorPlans.filter(
+    (plan) => !adminState.archivedAssetKeys.includes(plan.image),
+  );
+  const visibleSpecialPages = floorPlanSpecialPages.filter(
+    (plan) => !adminState.archivedAssetKeys.includes(plan.image),
+  );
 
   return (
     <>
@@ -37,7 +45,7 @@ export default async function FloorPlansPage() {
             </div>
             <AssetImageWithOverlays
               alt={`Special Saturday page for ${plan.label}`}
-              image={adminState.baseImageByAsset[plan.image] ?? plan.image}
+              image={plan.image}
               overlays={adminState.overlaysByAsset[plan.image] ?? []}
             />
           </section>
@@ -54,7 +62,7 @@ export default async function FloorPlansPage() {
             </div>
             <AssetImageWithOverlays
               alt={`Floor plan for ${plan.label}`}
-              image={adminState.baseImageByAsset[plan.image] ?? plan.image}
+              image={plan.image}
               overlays={adminState.overlaysByAsset[plan.image] ?? []}
             />
           </section>

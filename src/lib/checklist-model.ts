@@ -16,7 +16,7 @@ export type EntertainmentAddOnConfig = {
 export type FoodAddOnConfig = {
   key: string;
   label: string;
-  kind: "manual-price" | "fixed-price";
+  kind: "manual-price" | "fixed-price" | "quantity-only";
   fixedPrice?: number;
 };
 
@@ -166,6 +166,17 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "buffalo-sauce", label: "Buffalo Sauce", kind: "fixed-price", fixedPrice: 5 },
   { key: "ranch", label: "Ranch", kind: "fixed-price", fixedPrice: 5 },
   { key: "dessert-platter", label: "Dessert Platter", kind: "manual-price" },
+  { key: "taco-beef", label: "Beef", kind: "quantity-only" },
+  { key: "taco-chicken", label: "Chicken", kind: "quantity-only" },
+  { key: "taco-black-beans", label: "Black Beans", kind: "quantity-only" },
+  { key: "taco-tortillas", label: "Tortillas", kind: "quantity-only" },
+  { key: "taco-lettuce-wraps", label: "Lettuce Wraps", kind: "quantity-only" },
+  { key: "taco-tomatoes", label: "Tomatoes", kind: "quantity-only" },
+  { key: "taco-lettuce", label: "Lettuce", kind: "quantity-only" },
+  { key: "taco-sour-cream", label: "Sour Cream", kind: "quantity-only" },
+  { key: "taco-diced-onion", label: "Diced Onion", kind: "quantity-only" },
+  { key: "taco-shredded-cheese", label: "Shredded Cheese", kind: "quantity-only" },
+  { key: "taco-salsa", label: "Salsa", kind: "quantity-only" },
 ];
 
 export const checklistSections: ChecklistSection[] = [
@@ -378,6 +389,9 @@ export function entertainmentUnitPrice(config: EntertainmentAddOnConfig, state: 
 }
 
 export function foodUnitPrice(config: FoodAddOnConfig, state: FoodState) {
+  if (config.kind === "quantity-only") {
+    return 0;
+  }
   if (config.kind === "manual-price") {
     return numeric(state.manualPrice);
   }

@@ -1,25 +1,12 @@
 import eventPlanData from "../../public/data/event-plan-data.json";
+import type {
+  EventPlan,
+  ItineraryAsset,
+} from "./event-plans/types";
 
-export type EventPlan = {
-  id: number;
-  name: string;
-  date: string;
-  day: string;
-  time: string;
-  guest_count: number;
-  rooms: string[];
-  color: string;
-  food: string[];
-  drink_options: string[];
-  entertainment: Array<{
-    name: string;
-    quantity: string;
-    time: string;
-    duration: string;
-  }>;
-  special_instructions?: string[];
-  verification_status: string;
-};
+export { formatEventDate } from "./event-format";
+
+export type { EventPlan, ItineraryAsset } from "./event-plans/types";
 
 export type DateAsset = {
   date: string;
@@ -27,10 +14,6 @@ export type DateAsset = {
   image: string;
   events: string[];
   source?: string;
-};
-
-export type ItineraryAsset = EventPlan & {
-  pdf: string;
 };
 
 type DateConfig = {
@@ -47,6 +30,36 @@ type DatedConfig = DateConfig & {
 const baseEvents = (eventPlanData as { events: EventPlan[] }).events;
 
 const eventOverrides: Record<number, Partial<EventPlan>> = {
+  60984263: {
+    guest_count: 160,
+    entertainment: [
+      {
+        name: "Darts",
+        quantity: "4 lanes",
+        time: "4:00 PM - 8:00 PM",
+        duration: "4 hours",
+      },
+      {
+        name: "Duckpin Bowling",
+        quantity: "8 lanes",
+        time: "5:00 PM - 7:00 PM",
+        duration: "2 hours",
+      },
+      {
+        name: "Pool Tables",
+        quantity: "3 tables",
+        time: "4:00 PM - 8:00 PM",
+        duration: "4 hours",
+      },
+    ],
+    special_instructions: [
+      "Main Dining Room is listed in the current BEO event summary.",
+      "Current BEO special instructions list 160 guests; the earlier event snapshot listed 250.",
+      "The current BEO reserves 4 dart lanes from 4:00 PM - 8:00 PM, 8 bowling lanes from 5:00 PM - 7:00 PM, and 3 pool tables from 4:00 PM - 8:00 PM.",
+    ],
+    verification_status:
+      "Current BEO checked above billing; entertainment quantities and times updated from the July 31 contract, with the guest-count discrepancy retained for review.",
+  },
   61072003: {
     entertainment: [
       {
@@ -215,7 +228,15 @@ const floorPlanConfigs: DatedConfig[] = [
     image: "/floor-plans/july-30-university-of-dayton-edd-program-vip1.png",
     events: ["University of Dayton EdD Program"],
   },
-  { date: "2026-08-06", image: "/floor-plans/august-06-floor-plans.png" },
+  {
+    date: "2026-08-06",
+    image: "/floor-plans/august-06-floor-plans.png",
+    events: [
+      "Silfex Supply Chain Team-Building Event",
+      "Veterans Solutions Consulting Work Outing",
+      "Work outing",
+    ],
+  },
   { date: "2026-08-07", image: "/floor-plans/august-07-floor-plans.png" },
   { date: "2026-08-08", image: "/floor-plans/august-08-thompson-hine-dayton-summer-picnic.png" },
 ];
@@ -318,7 +339,9 @@ export const itineraries: ItineraryAsset[] = events.map((event) => ({
   pdf: itineraryPdfPath(event),
 }));
 
-export const floorPlans: DateAsset[] = floorPlanConfigs.map(({ date, ...config }) => buildDateAsset(date, config));
+export const floorPlans: DateAsset[] = floorPlanConfigs.map(
+  ({ date, ...config }) => buildDateAsset(date, config),
+);
 
 export const floorPlanSpecialPages: DateAsset[] = [
   {
@@ -331,13 +354,3 @@ export const floorPlanSpecialPages: DateAsset[] = [
 ];
 
 export const entertainmentSchedules: DateAsset[] = buildDateAssets(entertainmentScheduleByDate);
-
-export function formatEventDate(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}T12:00:00Z`));
-}

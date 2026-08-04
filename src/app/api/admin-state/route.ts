@@ -1,14 +1,30 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { hasAdminSession } from "@/lib/admin-auth";
-import { buildAdminStateRequest, loadAdminState } from "@/lib/admin-state";
-import { callChecklistFunction } from "@/lib/checklist-storage";
-import { emptyAdminState, type AdminState } from "@/lib/admin-types";
+import {
+  buildAdminStateRequest,
+  loadAdminStateSnapshot,
+  loadAdminStateVersion,
+} from "@/lib/admin-state";
+import { saveChecklist } from "@/lib/checklist-storage";
+import {
+  ADMIN_STATE_VERSION_HEADER,
+  emptyAdminState,
+  type AdminState,
+} from "@/lib/admin-types";
 
 export const dynamic = "force-dynamic";
 
+const PRIVATE_RESPONSE_HEADERS = {
+  "cache-control": "private, no-store, max-age=0",
+  vary: "Cookie",
+};
+
 function unauthorized() {
-  return NextResponse.json({ error: "Admin session required." }, { status: 401 });
+  return NextResponse.json(
+    { error: "Admin session required." },
+    { status: 401, headers: PRIVATE_RESPONSE_HEADERS },
+  );
 }
 
 function normalizeState(value: unknown): AdminState {
@@ -28,12 +44,6 @@ function normalizeState(value: unknown): AdminState {
             ]),
           )
         : {},
-    baseImageByAsset:
-      state.baseImageByAsset && typeof state.baseImageByAsset === "object"
-        ? Object.fromEntries(
-            Object.entries(state.baseImageByAsset).filter((entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string"),
-          )
-        : {},
   };
 }
 
@@ -43,7 +53,32 @@ export async function GET() {
     return unauthorized();
   }
 
-  return NextResponse.json({ state: await loadAdminState() });
+  return NextResponse.json(await loadAdminStateSnapshot(), {
+    headers: PRIVATE_RESPONSE_HEADERS,
+  });
+}
+
+export async function HEAD() {
+  const cookieStore = await cookies();
+  if (!hasAdminSession(cookieStore)) {
+    return unauthorized();
+  }
+
+  try {
+    const version = (await loadAdminStateVersion()) ?? "none";
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        ...PRIVATE_RESPONSE_HEADERS,
+        [ADMIN_STATE_VERSION_HEADER]: version,
+      },
+    });
+  } catch {
+    return new NextResponse(null, {
+      status: 502,
+      headers: PRIVATE_RESPONSE_HEADERS,
+    });
+  }
 }
 
 export async function PUT(request: Request) {
@@ -62,14 +97,17 @@ export async function PUT(request: Request) {
   const state = normalizeState(body.state);
 
   try {
-    const payload = await callChecklistFunction({
-      method: "POST",
-      body: JSON.stringify(buildAdminStateRequest(state)),
-    });
+    const record = await saveChecklist(buildAdminStateRequest(state));
 
-    return NextResponse.json({ ok: true, payload });
+    return NextResponse.json(
+      { ok: true, record },
+      { headers: PRIVATE_RESPONSE_HEADERS },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save admin state.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json(
+      { error: message },
+      { status: 502, headers: PRIVATE_RESPONSE_HEADERS },
+    );
   }
 }

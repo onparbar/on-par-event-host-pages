@@ -1,15 +1,14 @@
-import type { ChecklistRecord } from "@/lib/checklist-model";
-import { callChecklistFunction } from "@/lib/checklist-storage";
+import {
+  getChecklistRecord,
+  getChecklistRecordUpdatedAt,
+  listChecklistRecords,
+} from "@/lib/checklist-storage";
 import { emptyAdminState, type AdminState } from "@/lib/admin-types";
 
 export const ADMIN_STATE_EVENT_ID = 99990001;
 const ADMIN_EVENT_NAME = "__admin_state__";
 const ADMIN_EVENT_DATE = "2099-12-31";
 const ADMIN_EVENT_POC = "Admin State";
-
-type ChecklistFunctionPayload = {
-  records?: ChecklistRecord[];
-};
 
 function parseAdminState(value: unknown): AdminState {
   if (!value || typeof value !== "object") {
@@ -29,24 +28,27 @@ function parseAdminState(value: unknown): AdminState {
             ]),
           )
         : {},
-    baseImageByAsset:
-      candidate.baseImageByAsset && typeof candidate.baseImageByAsset === "object"
-        ? Object.fromEntries(
-            Object.entries(candidate.baseImageByAsset).filter((entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string"),
-          )
-        : {},
   };
 }
 
 export async function loadChecklistRecords() {
-  const payload = (await callChecklistFunction({ method: "GET" })) as ChecklistFunctionPayload;
-  return payload.records ?? [];
+  return listChecklistRecords();
+}
+
+export async function loadAdminStateSnapshot() {
+  const record = await getChecklistRecord(ADMIN_STATE_EVENT_ID);
+  return {
+    state: parseAdminState(record?.tasks?.adminState ?? null),
+    updatedAt: record?.updatedAt ?? null,
+  };
 }
 
 export async function loadAdminState() {
-  const records = await loadChecklistRecords();
-  const record = records.find((item) => item.eventId === ADMIN_STATE_EVENT_ID);
-  return parseAdminState(record?.tasks?.adminState ?? null);
+  return (await loadAdminStateSnapshot()).state;
+}
+
+export async function loadAdminStateVersion() {
+  return getChecklistRecordUpdatedAt(ADMIN_STATE_EVENT_ID);
 }
 
 export function buildAdminStateRequest(state: AdminState) {

@@ -1,0 +1,20 @@
+.git
+.next
+.playwright-cli
+*.tsbuildinfo
+node_modules
+.pnpm-store
+.env
+.env.*
+!.env.example
+Secret Files
+beo_extracts
+tmp
+Tripleseat API
+ITINERARY
+entertainment schedules
+MD Files
+outputs
+RESERVE SIGNS
+pricing sheet
+*.log

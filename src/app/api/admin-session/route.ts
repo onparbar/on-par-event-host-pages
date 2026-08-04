@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ADMIN_COOKIE_NAME, createAdminSessionValue, isValidAdminPin } from "@/lib/admin-auth";
+import { ADMIN_COOKIE_NAME, createAdminSessionValue, getAdminPin, isValidAdminPin } from "@/lib/admin-auth";
 
 type AccessRequest = {
   pin?: string;
@@ -10,6 +10,13 @@ function badRequest(message: string) {
 }
 
 export async function POST(request: Request) {
+  if (!getAdminPin() || !createAdminSessionValue()) {
+    return NextResponse.json(
+      { error: "Admin access is not configured for this deployment." },
+      { status: 503 },
+    );
+  }
+
   let body: AccessRequest;
 
   try {
@@ -26,10 +33,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Incorrect admin PIN." }, { status: 401 });
   }
 
+  const sessionValue = createAdminSessionValue();
+  if (!sessionValue) {
+    return NextResponse.json(
+      { error: "Admin access is not configured for this deployment." },
+      { status: 503 },
+    );
+  }
+
   const response = NextResponse.json({ ok: true });
   response.cookies.set({
     name: ADMIN_COOKIE_NAME,
-    value: createAdminSessionValue(),
+    value: sessionValue,
     httpOnly: true,
     maxAge: 60 * 60 * 12,
     path: "/",

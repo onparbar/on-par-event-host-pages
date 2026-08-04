@@ -1,24 +1,24 @@
 .DS_Store
 node_modules/
+.pnpm-store/
+.playwright-cli/
 .next/
 out/
 .vercel/
+*.tsbuildinfo
 *.log
 .env
 .env.*
+!.env.example
 
 # Local credential and working-source folders.
 Secret Files/
 beo_extracts/
 outputs/
-generated_floor_plans/
-Canva API/
 Tripleseat API/
 
-# Generated local-only PDFs and Canva/source work.
+# Generated local-only PDFs and source work.
 ITINERARY/
-canva floor plans/
 entertainment schedules/
-floor-plan-tool/
 RESERVE SIGNS/
 pricing sheet/

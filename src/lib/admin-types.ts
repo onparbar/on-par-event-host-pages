@@ -16,14 +16,15 @@ export type AdminState = {
   archivedAssetKeys: string[];
   archivedEventIds: number[];
   overlaysByAsset: Record<string, AdminAssetOverlay[]>;
-  baseImageByAsset: Record<string, string>;
 };
+
+export const ADMIN_STATE_VERSION_HEADER =
+  "x-event-host-admin-state-version";
 
 export function emptyAdminState(): AdminState {
   return {
     archivedAssetKeys: [],
     archivedEventIds: [],
     overlaysByAsset: {},
-    baseImageByAsset: {},
   };
 }

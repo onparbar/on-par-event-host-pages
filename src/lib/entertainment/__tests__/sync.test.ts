@@ -1,0 +1,317 @@
+import { describe, expect, it } from "vitest";
+import type { TripleseatAdapter } from "../../kitchen/tripleseat";
+import {
+  createManualEntertainmentReservation,
+  EntertainmentConflictError,
+  getEntertainmentDay,
+  getEntertainmentReservationAudit,
+  syncEntertainmentDay,
+  updateEntertainmentReservation,
+} from "../sync";
+import { MemoryEntertainmentStorage } from "../storage";
+import type { EntertainmentSourceEvent } from "../types";
+
+const DATE = "2026-07-28";
+
+function sourceEvent(): EntertainmentSourceEvent {
+  return {
+    tripleseatEventId: "ts-sync-1",
+    tripleseatBookingId: "booking-sync-1",
+    eventName: "Redacted Sync Event",
+    localDate: DATE,
+    eventStartAt: "2026-07-28T21:00:00.000Z",
+    eventEndAt: "2026-07-28T22:00:00.000Z",
+    status: "DEFINITE",
+    rooms: [],
+    items: [
+      {
+        sourceId: "line-sync-1",
+        name: "Bowling Lane 1",
+        description: "Bowling Lane 1",
+        categoryName: "Bowling",
+        quantity: 1,
+        startAt: "2026-07-28T21:00:00.000Z",
+        endAt: "2026-07-28T22:00:00.000Z",
+      },
+    ],
+    categoryNames: ["Bowling"],
+    sourceUpdatedAt: "2026-07-28T20:00:00.000Z",
+    noteCount: 0,
+  };
+}
+
+function adapter(events: EntertainmentSourceEvent[]): TripleseatAdapter {
+  return {
+    sourceMode: "live",
+    async fetchEventsForDate() {
+      return [];
+    },
+    async fetchEntertainmentEventsForDate() {
+      return structuredClone(events);
+    },
+    async fetchEventDateById() {
+      return null;
+    },
+    getDiagnostics() {
+      return {
+        sourceMode: "live",
+        missingEnvironmentVariables: [],
+        warnings: [],
+        locationId: "26059",
+      };
+    },
+  };
+}
+
+const localEvents = [
+  {
+    id: "ts-sync-1",
+    bookingId: "booking-sync-1",
+    name: "Redacted Sync Event",
+    date: DATE,
+    color: "#297025",
+    rooms: [],
+    entertainment: [],
+  },
+];
+
+describe("persistent entertainment synchronization", () => {
+  it("uses the known event window when mock entertainment timing needs review", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const mockAdapter: TripleseatAdapter = {
+      ...adapter([]),
+      sourceMode: "mock",
+      getDiagnostics() {
+        return {
+          sourceMode: "mock",
+          missingEnvironmentVariables: [],
+          warnings: [],
+          locationId: "26059",
+        };
+      },
+    };
+    const synced = await syncEntertainmentDay(DATE, {
+      storage,
+      adapter: mockAdapter,
+      localEvents: [
+        {
+          ...localEvents[0],
+          eventTime: "5:00 PM - 6:00 PM",
+          entertainment: [
+            {
+              name: "Duckpin Bowling",
+              quantity: "1 lane",
+              time: "Time not listed on BEO",
+            },
+          ],
+        },
+      ],
+    });
+    expect(synced.reservations).toHaveLength(1);
+    expect(synced.reservations[0]).toMatchObject({
+      startAt: "2026-07-28T21:00:00.000Z",
+      endAt: "2026-07-28T22:00:00.000Z",
+      needsReview: true,
+    });
+    expect(synced.reservations[0].reviewIssues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "TIME_NEEDS_REVIEW" })]),
+    );
+  });
+
+  it("rejects untrusted reservation IDs before querying storage", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    await expect(
+      getEntertainmentReservationAudit("../not-a-reservation", { storage }),
+    ).rejects.toThrow("Invalid entertainment reservation ID");
+  });
+
+  it("is idempotent and records a sync-create audit only once", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const dependencies = {
+      storage,
+      adapter: adapter([sourceEvent()]),
+      localEvents,
+    };
+    const first = await syncEntertainmentDay(DATE, dependencies);
+    const second = await syncEntertainmentDay(DATE, dependencies);
+    expect(first.reservations).toHaveLength(1);
+    expect(second.reservations).toHaveLength(1);
+    expect(second.reservations[0].id).toBe(first.reservations[0].id);
+    expect(
+      await storage.getAudit(second.reservations[0].id),
+    ).toHaveLength(1);
+  });
+
+  it("keeps an authenticated manual edit after a later Tripleseat sync", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const dependencies = {
+      storage,
+      adapter: adapter([sourceEvent()]),
+      localEvents,
+    };
+    const synced = await syncEntertainmentDay(DATE, dependencies);
+    const original = synced.reservations[0];
+    await updateEntertainmentReservation(
+      original.id,
+      {
+        operatingDate: DATE,
+        eventId: original.localEventId,
+        eventName: original.eventName,
+        resourceId: "bowling-6",
+        startAt: "2026-07-28T22:00:00.000Z",
+        endAt: "2026-07-28T23:00:00.000Z",
+        eventColor: original.eventColor,
+        notes: "Confirmed by event host.",
+        reason: "Guest timing changed.",
+      },
+      { storage },
+    );
+    const resynced = await syncEntertainmentDay(DATE, dependencies);
+    expect(resynced.reservations[0]).toMatchObject({
+      resourceId: "bowling-6",
+      startAt: "2026-07-28T22:00:00.000Z",
+      manualOverride: true,
+    });
+    expect(await storage.getAudit(original.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "manual-update" }),
+        expect.objectContaining({ action: "sync-create" }),
+      ]),
+    );
+  });
+
+  it("moves a manual reservation between date buckets without a stale copy", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const created = await createManualEntertainmentReservation(
+      {
+        operatingDate: DATE,
+        eventName: "Manual Event",
+        resourceId: "pool-1",
+        startAt: "2026-07-28T21:00:00.000Z",
+        endAt: "2026-07-28T22:00:00.000Z",
+        eventColor: "#1D4ED8",
+      },
+      { storage },
+    );
+    await updateEntertainmentReservation(
+      created.id,
+      {
+        operatingDate: "2026-07-29",
+        eventName: "Manual Event",
+        resourceId: "pool-1",
+        startAt: "2026-07-29T21:00:00.000Z",
+        endAt: "2026-07-29T22:00:00.000Z",
+        eventColor: "#1D4ED8",
+      },
+      { storage },
+    );
+    expect((await storage.getDay(DATE)).reservations).toHaveLength(0);
+    expect((await storage.getDay("2026-07-29")).reservations).toHaveLength(1);
+  });
+
+  it("flags but retains an outside-operating-day manual reservation", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const created = await createManualEntertainmentReservation(
+      {
+        operatingDate: DATE,
+        eventName: "Early Manual Event",
+        resourceId: "darts-1",
+        startAt: "2026-07-28T12:00:00.000Z",
+        endAt: "2026-07-28T13:00:00.000Z",
+        eventColor: "#7C3AED",
+      },
+      { storage },
+    );
+    expect(created.needsReview).toBe(true);
+    expect(created.reviewIssues).toEqual([
+      expect.objectContaining({ code: "OUTSIDE_OPERATING_DAY" }),
+    ]);
+  });
+
+  it("requires explicit confirmation before saving a conflicting edit", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    await createManualEntertainmentReservation(
+      {
+        operatingDate: DATE,
+        eventName: "First Event",
+        resourceId: "shuffleboard-1",
+        startAt: "2026-07-28T21:00:00.000Z",
+        endAt: "2026-07-28T22:00:00.000Z",
+        eventColor: "#0F766E",
+      },
+      { storage },
+    );
+    await expect(
+      createManualEntertainmentReservation(
+        {
+          operatingDate: DATE,
+          eventName: "Second Event",
+          resourceId: "shuffleboard-1",
+          startAt: "2026-07-28T21:30:00.000Z",
+          endAt: "2026-07-28T22:30:00.000Z",
+          eventColor: "#BE123C",
+        },
+        { storage },
+      ),
+    ).rejects.toBeInstanceOf(EntertainmentConflictError);
+  });
+
+  it("audits an intentionally confirmed conflict", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    await createManualEntertainmentReservation(
+      {
+        operatingDate: DATE,
+        eventName: "First Event",
+        resourceId: "pool-2",
+        startAt: "2026-07-28T21:00:00.000Z",
+        endAt: "2026-07-28T22:00:00.000Z",
+        eventColor: "#0F766E",
+      },
+      { storage },
+    );
+    const second = await createManualEntertainmentReservation(
+      {
+        operatingDate: DATE,
+        eventName: "Second Event",
+        resourceId: "pool-2",
+        startAt: "2026-07-28T21:30:00.000Z",
+        endAt: "2026-07-28T22:30:00.000Z",
+        eventColor: "#BE123C",
+        forceConflict: true,
+        reason: "Manager approved shared setup.",
+      },
+      { storage },
+    );
+    expect(await storage.getAudit(second.id)).toEqual([
+      expect.objectContaining({
+        action: "manual-create",
+        intentionalConflict: true,
+      }),
+    ]);
+  });
+
+  it("returns a synthetic event panel entry for an unlinked manual booking", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    await createManualEntertainmentReservation(
+      {
+        operatingDate: DATE,
+        eventName: "Unlisted Event",
+        resourceId: "private-room-vip-1",
+        startAt: "2026-07-28T21:00:00.000Z",
+        endAt: "2026-07-28T22:00:00.000Z",
+        eventColor: "#4338CA",
+      },
+      { storage },
+    );
+    const day = await getEntertainmentDay(DATE, {
+      storage,
+      adapter: adapter([]),
+    });
+    expect(day.events).toEqual([
+      expect.objectContaining({
+        eventId: "manual:Unlisted Event",
+        eventName: "Unlisted Event",
+      }),
+    ]);
+  });
+});
