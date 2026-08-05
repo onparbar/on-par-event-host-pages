@@ -152,6 +152,10 @@ describe("kitchen checklist day layout", () => {
     expect(html).toContain("Redacted Taco Package");
     expect(html).toContain("Number of guests");
     expect(html).toContain("Chafing dishes");
+    expect(html).not.toContain("DEFINITE");
+    expect(html).not.toContain("Bar package");
+    expect(html).not.toContain("Source Jul");
+    expect(html).not.toContain("Contract review alerts");
     expect(html).not.toContain("Event Kitchen Checklist");
     expect(headerIndex).toBeGreaterThanOrEqual(0);
     expect(headerIndex).toBeLessThan(tableIndex);

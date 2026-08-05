@@ -1442,19 +1442,11 @@ export function KitchenChecklistSheet({
             {checklist.event.endTime ? `–${formatTime(checklist.event.endTime)}` : ""}
             {" · "}
             {checklist.event.room || "Room or area not listed"}
-            {" · "}
-            {checklist.event.status || "Status not verified"}
-            {" · "}
-            {checklist.classification === "bar-package"
-              ? "Bar package"
-              : "Platter event"}
             {checklist.selectedCategories.length
               ? ` · ${checklist.selectedCategories
                   .map((category) => categoryLabels[category])
                   .join(", ")}`
               : ""}
-            {" · Source "}
-            {formatTimestamp(checklist.event.sourceUpdatedAt)}
           </p>
         </div>
         <div className="kitchen-checklist-header-fact">
@@ -1673,18 +1665,6 @@ export function KitchenChecklistSheet({
             </ul>
           ) : (
             <p>No food notes found in the Tripleseat contract or notes.</p>
-          )}
-        </section>
-        <section className="kitchen-review-panel">
-          <h3>Contract review alerts</h3>
-          {checklist.event.specialNotes.length ? (
-            <ul>
-              {checklist.event.specialNotes.map((note, index) => (
-                <li key={`${note}-${index}`}>{note}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>No contract import alerts.</p>
           )}
         </section>
         <details
