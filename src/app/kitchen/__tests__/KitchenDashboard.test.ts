@@ -9,6 +9,7 @@ import {
   ensureAudioContextRunning,
   formatTime,
   KitchenChecklistSheet,
+  KitchenEventAccordion,
   shouldApplyKitchenDayResponse,
   soundAlertButtonLabel,
   timeSortValue,
@@ -141,6 +142,50 @@ describe("kitchen checklist day layout", () => {
       }),
     );
   }
+
+  it("stacks each event behind a name-and-time accordion summary", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const html = renderToStaticMarkup(
+      createElement(
+        KitchenEventAccordion,
+        { checklist },
+        createElement("div", null, "Expanded prep list"),
+      ),
+    );
+    const summaryEnd = html.indexOf("</summary>");
+
+    expect(html).toContain(
+      'data-kitchen-event-accordion="mock-taco-001"',
+    );
+    expect(html).not.toContain('open=""');
+    expect(html.slice(0, summaryEnd)).toContain("Redacted Taco Package");
+    expect(html.slice(0, summaryEnd)).toContain("11:30 AM–1:30 PM");
+    expect(html.indexOf("Expanded prep list")).toBeGreaterThan(summaryEnd);
+  });
+
+  it("does not repeat event identity inside expanded accordion content", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const html = renderToStaticMarkup(
+      createElement(KitchenChecklistSheet, {
+        bwaDraft: "",
+        bwaSaveState: "idle",
+        checklist,
+        hideEventIdentity: true,
+        inline: true,
+        onBwaChange: noop,
+        onPrint: noop,
+        onSaveBwa: noop,
+      }),
+    );
+    const header = html.slice(
+      html.indexOf("data-kitchen-checklist-header"),
+      html.indexOf("</header>"),
+    );
+
+    expect(header).not.toContain('class="kitchen-checklist-event-name"');
+    expect(header).toContain("Number of guests");
+    expect(header).toContain("Chafing dishes");
+  });
 
   it("puts event identity and kitchen counts above the food table", () => {
     const html = renderSheet(0);

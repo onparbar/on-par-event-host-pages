@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   PortalFrame,
   PortalHeader,
@@ -1161,39 +1168,44 @@ export default function KitchenDashboard() {
 
         {loadState === "ready" && sortedEvents.length ? (
           <section
-            className={`kitchen-event-grid kitchen-event-checklist-grid${sortedEvents.length > 1 ? " kitchen-event-checklist-grid-multiple" : ""}`}
+            className="kitchen-event-grid kitchen-event-checklist-grid kitchen-event-accordion-list"
             aria-label="Definite event kitchen checklists"
           >
             {sortedEvents.map((checklist) => {
               const eventKey = String(checklist.event.eventId);
               return (
-                <KitchenChecklistSheet
-                  bwaDraft={bwaDrafts[eventKey] ?? ""}
-                  bwaOptions={day?.bwaOptions ?? []}
-                  bwaSaveState={bwaSaveStates[eventKey] ?? "idle"}
+                <KitchenEventAccordion
                   checklist={checklist}
-                  completionPending={completionPending}
-                  inline
                   key={eventKey}
-                  onBwaChange={(value) => {
-                    setBwaDrafts((current) => ({ ...current, [eventKey]: value }));
-                    setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
-                  }}
-                  onOpenDescription={setDescriptionItem}
-                  onPrint={() => printChecklist(checklist.event.eventId)}
-                  onCompletedChange={(itemKey, completed) =>
-                    void saveItemCompletion(
-                      checklist,
-                      itemKey,
-                      completed,
-                    )
-                  }
-                  onReadyChange={(itemKey, ready) =>
-                    void saveItemReadiness(checklist, itemKey, ready)
-                  }
-                  onSaveBwa={() => void saveBwa(checklist)}
-                  readinessPending={readinessPending}
-                />
+                >
+                  <KitchenChecklistSheet
+                    bwaDraft={bwaDrafts[eventKey] ?? ""}
+                    bwaOptions={day?.bwaOptions ?? []}
+                    bwaSaveState={bwaSaveStates[eventKey] ?? "idle"}
+                    checklist={checklist}
+                    completionPending={completionPending}
+                    hideEventIdentity
+                    inline
+                    onBwaChange={(value) => {
+                      setBwaDrafts((current) => ({ ...current, [eventKey]: value }));
+                      setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
+                    }}
+                    onOpenDescription={setDescriptionItem}
+                    onPrint={() => printChecklist(checklist.event.eventId)}
+                    onCompletedChange={(itemKey, completed) =>
+                      void saveItemCompletion(
+                        checklist,
+                        itemKey,
+                        completed,
+                      )
+                    }
+                    onReadyChange={(itemKey, ready) =>
+                      void saveItemReadiness(checklist, itemKey, ready)
+                    }
+                    onSaveBwa={() => void saveBwa(checklist)}
+                    readinessPending={readinessPending}
+                  />
+                </KitchenEventAccordion>
               );
             })}
           </section>
@@ -1361,12 +1373,41 @@ function ChecklistPanel({
   );
 }
 
+export function KitchenEventAccordion({
+  checklist,
+  children,
+}: {
+  checklist: KitchenChecklist;
+  children: ReactNode;
+}) {
+  const startTime = formatTime(
+    checklist.timing.startTime ?? checklist.event.startTime,
+  );
+  const eventTime = checklist.event.endTime
+    ? `${startTime}–${formatTime(checklist.event.endTime)}`
+    : startTime;
+
+  return (
+    <details
+      className="kitchen-event-accordion"
+      data-kitchen-event-accordion={String(checklist.event.eventId)}
+    >
+      <summary className="kitchen-event-accordion-summary">
+        <strong>{checklist.event.name}</strong>
+        <span>{eventTime}</span>
+      </summary>
+      <div className="kitchen-event-accordion-content">{children}</div>
+    </details>
+  );
+}
+
 export function KitchenChecklistSheet({
   bwaDraft,
   bwaOptions = [],
   bwaSaveState,
   checklist,
   completionPending = EMPTY_READINESS_KEYS,
+  hideEventIdentity = false,
   inline = false,
   onBwaChange,
   onCompletedChange,
@@ -1381,6 +1422,7 @@ export function KitchenChecklistSheet({
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
+  hideEventIdentity?: boolean;
   inline?: boolean;
   onBwaChange: (value: string) => void;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
@@ -1426,29 +1468,34 @@ export function KitchenChecklistSheet({
       className={`kitchen-checklist${inline ? " kitchen-checklist-inline" : ""}`}
       data-kitchen-event-id={String(checklist.event.eventId)}
     >
-      <header className="kitchen-checklist-heading" data-kitchen-checklist-header>
-        <div className="kitchen-checklist-event-name">
-          <span>Event name</span>
-          <div className="kitchen-event-name-line">
-            <h2>{checklist.event.name}</h2>
-            {checklist.needsReview ? (
-              <strong className="kitchen-needs-review-badge">
-                Needs review
-              </strong>
-            ) : null}
+      <header
+        className={`kitchen-checklist-heading${hideEventIdentity ? " kitchen-checklist-heading-accordion" : ""}`}
+        data-kitchen-checklist-header
+      >
+        {!hideEventIdentity ? (
+          <div className="kitchen-checklist-event-name">
+            <span>Event name</span>
+            <div className="kitchen-event-name-line">
+              <h2>{checklist.event.name}</h2>
+              {checklist.needsReview ? (
+                <strong className="kitchen-needs-review-badge">
+                  Needs review
+                </strong>
+              ) : null}
+            </div>
+            <p>
+              {formatTime(checklist.timing.startTime ?? checklist.event.startTime)}
+              {checklist.event.endTime ? `–${formatTime(checklist.event.endTime)}` : ""}
+              {" · "}
+              {checklist.event.room || "Room or area not listed"}
+              {checklist.selectedCategories.length
+                ? ` · ${checklist.selectedCategories
+                    .map((category) => categoryLabels[category])
+                    .join(", ")}`
+                : ""}
+            </p>
           </div>
-          <p>
-            {formatTime(checklist.timing.startTime ?? checklist.event.startTime)}
-            {checklist.event.endTime ? `–${formatTime(checklist.event.endTime)}` : ""}
-            {" · "}
-            {checklist.event.room || "Room or area not listed"}
-            {checklist.selectedCategories.length
-              ? ` · ${checklist.selectedCategories
-                  .map((category) => categoryLabels[category])
-                  .join(", ")}`
-              : ""}
-          </p>
-        </div>
+        ) : null}
         <div className="kitchen-checklist-header-fact">
           <span>Number of guests</span>
           <strong>{checklist.event.guestCount ?? "Needs review"}</strong>
