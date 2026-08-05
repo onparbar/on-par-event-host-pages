@@ -37,7 +37,7 @@ function rectangleTable(
     name,
     shortLabel,
     type: "rectangle-table",
-    capacity: 10,
+    capacity: 8,
     parentAreaId,
     x,
     y,
@@ -216,6 +216,10 @@ const AREA_BY_ENTERTAINMENT_RESOURCE = new Map(
   ),
 );
 
+const FIXED_SEATING_HIGHLIGHTS_BY_AREA: Record<string, readonly string[]> = {
+  "vip-1": ["vip1-conversation-wall", "vip1-extra-convo"],
+};
+
 export function getFloorPlanArea(areaId: string) {
   return AREA_BY_ID.get(areaId) ?? null;
 }
@@ -231,6 +235,13 @@ export function seatingTablesForArea(areaId: string) {
       (item.type === "rectangle-table" || item.type === "square-table") &&
       !item.canBeFoodTable,
   );
+}
+
+export function fixedSeatingHighlightsForArea(areaId: string) {
+  return (FIXED_SEATING_HIGHLIGHTS_BY_AREA[areaId] ?? []).flatMap((id) => {
+    const item = getFloorPlanArea(id);
+    return item ? [item] : [];
+  });
 }
 
 export function foodTablesNearArea(areaId: string) {

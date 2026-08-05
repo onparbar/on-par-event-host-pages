@@ -318,15 +318,19 @@ export function quantityForText(
   if (category === "mini-golf") {
     return exactResourceIdsForText(value, category).length || 1;
   }
-  if (
-    structuredQuantity != null &&
-    Number.isInteger(structuredQuantity) &&
-    structuredQuantity > 0
-  ) {
-    return structuredQuantity;
-  }
   if (category === "private-rooms") {
-    return exactResourceIdsForText(value, category).length || 1;
+    return (
+      exactResourceIdsForText(value, category).length ||
+      (structuredQuantity != null &&
+      Number.isInteger(structuredQuantity) &&
+      structuredQuantity > 0
+        ? structuredQuantity
+        : 1)
+    );
+  }
+  const exactResourceCount = exactResourceIdsForText(value, category).length;
+  if (exactResourceCount > 0) {
+    return exactResourceCount;
   }
   const nounPattern: Record<
     Exclude<EntertainmentCategory, "private-rooms" | "mini-golf">,
@@ -340,7 +344,17 @@ export function quantityForText(
   const match = value.match(
     new RegExp(`\\b(\\d{1,2})\\s+${nounPattern[category]}\\b`, "i"),
   );
-  return match ? Number(match[1]) : null;
+  if (match) {
+    return Number(match[1]);
+  }
+  if (
+    structuredQuantity != null &&
+    Number.isInteger(structuredQuantity) &&
+    structuredQuantity > 0
+  ) {
+    return structuredQuantity;
+  }
+  return null;
 }
 
 export function deterministicEventColor(eventId: string) {

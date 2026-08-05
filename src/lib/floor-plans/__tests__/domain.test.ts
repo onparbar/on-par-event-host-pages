@@ -161,8 +161,8 @@ function entertainmentReservation(
 }
 
 describe("floor-plan capacities and generation", () => {
-  it("counts rectangle tables as 10 seats", () => {
-    expect(getFloorPlanArea("main-rect-left-1")?.capacity).toBe(10);
+  it("counts venue rectangle tables as 8 seats", () => {
+    expect(getFloorPlanArea("main-rect-left-1")?.capacity).toBe(8);
   });
 
   it("counts square tables as 4 seats", () => {
@@ -176,6 +176,18 @@ describe("floor-plan capacities and generation", () => {
     );
     expect(seatingCapacity(selected)).toBe(24);
     expect(selected.map((item) => item.id)).toEqual(["r1", "r2", "s1"]);
+  });
+
+  it("highlights every available table when the mapped inventory is short", () => {
+    const selected = selectSmallestTableCombination(
+      [
+        { ...table("r1", "rectangle-table", 0), capacity: 8 },
+        { ...table("r2", "rectangle-table", 30), capacity: 8 },
+      ],
+      20,
+    );
+
+    expect(selected.map((item) => item.id)).toEqual(["r1", "r2"]);
   });
 
   it("generates seating that meets or exceeds the guest count", () => {
@@ -201,7 +213,7 @@ describe("floor-plan capacities and generation", () => {
     const source = plan([
       floorPlanEvent({
         contractedAreaIds: ["vip-1", "vip-2"],
-        guestCount: 45,
+        guestCount: 40,
         source: {
           rooms: ["VIP 1", "VIP 2"],
           food: [],
@@ -221,7 +233,7 @@ describe("floor-plan capacities and generation", () => {
       .filter(Boolean);
 
     expect(rooms).toEqual(["vip-1", "vip-2"]);
-    expect(seatingCapacity(tables)).toBeGreaterThanOrEqual(45);
+    expect(seatingCapacity(tables)).toBeGreaterThanOrEqual(40);
     expect(
       tables.every((item) => ["vip-1", "vip-2"].includes(item.parentAreaId ?? "")),
     ).toBe(true);
@@ -232,6 +244,80 @@ describe("floor-plan capacities and generation", () => {
     const food = generated.filter((item) => item.reservationType === "food-table");
     expect(food).toHaveLength(1);
     expect(getFloorPlanArea(food[0].areaId)).toMatchObject({ isAda: true, canBeFoodTable: true });
+  });
+
+  it("fills the missing August 6 VIP 1 table and fixed conversation highlights", () => {
+    const event = floorPlanEvent({
+      guestCount: 30,
+      contractedAreaIds: ["vip-1"],
+      source: {
+        rooms: ["VIP 1"],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    });
+    const existing = [
+      reservation(event, "vip1-extra-front-1"),
+      reservation(event, "vip1-extra-front-2"),
+      reservation(event, "vip1-extra-front-3"),
+    ];
+
+    const generated = generateFloorPlanReservations(
+      plan([event], existing),
+      "fill-missing",
+    );
+    const seatingIds = generated
+      .filter((item) => item.reservationType === "seating")
+      .map((item) => item.areaId);
+
+    expect(seatingIds).toEqual(expect.arrayContaining([
+      "vip1-extra-front-4",
+      "vip1-conversation-wall",
+      "vip1-extra-convo",
+    ]));
+  });
+
+  it("highlights the VIP 2 extra table even when it cannot seat every guest", () => {
+    const event = floorPlanEvent({
+      guestCount: 11,
+      contractedAreaIds: ["vip-2"],
+      source: {
+        rooms: ["VIP 2"],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    });
+
+    const generated = generateFloorPlanReservations(plan([event]), "fill-missing");
+
+    expect(generated).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        areaId: "vip2-extra-bowling-table",
+        reservationType: "seating",
+      }),
+    ]));
+  });
+
+  it("fills the fourth Main Dining table for a 30-guest event", () => {
+    const event = floorPlanEvent({ guestCount: 30 });
+    const existing = [
+      reservation(event, "main-rect-left-1"),
+      reservation(event, "main-rect-left-2"),
+      reservation(event, "main-rect-left-3"),
+    ];
+
+    const generated = generateFloorPlanReservations(
+      plan([event], existing),
+      "fill-missing",
+    );
+
+    expect(generated).toEqual(expect.arrayContaining([
+      expect.objectContaining({ areaId: "main-rect-left-4" }),
+    ]));
   });
 
   it("does not add a second food table for more than 100 guests", () => {
