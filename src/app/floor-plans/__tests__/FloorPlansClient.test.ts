@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { DateAsset } from "@/lib/events";
 import {
+  buildUpcomingFloorPlanEntries,
   FloorPlanCard,
   PendingFloorPlanCard,
   PublishedFloorPlanCard,
@@ -209,6 +210,61 @@ describe("floor-plan dashboard organization", () => {
     expect(html).toContain("Edit and approve");
   });
 
+  it("replaces the original floor-plan image as soon as edits are saved", () => {
+    const staticPlan = organizeFloorPlanAssets(
+      [{ ...nextPlan, date: interactivePlan.eventDate }],
+      [],
+      "2026-08-04",
+    ).upcoming;
+    const savedPlan = {
+      plan: {
+        ...interactivePlan,
+        status: "Needs Review" as const,
+        approvedAt: null,
+        approvedBy: null,
+      },
+      payload: {
+        ...interactivePayload,
+        plan: {
+          ...interactivePlan,
+          status: "Needs Review" as const,
+          approvedAt: null,
+          approvedBy: null,
+        },
+      },
+    };
+
+    const result = buildUpcomingFloorPlanEntries(staticPlan, [savedPlan]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      date: interactivePlan.eventDate,
+      kind: "saved",
+    });
+  });
+
+  it("labels an unapproved replacement as saved edits", () => {
+    const savedPlan = {
+      ...interactivePlan,
+      status: "Needs Review" as const,
+      approvedAt: null,
+      approvedBy: null,
+    };
+    const html = renderToStaticMarkup(
+      createElement(PublishedFloorPlanCard, {
+        publication: {
+          plan: savedPlan,
+          payload: { ...interactivePayload, plan: savedPlan },
+        },
+        isOpen: true,
+        onOpenChange: () => {},
+      }),
+    );
+
+    expect(html).toContain("Saved edits");
+    expect(html).toContain("Saved Event Host floor plan");
+  });
+
   it("renders the approved interactive highlights on the main page", () => {
     const html = renderToStaticMarkup(
       createElement(PublishedFloorPlanCard, {
@@ -221,7 +277,7 @@ describe("floor-plan dashboard organization", () => {
       }),
     );
 
-    expect(html).toContain("Published");
+    expect(html).toContain("Approved");
     expect(html).toContain("Redacted August 5 Event");
     expect(html).toContain("VIP 1 assigned to Redacted August 5 Event");
   });

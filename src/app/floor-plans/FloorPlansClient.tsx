@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import AssetImageWithOverlays from "@/app/_components/AssetImageWithOverlays";
 import {
   PortalCard,
@@ -32,6 +33,46 @@ export type FloorPlanPublication = {
   plan: FloorPlanDocument;
   payload: FloorPlanDayPayload | null;
 };
+
+export type FloorPlanUpcomingEntry =
+  | {
+      date: string;
+      key: string;
+      kind: "static";
+      asset: FloorPlanDisplayAsset;
+    }
+  | {
+      date: string;
+      key: string;
+      kind: "saved";
+      publication: FloorPlanPublication;
+    };
+
+export function buildUpcomingFloorPlanEntries(
+  assets: readonly FloorPlanDisplayAsset[],
+  publications: readonly FloorPlanPublication[],
+): FloorPlanUpcomingEntry[] {
+  const saved = publications.filter((publication) => publication.payload);
+  const savedDates = new Set(
+    saved.map((publication) => publication.plan.eventDate),
+  );
+  return [
+    ...assets
+      .filter((asset) => !savedDates.has(asset.date))
+      .map((asset) => ({
+        date: asset.date,
+        key: asset.image,
+        kind: "static" as const,
+        asset,
+      })),
+    ...saved.map((publication) => ({
+      date: publication.plan.eventDate,
+      key: `saved:${publication.plan.eventDate}`,
+      kind: "saved" as const,
+      publication,
+    })),
+  ].sort((left, right) => left.date.localeCompare(right.date));
+}
 
 export async function syncFloorPlanFromTripleseat(
   date: string,
@@ -251,6 +292,7 @@ export function PublishedFloorPlanCard({
 }) {
   const { payload, plan } = publication;
   if (!payload) return null;
+  const approved = plan.status === "Approved";
   const date = dateBlock(plan.eventDate);
   const label = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -275,7 +317,9 @@ export function PublishedFloorPlanCard({
             <strong>{label}</strong>
             <span>{plan.events.map((event) => event.name).join(" · ")}</span>
           </span>
-          <PortalStatusBadge tone="success">Published</PortalStatusBadge>
+          <PortalStatusBadge tone={approved ? "success" : "warning"}>
+            {approved ? "Approved" : "Saved edits"}
+          </PortalStatusBadge>
           <span className="floor-plan-expand-label">
             <span className="when-closed">View plan</span>
             <span className="when-open">Close plan</span>
@@ -286,11 +330,13 @@ export function PublishedFloorPlanCard({
           <div className="floor-plan-card-body">
             <div className="floor-plan-live-sync-bar">
               <div>
-                <strong>Approved Event Host floor plan</strong>
+                <strong>{approved ? "Approved" : "Saved"} Event Host floor plan</strong>
                 <span>
-                  Version {plan.version} · Approved {plan.approvedAt
-                    ? new Date(plan.approvedAt).toLocaleString()
-                    : "by Event Host staff"}
+                  Version {plan.version} · {approved
+                    ? `Approved ${plan.approvedAt
+                        ? new Date(plan.approvedAt).toLocaleString()
+                        : "by Event Host staff"}`
+                    : `Saved ${new Date(plan.updatedAt).toLocaleString()}`}
                 </span>
               </div>
             </div>
@@ -352,6 +398,7 @@ export default function FloorPlansClient({
   specialPages: DateAsset[];
   today: string;
 }) {
+  const router = useRouter();
   const organized = useMemo(
     () =>
       organizeFloorPlanAssets(
@@ -362,10 +409,9 @@ export default function FloorPlansClient({
       ),
     [initialState.archivedAssetKeys, plans, specialPages, today],
   );
-  const approvedPublications = useMemo(
+  const savedPublications = useMemo(
     () => publications.filter(
-      (publication) =>
-        publication.plan.status === "Approved" && publication.payload,
+      (publication) => publication.payload,
     ),
     [publications],
   );
@@ -376,35 +422,21 @@ export default function FloorPlansClient({
     ),
     [publications],
   );
-  const publishedDates = useMemo(
-    () => new Set(
-      approvedPublications.map((publication) => publication.plan.eventDate),
-    ),
-    [approvedPublications],
-  );
   const upcoming = useMemo(
-    () => [
-      ...organized.upcoming
-        .filter((asset) => !publishedDates.has(asset.date))
-        .map((asset) => ({
-          date: asset.date,
-          key: asset.image,
-          kind: "static" as const,
-          asset,
-        })),
-      ...approvedPublications.map((publication) => ({
-        date: publication.plan.eventDate,
-        key: `published:${publication.plan.eventDate}`,
-        kind: "published" as const,
-        publication,
-      })),
-    ].sort((left, right) => left.date.localeCompare(right.date)),
-    [approvedPublications, organized.upcoming, publishedDates],
+    () => buildUpcomingFloorPlanEntries(organized.upcoming, savedPublications),
+    [organized.upcoming, savedPublications],
   );
   const [openAssetKey, setOpenAssetKey] = useState<string | null>(
     upcoming[0]?.key ?? organized.archived[0]?.image ?? null,
   );
   const [liveByDate, setLiveByDate] = useState<Record<string, FloorPlanLiveState>>({});
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("event-host-floor-plans");
+    channel.addEventListener("message", () => router.refresh());
+    return () => channel.close();
+  }, [router]);
 
   async function handleLogout() {
     await fetch("/api/admin-session", { method: "DELETE" });
@@ -500,7 +532,7 @@ export default function FloorPlansClient({
             <PortalStatusBadge>View only</PortalStatusBadge>
           </div>
         }
-        description="Open one date at a time to review its published seating highlights. The nearest upcoming event opens automatically."
+        description="Open one date at a time to review its latest saved seating highlights. The nearest upcoming event opens automatically."
         eyebrow="Event Operations"
         title="Floor Plans"
       />
@@ -512,7 +544,7 @@ export default function FloorPlansClient({
               <span className="portal-eyebrow">Admin review</span>
               <h2 id="pending-floor-plans">Awaiting approval</h2>
             </div>
-            <p>Edit highlights in Admin, then Approve to publish the plan below.</p>
+            <p>Saved edits already replace the original plan below. Approve after completing validation.</p>
           </div>
           <div className="floor-plan-display-list">
             {[...pendingPublications]

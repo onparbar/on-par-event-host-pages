@@ -28,10 +28,7 @@ export default async function FloorPlansPage() {
   const publications = await Promise.all(
     publicationPlans.map(async (plan): Promise<FloorPlanPublication> => ({
       plan,
-      payload:
-        plan.status === "Approved"
-          ? await getFloorPlanDay(plan.eventDate, storage).catch(() => null)
-          : null,
+      payload: await getFloorPlanDay(plan.eventDate, storage).catch(() => null),
     })),
   );
   return (

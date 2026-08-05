@@ -343,9 +343,19 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       setRedoStack([]);
       setDirty(false);
       setRequestState("idle");
+      if (
+        (action === "save" || action === "approve") &&
+        typeof BroadcastChannel !== "undefined"
+      ) {
+        const channel = new BroadcastChannel("event-host-floor-plans");
+        channel.postMessage({ action, date, version: next.plan.version });
+        channel.close();
+      }
       setMessage(
         action === "approve"
           ? "Floor plan approved and published to the main Floor Plans page."
+          : action === "save"
+            ? `Floor plan saved as version ${next.plan.version} and published to the main Floor Plans page.`
           : action === "refresh"
             ? "Live Tripleseat sync complete and saved. Review highlighted changes before approval."
             : `Floor plan ${action === "generate" ? "generated" : `${action}d`} and saved as version ${next.plan.version}.`,
@@ -706,7 +716,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           <button disabled={!dirty || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
-          {plan?.status === "Approved" ? <><a className="button-link" href="/floor-plans">View published plan</a><button onClick={() => void exportPng()} type="button">Export PNG</button><button onClick={() => window.print()} type="button">Print / PDF</button></> : null}
+          {plan?.events.length && !dirty ? <a className="button-link" href="/floor-plans">View saved plan</a> : null}
+          {plan?.status === "Approved" ? <><button onClick={() => void exportPng()} type="button">Export PNG</button><button onClick={() => window.print()} type="button">Print / PDF</button></> : null}
         </div>
         <div className={`floor-plan-save-state is-${requestState}`} role="status">
           <strong>{dirty ? "Unsaved" : requestState === "saving" ? "Working" : requestState === "error" ? "Needs attention" : "Saved"}</strong>
