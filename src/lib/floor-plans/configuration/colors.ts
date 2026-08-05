@@ -67,6 +67,23 @@ export function distinctFloorPlanEventColor(
   return floorPlanEventColor(index, used);
 }
 
+export function ensureDistinctFloorPlanEventColors<T extends { color: string }>(
+  events: readonly T[],
+) {
+  const used: string[] = [];
+  return events.map((event, index) => {
+    const color = distinctFloorPlanEventColor(
+      rgb(event.color) ? event.color : null,
+      index,
+      used,
+    );
+    used.push(color);
+    return color === event.color.toUpperCase()
+      ? event
+      : { ...event, color };
+  });
+}
+
 export function readableOverlayText(color: string) {
   const match = color.match(/^#([0-9A-F]{6})$/i);
   if (!match) return "#000000";

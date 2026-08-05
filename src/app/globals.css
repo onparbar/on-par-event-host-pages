@@ -206,6 +206,47 @@
   padding: 18px;
 }
 
+.floor-plan-event-color-editor {
+  display: grid;
+  gap: 7px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--portal-border);
+  background: #fbfcfa;
+  color: var(--ope-forest);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.floor-plan-event-color-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.floor-plan-event-color-control input[type="color"] {
+  width: 58px;
+  min-height: 42px;
+  padding: 3px;
+  cursor: pointer;
+}
+
+.floor-plan-event-color-control output {
+  color: var(--portal-muted-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.floor-plan-event-color-editor small {
+  color: var(--portal-muted-text);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: none;
+}
+
 .floor-plan-event-list {
   display: flex;
   overflow-x: auto;

@@ -22,6 +22,7 @@ import { resolveAreaAlias } from "./configuration/aliases";
 import { selectEntertainmentResources } from "./configuration/adjacency";
 import {
   distinctFloorPlanEventColor,
+  ensureDistinctFloorPlanEventColors,
   floorPlanEventColorsAreDistinct,
 } from "./configuration/colors";
 import { getFloorPlanArea } from "./configuration/areas";
@@ -223,7 +224,10 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
           reservations: [],
           status: floorPlanStatusAfterSourceChange(saved.status, saved.events.length > 0),
         }
-      : saved;
+      : {
+          ...saved,
+          events: ensureDistinctFloorPlanEventColors(saved.events),
+        };
   }
 
   const currentIds = new Set(currentEvents.map((event) => event.id));

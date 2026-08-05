@@ -17,7 +17,10 @@ import {
   getAreaForEntertainmentResource,
   getFloorPlanArea,
 } from "@/lib/floor-plans/configuration/areas";
-import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
+import {
+  floorPlanEventColorsAreDistinct,
+  readableOverlayText,
+} from "@/lib/floor-plans/configuration/colors";
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
 import {
@@ -504,6 +507,18 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   function updateActiveEventColor(color: string) {
     if (!plan || !activeEvent) return;
+    const conflict = plan.events.find(
+      (event) =>
+        event.id !== activeEvent.id &&
+        !floorPlanEventColorsAreDistinct(color, event.color),
+    );
+    if (conflict) {
+      setRequestState("error");
+      setMessage(`Choose a different color. ${conflict.name} already uses a similar color.`);
+      return;
+    }
+    setRequestState("idle");
+    setMessage(`Updated ${activeEvent.name}'s event name and highlights. Save to publish the color.`);
     commitPlan({
       ...plan,
       events: plan.events.map((event) =>
@@ -722,7 +737,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                     style={{ "--event-color": event.color } as React.CSSProperties}
                     type="button"
                   >
-                    <span className="floor-plan-event-card-title"><strong>{event.name}</strong><span className={`floor-plan-source-status ${eventStatusClass(event)}`}>{event.fullBuyout ? "Full buyout" : event.status}</span></span>
+                    <span className="floor-plan-event-card-title"><strong style={{ color: event.color }}>{event.name}</strong><span className={`floor-plan-source-status ${eventStatusClass(event)}`}>{event.fullBuyout ? "Full buyout" : event.status}</span></span>
                     <span>{event.guestCount} guests · {eventTime(event)}</span>
                     <span>{event.source.rooms.join(", ") || "Contracted section missing"}</span>
                     <span>{event.source.entertainment.map((item) => `${item.name} ${item.quantity}`).join(" · ") || "No entertainment listed"}</span>
@@ -809,13 +824,28 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
           <aside className="floor-plan-inspector" aria-label="Floor plan inspector">
             <div className="floor-plan-panel-heading"><span className="portal-module-kicker">Inspector</span><h2>{selectedArea ? selectedArea.name : activeEvent?.name ?? "Select an event"}</h2></div>
+            {activeEvent ? (
+              <label className="floor-plan-event-color-editor">
+                <span>Event name &amp; highlight color</span>
+                <span className="floor-plan-event-color-control">
+                  <input
+                    aria-label={`Event name and highlight color for ${activeEvent.name}`}
+                    onChange={(event) => updateActiveEventColor(event.target.value)}
+                    type="color"
+                    value={activeEvent.color}
+                  />
+                  <output>{activeEvent.color}</output>
+                </span>
+                <small>Updates this party&apos;s event name and every highlight. Each party must use a different color.</small>
+              </label>
+            ) : null}
             {selectedArea && activeEvent ? (
               <div className="floor-plan-inspector-body">
                 <dl className="floor-plan-detail-list"><div><dt>Type</dt><dd>{selectedArea.type}</dd></div><div><dt>Capacity</dt><dd>{selectedArea.capacity || "Not counted"}</dd></div><div><dt>Parent</dt><dd>{selectedArea.parentAreaId ? getFloorPlanArea(selectedArea.parentAreaId)?.name ?? selectedArea.parentAreaId : "—"}</dd></div><div><dt>Assigned event</dt><dd>{activePlanReservation || activeEntertainmentReservation ? activeEvent.name : "Unassigned for selected event"}</dd></div></dl>
                 {selectedArea.entertainmentResourceId && selectedArea.type !== "mini-golf" ? <><label className="floor-plan-toggle-field"><input checked={entertainmentMode} disabled={selectedArea.type !== "room"} onChange={(event) => setEntertainmentMode(event.target.checked)} type="checkbox" />{selectedArea.type === "room" ? "Also reserve on Entertainment Schedule" : "Shared Entertainment Schedule reservation"}</label><div className="floor-plan-field-group"><label>Reservation start<input onChange={(event) => setEntStart(event.target.value)} type="datetime-local" value={entStart} /></label><label>Reservation end<input onChange={(event) => setEntEnd(event.target.value)} type="datetime-local" value={entEnd} /></label></div></> : null}
                 {selectedArea.type === "mini-golf" ? <p className="floor-plan-warning-copy">Mini golf is open play and is not reserved on the Entertainment Schedule.</p> : null}
                 {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />Mark as food table and label F</label> : null}
-                {activePlanReservation ? <div className="floor-plan-field-group"><label>Label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label><label>Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label></div> : <label className="floor-plan-color-field">Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label>}
+                {activePlanReservation ? <div className="floor-plan-field-group"><label>Highlight label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label></div> : null}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}
                 <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">Add highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
                 {activePlanReservation?.reservationType === "custom" && activePlanReservation.customGeometry ? <div className="floor-plan-geometry-grid">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key}<input min={0} onChange={(event) => updateReservation({ customGeometry: { ...activePlanReservation.customGeometry!, [key]: Number(event.target.value) } })} type="number" value={activePlanReservation.customGeometry![key]} /></label>)}</div> : null}

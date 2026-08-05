@@ -70,6 +70,23 @@ describe("floor-plan publication window", () => {
     );
   });
 
+  it("repairs duplicate party colors before a saved plan is displayed", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const saved = plan("2026-08-07");
+    saved.events = [
+      { ...saved.events[0], id: "event-one", color: "#BE123C" },
+      { ...saved.events[0], id: "event-two", color: "#BE123C" },
+    ];
+    await storage.save(saved, "Duplicate saved party colors.");
+
+    const [result] = await loadFloorPlanPublicationWindow(
+      "2026-08-05",
+      storage,
+    );
+
+    expect(result.events[0].color).not.toBe(result.events[1].color);
+  });
+
   it("uses the supplied fallback when no saved event plan is available", () => {
     expect(nearestFloorPlanDate([], "2026-08-04", "2026-08-06")).toBe(
       "2026-08-06",

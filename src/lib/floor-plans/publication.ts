@@ -1,4 +1,5 @@
 import { addCalendarDays } from "@/lib/entertainment/time";
+import { ensureDistinctFloorPlanEventColors } from "./configuration/colors";
 import { getFloorPlanStorage, type FloorPlanStorage } from "./storage";
 import type { FloorPlanDocument } from "./types";
 
@@ -12,9 +13,14 @@ export async function loadFloorPlanPublicationWindow(
   const plans = await Promise.all(
     dates.map((date) => storage.get(date).catch(() => null)),
   );
-  return plans.filter(
-    (plan): plan is FloorPlanDocument => Boolean(plan?.events.length),
-  );
+  return plans
+    .filter(
+      (plan): plan is FloorPlanDocument => Boolean(plan?.events.length),
+    )
+    .map((plan) => ({
+      ...plan,
+      events: ensureDistinctFloorPlanEventColors(plan.events),
+    }));
 }
 
 export function nearestFloorPlanDate(
