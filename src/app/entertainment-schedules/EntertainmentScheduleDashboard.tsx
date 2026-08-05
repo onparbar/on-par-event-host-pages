@@ -18,6 +18,7 @@ import {
   resourcesForCategory,
   textColorForBackground,
 } from "@/lib/entertainment/resources";
+import { broadcastEntertainmentUpdate } from "@/lib/entertainment/live-updates";
 import {
   addCalendarDays,
   clampOperatingMinutes,
@@ -745,6 +746,7 @@ export default function EntertainmentScheduleDashboard({
       const next = (await response.json()) as EntertainmentDayPayload;
       setPayload(next);
       setState("ready");
+      broadcastEntertainmentUpdate("sync", selectedDate);
       setNotice(
         `Sync complete: ${next.sync?.eventsProcessed ?? 0} events, ${
           next.sync?.reservationsCreated ?? 0
@@ -982,6 +984,10 @@ export default function EntertainmentScheduleDashboard({
       }
       setModal(null);
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate(
+        draft.reservation ? "update" : "create",
+        selectedDate,
+      );
       setNotice("Reservation saved locally in Event Host.");
     } catch (saveError) {
       setState("ready");
@@ -1027,6 +1033,7 @@ export default function EntertainmentScheduleDashboard({
       setDragPreview(null);
       dragPreviewRef.current = null;
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate("update", selectedDate);
       setNotice("Reservation updated and conflicts recalculated.");
     } catch (saveError) {
       setDragPreview(null);
@@ -1064,6 +1071,7 @@ export default function EntertainmentScheduleDashboard({
       }
       setModal(null);
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate("remove", selectedDate);
       setNotice("Reservation removed from the local schedule.");
     } catch (removeError) {
       setState("ready");
@@ -1090,6 +1098,7 @@ export default function EntertainmentScheduleDashboard({
       );
       setModal(null);
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate("revert", selectedDate);
       setNotice("The saved Tripleseat value is active again.");
     } catch (revertError) {
       setState("ready");

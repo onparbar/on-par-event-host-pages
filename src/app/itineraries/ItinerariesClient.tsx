@@ -1,13 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   PortalPageHeader,
   PortalShell,
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
 import { formatEventDate } from "@/lib/event-format";
+import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
 import type {
   EventPlan,
   EventPlanOperationalNote,
@@ -238,12 +240,20 @@ export default function ItinerariesClient({
 }: {
   items: ItineraryAsset[];
 }) {
+  const router = useRouter();
   const [activeEventId, setActiveEventId] = useState<number>(items[0]?.id ?? 0);
   const [refreshState, setRefreshState] = useState<
     "idle" | "refreshing" | "error"
   >("idle");
   const activeEvent =
     items.find((event) => event.id === activeEventId) ?? items[0];
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(ENTERTAINMENT_UPDATE_CHANNEL);
+    channel.addEventListener("message", () => router.refresh());
+    return () => channel.close();
+  }, [router]);
 
   async function refreshEventPlans() {
     setRefreshState("refreshing");
