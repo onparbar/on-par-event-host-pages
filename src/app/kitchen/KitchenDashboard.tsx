@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
@@ -71,6 +72,10 @@ type FoodDescriptionItem = {
 };
 
 const DISMISSED_ALERTS_STORAGE_KEY = "ope-kitchen-dismissed-alerts-v1";
+const KITCHEN_ZOOM_STORAGE_KEY = "ope-kitchen-dashboard-zoom-v1";
+const KITCHEN_ZOOM_MIN = 70;
+const KITCHEN_ZOOM_MAX = 130;
+const KITCHEN_ZOOM_STEP = 10;
 const LIVE_REFRESH_INTERVAL_MS = 3_000;
 const ALERT_CHECK_INTERVAL_MS = 10_000;
 const EMPTY_READINESS_KEYS: ReadonlySet<string> = new Set();
@@ -284,6 +289,35 @@ function persistDismissedAlertIds(ids: ReadonlySet<string>) {
   );
 }
 
+export function clampKitchenZoom(value: number) {
+  if (!Number.isFinite(value)) {
+    return 100;
+  }
+  const stepped = Math.round(value / KITCHEN_ZOOM_STEP) * KITCHEN_ZOOM_STEP;
+  return Math.min(KITCHEN_ZOOM_MAX, Math.max(KITCHEN_ZOOM_MIN, stepped));
+}
+
+export function nextKitchenZoom(current: number, direction: -1 | 1) {
+  return clampKitchenZoom(current + direction * KITCHEN_ZOOM_STEP);
+}
+
+function safeStoredKitchenZoom() {
+  try {
+    const stored = window.localStorage.getItem(KITCHEN_ZOOM_STORAGE_KEY);
+    return stored === null ? 100 : clampKitchenZoom(Number(stored));
+  } catch {
+    return 100;
+  }
+}
+
+function persistKitchenZoom(value: number) {
+  try {
+    window.localStorage.setItem(KITCHEN_ZOOM_STORAGE_KEY, String(value));
+  } catch {
+    // The selected zoom still applies for this session if storage is blocked.
+  }
+}
+
 function sourceModeLabel(mode: string) {
   if (mode.toLowerCase() === "mock") {
     return "Mock data";
@@ -314,6 +348,7 @@ export default function KitchenDashboard() {
     useState<FoodDescriptionItem | null>(null);
   const [soundAlertState, setSoundAlertState] =
     useState<SoundAlertState>("waiting");
+  const [dashboardZoom, setDashboardZoom] = useState(100);
   const [alertQueue, setAlertQueue] = useState<KitchenTimedAlert[]>([]);
   const [addOnAlertQueue, setAddOnAlertQueue] = useState<
     KitchenLiveAddOnAlert[]
@@ -448,6 +483,10 @@ export default function KitchenDashboard() {
       setError(loadError instanceof Error ? loadError.message : "Unable to load the kitchen day.");
       return false;
     }
+  }, []);
+
+  useEffect(() => {
+    setDashboardZoom(safeStoredKitchenZoom());
   }, []);
 
   useEffect(() => {
@@ -963,6 +1002,19 @@ export default function KitchenDashboard() {
     window.location.reload();
   }
 
+  function changeDashboardZoom(direction: -1 | 1) {
+    setDashboardZoom((current) => {
+      const next = nextKitchenZoom(current, direction);
+      persistKitchenZoom(next);
+      return next;
+    });
+  }
+
+  function resetDashboardZoom() {
+    setDashboardZoom(100);
+    persistKitchenZoom(100);
+  }
+
   const hasBlockingOverlay =
     selectedChecklist !== null ||
     descriptionItem !== null ||
@@ -977,17 +1029,52 @@ export default function KitchenDashboard() {
     >
       <PortalHeader
         actions={
-          <button
-            className="portal-header-button kitchen-sound-button"
-            disabled={
-              soundAlertState === "on" ||
-              soundAlertState === "enabling"
-            }
-            onClick={() => void enableSoundAlerts(true)}
-            type="button"
-          >
-            {soundAlertButtonLabel(soundAlertState)}
-          </button>
+          <>
+            <div
+              aria-label="Dashboard zoom"
+              className="kitchen-zoom-controls"
+              role="group"
+            >
+              <button
+                aria-label="Zoom out"
+                className="kitchen-zoom-button"
+                disabled={dashboardZoom === KITCHEN_ZOOM_MIN}
+                onClick={() => changeDashboardZoom(-1)}
+                type="button"
+              >
+                −
+              </button>
+              <button
+                aria-label={`Reset dashboard zoom from ${dashboardZoom}% to 100%`}
+                className="kitchen-zoom-value"
+                disabled={dashboardZoom === 100}
+                onClick={resetDashboardZoom}
+                type="button"
+              >
+                {dashboardZoom}%
+              </button>
+              <button
+                aria-label="Zoom in"
+                className="kitchen-zoom-button"
+                disabled={dashboardZoom === KITCHEN_ZOOM_MAX}
+                onClick={() => changeDashboardZoom(1)}
+                type="button"
+              >
+                +
+              </button>
+            </div>
+            <button
+              className="portal-header-button kitchen-sound-button"
+              disabled={
+                soundAlertState === "on" ||
+                soundAlertState === "enabling"
+              }
+              onClick={() => void enableSoundAlerts(true)}
+              type="button"
+            >
+              {soundAlertButtonLabel(soundAlertState)}
+            </button>
+          </>
         }
         allowFullscreen
         blocked={hasBlockingOverlay}
@@ -1000,6 +1087,14 @@ export default function KitchenDashboard() {
         aria-hidden={hasBlockingOverlay ? true : undefined}
         className="kitchen-dashboard-main"
         inert={hasBlockingOverlay ? true : undefined}
+        style={
+          {
+            "--kitchen-dashboard-zoom": dashboardZoom / 100,
+            "--kitchen-dashboard-zoom-height": `calc(${10000 / dashboardZoom}dvh - ${8200 / dashboardZoom}px)`,
+            "--kitchen-dashboard-zoom-max-width": `${192000 / dashboardZoom}px`,
+            "--kitchen-dashboard-zoom-width": `${10000 / dashboardZoom}%`,
+          } as CSSProperties
+        }
       >
         <section className="kitchen-dashboard-intro">
           <div>

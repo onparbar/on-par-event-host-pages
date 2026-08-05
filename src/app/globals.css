@@ -6191,6 +6191,7 @@ a {
 }
 
 .kitchen-dashboard-shell {
+  overflow-x: hidden;
   background: var(--kitchen-cream);
 }
 
@@ -6267,9 +6268,59 @@ a {
 }
 
 .kitchen-dashboard-main {
-  width: min(100%, 1920px);
-  margin: 0 auto;
+  width: min(
+    var(--kitchen-dashboard-zoom-width, 100%),
+    var(--kitchen-dashboard-zoom-max-width, 1920px)
+  );
+  margin: 0;
   padding: 24px clamp(12px, 2vw, 30px) 50px;
+  transform: scale(var(--kitchen-dashboard-zoom, 1));
+  transform-origin: top left;
+}
+
+.kitchen-zoom-controls {
+  display: inline-flex;
+  overflow: hidden;
+  min-height: 42px;
+  align-items: stretch;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: var(--portal-radius-sm);
+}
+
+.kitchen-zoom-button,
+.kitchen-zoom-value {
+  display: inline-grid;
+  min-height: 40px;
+  place-items: center;
+  padding: 6px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--ope-white);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.kitchen-zoom-button {
+  min-width: 36px;
+  font-size: 1.15rem;
+}
+
+.kitchen-zoom-value {
+  min-width: 54px;
+  border-inline: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.kitchen-zoom-button:hover:not(:disabled),
+.kitchen-zoom-value:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.kitchen-zoom-button:disabled,
+.kitchen-zoom-value:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .kitchen-dashboard-intro {
@@ -7481,8 +7532,10 @@ a {
 
   .kitchen-dashboard-main {
     display: flex;
-    height: calc(100vh - 82px);
-    height: calc(100dvh - 82px);
+    height: var(
+      --kitchen-dashboard-zoom-height,
+      calc(100dvh - 82px)
+    );
     min-height: 0;
     flex-direction: column;
     padding-top: 8px;
@@ -7816,6 +7869,10 @@ a {
     max-width: none;
     margin: 0;
     padding: 0;
+  }
+
+  .kitchen-dashboard-main {
+    transform: none;
   }
 
   .kitchen-checklist-wrap {
