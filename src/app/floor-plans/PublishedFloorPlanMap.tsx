@@ -4,6 +4,7 @@ import {
 } from "@/lib/floor-plans/configuration/areas";
 import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
 import {
+  entertainmentOverlapOutlines,
   entertainmentTimingLabel,
   eventForFloorPlanEntertainment,
   floorPlanCustomGeometry,
@@ -25,6 +26,10 @@ export default function PublishedFloorPlanMap({
   payload: FloorPlanDayPayload;
 }) {
   const { plan } = payload;
+  const overlapOutlines = entertainmentOverlapOutlines(
+    plan,
+    payload.entertainmentReservations,
+  );
 
   return (
     <div className="published-floor-plan-map">
@@ -45,6 +50,21 @@ export default function PublishedFloorPlanMap({
           ))}
         </div>
         <div className="floor-plan-area-layer published-floor-plan-area-layer">
+          {overlapOutlines.map((outline) => (
+            <span
+              aria-label={`${outline.eventName} overlapping ${outline.category}: ${outline.resourceNames.join(", ")}`}
+              className="floor-plan-entertainment-overlap-outline"
+              key={outline.id}
+              role="img"
+              style={{
+                left: `${(outline.x / 1920) * 100}%`,
+                top: `${(outline.y / 1080) * 100}%`,
+                width: `${(outline.width / 1920) * 100}%`,
+                height: `${(outline.height / 1080) * 100}%`,
+                "--event-color": outline.color,
+              } as React.CSSProperties}
+            />
+          ))}
           {AREAS.map((area) => {
             const local = plan.reservations.find(
               (reservation) =>

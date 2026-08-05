@@ -24,6 +24,7 @@ import {
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
 import {
+  entertainmentOverlapOutlines,
   entertainmentTimingLabel,
   eventForFloorPlanEntertainment,
   floorPlanCustomGeometry,
@@ -204,6 +205,13 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }, [date, loadDate]);
 
   const plan = payload?.plan ?? null;
+  const overlapOutlines = useMemo(
+    () =>
+      plan && payload
+        ? entertainmentOverlapOutlines(plan, payload.entertainmentReservations)
+        : [],
+    [payload, plan],
+  );
   const activeEvent =
     plan?.events.find((event) => event.id === activeEventId) ?? null;
   const selectedArea =
@@ -668,6 +676,14 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       context.fillStyle = "#000000";
       context.fillText(label, x + 11, y + 19);
     }
+    for (const outline of overlapOutlines) {
+      context.strokeStyle = "#FFFFFF";
+      context.lineWidth = 6;
+      context.strokeRect(outline.x, outline.y, outline.width, outline.height);
+      context.strokeStyle = outline.color;
+      context.lineWidth = 4;
+      context.strokeRect(outline.x, outline.y, outline.width, outline.height);
+    }
     const link = document.createElement("a");
     link.download = `${date}-event-host-floor-plan.png`;
     link.href = canvas.toDataURL("image/png");
@@ -771,6 +787,21 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 <img alt="On Par Entertainment floor map" draggable={false} ref={mapImageRef} src="/floor-plans/blank-floor-map.png" />
                 <div className="floor-plan-map-date" aria-hidden="true"><strong>{formatFullDate(date)}</strong>{plan.events.map((event) => <span key={event.id} style={{ color: event.color }}><b>{event.name} ({event.guestCount})</b><small>{eventTime(event)}</small></span>)}</div>
                 <div className="floor-plan-area-layer">
+                  {overlapOutlines.map((outline) => (
+                    <span
+                      aria-label={`${outline.eventName} overlapping ${outline.category}: ${outline.resourceNames.join(", ")}`}
+                      className="floor-plan-entertainment-overlap-outline"
+                      key={outline.id}
+                      role="img"
+                      style={{
+                        left: `${(outline.x / 1920) * 100}%`,
+                        top: `${(outline.y / 1080) * 100}%`,
+                        width: `${(outline.width / 1920) * 100}%`,
+                        height: `${(outline.height / 1080) * 100}%`,
+                        "--event-color": outline.color,
+                      } as React.CSSProperties}
+                    />
+                  ))}
                   {AREAS.filter((area) => area.id !== "facility" || plan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
                     const local = plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom" && (reservation.floorPlanEventId === activeEventId || !activeEventId)) ?? plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom") ?? null;
                     const shared = area.entertainmentResourceId
