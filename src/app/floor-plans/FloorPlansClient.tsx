@@ -385,6 +385,43 @@ export function PendingFloorPlanCard({
   );
 }
 
+export function AwaitingApprovalSection({
+  plans,
+}: {
+  plans: readonly FloorPlanDocument[];
+}) {
+  if (!plans.length) return null;
+
+  const sortedPlans = [...plans].sort((left, right) =>
+    left.eventDate.localeCompare(right.eventDate),
+  );
+
+  return (
+    <details className="floor-plan-archive floor-plan-awaiting-approval">
+      <summary>
+        <span>
+          <span className="portal-eyebrow">Admin review</span>
+          <strong>Awaiting approval</strong>
+        </span>
+        <span className="floor-plan-awaiting-summary-meta">
+          <span className="floor-plan-archive-count">
+            {sortedPlans.length} plan{sortedPlans.length === 1 ? "" : "s"}
+          </span>
+          <span aria-hidden="true" className="floor-plan-awaiting-chevron">⌄</span>
+        </span>
+      </summary>
+      <div className="floor-plan-awaiting-body">
+        <p>Saved edits already replace the original plan. Approve after completing validation.</p>
+        <div className="floor-plan-display-list">
+          {sortedPlans.map((plan) => (
+            <PendingFloorPlanCard key={plan.id} plan={plan} />
+          ))}
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export default function FloorPlansClient({
   initialState,
   plans,
@@ -537,30 +574,6 @@ export default function FloorPlansClient({
         title="Floor Plans"
       />
 
-      {pendingPublications.length ? (
-        <section aria-labelledby="pending-floor-plans" className="floor-plan-group floor-plan-pending-group">
-          <div className="floor-plan-group-heading">
-            <div>
-              <span className="portal-eyebrow">Admin review</span>
-              <h2 id="pending-floor-plans">Awaiting approval</h2>
-            </div>
-            <p>Saved edits already replace the original plan below. Approve after completing validation.</p>
-          </div>
-          <div className="floor-plan-display-list">
-            {[...pendingPublications]
-              .sort((left, right) =>
-                left.plan.eventDate.localeCompare(right.plan.eventDate),
-              )
-              .map((publication) => (
-                <PendingFloorPlanCard
-                  key={publication.plan.id}
-                  plan={publication.plan}
-                />
-              ))}
-          </div>
-        </section>
-      ) : null}
-
       <section aria-labelledby="upcoming-floor-plans" className="floor-plan-group">
         <div className="floor-plan-group-heading">
           <div>
@@ -597,6 +610,10 @@ export default function FloorPlansClient({
           {organized.archived.map(renderPlan)}
         </div>
       </details>
+
+      <AwaitingApprovalSection
+        plans={pendingPublications.map((publication) => publication.plan)}
+      />
     </PortalShell>
   );
 }

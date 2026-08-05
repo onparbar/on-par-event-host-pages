@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { DateAsset } from "@/lib/events";
 import {
+  AwaitingApprovalSection,
   buildUpcomingFloorPlanEntries,
   FloorPlanCard,
   PendingFloorPlanCard,
@@ -207,6 +208,29 @@ describe("floor-plan dashboard organization", () => {
     expect(html).toContain(
       "/admin/floor-plans?date=2026-08-05",
     );
+    expect(html).toContain("Edit and approve");
+  });
+
+  it("keeps the approval queue collapsed until staff open it", () => {
+    const html = renderToStaticMarkup(
+      createElement(AwaitingApprovalSection, {
+        plans: [
+          { ...interactivePlan, status: "Needs Review" },
+          {
+            ...interactivePlan,
+            id: "floor-plan-2026-08-06",
+            eventDate: "2026-08-06",
+            status: "Draft",
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain(
+      '<details class="floor-plan-archive floor-plan-awaiting-approval">',
+    );
+    expect(html).toContain("Awaiting approval");
+    expect(html).toContain("2 plans");
     expect(html).toContain("Edit and approve");
   });
 

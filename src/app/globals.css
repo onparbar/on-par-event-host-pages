@@ -5157,10 +5157,6 @@ a {
   gap: 14px;
 }
 
-.floor-plan-pending-group {
-  margin-bottom: 24px;
-}
-
 .portal-card.floor-plan-pending-card {
   overflow: hidden;
   padding: 0;
@@ -5272,6 +5268,38 @@ a {
   padding: 0 14px 14px;
   border-top: 1px solid var(--portal-border);
   background: #f3f5f1;
+}
+
+.floor-plan-awaiting-summary-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.floor-plan-awaiting-chevron {
+  color: var(--ope-muted-green);
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1;
+  transition: transform 140ms ease;
+}
+
+.floor-plan-awaiting-approval[open] .floor-plan-awaiting-chevron {
+  transform: rotate(180deg);
+}
+
+.floor-plan-awaiting-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-top: 1px solid var(--portal-border);
+  background: #f3f5f1;
+}
+
+.floor-plan-awaiting-body > p {
+  margin: 0;
+  color: var(--portal-muted-text);
+  font-size: 0.86rem;
 }
 
 .portal-card.floor-plan-display-card {
