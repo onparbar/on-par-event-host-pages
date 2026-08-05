@@ -153,6 +153,10 @@ describe("kitchen synchronization", () => {
     });
     expect(day.events).toHaveLength(1);
     expect(day.events[0].foodRunnerOrBwa).toBe("Jamie K.");
+    expect(day.bwaOptions).toEqual(
+      expect.arrayContaining(["Adrian", "Molly", "Veronica"]),
+    );
+    expect(day.bwaOptions).not.toContain("Jamie K.");
     expect(day.events[0].event.sourceUpdatedAt).toBe(
       "2026-07-28T13:00:00Z",
     );

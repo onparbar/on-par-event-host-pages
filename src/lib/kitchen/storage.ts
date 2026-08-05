@@ -14,6 +14,32 @@ import type {
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const WEBHOOK_PROCESSING_LEASE_MS = 10 * 60 * 1000;
 const WEBHOOK_DEDUPLICATION_WINDOW_MS = 10 * 60 * 1000;
+const KITCHEN_BWA_ROSTER = [
+  "Adrian",
+  "Alanis",
+  "Ashleigh",
+  "Austin",
+  "Cameron",
+  "Chase",
+  "Diana",
+  "Emily",
+  "Enrique",
+  "Estuardo",
+  "Jasmonica",
+  "Julio",
+  "Kaleb",
+  "Karla",
+  "Lindsey",
+  "Molly",
+  "Rocky",
+  "Ryan",
+  "Samantha",
+  "Saul",
+  "Selena",
+  "Staci",
+  "Taylor",
+  "Veronica",
+] as const;
 
 export type KitchenSyncStatus = "running" | "success" | "error";
 
@@ -35,6 +61,7 @@ export type StoredKitchenEvent = {
 export type StoredKitchenDay = {
   date: string;
   events: KitchenChecklist[];
+  bwaOptions: string[];
   sync: KitchenSyncState | null;
   addOnActivity: KitchenAddOnActivity[];
   addOnCompletions: KitchenAddOnCompletion[];
@@ -169,6 +196,12 @@ type TokenRow = {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+function savedBwaOptions() {
+  return [...KITCHEN_BWA_ROSTER].sort((left, right) =>
+    left.localeCompare(right, "en", { sensitivity: "base" }),
+  );
 }
 
 function checklistForCurrentRules(
@@ -537,6 +570,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     return {
       date,
       events: sortedEvents,
+      bwaOptions: savedBwaOptions(),
       sync: syncStateFromRow(syncRows[0]),
       ...alertMetadata,
     };
@@ -1023,6 +1057,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
     return {
       date,
       events: sortedEvents,
+      bwaOptions: savedBwaOptions(),
       sync: clone(this.syncRuns.get(date) ?? null),
       ...alertMetadata,
     };

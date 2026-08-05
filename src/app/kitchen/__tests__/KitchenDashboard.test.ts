@@ -4,44 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import { MOCK_KITCHEN_EVENTS } from "../../../lib/kitchen/fixtures";
 import { quantityAwareReadinessKey } from "../../../lib/kitchen/readiness";
 import { generateKitchenChecklist } from "../../../lib/kitchen/rules";
-import { kitchenFocusSnapshot } from "../../../lib/kitchen/focus";
 import {
   clockParts,
   ensureAudioContextRunning,
   formatTime,
-  KitchenEventFocusPanel,
   KitchenChecklistSheet,
   shouldApplyKitchenDayResponse,
   soundAlertButtonLabel,
   timeSortValue,
 } from "../KitchenDashboard";
-
-describe("kitchen event focus panel", () => {
-  it("renders the current event, countdown, and next event", () => {
-    const current = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
-    const next = generateKitchenChecklist({
-      ...MOCK_KITCHEN_EVENTS[1],
-      startTime: "18:30",
-      endTime: "20:00",
-    });
-    const now = new Date("2026-07-28T16:00:00.000Z");
-    const snapshot = kitchenFocusSnapshot([current, next], now);
-    const html = renderToStaticMarkup(
-      createElement(KitchenEventFocusPanel, {
-        current: snapshot.current,
-        currentEventCount: snapshot.currentEventCount,
-        next: snapshot.next,
-        now,
-      }),
-    );
-
-    expect(html).toContain("Current event");
-    expect(html).toContain("Next event");
-    expect(html).toContain(current.event.name);
-    expect(html).toContain(next.event.name);
-    expect(html).toContain("remaining");
-  });
-});
 
 describe("kitchen dashboard time display", () => {
   it("rejects invalid clock values instead of displaying plausible times", () => {
@@ -103,6 +74,13 @@ describe("kitchen sound alerts", () => {
     );
     expect(soundAlertButtonLabel("error")).toBe("Retry sound alerts");
     expect(soundAlertButtonLabel("error")).not.toBe("Sound alerts on");
+  });
+
+  it("labels the armed and enabled states as automatic sound alerts", () => {
+    expect(soundAlertButtonLabel("waiting")).toBe("Sound alerts armed");
+    expect(soundAlertButtonLabel("on")).toBe(
+      "Sound alerts always on",
+    );
   });
 
   it("rejects a resume that resolves without starting audio", async () => {
@@ -192,6 +170,28 @@ describe("kitchen checklist day layout", () => {
     expect(html.indexOf("Redacted Taco Package")).toBeLessThan(
       html.indexOf("Redacted Wing Package"),
     );
+  });
+
+  it("renders only approved Food Runner and BWA roster options", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    checklist.foodRunnerOrBwa = "Ryan (POC)";
+    const html = renderToStaticMarkup(
+      createElement(KitchenChecklistSheet, {
+        bwaDraft: "Ryan (POC)",
+        bwaOptions: ["Diana", "Ryan"],
+        bwaSaveState: "idle",
+        checklist,
+        inline: true,
+        onBwaChange: noop,
+        onSaveBwa: noop,
+      }),
+    );
+
+    expect(html).toContain('<select id="kitchen-bwa-mock-taco-001"');
+    expect(html).toContain('<option value="Diana">Diana</option>');
+    expect(html).toContain('<option value="Ryan">Ryan</option>');
+    expect(html).not.toContain('<option value="Ryan (POC)"');
+    expect(html).not.toContain('placeholder="Enter employee name"');
   });
 
   it("renders independent Ready and Completed controls after Quantity", () => {

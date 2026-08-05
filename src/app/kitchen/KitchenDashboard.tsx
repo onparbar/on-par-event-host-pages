@@ -24,11 +24,6 @@ import {
   type KitchenTimedAlert,
 } from "../../lib/kitchen/alerts";
 import { quantityAwareReadinessKey } from "../../lib/kitchen/readiness";
-import {
-  kitchenFocusSnapshot,
-  minutesUntil,
-  type KitchenFocusItem,
-} from "../../lib/kitchen/focus";
 import type {
   KitchenAddOnActivity,
   KitchenAddOnCompletion,
@@ -44,6 +39,7 @@ type KitchenDayResponse = {
   date: string;
   serverTime: string;
   events: KitchenChecklist[];
+  bwaOptions: string[];
   archivedEventCount: number;
   addOnActivity: KitchenAddOnActivity[];
   addOnCompletions: KitchenAddOnCompletion[];
@@ -310,7 +306,7 @@ export default function KitchenDashboard() {
   const [descriptionItem, setDescriptionItem] =
     useState<FoodDescriptionItem | null>(null);
   const [soundAlertState, setSoundAlertState] =
-    useState<SoundAlertState>("off");
+    useState<SoundAlertState>("waiting");
   const [alertQueue, setAlertQueue] = useState<KitchenTimedAlert[]>([]);
   const [addOnAlertQueue, setAddOnAlertQueue] = useState<
     KitchenLiveAddOnAlert[]
@@ -319,19 +315,14 @@ export default function KitchenDashboard() {
   const [lastLiveRefreshAt, setLastLiveRefreshAt] = useState<string | null>(
     null,
   );
-  const [focusNowMs, setFocusNowMs] = useState<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const serverClockAnchorRef = useRef({
-    epochMs: 0,
-    monotonicMs: 0,
-  });
+  const soundActivationInFlightRef = useRef(false);
   const dismissedAlertIdsRef = useRef<Set<string>>(new Set());
   const knownTimedAlertIdsRef = useRef<Set<string>>(new Set());
   const knownTimedAlertDateRef = useRef<string | null>(null);
   const lastAlertCheckAtRef = useRef<string | null>(null);
   const selectedDateRef = useRef(selectedDate);
   const dayLoadGenerationRef = useRef(0);
-  const soundAlertsEnabled = soundAlertState === "on";
   selectedDateRef.current = selectedDate;
 
   const selectKitchenDate = useCallback((nextDate: string) => {
@@ -402,14 +393,6 @@ export default function KitchenDashboard() {
           : stillApplicable;
       });
       setDay(payload);
-      const serverTime = Date.parse(payload.serverTime);
-      if (Number.isFinite(serverTime)) {
-        serverClockAnchorRef.current = {
-          epochMs: serverTime,
-          monotonicMs: window.performance.now(),
-        };
-        setFocusNowMs(serverTime);
-      }
       setLiveRefreshHealthy(true);
       setLastLiveRefreshAt(new Date().toISOString());
       setBwaDrafts((current) =>
@@ -503,22 +486,6 @@ export default function KitchenDashboard() {
     };
   }, [loadDay, loadState, selectedDate]);
 
-  const hasServerClock = focusNowMs !== null;
-  useEffect(() => {
-    if (!hasServerClock) {
-      return;
-    }
-    const updateClock = () => {
-      const anchor = serverClockAnchorRef.current;
-      setFocusNowMs(
-        anchor.epochMs +
-          (window.performance.now() - anchor.monotonicMs),
-      );
-    };
-    const interval = window.setInterval(updateClock, 30_000);
-    return () => window.clearInterval(interval);
-  }, [hasServerClock]);
-
   const sortedEvents = useMemo(
     () =>
       [...(day?.events ?? [])].sort(
@@ -532,17 +499,14 @@ export default function KitchenDashboard() {
 
   const selectedChecklist =
     sortedEvents.find((checklist) => sameEventId(selectedEventId, checklist.event.eventId)) ?? null;
-  const focusNow = new Date(focusNowMs ?? Number.NaN);
-  const eventFocus = useMemo(
-    () => kitchenFocusSnapshot(sortedEvents, focusNow),
-    [focusNowMs, sortedEvents],
-  );
   const warningCount = sortedEvents.reduce((sum, checklist) => sum + checklist.warnings.length, 0);
   const reviewCount = sortedEvents.filter((checklist) => checklist.needsReview).length;
   const timedAlerts = useMemo(
     () => kitchenTimedAlerts(sortedEvents, selectedDate),
     [selectedDate, sortedEvents],
   );
+  const timedAlertsRef = useRef(timedAlerts);
+  timedAlertsRef.current = timedAlerts;
   const activeAlert =
     addOnAlertQueue[0] ?? alertQueue[0] ?? null;
   const activeAlertId = activeAlert?.id ?? null;
@@ -564,9 +528,32 @@ export default function KitchenDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!soundAlertsEnabled) {
-      return;
+    let active = true;
+    const removeActivationListeners = () => {
+      window.removeEventListener("pointerdown", activateFromInteraction, true);
+      window.removeEventListener("keydown", activateFromInteraction, true);
+    };
+    const activate = async (reportFailure: boolean) => {
+      const enabled = await enableSoundAlerts(reportFailure);
+      if (active && enabled) {
+        removeActivationListeners();
+      }
+    };
+    function activateFromInteraction() {
+      void activate(true);
     }
+
+    window.addEventListener("pointerdown", activateFromInteraction, true);
+    window.addEventListener("keydown", activateFromInteraction, true);
+    void activate(false);
+
+    return () => {
+      active = false;
+      removeActivationListeners();
+    };
+  }, []);
+
+  useEffect(() => {
 
     const scanForAlerts = () => {
       const currentMinute = easternMinuteKey(new Date());
@@ -640,11 +627,15 @@ export default function KitchenDashboard() {
       window.removeEventListener("focus", scanWhenVisible);
       document.removeEventListener("visibilitychange", scanWhenVisible);
     };
-  }, [soundAlertsEnabled, timedAlerts]);
+  }, [selectedDate, timedAlerts]);
 
   useEffect(() => {
     const context = audioContextRef.current;
-    if (!soundAlertsEnabled || activeAlertId === null || context === null) {
+    if (
+      soundAlertState !== "on" ||
+      activeAlertId === null ||
+      context === null
+    ) {
       return;
     }
 
@@ -668,7 +659,7 @@ export default function KitchenDashboard() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [activeAlertId, soundAlertsEnabled]);
+  }, [activeAlertId, soundAlertState]);
 
   const closeChecklist = useCallback(() => {
     setSelectedEventId(null);
@@ -679,25 +670,43 @@ export default function KitchenDashboard() {
     setPendingPrintId(eventId);
   }
 
-  async function enableSoundAlerts() {
+  async function enableSoundAlerts(reportFailure = true) {
+    if (audioContextRef.current?.state === "running") {
+      setSoundAlertState("on");
+      return true;
+    }
+    if (soundActivationInFlightRef.current) {
+      return false;
+    }
+    soundActivationInFlightRef.current = true;
     setSoundAlertState("enabling");
-    setError("");
+    setError((current) =>
+      current === AUDIO_ALERT_ERROR ? "" : current,
+    );
     try {
       const context =
         audioContextRef.current?.state === "closed"
           ? new window.AudioContext()
           : (audioContextRef.current ?? new window.AudioContext());
       audioContextRef.current = context;
-      await playAlertTone(context);
+      await ensureAudioContextRunning(context);
       lastAlertCheckAtRef.current = easternMinuteKey(new Date());
-      knownTimedAlertDateRef.current = selectedDate;
+      knownTimedAlertDateRef.current = selectedDateRef.current;
       knownTimedAlertIdsRef.current = new Set(
-        timedAlerts.map((alert) => alert.id),
+        timedAlertsRef.current.map((alert) => alert.id),
       );
       setSoundAlertState("on");
+      return true;
     } catch {
-      setSoundAlertState("error");
-      setError(AUDIO_ALERT_ERROR);
+      if (reportFailure) {
+        setSoundAlertState("error");
+        setError(AUDIO_ALERT_ERROR);
+      } else {
+        setSoundAlertState("waiting");
+      }
+      return false;
+    } finally {
+      soundActivationInFlightRef.current = false;
     }
   }
 
@@ -967,7 +976,7 @@ export default function KitchenDashboard() {
               soundAlertState === "on" ||
               soundAlertState === "enabling"
             }
-            onClick={() => void enableSoundAlerts()}
+            onClick={() => void enableSoundAlerts(true)}
             type="button"
           >
             {soundAlertButtonLabel(soundAlertState)}
@@ -1054,15 +1063,6 @@ export default function KitchenDashboard() {
             </button>
           </div>
         </section>
-
-        {loadState === "ready" ? (
-          <KitchenEventFocusPanel
-            current={eventFocus.current}
-            currentEventCount={eventFocus.currentEventCount}
-            next={eventFocus.next}
-            now={focusNow}
-          />
-        ) : null}
 
         {day?.missingEnvironmentVariables.length ? (
           <section className="kitchen-alert" role="status">
@@ -1169,6 +1169,7 @@ export default function KitchenDashboard() {
               return (
                 <KitchenChecklistSheet
                   bwaDraft={bwaDrafts[eventKey] ?? ""}
+                  bwaOptions={day?.bwaOptions ?? []}
                   bwaSaveState={bwaSaveStates[eventKey] ?? "idle"}
                   checklist={checklist}
                   completionPending={completionPending}
@@ -1202,6 +1203,7 @@ export default function KitchenDashboard() {
       {selectedChecklist && !activeAlert ? (
         <ChecklistPanel
           bwaDraft={bwaDrafts[String(selectedChecklist.event.eventId)] ?? ""}
+          bwaOptions={day?.bwaOptions ?? []}
           bwaSaveState={bwaSaveStates[String(selectedChecklist.event.eventId)] ?? "idle"}
           checklist={selectedChecklist}
           completionPending={completionPending}
@@ -1238,107 +1240,12 @@ export default function KitchenDashboard() {
       {activeAlert ? (
         <KitchenAlertDialog
           alert={activeAlert}
-          onEnableSound={() => void enableSoundAlerts()}
+          onEnableSound={() => void enableSoundAlerts(true)}
           onDismiss={dismissActiveAlert}
           soundAlertState={soundAlertState}
         />
       ) : null}
     </PortalFrame>
-  );
-}
-
-function durationLabel(totalMinutes: number) {
-  const minutes = Math.max(0, totalMinutes);
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (!hours) {
-    return `${minutes} min`;
-  }
-  return remainingMinutes
-    ? `${hours} hr ${remainingMinutes} min`
-    : `${hours} hr`;
-}
-
-function focusTimeLabel(value: number | null) {
-  return value === null
-    ? "Time not set"
-    : formatTime(new Date(value).toISOString());
-}
-
-function currentFoodReadyLabel(item: KitchenFocusItem, now: Date) {
-  const minutes = minutesUntil(item.foodReadyAt, now);
-  if (minutes === null) {
-    return "Food ready time not set";
-  }
-  if (minutes > 0) {
-    return `Food ready in ${durationLabel(minutes)}`;
-  }
-  if (minutes === 0) {
-    return "Food ready now";
-  }
-  return `Food ready time passed ${durationLabel(Math.abs(minutes))} ago`;
-}
-
-export function KitchenEventFocusPanel({
-  current,
-  currentEventCount,
-  next,
-  now,
-}: {
-  current: KitchenFocusItem | null;
-  currentEventCount: number;
-  next: KitchenFocusItem | null;
-  now: Date;
-}) {
-  const remaining = current ? minutesUntil(current.endAt, now) : null;
-  const untilNext = next ? minutesUntil(next.startAt, now) : null;
-
-  return (
-    <section
-      aria-label="Current and next kitchen events"
-      className="kitchen-event-focus"
-    >
-      <article className="kitchen-event-focus-item is-current">
-        <span className="kitchen-event-focus-label">Current event</span>
-        {current ? (
-          <>
-            <strong>{current.event.event.name}</strong>
-            <span>
-              {current.endAt === null
-                ? "End time missing"
-                : `Ends at ${focusTimeLabel(current.endAt)}`}
-            </span>
-            <span>
-              {remaining === null
-                ? "Time remaining unavailable"
-                : `${durationLabel(remaining)} remaining`}
-            </span>
-            <span>{currentFoodReadyLabel(current, now)}</span>
-            {currentEventCount > 1 ? (
-              <small>{currentEventCount - 1} more event{currentEventCount === 2 ? " is" : "s are"} active</small>
-            ) : null}
-          </>
-        ) : (
-          <span>No event is active right now.</span>
-        )}
-      </article>
-      <article className="kitchen-event-focus-item is-next">
-        <span className="kitchen-event-focus-label">Next event</span>
-        {next ? (
-          <>
-            <strong>{next.event.event.name}</strong>
-            <span>Starts at {focusTimeLabel(next.startAt)}</span>
-            <span>
-              {untilNext === null
-                ? "Start countdown unavailable"
-                : `Starts in ${durationLabel(untilNext)}`}
-            </span>
-          </>
-        ) : (
-          <span>No later event is scheduled.</span>
-        )}
-      </article>
-    </section>
   );
 }
 
@@ -1369,6 +1276,7 @@ function StateCard({
 
 function ChecklistPanel({
   bwaDraft,
+  bwaOptions,
   bwaSaveState,
   checklist,
   completionPending,
@@ -1382,6 +1290,7 @@ function ChecklistPanel({
   readinessPending,
 }: {
   bwaDraft: string;
+  bwaOptions: readonly string[];
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
@@ -1437,6 +1346,7 @@ function ChecklistPanel({
 
       <KitchenChecklistSheet
         bwaDraft={bwaDraft}
+        bwaOptions={bwaOptions}
         bwaSaveState={bwaSaveState}
         checklist={checklist}
         completionPending={completionPending}
@@ -1453,6 +1363,7 @@ function ChecklistPanel({
 
 export function KitchenChecklistSheet({
   bwaDraft,
+  bwaOptions = [],
   bwaSaveState,
   checklist,
   completionPending = EMPTY_READINESS_KEYS,
@@ -1466,6 +1377,7 @@ export function KitchenChecklistSheet({
   readinessPending = EMPTY_READINESS_KEYS,
 }: {
   bwaDraft: string;
+  bwaOptions?: readonly string[];
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
@@ -1488,6 +1400,15 @@ export function KitchenChecklistSheet({
     ]),
   ];
   const bwaChanged = bwaDraft !== checklist.foodRunnerOrBwa;
+  const availableBwaOptions = [
+    ...new Set(
+      [...bwaOptions]
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ].sort((left, right) =>
+    left.localeCompare(right, "en", { sensitivity: "base" }),
+  );
   const completedItemKeys = new Set(checklist.completedItemKeys ?? []);
   const finalCompletedItemKeys = new Set(
     checklist.finalCompletedItemKeys ?? [],
@@ -1569,13 +1490,18 @@ export function KitchenChecklistSheet({
         <div className="kitchen-checklist-bwa">
           <div className="kitchen-bwa-field">
             <label htmlFor={`kitchen-bwa-${checklist.event.eventId}`}>Food Runner or BWA</label>
-            <input
+            <select
               id={`kitchen-bwa-${checklist.event.eventId}`}
               onChange={(event) => onBwaChange(event.target.value)}
-              placeholder="Enter employee name"
-              type="text"
               value={bwaDraft}
-            />
+            >
+              <option value="">Select a saved name</option>
+              {availableBwaOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
             <button
               className="kitchen-primary-button kitchen-bwa-save"
               disabled={!bwaChanged || bwaSaveState === "saving"}

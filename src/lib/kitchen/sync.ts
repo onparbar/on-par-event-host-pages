@@ -24,6 +24,7 @@ import type {
 export type KitchenDayPayload = {
   date: string;
   events: KitchenChecklist[];
+  bwaOptions: string[];
   archivedEventCount: number;
   addOnActivity: KitchenAddOnActivity[];
   addOnCompletions: KitchenAddOnCompletion[];
@@ -156,6 +157,7 @@ export async function getKitchenDay(
   return {
     date,
     events,
+    bwaOptions: stored.bwaOptions,
     archivedEventCount: eventsWithSourceStatus.length - events.length,
     addOnActivity: (stored.addOnActivity ?? []).filter((activity) =>
       activeEventIds.has(activity.eventId),

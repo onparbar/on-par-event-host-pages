@@ -52,6 +52,63 @@ function checklist(eventId: string): KitchenChecklist {
 }
 
 describe("Supabase kitchen storage authentication", () => {
+  it("returns only the approved roster as sorted dropdown options", async () => {
+    const storage = new SupabaseKitchenStorage({
+      env: {
+        NODE_ENV: "test",
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SECRET_KEY: "sb_secret_test-value",
+      },
+      fetchImpl: async (input) => {
+        const table = new URL(String(input)).pathname.split("/").pop();
+        return Response.json(
+          table === "kitchen_manual_assignments"
+            ? [
+                { event_id: "1", bwa: "  Ryan (POC)  " },
+                { event_id: "2", bwa: "Diana (FR)" },
+                { event_id: "3", bwa: "Ryan (POC)" },
+                { event_id: "4", bwa: "" },
+              ]
+            : [],
+        );
+      },
+    });
+
+    const day = await storage.getDay("2026-07-29");
+    expect(day.bwaOptions).toEqual([
+      "Adrian",
+      "Alanis",
+      "Ashleigh",
+      "Austin",
+      "Cameron",
+      "Chase",
+      "Diana",
+      "Emily",
+      "Enrique",
+      "Estuardo",
+      "Jasmonica",
+      "Julio",
+      "Kaleb",
+      "Karla",
+      "Lindsey",
+      "Molly",
+      "Rocky",
+      "Ryan",
+      "Samantha",
+      "Saul",
+      "Selena",
+      "Staci",
+      "Taylor",
+      "Veronica",
+    ]);
+    expect(day.bwaOptions).toEqual(
+      [...day.bwaOptions].sort((left, right) =>
+        left.localeCompare(right, "en", { sensitivity: "base" }),
+      ),
+    );
+    expect(new Set(day.bwaOptions).size).toBe(day.bwaOptions.length);
+  });
+
   it("sends a new sb_secret key only through the apikey header", async () => {
     const captured: Headers[] = [];
     const storage = new SupabaseKitchenStorage({
