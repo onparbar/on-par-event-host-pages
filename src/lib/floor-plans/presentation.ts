@@ -8,7 +8,6 @@ import type {
   EntertainmentCategory,
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
-import { timeRangesOverlap } from "./conflicts";
 import type {
   FloorPlanArea,
   FloorPlanDocument,
@@ -75,7 +74,7 @@ export function isEntertainmentTimeAnchor(
   )?.id === area.id;
 }
 
-export type EntertainmentOverlapOutline = {
+export type EntertainmentMultipleReservationOutline = {
   id: string;
   eventId: string;
   eventName: string;
@@ -92,12 +91,10 @@ type EntertainmentGroup = {
   id: string;
   event: FloorPlanEvent;
   category: EntertainmentCategory;
-  startAt: string;
-  endAt: string;
   reservations: EntertainmentReservation[];
 };
 
-const OUTLINE_PADDING = 2;
+const OUTLINE_PADDING = 4;
 const SEQUENTIAL_ENTERTAINMENT_CATEGORIES = new Set<EntertainmentCategory>([
   "bowling",
   "darts",
@@ -105,9 +102,61 @@ const SEQUENTIAL_ENTERTAINMENT_CATEGORIES = new Set<EntertainmentCategory>([
   "shuffleboard",
 ]);
 
-function entertainmentGroups(
+function compareEntertainmentReservations(
+  left: EntertainmentReservation,
+  right: EntertainmentReservation,
+) {
+  return (
+    Date.parse(left.startAt) - Date.parse(right.startAt) ||
+    Date.parse(left.endAt) - Date.parse(right.endAt) ||
+    left.eventName.localeCompare(right.eventName) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+export function primaryEntertainmentReservationForResource(
   plan: FloorPlanDocument,
   reservations: readonly EntertainmentReservation[],
+  resourceId: string,
+  preferredEventId = "",
+) {
+  const candidates = reservations
+    .filter(
+      (reservation) =>
+        reservation.active &&
+        reservation.resourceId === resourceId &&
+        eventForFloorPlanEntertainment(plan, reservation),
+    )
+    .sort(compareEntertainmentReservations);
+  return (
+    candidates.find(
+      (reservation) =>
+        eventForFloorPlanEntertainment(plan, reservation)?.id === preferredEventId,
+    ) ?? candidates[0] ?? null
+  );
+}
+
+export function visibleEntertainmentReservations(
+  plan: FloorPlanDocument,
+  reservations: readonly EntertainmentReservation[],
+  preferredEventId = "",
+) {
+  return AREAS.flatMap((area) => {
+    if (!area.entertainmentResourceId) return [];
+    const reservation = primaryEntertainmentReservationForResource(
+      plan,
+      reservations,
+      area.entertainmentResourceId,
+      preferredEventId,
+    );
+    return reservation ? [reservation] : [];
+  });
+}
+
+function additionalEntertainmentGroups(
+  plan: FloorPlanDocument,
+  reservations: readonly EntertainmentReservation[],
+  preferredEventId: string,
 ) {
   const groups = new Map<string, EntertainmentGroup>();
   for (const reservation of reservations) {
@@ -117,6 +166,18 @@ function entertainmentGroups(
     const event = eventForFloorPlanEntertainment(plan, reservation);
     const area = getAreaForEntertainmentResource(reservation.resourceId);
     if (!event || !area?.entertainmentResourceId) continue;
+    const primary = primaryEntertainmentReservationForResource(
+      plan,
+      reservations,
+      reservation.resourceId,
+      preferredEventId,
+    );
+    if (
+      !primary ||
+      eventForFloorPlanEntertainment(plan, primary)?.id === event.id
+    ) {
+      continue;
+    }
     const id = [
       event.id,
       reservation.resourceCategory,
@@ -127,8 +188,6 @@ function entertainmentGroups(
       id,
       event,
       category: reservation.resourceCategory,
-      startAt: reservation.startAt,
-      endAt: reservation.endAt,
       reservations: [],
     };
     if (!group.reservations.some((item) => item.resourceId === reservation.resourceId)) {
@@ -170,34 +229,15 @@ function contiguousReservationRuns(group: EntertainmentGroup) {
 }
 
 /**
- * Builds transparent group borders only when different parties use the same
- * entertainment category during overlapping time windows. Individual resource
- * highlights stay visible inside each border.
+ * Keeps the earliest reservation as the resource fill and wraps each additional
+ * party's contiguous resources in that party's color.
  */
-export function entertainmentOverlapOutlines(
+export function entertainmentMultipleReservationOutlines(
   plan: FloorPlanDocument,
   reservations: readonly EntertainmentReservation[],
-): EntertainmentOverlapOutline[] {
-  const groups = entertainmentGroups(plan, reservations);
-  const overlappingGroupIds = new Set<string>();
-  for (let leftIndex = 0; leftIndex < groups.length; leftIndex += 1) {
-    const left = groups[leftIndex];
-    for (let rightIndex = leftIndex + 1; rightIndex < groups.length; rightIndex += 1) {
-      const right = groups[rightIndex];
-      if (
-        left.event.id === right.event.id ||
-        left.category !== right.category ||
-        !timeRangesOverlap(left.startAt, left.endAt, right.startAt, right.endAt)
-      ) {
-        continue;
-      }
-      overlappingGroupIds.add(left.id);
-      overlappingGroupIds.add(right.id);
-    }
-  }
-
-  return groups
-    .filter((group) => overlappingGroupIds.has(group.id))
+  preferredEventId = "",
+): EntertainmentMultipleReservationOutline[] {
+  return additionalEntertainmentGroups(plan, reservations, preferredEventId)
     .flatMap((group) =>
       contiguousReservationRuns(group).flatMap((run, runIndex) => {
         const areas = run.flatMap((reservation) => {

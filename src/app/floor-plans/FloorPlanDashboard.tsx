@@ -24,13 +24,14 @@ import {
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
 import {
-  entertainmentOverlapOutlines,
+  entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
   eventForFloorPlanEntertainment,
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
   localHighlightIdsForDeletion,
+  visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
 import type {
   FloorPlanArea,
@@ -205,12 +206,27 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }, [date, loadDate]);
 
   const plan = payload?.plan ?? null;
-  const overlapOutlines = useMemo(
+  const visibleEntertainment = useMemo(
     () =>
       plan && payload
-        ? entertainmentOverlapOutlines(plan, payload.entertainmentReservations)
+        ? visibleEntertainmentReservations(
+            plan,
+            payload.entertainmentReservations,
+            activeEventId,
+          )
         : [],
-    [payload, plan],
+    [activeEventId, payload, plan],
+  );
+  const multipleReservationOutlines = useMemo(
+    () =>
+      plan && payload
+        ? entertainmentMultipleReservationOutlines(
+            plan,
+            payload.entertainmentReservations,
+            activeEventId,
+          )
+        : [],
+    [activeEventId, payload, plan],
   );
   const activeEvent =
     plan?.events.find((event) => event.id === activeEventId) ?? null;
@@ -582,6 +598,15 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   async function exportPng() {
     if (!plan || !payload || !mapImageRef.current || plan.status !== "Approved") return;
+    const exportedVisibleEntertainment = visibleEntertainmentReservations(
+      plan,
+      payload.entertainmentReservations,
+    );
+    const exportedMultipleReservationOutlines =
+      entertainmentMultipleReservationOutlines(
+        plan,
+        payload.entertainmentReservations,
+      );
     const canvas = document.createElement("canvas");
     canvas.width = 1920;
     canvas.height = 1080;
@@ -630,7 +655,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       }
     }
     const exportedEntertainmentGroups = new Set<string>();
-    const exportedEntertainment = [...payload.entertainmentReservations].sort(
+    const exportedEntertainment = [...exportedVisibleEntertainment].sort(
       (left, right) =>
         AREAS.findIndex(
           (area) => area.entertainmentResourceId === left.resourceId,
@@ -676,12 +701,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       context.fillStyle = "#000000";
       context.fillText(label, x + 11, y + 19);
     }
-    for (const outline of overlapOutlines) {
-      context.strokeStyle = "#FFFFFF";
-      context.lineWidth = 6;
-      context.strokeRect(outline.x, outline.y, outline.width, outline.height);
+    for (const outline of exportedMultipleReservationOutlines) {
       context.strokeStyle = outline.color;
-      context.lineWidth = 4;
+      context.lineWidth = 7;
       context.strokeRect(outline.x, outline.y, outline.width, outline.height);
     }
     const link = document.createElement("a");
@@ -787,10 +809,10 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 <img alt="On Par Entertainment floor map" draggable={false} ref={mapImageRef} src="/floor-plans/blank-floor-map.png" />
                 <div className="floor-plan-map-date" aria-hidden="true"><strong>{formatFullDate(date)}</strong>{plan.events.map((event) => <span key={event.id} style={{ color: event.color }}><b>{event.name} ({event.guestCount})</b><small>{eventTime(event)}</small></span>)}</div>
                 <div className="floor-plan-area-layer">
-                  {overlapOutlines.map((outline) => (
+                  {multipleReservationOutlines.map((outline) => (
                     <span
-                      aria-label={`${outline.eventName} overlapping ${outline.category}: ${outline.resourceNames.join(", ")}`}
-                      className="floor-plan-entertainment-overlap-outline"
+                      aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}`}
+                      className="floor-plan-entertainment-multiple-outline"
                       key={outline.id}
                       role="img"
                       style={{
@@ -805,7 +827,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                   {AREAS.filter((area) => area.id !== "facility" || plan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
                     const local = plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom" && (reservation.floorPlanEventId === activeEventId || !activeEventId)) ?? plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom") ?? null;
                     const shared = area.entertainmentResourceId
-                      ? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId && (eventForFloorPlanEntertainment(plan, reservation)?.id === activeEventId || !activeEventId)) ?? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId) ?? null
+                      ? visibleEntertainment.find((reservation) => reservation.resourceId === area.entertainmentResourceId) ?? null
                       : null;
                     const assignedEvent = local
                       ? plan.events.find((event) => event.id === local.floorPlanEventId) ?? null
@@ -816,7 +838,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                       assignedEvent &&
                       area.type !== "mini-golf" &&
                       isEntertainmentTimeAnchor(
-                        payload.entertainmentReservations,
+                        visibleEntertainment,
                         area,
                         shared,
                       ),

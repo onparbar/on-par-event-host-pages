@@ -498,15 +498,13 @@
   z-index: 3;
 }
 
-.floor-plan-entertainment-overlap-outline {
+.floor-plan-entertainment-multiple-outline {
   position: absolute;
   z-index: 6;
   box-sizing: border-box;
-  border: 3px solid var(--event-color);
+  border: 5px solid var(--event-color);
   border-radius: 5px;
   background: transparent;
-  outline: 2px solid #ffffff;
-  outline-offset: 1px;
   pointer-events: none;
 }
 
@@ -974,7 +972,7 @@
 
   .floor-plan-area.is-assigned,
   .floor-plan-custom-note,
-  .floor-plan-entertainment-overlap-outline {
+  .floor-plan-entertainment-multiple-outline {
     border: 2px solid #000000 !important;
     background:
       repeating-linear-gradient(
@@ -988,10 +986,8 @@
     print-color-adjust: exact;
   }
 
-  .floor-plan-entertainment-overlap-outline {
+  .floor-plan-entertainment-multiple-outline {
     background: transparent !important;
-    outline: 2px solid #ffffff !important;
-    outline-offset: 1px;
   }
 
   .floor-plan-map-date span {

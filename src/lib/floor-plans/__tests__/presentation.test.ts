@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { EntertainmentReservation } from "@/lib/entertainment/types";
 import {
-  entertainmentOverlapOutlines,
+  entertainmentMultipleReservationOutlines,
   localHighlightIdsForDeletion,
+  visibleEntertainmentReservations,
 } from "../presentation";
 import type { FloorPlanDocument, FloorPlanEvent } from "../types";
 
@@ -136,59 +137,75 @@ function entertainmentReservation(
   };
 }
 
-describe("overlapping entertainment group outlines", () => {
+describe("multiple entertainment reservation outlines", () => {
   const firstEvent = floorPlanEvent("event-1", "101", "First Party", "#D97706");
   const secondEvent = floorPlanEvent("event-2", "202", "Second Party", "#C026D3");
   const floorPlan = { ...plan, events: [firstEvent, secondEvent] };
 
-  it("wraps each party's contiguous lanes when their bowling times overlap", () => {
+  it("keeps the earliest reservation as the fill and wraps shared contiguous lanes in the additional party's color", () => {
     const reservations = [
-      entertainmentReservation("first-1", firstEvent, "bowling-1", "2026-08-07T17:30:00.000Z", "2026-08-07T19:30:00.000Z"),
-      entertainmentReservation("first-2", firstEvent, "bowling-2", "2026-08-07T17:30:00.000Z", "2026-08-07T19:30:00.000Z"),
-      entertainmentReservation("second-3", secondEvent, "bowling-3", "2026-08-07T16:30:00.000Z", "2026-08-07T18:30:00.000Z"),
-      entertainmentReservation("second-4", secondEvent, "bowling-4", "2026-08-07T16:30:00.000Z", "2026-08-07T18:30:00.000Z"),
+      entertainmentReservation("first-5", firstEvent, "bowling-5", "2026-08-07T16:30:00.000Z", "2026-08-07T18:30:00.000Z"),
+      entertainmentReservation("first-6", firstEvent, "bowling-6", "2026-08-07T16:30:00.000Z", "2026-08-07T18:30:00.000Z"),
+      entertainmentReservation("second-5", secondEvent, "bowling-5", "2026-08-07T21:00:00.000Z", "2026-08-07T23:00:00.000Z"),
+      entertainmentReservation("second-6", secondEvent, "bowling-6", "2026-08-07T21:00:00.000Z", "2026-08-07T23:00:00.000Z"),
+      entertainmentReservation("second-7", secondEvent, "bowling-7", "2026-08-07T21:00:00.000Z", "2026-08-07T23:00:00.000Z"),
+      entertainmentReservation("second-8", secondEvent, "bowling-8", "2026-08-07T21:00:00.000Z", "2026-08-07T23:00:00.000Z"),
     ];
 
-    expect(entertainmentOverlapOutlines(floorPlan, reservations)).toEqual([
-      expect.objectContaining({
-        eventName: "First Party",
-        color: "#D97706",
-        resourceNames: ["Bowling Lane 1", "Bowling Lane 2"],
-        x: 1464,
-        y: 422,
-        width: 107,
-        height: 66,
-      }),
+    expect(
+      visibleEntertainmentReservations(floorPlan, reservations).map(
+        (reservation) => reservation.id,
+      ),
+    ).toEqual(["first-5", "first-6", "second-7", "second-8"]);
+    expect(entertainmentMultipleReservationOutlines(floorPlan, reservations)).toEqual([
       expect.objectContaining({
         eventName: "Second Party",
         color: "#C026D3",
-        resourceNames: ["Bowling Lane 3", "Bowling Lane 4"],
-        x: 1464,
-        y: 495,
-        width: 107,
-        height: 66,
+        resourceNames: ["Bowling Lane 5", "Bowling Lane 6"],
+        x: 1462,
+        y: 571,
+        width: 111,
+        height: 71,
       }),
     ]);
   });
 
-  it("does not add group borders when entertainment times only touch", () => {
+  it("does not add a border when parties reserve different resources", () => {
     const reservations = [
-      entertainmentReservation("first-1", firstEvent, "bowling-1", "2026-08-07T16:00:00.000Z", "2026-08-07T17:00:00.000Z"),
-      entertainmentReservation("second-2", secondEvent, "bowling-2", "2026-08-07T17:00:00.000Z", "2026-08-07T18:00:00.000Z"),
+      entertainmentReservation("first-1", firstEvent, "bowling-1", "2026-08-07T16:00:00.000Z", "2026-08-07T18:00:00.000Z"),
+      entertainmentReservation("second-2", secondEvent, "bowling-2", "2026-08-07T17:00:00.000Z", "2026-08-07T19:00:00.000Z"),
     ];
 
-    expect(entertainmentOverlapOutlines(floorPlan, reservations)).toEqual([]);
+    expect(entertainmentMultipleReservationOutlines(floorPlan, reservations)).toEqual([]);
   });
 
-  it("splits non-contiguous lanes into separate borders", () => {
+  it("splits non-contiguous shared lanes into separate borders", () => {
     const reservations = [
       entertainmentReservation("first-1", firstEvent, "bowling-1", "2026-08-07T16:00:00.000Z", "2026-08-07T18:00:00.000Z"),
       entertainmentReservation("first-3", firstEvent, "bowling-3", "2026-08-07T16:00:00.000Z", "2026-08-07T18:00:00.000Z"),
-      entertainmentReservation("second-4", secondEvent, "bowling-4", "2026-08-07T17:00:00.000Z", "2026-08-07T19:00:00.000Z"),
+      entertainmentReservation("second-1", secondEvent, "bowling-1", "2026-08-07T21:00:00.000Z", "2026-08-07T23:00:00.000Z"),
+      entertainmentReservation("second-3", secondEvent, "bowling-3", "2026-08-07T21:00:00.000Z", "2026-08-07T23:00:00.000Z"),
     ];
 
-    const outlines = entertainmentOverlapOutlines(floorPlan, reservations);
-    expect(outlines.filter((outline) => outline.eventId === firstEvent.id)).toHaveLength(2);
-    expect(outlines.filter((outline) => outline.eventId === secondEvent.id)).toHaveLength(1);
+    const outlines = entertainmentMultipleReservationOutlines(floorPlan, reservations);
+    expect(outlines.filter((outline) => outline.eventId === secondEvent.id)).toHaveLength(2);
+  });
+
+  it("shows the selected Admin event as the fill and outlines the other party", () => {
+    const reservations = [
+      entertainmentReservation("first-5", firstEvent, "bowling-5", "2026-08-07T16:00:00.000Z", "2026-08-07T18:00:00.000Z"),
+      entertainmentReservation("second-5", secondEvent, "bowling-5", "2026-08-07T21:00:00.000Z", "2026-08-07T23:00:00.000Z"),
+    ];
+
+    expect(
+      visibleEntertainmentReservations(floorPlan, reservations, secondEvent.id)[0]?.id,
+    ).toBe("second-5");
+    expect(
+      entertainmentMultipleReservationOutlines(
+        floorPlan,
+        reservations,
+        secondEvent.id,
+      )[0],
+    ).toEqual(expect.objectContaining({ eventId: firstEvent.id }));
   });
 });

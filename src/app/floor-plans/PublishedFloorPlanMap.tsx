@@ -4,12 +4,13 @@ import {
 } from "@/lib/floor-plans/configuration/areas";
 import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
 import {
-  entertainmentOverlapOutlines,
+  entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
   eventForFloorPlanEntertainment,
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
+  visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
 import type { FloorPlanDayPayload } from "@/lib/floor-plans/types";
 import { formatClock, formatFullDate } from "@/lib/entertainment/time";
@@ -26,7 +27,11 @@ export default function PublishedFloorPlanMap({
   payload: FloorPlanDayPayload;
 }) {
   const { plan } = payload;
-  const overlapOutlines = entertainmentOverlapOutlines(
+  const visibleEntertainment = visibleEntertainmentReservations(
+    plan,
+    payload.entertainmentReservations,
+  );
+  const multipleReservationOutlines = entertainmentMultipleReservationOutlines(
     plan,
     payload.entertainmentReservations,
   );
@@ -50,10 +55,10 @@ export default function PublishedFloorPlanMap({
           ))}
         </div>
         <div className="floor-plan-area-layer published-floor-plan-area-layer">
-          {overlapOutlines.map((outline) => (
+          {multipleReservationOutlines.map((outline) => (
             <span
-              aria-label={`${outline.eventName} overlapping ${outline.category}: ${outline.resourceNames.join(", ")}`}
-              className="floor-plan-entertainment-overlap-outline"
+              aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}`}
+              className="floor-plan-entertainment-multiple-outline"
               key={outline.id}
               role="img"
               style={{
@@ -72,9 +77,8 @@ export default function PublishedFloorPlanMap({
                 reservation.reservationType !== "custom",
             ) ?? null;
             const shared = area.entertainmentResourceId
-              ? payload.entertainmentReservations.find(
+              ? visibleEntertainment.find(
                   (reservation) =>
-                    reservation.active &&
                     reservation.resourceId === area.entertainmentResourceId,
                 ) ?? null
               : null;
@@ -88,7 +92,7 @@ export default function PublishedFloorPlanMap({
               shared &&
                 area.type !== "mini-golf" &&
                 isEntertainmentTimeAnchor(
-                  payload.entertainmentReservations,
+                  visibleEntertainment,
                   area,
                   shared,
                 ),
