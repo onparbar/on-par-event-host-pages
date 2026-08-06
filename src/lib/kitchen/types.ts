@@ -275,6 +275,7 @@ export type KitchenChecklist = {
   sections: KitchenChecklistSection[];
   liveFoodAddOns: KitchenLiveFoodAddOn[];
   completedItemKeys: string[];
+  preppedItemKeys?: string[];
   finalCompletedItemKeys: string[];
   chafingDishes: {
     bars: number | null;

@@ -492,3 +492,26 @@ export async function updateKitchenItemCompletion(
     completed,
   };
 }
+
+export async function updateKitchenItemPrepped(
+  eventId: string,
+  itemKey: string,
+  prepped: boolean,
+  options: Pick<KitchenSyncDependencies, "storage"> = {},
+) {
+  const normalizedEventId = normalizeKitchenEventId(eventId);
+  const normalizedItemKey = itemKey.trim();
+  if (!/^[A-Za-z0-9:_-]{1,160}$/.test(normalizedItemKey)) {
+    throw new Error("Invalid kitchen item key.");
+  }
+  if (typeof prepped !== "boolean") {
+    throw new Error("Kitchen item preparation state must be a boolean.");
+  }
+
+  await (options.storage ?? getKitchenStorage()).saveItemPrepped(
+    normalizedEventId,
+    normalizedItemKey,
+    prepped,
+  );
+  return { eventId: normalizedEventId, itemKey: normalizedItemKey, prepped };
+}

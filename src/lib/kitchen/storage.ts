@@ -112,6 +112,11 @@ export interface KitchenStorage {
     itemKey: string,
     ready: boolean,
   ): Promise<void>;
+  saveItemPrepped(
+    eventId: string,
+    itemKey: string,
+    prepped: boolean,
+  ): Promise<void>;
   saveItemCompletion(
     eventId: string,
     itemKey: string,
@@ -175,6 +180,8 @@ type ItemReadinessRow = {
   item_key: string;
   ready: boolean;
   updated_at: string;
+  prepped: boolean;
+  prepped_updated_at: string | null;
   completed: boolean;
   completed_updated_at: string | null;
 };
@@ -293,6 +300,11 @@ type CurrentReadiness = {
 
 type CurrentCompletion = {
   completed: boolean;
+  updatedAt: string;
+};
+
+type CurrentPrepped = {
+  prepped: boolean;
   updatedAt: string;
 };
 
@@ -487,9 +499,9 @@ export class SupabaseKitchenStorage implements KitchenStorage {
             "kitchen_item_readiness",
             new URLSearchParams({
               select:
-                "event_id,item_key,ready,updated_at,completed,completed_updated_at",
+                "event_id,item_key,ready,updated_at,prepped,prepped_updated_at,completed,completed_updated_at",
               event_id: `in.(${queryableEventIds.join(",")})`,
-              or: "(ready.eq.true,completed.eq.true)",
+              or: "(ready.eq.true,prepped.eq.true,completed.eq.true)",
             }),
           ),
       queryableEventIds.length === 0
@@ -520,12 +532,18 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       }),
     );
     const completedItemsByEvent = new Map<string, string[]>();
+    const preppedItemsByEvent = new Map<string, string[]>();
     const finalCompletedItemsByEvent = new Map<string, string[]>();
     const readinessByEvent = new Map<
       string,
       Map<string, CurrentReadiness>
     >();
     for (const row of itemReadinessRows) {
+      if (row.prepped) {
+        const itemKeys = preppedItemsByEvent.get(row.event_id) ?? [];
+        itemKeys.push(row.item_key);
+        preppedItemsByEvent.set(row.event_id, itemKeys);
+      }
       if (row.completed) {
         const itemKeys =
           finalCompletedItemsByEvent.get(row.event_id) ?? [];
@@ -571,6 +589,9 @@ export class SupabaseKitchenStorage implements KitchenStorage {
         pocs: manualByEvent.get(row.event_id)?.pocs ?? [],
         completedItemKeys: (
           completedItemsByEvent.get(row.event_id) ?? []
+        ).sort(),
+        preppedItemKeys: (
+          preppedItemsByEvent.get(row.event_id) ?? []
         ).sort(),
         finalCompletedItemKeys: (
           finalCompletedItemsByEvent.get(row.event_id) ?? []
@@ -758,6 +779,29 @@ export class SupabaseKitchenStorage implements KitchenStorage {
           item_key: itemKey,
           completed,
           completed_updated_at: new Date().toISOString(),
+        }),
+      },
+    );
+  }
+
+  async saveItemPrepped(
+    eventId: string,
+    itemKey: string,
+    prepped: boolean,
+  ) {
+    await this.emptyRequest(
+      "kitchen_item_readiness",
+      new URLSearchParams({ on_conflict: "event_id,item_key" }),
+      {
+        method: "POST",
+        headers: {
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({
+          event_id: eventId,
+          item_key: itemKey,
+          prepped,
+          prepped_updated_at: new Date().toISOString(),
         }),
       },
     );
@@ -1031,6 +1075,10 @@ export class MemoryKitchenStorage implements KitchenStorage {
     string,
     Map<string, CurrentCompletion>
   >();
+  private readonly itemPrepped = new Map<
+    string,
+    Map<string, CurrentPrepped>
+  >();
   private readonly foodAddOns = new Map<string, StoredKitchenFoodAddOns>();
   private readonly syncRuns = new Map<string, KitchenSyncState>();
   private readonly webhookReceipts = new Map<
@@ -1069,6 +1117,12 @@ export class MemoryKitchenStorage implements KitchenStorage {
           ...(this.itemReadiness.get(eventId)?.entries() ?? []),
         ]
           .filter(([, readiness]) => readiness.ready)
+          .map(([itemKey]) => itemKey)
+          .sort(),
+        preppedItemKeys: [
+          ...(this.itemPrepped.get(eventId)?.entries() ?? []),
+        ]
+          .filter(([, state]) => state.prepped)
           .map(([itemKey]) => itemKey)
           .sort(),
         finalCompletedItemKeys: [
@@ -1149,6 +1203,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
         if (!stillStored) {
           this.foodAddOns.delete(eventId);
           this.itemReadiness.delete(eventId);
+          this.itemPrepped.delete(eventId);
           this.itemCompletion.delete(eventId);
         }
       }
@@ -1195,6 +1250,19 @@ export class MemoryKitchenStorage implements KitchenStorage {
       updatedAt: new Date().toISOString(),
     });
     this.itemCompletion.set(eventId, completion);
+  }
+
+  async saveItemPrepped(
+    eventId: string,
+    itemKey: string,
+    prepped: boolean,
+  ) {
+    const state = this.itemPrepped.get(eventId) ?? new Map();
+    state.set(itemKey, {
+      prepped,
+      updatedAt: new Date().toISOString(),
+    });
+    this.itemPrepped.set(eventId, state);
   }
 
   async getFoodAddOns(eventId: string) {

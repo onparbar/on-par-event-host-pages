@@ -196,6 +196,11 @@ describe("time calculations", () => {
       "bar-selection-quantity",
     );
     expect(row(checklist, "taco-beef").quantity).toBe(5);
+    expect(row(checklist, "taco-black-beans")).toMatchObject({
+      quantity: 1,
+      numberOfPans: 2,
+      panSize: "1/3",
+    });
     expect(row(checklist, "taco-tortillas").quantity).toBe(2);
     expect(checklist.chafingDishes.bars).toBe(1);
     expect(warningCodes(checklist)).not.toContain(
@@ -1233,7 +1238,7 @@ describe("platter packing and chafing dishes", () => {
     [2, 2, "1/2", 1],
     [3, 3, "1/3", 1],
     [4, 4, "1/2", 2],
-    [6, 6, "1/3", 2],
+    [6, 6, "1/3", 1],
   ] as const)(
     "approves %i same-food hot platters",
     (
@@ -1433,6 +1438,37 @@ describe("platter packing and chafing dishes", () => {
       bars: 2,
       hotPlatters: 1,
       total: 3,
+    });
+  });
+
+  it("packs the redacted Veterans setup into two total chafing dishes", () => {
+    const checklist = generateKitchenChecklist(
+      packageEvent("Taco Bar", 50, [
+        {
+          name: "Tater Keg Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+        {
+          name: "Wing Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+        {
+          name: "Chicken Tender Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    expect(checklist.chafingDishes).toEqual({
+      bars: 1,
+      hotPlatters: 1,
+      total: 2,
     });
   });
 });

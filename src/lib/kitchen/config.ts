@@ -282,7 +282,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-06.1",
+  ruleVersion: "ope-kitchen-2026-08-06.2",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -293,7 +293,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
     chickenPoundsPerPan: 2.5,
     beanRecipesPerBatch: 1,
     beefPansPerBatch: 1,
-    beanPansPerBatch: 1,
+    beanPansPerBatch: 2,
     panSize: "1/3",
     tortillaGuestsPerPack: 8,
   },

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { hasAdminSession } from "@/lib/admin-auth";
 import {
   updateKitchenItemCompletion,
+  updateKitchenItemPrepped,
   updateKitchenItemReadiness,
 } from "@/lib/kitchen/sync";
 
@@ -11,6 +12,7 @@ export const runtime = "nodejs";
 
 type ItemStateRequest = {
   ready?: unknown;
+  prepped?: unknown;
   completed?: unknown;
 };
 
@@ -52,15 +54,17 @@ export async function PATCH(
     );
   }
   const hasReady = Object.hasOwn(body, "ready");
+  const hasPrepped = Object.hasOwn(body, "prepped");
   const hasCompleted = Object.hasOwn(body, "completed");
-  if (hasReady === hasCompleted) {
+  if (Number(hasReady) + Number(hasPrepped) + Number(hasCompleted) !== 1) {
     return NextResponse.json(
-      { error: "Provide exactly one of ready or completed." },
+      { error: "Provide exactly one of ready, prepped, or completed." },
       { status: 400 },
     );
   }
   if (
     (hasReady && typeof body.ready !== "boolean") ||
+    (hasPrepped && typeof body.prepped !== "boolean") ||
     (hasCompleted && typeof body.completed !== "boolean")
   ) {
     return NextResponse.json(
@@ -78,7 +82,13 @@ export async function PATCH(
             itemKey,
             body.ready as boolean,
           )
-        : await updateKitchenItemCompletion(
+        : hasPrepped
+          ? await updateKitchenItemPrepped(
+              eventId,
+              itemKey,
+              body.prepped as boolean,
+            )
+          : await updateKitchenItemCompletion(
             eventId,
             itemKey,
             body.completed as boolean,

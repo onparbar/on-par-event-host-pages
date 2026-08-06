@@ -350,6 +350,9 @@ export default function KitchenDashboard() {
   const [completionPending, setCompletionPending] = useState<Set<string>>(
     () => new Set(),
   );
+  const [preppedPending, setPreppedPending] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [descriptionItem, setDescriptionItem] =
     useState<FoodDescriptionItem | null>(null);
   const [soundAlertState, setSoundAlertState] =
@@ -1018,6 +1021,69 @@ export default function KitchenDashboard() {
     }
   }
 
+  async function saveItemPrepped(
+    checklist: KitchenChecklist,
+    itemKey: string,
+    prepped: boolean,
+  ) {
+    const eventId = String(checklist.event.eventId);
+    const requestKey = readinessRequestKey(eventId, itemKey);
+    const wasPrepped = (checklist.preppedItemKeys ?? []).includes(itemKey);
+    const updateLocalState = (nextPrepped: boolean) => {
+      setDay((current) =>
+        current
+          ? {
+              ...current,
+              events: current.events.map((eventChecklist) => {
+                if (!sameEventId(eventChecklist.event.eventId, eventId)) {
+                  return eventChecklist;
+                }
+                const preppedKeys = new Set(
+                  eventChecklist.preppedItemKeys ?? [],
+                );
+                if (nextPrepped) preppedKeys.add(itemKey);
+                else preppedKeys.delete(itemKey);
+                return {
+                  ...eventChecklist,
+                  preppedItemKeys: [...preppedKeys].sort(),
+                };
+              }),
+            }
+          : current,
+      );
+    };
+
+    updateLocalState(prepped);
+    setPreppedPending((current) => new Set(current).add(requestKey));
+    try {
+      const response = await fetch(
+        `/api/kitchen/events/${encodeURIComponent(eventId)}/items/${encodeURIComponent(itemKey)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ prepped }),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to save item preparation.");
+      }
+    } catch {
+      updateLocalState(wasPrepped);
+      setError(
+        `Could not save the Prepped checkbox for ${checklist.event.name}. Try again.`,
+      );
+    } finally {
+      setPreppedPending((current) => {
+        const next = new Set(current);
+        next.delete(requestKey);
+        return next;
+      });
+    }
+  }
+
   async function lockDashboard() {
     await fetch("/api/admin-session", { method: "DELETE" });
     window.location.reload();
@@ -1318,6 +1384,10 @@ export default function KitchenDashboard() {
                     onReadyChange={(itemKey, ready) =>
                       void saveItemReadiness(checklist, itemKey, ready)
                     }
+                    onPreppedChange={(itemKey, prepped) =>
+                      void saveItemPrepped(checklist, itemKey, prepped)
+                    }
+                    preppedPending={preppedPending}
                     onSaveStaff={() => void saveStaffAssignments(checklist)}
                     readinessPending={readinessPending}
                   />
@@ -1353,6 +1423,10 @@ export default function KitchenDashboard() {
           onReadyChange={(itemKey, ready) =>
             void saveItemReadiness(selectedChecklist, itemKey, ready)
           }
+          onPreppedChange={(itemKey, prepped) =>
+            void saveItemPrepped(selectedChecklist, itemKey, prepped)
+          }
+          preppedPending={preppedPending}
           onSaveStaff={() => void saveStaffAssignments(selectedChecklist)}
           readinessPending={readinessPending}
         />
@@ -1413,9 +1487,11 @@ function ChecklistPanel({
   onCompletedChange,
   onOpenDescription,
   onPrint,
+  onPreppedChange,
   onReadyChange,
   onSaveStaff,
   readinessPending,
+  preppedPending,
 }: {
   staffDraft: StaffAssignmentDraft;
   bwaOptions: readonly string[];
@@ -1427,9 +1503,11 @@ function ChecklistPanel({
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription: (item: FoodDescriptionItem) => void;
   onPrint: () => void;
+  onPreppedChange?: (itemKey: string, prepped: boolean) => void;
   onReadyChange: (itemKey: string, ready: boolean) => void;
   onSaveStaff: () => void;
   readinessPending: ReadonlySet<string>;
+  preppedPending?: ReadonlySet<string>;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -1481,9 +1559,11 @@ function ChecklistPanel({
         onStaffChange={onStaffChange}
         onCompletedChange={onCompletedChange}
         onOpenDescription={onOpenDescription}
+        onPreppedChange={onPreppedChange}
         onReadyChange={onReadyChange}
         onSaveStaff={onSaveStaff}
         readinessPending={readinessPending}
+        preppedPending={preppedPending}
       />
     </section>
   );
@@ -1572,10 +1652,12 @@ export function KitchenChecklistSheet({
   onCompletedChange,
   onOpenDescription,
   onPrint,
+  onPreppedChange,
   onReadyChange,
   onSaveStaff = () => {},
   onSaveBwa: _legacyOnSaveBwa,
   readinessPending = EMPTY_READINESS_KEYS,
+  preppedPending = EMPTY_READINESS_KEYS,
 }: {
   staffDraft?: StaffAssignmentDraft;
   bwaDraft?: string;
@@ -1590,10 +1672,12 @@ export function KitchenChecklistSheet({
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
   onPrint?: () => void;
+  onPreppedChange?: (itemKey: string, prepped: boolean) => void;
   onReadyChange?: (itemKey: string, ready: boolean) => void;
   onSaveStaff?: () => void;
   onSaveBwa?: () => void;
   readinessPending?: ReadonlySet<string>;
+  preppedPending?: ReadonlySet<string>;
 }) {
   const visibleSections = [...checklist.sections]
     .filter((section) => section.rows.length > 0)
@@ -1618,6 +1702,7 @@ export function KitchenChecklistSheet({
     left.localeCompare(right, "en", { sensitivity: "base" }),
   );
   const completedItemKeys = new Set(checklist.completedItemKeys ?? []);
+  const preppedItemKeys = new Set(checklist.preppedItemKeys ?? []);
   const finalCompletedItemKeys = new Set(
     checklist.finalCompletedItemKeys ?? [],
   );
@@ -1627,6 +1712,8 @@ export function KitchenChecklistSheet({
     completionPending.has(readinessRequestKey(eventId, itemKey));
   const isReadinessPending = (itemKey: string) =>
     readinessPending.has(readinessRequestKey(eventId, itemKey));
+  const isPreppedPending = (itemKey: string) =>
+    preppedPending.has(readinessRequestKey(eventId, itemKey));
 
   return (
     <article
@@ -1749,6 +1836,7 @@ export function KitchenChecklistSheet({
           <thead>
             <tr>
               <th scope="col">Ready</th>
+              <th scope="col">Prepped</th>
               <th scope="col">Food Name</th>
               <th scope="col">Number of Pans</th>
               <th scope="col">Pan Size</th>
@@ -1760,13 +1848,16 @@ export function KitchenChecklistSheet({
             {visibleSections.map((section) => (
               <ChecklistSection
                 completedItemKeys={completedItemKeys}
+                preppedItemKeys={preppedItemKeys}
                 finalCompletedItemKeys={finalCompletedItemKeys}
                 isCompletionPending={isCompletionPending}
                 isReadinessPending={isReadinessPending}
+                isPreppedPending={isPreppedPending}
                 key={section.category}
                 onCompletedChange={onCompletedChange}
                 onOpenDescription={onOpenDescription}
                 onReadyChange={onReadyChange}
+                onPreppedChange={onPreppedChange}
                 ruleVersion={checklist.ruleVersion}
                 section={section}
               />
@@ -1792,6 +1883,7 @@ export function KitchenChecklistSheet({
                   ruleVersion: checklist.ruleVersion,
                 });
                 const isReady = completedItemKeys.has(readinessKey);
+                const isPrepped = preppedItemKeys.has(readinessKey);
                 const isCompleted =
                   finalCompletedItemKeys.has(readinessKey);
                 return (
@@ -1816,6 +1908,24 @@ export function KitchenChecklistSheet({
                         type="checkbox"
                       />
                       <span>Ready</span>
+                    </label>
+                    <label className="kitchen-ready-control">
+                      <input
+                        aria-label={`Mark add-on ${item.foodName} prepped`}
+                        checked={isPrepped}
+                        disabled={
+                          !onPreppedChange ||
+                          isPreppedPending(readinessKey)
+                        }
+                        onChange={(event) =>
+                          onPreppedChange?.(
+                            readinessKey,
+                            event.target.checked,
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      <span>Prepped</span>
                     </label>
                     <button
                       aria-haspopup="dialog"
@@ -1928,22 +2038,28 @@ function ChecklistFact({
 
 function ChecklistSection({
   completedItemKeys,
+  preppedItemKeys,
   finalCompletedItemKeys,
   isCompletionPending,
   isReadinessPending,
+  isPreppedPending,
   onCompletedChange,
   onOpenDescription,
   onReadyChange,
+  onPreppedChange,
   ruleVersion,
   section,
 }: {
   completedItemKeys: ReadonlySet<string>;
+  preppedItemKeys: ReadonlySet<string>;
   finalCompletedItemKeys: ReadonlySet<string>;
   isCompletionPending: (itemKey: string) => boolean;
   isReadinessPending: (itemKey: string) => boolean;
+  isPreppedPending: (itemKey: string) => boolean;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
   onReadyChange?: (itemKey: string, ready: boolean) => void;
+  onPreppedChange?: (itemKey: string, prepped: boolean) => void;
   ruleVersion: string;
   section: KitchenChecklistSection;
 }) {
@@ -1951,7 +2067,7 @@ function ChecklistSection({
   return (
     <>
       <tr className={`kitchen-category-heading kitchen-category-${categoryClassName}`}>
-        <th colSpan={6} scope="colgroup">
+        <th colSpan={7} scope="colgroup">
           {section.label || categoryLabels[section.category]}
         </th>
       </tr>
@@ -1965,6 +2081,7 @@ function ChecklistSection({
           ruleVersion,
         });
         const isReady = completedItemKeys.has(readinessKey);
+        const isPrepped = preppedItemKeys.has(readinessKey);
         const isCompleted = finalCompletedItemKeys.has(readinessKey);
         return (
           <tr
@@ -1985,6 +2102,22 @@ function ChecklistSection({
                   type="checkbox"
                 />
                 <span className="kitchen-visually-hidden">Ready</span>
+              </label>
+            </td>
+            <td className="kitchen-ready-cell" data-label="Prepped">
+              <label className="kitchen-ready-control">
+                <input
+                  aria-label={`Mark ${row.foodName} prepped`}
+                  checked={isPrepped}
+                  disabled={
+                    !onPreppedChange || isPreppedPending(readinessKey)
+                  }
+                  onChange={(event) =>
+                    onPreppedChange?.(readinessKey, event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="kitchen-visually-hidden">Prepped</span>
               </label>
             </td>
             <td data-label="Food name">

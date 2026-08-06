@@ -448,11 +448,11 @@ describe("Supabase kitchen storage authentication", () => {
     expect(
       new URL(readinessRequest?.url ?? "").searchParams.get("select"),
     ).toBe(
-      "event_id,item_key,ready,updated_at,completed,completed_updated_at",
+      "event_id,item_key,ready,updated_at,prepped,prepped_updated_at,completed,completed_updated_at",
     );
     expect(
       new URL(readinessRequest?.url ?? "").searchParams.get("or"),
-    ).toBe("(ready.eq.true,completed.eq.true)");
+    ).toBe("(ready.eq.true,prepped.eq.true,completed.eq.true)");
     expect(
       new URL(addOnRequest?.url ?? "").searchParams.get("event_id"),
     ).toBe("in.(12345,preview-alpha)");
@@ -637,7 +637,7 @@ describe("Supabase kitchen storage authentication", () => {
       .flatMap((section) => section.rows)
       .find((item) => item.key === "taco-chicken");
 
-    expect(day.events[0].ruleVersion).toBe("ope-kitchen-2026-08-06.1");
+    expect(day.events[0].ruleVersion).toBe("ope-kitchen-2026-08-06.2");
     expect(currentChicken).toMatchObject({
       quantity: 5,
       numberOfPans: 2,

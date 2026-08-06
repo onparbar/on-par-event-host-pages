@@ -316,11 +316,15 @@ describe("kitchen checklist day layout", () => {
     const completedHeader = html.indexOf(
       '<th scope="col">Verified (different person)</th>',
     );
+    const preppedHeader = html.indexOf('<th scope="col">Prepped</th>');
     const beefReadyInput = html.match(
       /<input aria-label="Mark Beef ready"[^>]*>/,
     )?.[0];
     const beefCompletedInput = html.match(
       /<input aria-label="Mark Beef verified by a different person"[^>]*>/,
+    )?.[0];
+    const beefPreppedInput = html.match(
+      /<input aria-label="Mark Beef prepped"[^>]*>/,
     )?.[0];
     const wingsCompletedInput = html.match(
       /<input aria-label="Mark add-on Wings verified by a different person"[^>]*>/,
@@ -329,9 +333,11 @@ describe("kitchen checklist day layout", () => {
     expect(html).toContain("<th scope=\"col\">Ready</th>");
     expect(quantityHeader).toBeGreaterThanOrEqual(0);
     expect(completedHeader).toBeGreaterThan(quantityHeader);
-    expect(html).toContain('<th colSpan="6"');
+    expect(preppedHeader).toBeGreaterThanOrEqual(0);
+    expect(html).toContain('<th colSpan="7"');
     expect(beefReadyInput).toContain('checked=""');
     expect(beefCompletedInput).toContain('checked=""');
+    expect(beefPreppedInput).not.toContain('checked=""');
     expect(wingsCompletedInput).not.toContain('checked=""');
     expect(html).toContain('aria-haspopup="dialog"');
     expect(html).toContain("Live food add-ons");

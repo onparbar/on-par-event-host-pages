@@ -397,7 +397,7 @@ export function packHotPlatters(
     2: { panCount: 2, panSize: "1/2" as const, chafingDishes: 1 },
     3: { panCount: 3, panSize: "1/3" as const, chafingDishes: 1 },
     4: { panCount: 4, panSize: "1/2" as const, chafingDishes: 2 },
-    6: { panCount: 6, panSize: "1/3" as const, chafingDishes: 2 },
+    6: { panCount: 6, panSize: "1/3" as const, chafingDishes: 1 },
   }[totalHotPlatters];
 
   if (!approved) {
@@ -1488,6 +1488,7 @@ export function generateKitchenChecklist(
     sections,
     liveFoodAddOns: liveFoodAddOns.map((item) => ({ ...item })),
     completedItemKeys: [],
+    preppedItemKeys: [],
     finalCompletedItemKeys: [],
     chafingDishes: {
       bars: barChafingDishes,
