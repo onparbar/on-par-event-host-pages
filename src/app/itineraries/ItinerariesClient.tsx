@@ -351,18 +351,30 @@ export default function ItinerariesClient({
               {activeEvent.guest_count} guests · {activeEvent.rooms.join(", ")}
             </span>
           </div>
-          {activeEvent.pdf ? (
-            <a
-              className="button-link itinerary-open-link"
-              href={activeEvent.pdf}
-              rel="noreferrer"
-              target="_blank"
+          <div className="itinerary-toolbar-actions">
+            {activeEvent.pdf ? (
+              <a
+                className="button-link itinerary-open-link"
+                href={activeEvent.pdf}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open Approved PDF
+              </a>
+            ) : (
+              <PortalStatusBadge>
+                Generated from current event data
+              </PortalStatusBadge>
+            )}
+            <button
+              aria-label={`Print ${activeEvent.name} itinerary at 4 by 9 inches`}
+              className="button-link itinerary-print-button"
+              onClick={() => window.print()}
+              type="button"
             >
-              Open Approved PDF
-            </a>
-          ) : (
-            <PortalStatusBadge>Generated from current event data</PortalStatusBadge>
-          )}
+              Print 4″ × 9″
+            </button>
+          </div>
         </div>
 
         <div className="itinerary-workspace">

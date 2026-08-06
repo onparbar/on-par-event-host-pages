@@ -3045,6 +3045,13 @@ a {
   gap: 3px;
 }
 
+.itinerary-toolbar .itinerary-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .itinerary-toolbar .eyebrow {
   margin: 0;
 }
@@ -3059,6 +3066,14 @@ a {
   margin-top: 0;
   border-color: var(--ope-action-green);
   background: var(--ope-action-green);
+  color: var(--ope-white);
+  font-weight: 800;
+}
+
+.itinerary-print-button {
+  margin: 0;
+  border-color: var(--ope-forest);
+  background: var(--ope-forest);
   color: var(--ope-white);
   font-weight: 800;
 }
@@ -7997,5 +8012,197 @@ a {
   .kitchen-addon-item {
     font-size: 7.5pt;
     line-height: 1.25;
+  }
+}
+
+@page itinerary-card {
+  size: 4in 9in;
+  margin: 0;
+}
+
+@media print {
+  .portal-shell:has(.itinerary-page) {
+    min-height: 0;
+    background: #ffffff;
+  }
+
+  .portal-shell:has(.itinerary-page) .portal-header,
+  .itinerary-page > .portal-page-header,
+  .itinerary-page > .event-tab-strip,
+  .itinerary-page .itinerary-toolbar,
+  .itinerary-page .itinerary-operations-card {
+    display: none !important;
+  }
+
+  .portal-main.itinerary-page,
+  .itinerary-panel,
+  .itinerary-workspace {
+    display: block;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .itinerary-dashboard-card {
+    page: itinerary-card;
+    width: 4in;
+    min-height: 9in;
+    margin: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    color: #000000;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .itinerary-dashboard-hero {
+    min-height: 0;
+    padding: 0.22in 0.24in 0.18in;
+  }
+
+  .itinerary-hero-brand {
+    gap: 0.08in;
+  }
+
+  .itinerary-hero-brand img {
+    width: 0.82in;
+  }
+
+  .itinerary-hero-brand > span {
+    height: 0.28in;
+  }
+
+  .itinerary-hero-brand small {
+    font-size: 5.5pt;
+  }
+
+  .itinerary-hero-brand strong {
+    font-size: 7pt;
+  }
+
+  .itinerary-hero-title {
+    margin-top: 0.15in;
+  }
+
+  .itinerary-hero-title span {
+    font-size: 6.5pt;
+  }
+
+  .itinerary-hero-title h2 {
+    max-width: none;
+    margin: 0.04in 0 0.05in;
+    font-size: 18pt;
+    line-height: 1;
+  }
+
+  .itinerary-hero-title p {
+    font-size: 8pt;
+  }
+
+  .itinerary-fact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .itinerary-fact-grid > div {
+    min-height: 0;
+    gap: 1px;
+    padding: 0.07in 0.1in;
+    border-bottom: 1px solid rgba(82, 109, 82, 0.2);
+  }
+
+  .itinerary-fact-grid span {
+    font-size: 5.5pt;
+  }
+
+  .itinerary-fact-grid strong {
+    font-size: 7.5pt;
+  }
+
+  .itinerary-fact-grid small {
+    font-size: 6pt;
+    line-height: 1.15;
+  }
+
+  .itinerary-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.09in;
+    padding: 0.12in;
+  }
+
+  .itinerary-detail-card {
+    min-height: 0;
+    padding: 0.1in;
+    border-radius: 0.06in;
+    break-inside: avoid;
+  }
+
+  .itinerary-detail-card > header {
+    gap: 0.06in;
+    margin-bottom: 0.06in;
+    padding-bottom: 0.05in;
+  }
+
+  .itinerary-section-number {
+    width: 0.27in;
+    height: 0.27in;
+    border-radius: 0.04in;
+    font-size: 5.5pt;
+  }
+
+  .itinerary-detail-card header small {
+    font-size: 5pt;
+  }
+
+  .itinerary-detail-card h3 {
+    font-size: 10pt;
+  }
+
+  .itinerary-detail-card p,
+  .itinerary-detail-card li {
+    font-size: 6.5pt;
+    line-height: 1.22;
+  }
+
+  .itinerary-detail-card li {
+    padding: 0.035in 0 0.035in 0.11in;
+  }
+
+  .itinerary-detail-card li::before {
+    top: 0.07in;
+    left: 0.01in;
+    width: 0.04in;
+    height: 0.04in;
+  }
+
+  .itinerary-activity-list {
+    gap: 0.04in;
+  }
+
+  .itinerary-activity-list > div {
+    gap: 1px;
+    padding: 0.04in 0.05in;
+    border-left-width: 2px;
+    border-radius: 0 0.03in 0.03in 0;
+  }
+
+  .itinerary-activity-list strong {
+    font-size: 6.5pt;
+  }
+
+  .itinerary-activity-list span {
+    font-size: 6pt;
+    line-height: 1.18;
+  }
+
+  .itinerary-drinks-card {
+    grid-column: 1 / -1;
+  }
+
+  .itinerary-drinks-card ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 0.1in;
   }
 }
