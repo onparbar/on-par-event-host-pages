@@ -80,6 +80,27 @@ entertainment document line items, menu selections, room assignments, event
 times, status, IDs, and update timestamps into a safe scheduling snapshot.
 Tripleseat remains read-only; block edits are saved only in Event Host.
 
+### Read-only Entertainment Schedule API
+
+Tech's waitlist service can read the saved normalized reservations without an
+Event Host browser session:
+
+```http
+GET /api/entertainment-schedule?from=2026-08-04&to=2026-08-11
+Authorization: Bearer <service-token>
+```
+
+Configure the server-only `ENTERTAINMENT_SCHEDULE_API_TOKEN` environment
+variable with a strong independent token. The caller must keep the token on
+its server; it must not be embedded in browser JavaScript or use a
+`NEXT_PUBLIC_` variable. The inclusive range is limited to 31 days.
+
+The response contains a flat, start-time-sorted `reservations` array with the
+operating date, Event Host/Tripleseat event identifier, event name, canonical
+resource ID/name/category, ISO start and end times, event color, source,
+manual-override and review flags, and update time. It deliberately excludes
+booking details, notes, source documents, audit history, and all write actions.
+
 Kitchen and Entertainment Schedule synchronization filter the configured OPE
 location and exact `DEFINITE` event status.
 Structured menu selections are preferred. Approved `Food Packages` and
