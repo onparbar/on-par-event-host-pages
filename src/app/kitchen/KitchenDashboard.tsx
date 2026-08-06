@@ -1841,7 +1841,12 @@ export function KitchenChecklistSheet({
               <th scope="col">Number of Pans</th>
               <th scope="col">Pan Size</th>
               <th scope="col">Quantity</th>
-              <th scope="col">Verified (different person)</th>
+              <th scope="col">
+                <span className="kitchen-verified-heading">Verified</span>
+                <small className="kitchen-verified-subheading">
+                  Different person
+                </small>
+              </th>
             </tr>
           </thead>
           <tbody>

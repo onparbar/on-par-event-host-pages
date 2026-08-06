@@ -314,7 +314,7 @@ describe("kitchen checklist day layout", () => {
       '<th scope="col">Quantity</th>',
     );
     const completedHeader = html.indexOf(
-      '<th scope="col">Verified (different person)</th>',
+      '<span class="kitchen-verified-heading">Verified</span>',
     );
     const preppedHeader = html.indexOf('<th scope="col">Prepped</th>');
     const beefReadyInput = html.match(

@@ -7010,29 +7010,46 @@ a {
 }
 
 .kitchen-checklist-table thead th:first-child {
-  width: 8%;
+  width: 7%;
   text-align: center;
 }
 
 .kitchen-checklist-table thead th:nth-child(2) {
-  width: 31%;
+  width: 7%;
+  text-align: center;
 }
 
 .kitchen-checklist-table thead th:nth-child(3) {
-  width: 16%;
+  width: 28%;
 }
 
 .kitchen-checklist-table thead th:nth-child(4) {
-  width: 13%;
+  width: 14%;
 }
 
 .kitchen-checklist-table thead th:nth-child(5) {
-  width: 18%;
+  width: 11%;
 }
 
 .kitchen-checklist-table thead th:nth-child(6) {
-  width: 14%;
+  width: 18%;
+}
+
+.kitchen-checklist-table thead th:nth-child(7) {
+  width: 15%;
   text-align: center;
+}
+
+.kitchen-verified-heading,
+.kitchen-verified-subheading {
+  display: block;
+}
+
+.kitchen-verified-subheading {
+  margin-top: 2px;
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
 }
 
 .kitchen-category-heading th {
@@ -7852,7 +7869,7 @@ a {
     grid-template-columns: 64px repeat(3, minmax(0, 1fr));
   }
 
-  .kitchen-checklist-table tr:not(.kitchen-category-heading) td:nth-child(2) {
+  .kitchen-checklist-table tr:not(.kitchen-category-heading) td:nth-child(3) {
     grid-column: 2 / -1;
     font-size: 1.02rem;
   }
@@ -8155,11 +8172,11 @@ a {
   }
 
   .itinerary-hero-brand small {
-    font-size: 5.5pt;
+    font-size: 6.5pt;
   }
 
   .itinerary-hero-brand strong {
-    font-size: 7pt;
+    font-size: 8pt;
   }
 
   .itinerary-hero-title {
@@ -8167,18 +8184,18 @@ a {
   }
 
   .itinerary-hero-title span {
-    font-size: 6.5pt;
+    font-size: 7.5pt;
   }
 
   .itinerary-hero-title h2 {
     max-width: none;
     margin: 0.04in 0 0.05in;
-    font-size: 18pt;
+    font-size: 20pt;
     line-height: 1;
   }
 
   .itinerary-hero-title p {
-    font-size: 8pt;
+    font-size: 9pt;
   }
 
   .itinerary-fact-grid {
@@ -8193,15 +8210,15 @@ a {
   }
 
   .itinerary-fact-grid span {
-    font-size: 5.5pt;
+    font-size: 6.5pt;
   }
 
   .itinerary-fact-grid strong {
-    font-size: 7.5pt;
+    font-size: 8.5pt;
   }
 
   .itinerary-fact-grid small {
-    font-size: 6pt;
+    font-size: 7pt;
     line-height: 1.15;
   }
 
@@ -8232,20 +8249,20 @@ a {
     width: 0.27in;
     height: 0.27in;
     border-radius: 0.04in;
-    font-size: 5.5pt;
+    font-size: 6.5pt;
   }
 
   .itinerary-detail-card header small {
-    font-size: 5pt;
+    font-size: 6pt;
   }
 
   .itinerary-detail-card h3 {
-    font-size: 10pt;
+    font-size: 11pt;
   }
 
   .itinerary-detail-card p,
   .itinerary-detail-card li {
-    font-size: 6.5pt;
+    font-size: 7.5pt;
     line-height: 1.22;
   }
 
@@ -8272,11 +8289,11 @@ a {
   }
 
   .itinerary-activity-list strong {
-    font-size: 6.5pt;
+    font-size: 7.5pt;
   }
 
   .itinerary-activity-list span {
-    font-size: 6pt;
+    font-size: 7pt;
     line-height: 1.18;
   }
 
