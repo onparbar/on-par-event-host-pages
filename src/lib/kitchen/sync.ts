@@ -7,6 +7,7 @@ import { generateKitchenChecklist } from "./rules";
 import {
   getKitchenStorage,
   getMissingSupabaseEnvironmentVariables,
+  KITCHEN_STAFF_ROSTER,
   type KitchenStorage,
   type KitchenSyncState,
 } from "./storage";
@@ -218,25 +219,66 @@ export async function syncKitchenDay(
   }
 }
 
-export async function updateKitchenManualBwa(
+export async function updateKitchenManualAssignments(
   eventId: string,
-  bwa: string,
+  foodRunners: readonly string[],
+  pocs: readonly string[],
   options: Pick<KitchenSyncDependencies, "storage"> = {},
 ) {
   const normalizedEventId = eventId.trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalizedEventId)) {
     throw new Error("Invalid kitchen event ID.");
   }
-  const normalizedBwa = bwa.trim().replace(/\s+/g, " ");
-  if (normalizedBwa.length > 120) {
-    throw new Error("Food Runner or BWA must be 120 characters or fewer.");
-  }
+  const normalizeNames = (values: readonly string[], label: string) => {
+    if (values.length > 24) {
+      throw new Error(`${label} can include at most 24 employees.`);
+    }
+    const normalized = unique(
+      values.map((value) => value.trim().replace(/\s+/g, " ")).filter(Boolean),
+    );
+    if (normalized.some((value) => value.length > 80)) {
+      throw new Error(`${label} names must be 80 characters or fewer.`);
+    }
+    if (
+      normalized.some(
+        (value) =>
+          !KITCHEN_STAFF_ROSTER.includes(
+            value as (typeof KITCHEN_STAFF_ROSTER)[number],
+          ),
+      )
+    ) {
+      throw new Error(`${label} contains an employee outside the approved roster.`);
+    }
+    return normalized;
+  };
+  const normalizedFoodRunners = normalizeNames(foodRunners, "Food Runner");
+  const normalizedPocs = normalizeNames(pocs, "POC");
 
-  await (options.storage ?? getKitchenStorage()).saveManualBwa(
+  await (options.storage ?? getKitchenStorage()).saveManualAssignments(
     normalizedEventId,
-    normalizedBwa,
+    normalizedFoodRunners,
+    normalizedPocs,
   );
-  return { eventId: normalizedEventId, bwa: normalizedBwa };
+  return {
+    eventId: normalizedEventId,
+    foodRunners: normalizedFoodRunners,
+    pocs: normalizedPocs,
+  };
+}
+
+/** Backward-compatible adapter for older callers during the assignment migration. */
+export async function updateKitchenManualBwa(
+  eventId: string,
+  bwa: string,
+  options: Pick<KitchenSyncDependencies, "storage"> = {},
+) {
+  const normalizedBwa = bwa.trim().replace(/\s+/g, " ");
+  return updateKitchenManualAssignments(
+    eventId,
+    normalizedBwa ? [normalizedBwa] : [],
+    [],
+    options,
+  );
 }
 
 function normalizeKitchenEventId(eventId: string) {

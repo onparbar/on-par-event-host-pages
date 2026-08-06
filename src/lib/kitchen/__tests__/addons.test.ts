@@ -195,9 +195,9 @@ describe("translateEventHostFoodAddOns", () => {
         panSize: null,
       },
       {
-        quantity: 100,
+        quantity: 128,
         unit: "each",
-        numberOfPans: 4,
+        numberOfPans: 6,
         panSize: "1/3",
       },
       {

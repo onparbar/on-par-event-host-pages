@@ -139,7 +139,7 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     section: "party-platters",
     sourceUnitLabel: "platters",
     description: "Fried chicken tenders served with ranch dipping sauce.",
-    amountPerSourceUnit: 50,
+    amountPerSourceUnit: 64,
     maxSourceQuantity: 10,
     unit: "each",
     panCapacityKey: "chickenTenders",

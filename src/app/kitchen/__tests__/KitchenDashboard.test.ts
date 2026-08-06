@@ -233,14 +233,13 @@ describe("kitchen checklist day layout", () => {
 
     expect(html.match(/data-kitchen-event-id=/g)).toHaveLength(2);
     expect(html.match(/<table/g)).toHaveLength(2);
-    expect(html).toContain('id="kitchen-bwa-mock-taco-001"');
-    expect(html).toContain('id="kitchen-bwa-mock-wing-002"');
+    expect(html.match(/class="kitchen-staff-select"/g)).toHaveLength(4);
     expect(html.indexOf("Redacted Taco Package")).toBeLessThan(
       html.indexOf("Redacted Wing Package"),
     );
   });
 
-  it("renders only approved Food Runner and BWA roster options", () => {
+  it("renders approved multi-select Food Runner and POC roster options", () => {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     checklist.foodRunnerOrBwa = "Ryan (POC)";
     const html = renderToStaticMarkup(
@@ -255,14 +254,15 @@ describe("kitchen checklist day layout", () => {
       }),
     );
 
-    expect(html).toContain('<select id="kitchen-bwa-mock-taco-001"');
-    expect(html).toContain('<option value="Diana">Diana</option>');
-    expect(html).toContain('<option value="Ryan">Ryan</option>');
-    expect(html).not.toContain('<option value="Ryan (POC)"');
+    expect(html).toContain("Food Runner");
+    expect(html).toContain("POC");
+    expect(html).toContain("Diana");
+    expect(html).toContain("Ryan");
+    expect(html).not.toContain("Ryan (POC)</span>");
     expect(html).not.toContain('placeholder="Enter employee name"');
   });
 
-  it("renders independent Ready and Completed controls after Quantity", () => {
+  it("renders independent Ready and verification controls after Quantity", () => {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     const beef = checklist.sections
       .flatMap((section) => section.rows)
@@ -314,16 +314,16 @@ describe("kitchen checklist day layout", () => {
       '<th scope="col">Quantity</th>',
     );
     const completedHeader = html.indexOf(
-      '<th scope="col">Completed</th>',
+      '<th scope="col">Verified (different person)</th>',
     );
     const beefReadyInput = html.match(
       /<input aria-label="Mark Beef ready"[^>]*>/,
     )?.[0];
     const beefCompletedInput = html.match(
-      /<input aria-label="Mark Beef completed"[^>]*>/,
+      /<input aria-label="Mark Beef verified by a different person"[^>]*>/,
     )?.[0];
     const wingsCompletedInput = html.match(
-      /<input aria-label="Mark add-on Wings completed"[^>]*>/,
+      /<input aria-label="Mark add-on Wings verified by a different person"[^>]*>/,
     )?.[0];
 
     expect(html).toContain("<th scope=\"col\">Ready</th>");
@@ -337,7 +337,7 @@ describe("kitchen checklist day layout", () => {
     expect(html).toContain("Live food add-ons");
     expect(html).toContain('aria-label="Mark add-on Wings ready"');
     expect(html).toContain(
-      'aria-label="Mark add-on Wings completed"',
+      'aria-label="Mark add-on Wings verified by a different person"',
     );
     expect(html.match(/kitchen-item-complete/g)).toHaveLength(2);
     expect(html).toContain("Needs review:");
@@ -374,7 +374,7 @@ describe("kitchen checklist day layout", () => {
       /<input aria-label="Mark Beef ready"[^>]*>/,
     )?.[0];
     const completedInput = html.match(
-      /<input aria-label="Mark Beef completed"[^>]*>/,
+      /<input aria-label="Mark Beef verified by a different person"[^>]*>/,
     )?.[0];
 
     expect(readyInput).not.toContain('checked=""');

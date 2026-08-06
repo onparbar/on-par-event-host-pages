@@ -266,7 +266,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
   "platter-tater-kegs":
     "Tater Keg Platters contain 64 each; pack up to 25 in each 1/3 pan.",
   "platter-chicken-tenders":
-    "Chicken Tender Platters contain 50 each; pack up to 25 in each 1/3 pan.",
+    "Chicken Tender Platters contain 64 each; pack up to 25 in each 1/3 pan.",
   "platter-mozzarella-sticks":
     "Mozzarella Stick Platters contain 4 pounds; pack each platter into two 1/2 pans.",
   "platter-wings":
@@ -282,7 +282,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-04.3",
+  ruleVersion: "ope-kitchen-2026-08-06.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -370,7 +370,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
       "platter:chicken-tenders": {
         rowKey: "platter-chicken-tenders",
         foodName: "Chicken Tenders",
-        amountPerPlatter: 50,
+        amountPerPlatter: 64,
         unit: "each",
         hot: true,
         panCapacityKey: "chickenTenders",

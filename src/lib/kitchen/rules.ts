@@ -1466,6 +1466,8 @@ export function generateKitchenChecklist(
       specialNotes,
     },
     foodRunnerOrBwa: "",
+    foodRunners: [],
+    pocs: [],
     classification,
     packageMarkers,
     selectedBars,

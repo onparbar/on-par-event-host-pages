@@ -258,7 +258,10 @@ export type KitchenChecklist = {
     foodNotes?: KitchenFoodNote[];
     specialNotes: string[];
   };
+  /** Legacy single-value assignment retained while older snapshots migrate. */
   foodRunnerOrBwa: string;
+  foodRunners?: string[];
+  pocs?: string[];
   classification: KitchenClassification;
   packageMarkers: PackageMarker[];
   selectedBars: BarType[];

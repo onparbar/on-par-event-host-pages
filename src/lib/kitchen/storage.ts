@@ -14,7 +14,7 @@ import type {
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const WEBHOOK_PROCESSING_LEASE_MS = 10 * 60 * 1000;
 const WEBHOOK_DEDUPLICATION_WINDOW_MS = 10 * 60 * 1000;
-const KITCHEN_BWA_ROSTER = [
+export const KITCHEN_STAFF_ROSTER = [
   "Adrian",
   "Alanis",
   "Ashleigh",
@@ -101,6 +101,11 @@ export interface KitchenStorage {
   getDay(date: string): Promise<StoredKitchenDay>;
   getEventDate(eventId: string): Promise<string | null>;
   replaceDay(date: string, events: readonly StoredKitchenEvent[]): Promise<void>;
+  saveManualAssignments(
+    eventId: string,
+    foodRunners: readonly string[],
+    pocs: readonly string[],
+  ): Promise<void>;
   saveManualBwa(eventId: string, bwa: string): Promise<void>;
   saveItemReadiness(
     eventId: string,
@@ -161,6 +166,8 @@ type ChecklistRow = {
 type ManualRow = {
   event_id: string;
   bwa: string | null;
+  food_runners: string[] | null;
+  pocs: string[] | null;
 };
 
 type ItemReadinessRow = {
@@ -199,7 +206,7 @@ function clone<T>(value: T): T {
 }
 
 function savedBwaOptions() {
-  return [...KITCHEN_BWA_ROSTER].sort((left, right) =>
+  return [...KITCHEN_STAFF_ROSTER].sort((left, right) =>
     left.localeCompare(right, "en", { sensitivity: "base" }),
   );
 }
@@ -464,7 +471,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       >("kitchen_event_snapshots", snapshotParams),
       this.jsonRequest<ManualRow[]>(
         "kitchen_manual_assignments",
-        new URLSearchParams({ select: "event_id,bwa" }),
+        new URLSearchParams({ select: "event_id,bwa,food_runners,pocs" }),
       ),
       this.jsonRequest<SyncRow[]>("kitchen_sync_runs", syncParams),
     ]);
@@ -497,7 +504,20 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     ]);
 
     const manualByEvent = new Map(
-      manualRows.map((row) => [row.event_id, row.bwa ?? ""]),
+      manualRows.map((row) => {
+        const legacy = row.bwa?.trim();
+        return [
+          row.event_id,
+          {
+            foodRunners: row.food_runners?.length
+              ? row.food_runners
+              : legacy
+                ? [legacy]
+                : [],
+            pocs: row.pocs ?? [],
+          },
+        ] as const;
+      }),
     );
     const completedItemsByEvent = new Map<string, string[]>();
     const finalCompletedItemsByEvent = new Map<string, string[]>();
@@ -545,7 +565,10 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       );
       return {
         ...derivedChecklist,
-        foodRunnerOrBwa: manualByEvent.get(row.event_id) ?? "",
+        foodRunnerOrBwa:
+          manualByEvent.get(row.event_id)?.foodRunners.join(", ") ?? "",
+        foodRunners: manualByEvent.get(row.event_id)?.foodRunners ?? [],
+        pocs: manualByEvent.get(row.event_id)?.pocs ?? [],
         completedItemKeys: (
           completedItemsByEvent.get(row.event_id) ?? []
         ).sort(),
@@ -666,7 +689,11 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     );
   }
 
-  async saveManualBwa(eventId: string, bwa: string) {
+  async saveManualAssignments(
+    eventId: string,
+    foodRunners: readonly string[],
+    pocs: readonly string[],
+  ) {
     await this.emptyRequest(
       "kitchen_manual_assignments",
       new URLSearchParams({ on_conflict: "event_id" }),
@@ -677,11 +704,17 @@ export class SupabaseKitchenStorage implements KitchenStorage {
         },
         body: JSON.stringify({
           event_id: eventId,
-          bwa,
+          bwa: "",
+          food_runners: foodRunners,
+          pocs,
           updated_at: new Date().toISOString(),
         }),
       },
     );
+  }
+
+  async saveManualBwa(eventId: string, bwa: string) {
+    await this.saveManualAssignments(eventId, bwa ? [bwa] : [], []);
   }
 
   async saveItemReadiness(
@@ -986,7 +1019,10 @@ export class SupabaseKitchenStorage implements KitchenStorage {
 export class MemoryKitchenStorage implements KitchenStorage {
   readonly persistence = "memory" as const;
   private readonly days = new Map<string, StoredKitchenEvent[]>();
-  private readonly manualBwa = new Map<string, string>();
+  private readonly manualAssignments = new Map<
+    string,
+    { foodRunners: string[]; pocs: string[] }
+  >();
   private readonly itemReadiness = new Map<
     string,
     Map<string, CurrentReadiness>
@@ -1024,7 +1060,11 @@ export class MemoryKitchenStorage implements KitchenStorage {
       );
       return {
         ...derivedChecklist,
-        foodRunnerOrBwa: this.manualBwa.get(eventId) ?? "",
+        foodRunnerOrBwa:
+          this.manualAssignments.get(eventId)?.foodRunners.join(", ") ?? "",
+        foodRunners:
+          this.manualAssignments.get(eventId)?.foodRunners ?? [],
+        pocs: this.manualAssignments.get(eventId)?.pocs ?? [],
         completedItemKeys: [
           ...(this.itemReadiness.get(eventId)?.entries() ?? []),
         ]
@@ -1116,8 +1156,19 @@ export class MemoryKitchenStorage implements KitchenStorage {
     this.days.set(date, clone([...events]));
   }
 
+  async saveManualAssignments(
+    eventId: string,
+    foodRunners: readonly string[],
+    pocs: readonly string[],
+  ) {
+    this.manualAssignments.set(eventId, {
+      foodRunners: [...foodRunners],
+      pocs: [...pocs],
+    });
+  }
+
   async saveManualBwa(eventId: string, bwa: string) {
-    this.manualBwa.set(eventId, bwa);
+    await this.saveManualAssignments(eventId, bwa ? [bwa] : [], []);
   }
 
   async saveItemReadiness(

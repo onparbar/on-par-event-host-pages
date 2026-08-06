@@ -673,7 +673,7 @@ describe("dessert and platter quantities", () => {
     [
       "Chicken Tender Platter",
       "platter-chicken-tenders",
-      50,
+      64,
       "Food Platters",
       25,
       "1/3",
@@ -749,7 +749,7 @@ describe("dessert and platter quantities", () => {
       "Chicken Tender PlatterFried chicken tenders with ranch dipping sauce.",
       "platter-chicken-tenders",
       4,
-      200,
+      256,
     ],
     [
       "Veggie TrayAssorted fresh vegetables served with ranch dressing.",
@@ -773,7 +773,7 @@ describe("dessert and platter quantities", () => {
       "Chicken Tender PlatterFried chicken tenders with ranch dipping sauce",
       "platter-chicken-tenders",
       1,
-      50,
+      64,
     ],
     [
       "Veggie TrayAssorted fresh vegetables served with ranch dressing",
@@ -1335,9 +1335,9 @@ describe("platter packing and chafing dishes", () => {
       panSize: "1/3",
     });
     expect(row(checklist, "platter-chicken-tenders")).toMatchObject({
-      quantity: 50,
+      quantity: 64,
       unit: "each",
-      numberOfPans: 2,
+      numberOfPans: 3,
       panSize: "1/3",
     });
     expect(row(checklist, "platter-veggie-tray")).toMatchObject({

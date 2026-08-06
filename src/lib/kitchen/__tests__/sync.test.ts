@@ -12,6 +12,7 @@ import {
   updateKitchenEventFoodAddOns,
   updateKitchenItemCompletion,
   updateKitchenItemReadiness,
+  updateKitchenManualAssignments,
   updateKitchenManualBwa,
 } from "../sync";
 import type {
@@ -70,6 +71,45 @@ describe("kitchen synchronization", () => {
       "Mock Tripleseat data cannot be persisted to the kitchen database.",
     );
     expect(requested).toBe(false);
+  });
+
+  it("persists multiple Food Runners and POCs independently", async () => {
+    const storage = createMemoryKitchenStorage();
+    const adapter = testAdapter(() => [
+      {
+        eventId: "staff-123",
+        bookingId: null,
+        eventName: "Staff assignment test",
+        localDate: "2026-07-28",
+        localDateVerified: true,
+        startTime: "12:00",
+        endTime: "14:00",
+        guestCount: 20,
+        status: "DEFINITE",
+        statusVerified: true,
+        room: "VIP 1",
+        selections: [{ name: "Taco Bar", isFood: true }],
+        specialNotes: [],
+        sourceUpdatedAt: "2026-07-28T12:00:00Z",
+        sourceState: "fresh",
+        documentMetadata: [],
+      },
+    ]);
+    await syncKitchenDay("2026-07-28", { adapter, storage });
+    await updateKitchenManualAssignments(
+      "staff-123",
+      ["Ryan", "Diana"],
+      ["Molly", "Taylor"],
+      { storage },
+    );
+
+    const day = await getKitchenDay("2026-07-28", {
+      adapter,
+      storage,
+      now: viewingTime("2026-07-28"),
+    });
+    expect(day.events[0].foodRunners).toEqual(["Ryan", "Diana"]);
+    expect(day.events[0].pocs).toEqual(["Molly", "Taylor"]);
   });
 
   it("marks stored database events stale when live Tripleseat is unavailable", async () => {
@@ -142,7 +182,7 @@ describe("kitchen synchronization", () => {
     ]);
 
     await syncKitchenDay("2026-07-28", { adapter, storage });
-    await updateKitchenManualBwa("12345", "  Jamie   K.  ", { storage });
+    await updateKitchenManualBwa("12345", "  Ryan  ", { storage });
     sourceUpdatedAt = "2026-07-28T13:00:00Z";
     await syncKitchenDay("2026-07-28", { adapter, storage });
 
@@ -152,11 +192,10 @@ describe("kitchen synchronization", () => {
       now: viewingTime("2026-07-28"),
     });
     expect(day.events).toHaveLength(1);
-    expect(day.events[0].foodRunnerOrBwa).toBe("Jamie K.");
+    expect(day.events[0].foodRunnerOrBwa).toBe("Ryan");
     expect(day.bwaOptions).toEqual(
       expect.arrayContaining(["Adrian", "Molly", "Veronica"]),
     );
-    expect(day.bwaOptions).not.toContain("Jamie K.");
     expect(day.events[0].event.sourceUpdatedAt).toBe(
       "2026-07-28T13:00:00Z",
     );
@@ -186,7 +225,7 @@ describe("kitchen synchronization", () => {
         (warning) => warning.code === "SOURCE_SYNC_FAILED",
       ),
     ).toBe(true);
-    expect(failedDay.events[0].foodRunnerOrBwa).toBe("Jamie K.");
+    expect(failedDay.events[0].foodRunnerOrBwa).toBe("Ryan");
   });
 
   it("preserves the safe reconnect instruction when Tripleseat rejects a refresh token", async () => {

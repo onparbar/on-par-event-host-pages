@@ -62,6 +62,10 @@ type KitchenDayResponse = {
 type LoadState = "loading" | "ready" | "error";
 type SyncState = "idle" | "syncing" | "error";
 type BwaSaveState = "idle" | "saving" | "saved" | "error";
+type StaffAssignmentDraft = {
+  foodRunners: string[];
+  pocs: string[];
+};
 type FoodDescriptionItem = {
   foodName: string;
   description: string;
@@ -336,7 +340,9 @@ export default function KitchenDashboard() {
   const [error, setError] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | number | null>(null);
   const [pendingPrintId, setPendingPrintId] = useState<string | number | null>(null);
-  const [bwaDrafts, setBwaDrafts] = useState<Record<string, string>>({});
+  const [staffDrafts, setStaffDrafts] = useState<
+    Record<string, StaffAssignmentDraft>
+  >({});
   const [bwaSaveStates, setBwaSaveStates] = useState<Record<string, BwaSaveState>>({});
   const [readinessPending, setReadinessPending] = useState<Set<string>>(
     () => new Set(),
@@ -437,7 +443,7 @@ export default function KitchenDashboard() {
       setDay(payload);
       setLiveRefreshHealthy(true);
       setLastLiveRefreshAt(new Date().toISOString());
-      setBwaDrafts((current) =>
+      setStaffDrafts((current) =>
         Object.fromEntries(
           payload.events.map((checklist) => {
             const eventKey = String(checklist.event.eventId);
@@ -445,7 +451,14 @@ export default function KitchenDashboard() {
               eventKey,
               background && Object.hasOwn(current, eventKey)
                 ? current[eventKey]
-                : checklist.foodRunnerOrBwa,
+                : {
+                    foodRunners: checklist.foodRunners ?? (
+                      checklist.foodRunnerOrBwa
+                        ? [checklist.foodRunnerOrBwa]
+                        : []
+                    ),
+                    pocs: checklist.pocs ?? [],
+                  },
             ];
           }),
         ),
@@ -818,9 +831,12 @@ export default function KitchenDashboard() {
     }
   }
 
-  async function saveBwa(checklist: KitchenChecklist) {
+  async function saveStaffAssignments(checklist: KitchenChecklist) {
     const eventKey = String(checklist.event.eventId);
-    const bwa = bwaDrafts[eventKey] ?? "";
+    const assignments = staffDrafts[eventKey] ?? {
+      foodRunners: [],
+      pocs: [],
+    };
     setBwaSaveStates((current) => ({ ...current, [eventKey]: "saving" }));
 
     try {
@@ -829,11 +845,11 @@ export default function KitchenDashboard() {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ bwa }),
+        body: JSON.stringify(assignments),
       });
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) {
-        throw new Error(payload?.error || "Unable to save the BWA name.");
+        throw new Error(payload?.error || "Unable to save staff assignments.");
       }
       setDay((current) =>
         current
@@ -841,7 +857,12 @@ export default function KitchenDashboard() {
               ...current,
               events: current.events.map((eventChecklist) =>
                 sameEventId(eventChecklist.event.eventId, checklist.event.eventId)
-                  ? { ...eventChecklist, foodRunnerOrBwa: bwa }
+                  ? {
+                      ...eventChecklist,
+                      foodRunnerOrBwa: assignments.foodRunners.join(", "),
+                      foodRunners: assignments.foodRunners,
+                      pocs: assignments.pocs,
+                    }
                   : eventChecklist,
               ),
             }
@@ -986,7 +1007,7 @@ export default function KitchenDashboard() {
     } catch {
       updateLocalState(wasCompleted);
       setError(
-        `Could not save the Completed checkbox for ${checklist.event.name}. Try again.`,
+        `Could not save the Verified checkbox for ${checklist.event.name}. Try again.`,
       );
     } finally {
       setCompletionPending((current) => {
@@ -1274,15 +1295,15 @@ export default function KitchenDashboard() {
                   key={eventKey}
                 >
                   <KitchenChecklistSheet
-                    bwaDraft={bwaDrafts[eventKey] ?? ""}
+                    staffDraft={staffDrafts[eventKey] ?? { foodRunners: [], pocs: [] }}
                     bwaOptions={day?.bwaOptions ?? []}
                     bwaSaveState={bwaSaveStates[eventKey] ?? "idle"}
                     checklist={checklist}
                     completionPending={completionPending}
                     hideEventIdentity
                     inline
-                    onBwaChange={(value) => {
-                      setBwaDrafts((current) => ({ ...current, [eventKey]: value }));
+                    onStaffChange={(value) => {
+                      setStaffDrafts((current) => ({ ...current, [eventKey]: value }));
                       setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
                     }}
                     onOpenDescription={setDescriptionItem}
@@ -1297,7 +1318,7 @@ export default function KitchenDashboard() {
                     onReadyChange={(itemKey, ready) =>
                       void saveItemReadiness(checklist, itemKey, ready)
                     }
-                    onSaveBwa={() => void saveBwa(checklist)}
+                    onSaveStaff={() => void saveStaffAssignments(checklist)}
                     readinessPending={readinessPending}
                   />
                 </KitchenEventAccordion>
@@ -1309,14 +1330,14 @@ export default function KitchenDashboard() {
 
       {selectedChecklist && !activeAlert ? (
         <ChecklistPanel
-          bwaDraft={bwaDrafts[String(selectedChecklist.event.eventId)] ?? ""}
+          staffDraft={staffDrafts[String(selectedChecklist.event.eventId)] ?? { foodRunners: [], pocs: [] }}
           bwaOptions={day?.bwaOptions ?? []}
           bwaSaveState={bwaSaveStates[String(selectedChecklist.event.eventId)] ?? "idle"}
           checklist={selectedChecklist}
           completionPending={completionPending}
-          onBwaChange={(value) => {
+          onStaffChange={(value) => {
             const eventKey = String(selectedChecklist.event.eventId);
-            setBwaDrafts((current) => ({ ...current, [eventKey]: value }));
+            setStaffDrafts((current) => ({ ...current, [eventKey]: value }));
             setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
           }}
           onClose={closeChecklist}
@@ -1332,7 +1353,7 @@ export default function KitchenDashboard() {
           onReadyChange={(itemKey, ready) =>
             void saveItemReadiness(selectedChecklist, itemKey, ready)
           }
-          onSaveBwa={() => void saveBwa(selectedChecklist)}
+          onSaveStaff={() => void saveStaffAssignments(selectedChecklist)}
           readinessPending={readinessPending}
         />
       ) : null}
@@ -1382,32 +1403,32 @@ function StateCard({
 }
 
 function ChecklistPanel({
-  bwaDraft,
+  staffDraft,
   bwaOptions,
   bwaSaveState,
   checklist,
   completionPending,
-  onBwaChange,
+  onStaffChange,
   onClose,
   onCompletedChange,
   onOpenDescription,
   onPrint,
   onReadyChange,
-  onSaveBwa,
+  onSaveStaff,
   readinessPending,
 }: {
-  bwaDraft: string;
+  staffDraft: StaffAssignmentDraft;
   bwaOptions: readonly string[];
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
-  onBwaChange: (value: string) => void;
+  onStaffChange: (value: StaffAssignmentDraft) => void;
   onClose: () => void;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription: (item: FoodDescriptionItem) => void;
   onPrint: () => void;
   onReadyChange: (itemKey: string, ready: boolean) => void;
-  onSaveBwa: () => void;
+  onSaveStaff: () => void;
   readinessPending: ReadonlySet<string>;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1452,16 +1473,16 @@ function ChecklistPanel({
       </div>
 
       <KitchenChecklistSheet
-        bwaDraft={bwaDraft}
+        staffDraft={staffDraft}
         bwaOptions={bwaOptions}
         bwaSaveState={bwaSaveState}
         checklist={checklist}
         completionPending={completionPending}
-        onBwaChange={onBwaChange}
+        onStaffChange={onStaffChange}
         onCompletedChange={onCompletedChange}
         onOpenDescription={onOpenDescription}
         onReadyChange={onReadyChange}
-        onSaveBwa={onSaveBwa}
+        onSaveStaff={onSaveStaff}
         readinessPending={readinessPending}
       />
     </section>
@@ -1473,7 +1494,7 @@ export function KitchenEventAccordion({
   children,
 }: {
   checklist: KitchenChecklist;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const startTime = formatTime(
     checklist.timing.startTime ?? checklist.event.startTime,
@@ -1496,35 +1517,82 @@ export function KitchenEventAccordion({
   );
 }
 
+function StaffMultiSelect({
+  label,
+  onChange,
+  options,
+  selected,
+}: {
+  label: string;
+  onChange: (values: string[]) => void;
+  options: readonly string[];
+  selected: readonly string[];
+}) {
+  const selectedSet = new Set(selected);
+  return (
+    <details className="kitchen-staff-select">
+      <summary>
+        <span>{label}</span>
+        <strong>{selected.length ? selected.join(", ") : "Select employees"}</strong>
+      </summary>
+      <fieldset>
+        <legend>{label}</legend>
+        {options.map((option) => (
+          <label key={option}>
+            <input
+              checked={selectedSet.has(option)}
+              onChange={(event) =>
+                onChange(
+                  event.target.checked
+                    ? [...selected, option]
+                    : selected.filter((value) => value !== option),
+                )
+              }
+              type="checkbox"
+            />
+            <span>{option}</span>
+          </label>
+        ))}
+      </fieldset>
+    </details>
+  );
+}
+
 export function KitchenChecklistSheet({
-  bwaDraft,
+  staffDraft = { foodRunners: [], pocs: [] },
+  bwaDraft: _legacyBwaDraft,
   bwaOptions = [],
   bwaSaveState,
   checklist,
   completionPending = EMPTY_READINESS_KEYS,
   hideEventIdentity = false,
   inline = false,
-  onBwaChange,
+  onStaffChange = () => {},
+  onBwaChange: _legacyOnBwaChange,
   onCompletedChange,
   onOpenDescription,
   onPrint,
   onReadyChange,
-  onSaveBwa,
+  onSaveStaff = () => {},
+  onSaveBwa: _legacyOnSaveBwa,
   readinessPending = EMPTY_READINESS_KEYS,
 }: {
-  bwaDraft: string;
+  staffDraft?: StaffAssignmentDraft;
+  bwaDraft?: string;
   bwaOptions?: readonly string[];
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
   hideEventIdentity?: boolean;
   inline?: boolean;
-  onBwaChange: (value: string) => void;
+  onStaffChange?: (value: StaffAssignmentDraft) => void;
+  onBwaChange?: (value: string) => void;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
   onPrint?: () => void;
   onReadyChange?: (itemKey: string, ready: boolean) => void;
-  onSaveBwa: () => void;
+  onSaveStaff?: () => void;
+  onSaveBwa?: () => void;
   readinessPending?: ReadonlySet<string>;
 }) {
   const visibleSections = [...checklist.sections]
@@ -1536,7 +1604,10 @@ export function KitchenChecklistSheet({
       ...checklist.referenceConflicts.map((conflict) => `${conflict.title}: ${conflict.currentResolution}`),
     ]),
   ];
-  const bwaChanged = bwaDraft !== checklist.foodRunnerOrBwa;
+  const bwaChanged =
+    JSON.stringify(staffDraft.foodRunners) !==
+      JSON.stringify(checklist.foodRunners ?? []) ||
+    JSON.stringify(staffDraft.pocs) !== JSON.stringify(checklist.pocs ?? []);
   const availableBwaOptions = [
     ...new Set(
       [...bwaOptions]
@@ -1623,23 +1694,24 @@ export function KitchenChecklistSheet({
       <div className="kitchen-checklist-schedule">
         <div className="kitchen-checklist-bwa">
           <div className="kitchen-bwa-field">
-            <label htmlFor={`kitchen-bwa-${checklist.event.eventId}`}>Food Runner or BWA</label>
-            <select
-              id={`kitchen-bwa-${checklist.event.eventId}`}
-              onChange={(event) => onBwaChange(event.target.value)}
-              value={bwaDraft}
-            >
-              <option value="">Select a saved name</option>
-              {availableBwaOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            <StaffMultiSelect
+              label="Food Runner"
+              onChange={(foodRunners) =>
+                onStaffChange({ ...staffDraft, foodRunners })
+              }
+              options={availableBwaOptions}
+              selected={staffDraft.foodRunners}
+            />
+            <StaffMultiSelect
+              label="POC"
+              onChange={(pocs) => onStaffChange({ ...staffDraft, pocs })}
+              options={availableBwaOptions}
+              selected={staffDraft.pocs}
+            />
             <button
               className="kitchen-primary-button kitchen-bwa-save"
               disabled={!bwaChanged || bwaSaveState === "saving"}
-              onClick={onSaveBwa}
+              onClick={onSaveStaff}
               type="button"
             >
               {bwaSaveState === "saving" ? "Saving…" : "Save"}
@@ -1647,11 +1719,11 @@ export function KitchenChecklistSheet({
           </div>
           <span className="kitchen-bwa-status" role="status">
             {bwaSaveState === "saved"
-              ? "BWA saved separately from Tripleseat."
+              ? "Staff assignments saved separately from Tripleseat."
               : bwaSaveState === "error"
                 ? "Save failed. Try again."
                 : bwaChanged
-                  ? "Unsaved BWA change"
+                  ? "Unsaved staff changes"
                   : ""}
           </span>
         </div>
@@ -1681,7 +1753,7 @@ export function KitchenChecklistSheet({
               <th scope="col">Number of Pans</th>
               <th scope="col">Pan Size</th>
               <th scope="col">Quantity</th>
-              <th scope="col">Completed</th>
+              <th scope="col">Verified (different person)</th>
             </tr>
           </thead>
           <tbody>
@@ -1770,7 +1842,7 @@ export function KitchenChecklistSheet({
                     </span>
                     <label className="kitchen-completed-control">
                       <input
-                        aria-label={`Mark add-on ${item.foodName} completed`}
+                        aria-label={`Mark add-on ${item.foodName} verified by a different person`}
                         checked={isCompleted}
                         disabled={
                           !onCompletedChange ||
@@ -1784,7 +1856,7 @@ export function KitchenChecklistSheet({
                         }
                         type="checkbox"
                       />
-                      <span>Completed</span>
+                      <span>Verified (different person)</span>
                     </label>
                   </div>
                 );
@@ -1941,11 +2013,11 @@ function ChecklistSection({
             <td data-label="Quantity">{formatQuantity(row)}</td>
             <td
               className="kitchen-completed-cell"
-              data-label="Completed"
+              data-label="Verified (different person)"
             >
               <label className="kitchen-completed-control">
                 <input
-                  aria-label={`Mark ${row.foodName} completed`}
+                  aria-label={`Mark ${row.foodName} verified by a different person`}
                   checked={isCompleted}
                   disabled={
                     !onCompletedChange ||
@@ -1960,7 +2032,7 @@ function ChecklistSection({
                   type="checkbox"
                 />
                 <span className="kitchen-visually-hidden">
-                  Completed
+                  Verified by a different person
                 </span>
               </label>
             </td>

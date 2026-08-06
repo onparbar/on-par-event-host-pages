@@ -6867,7 +6867,82 @@ a {
   display: grid;
   align-items: end;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+}
+
+.kitchen-staff-select {
+  position: relative;
+  min-width: 0;
+}
+
+.kitchen-staff-select summary {
+  min-height: 48px;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid #8c938c;
+  border-radius: 10px;
+  background: var(--ope-white);
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.kitchen-staff-select summary span,
+.kitchen-staff-select summary strong {
+  display: block;
+}
+
+.kitchen-staff-select summary span,
+.kitchen-staff-select legend {
+  color: #52605a;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kitchen-staff-select summary strong {
+  overflow: hidden;
+  color: var(--ope-black);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kitchen-staff-select fieldset {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  display: grid;
+  width: max(100%, 190px);
+  max-height: 240px;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid #8c938c;
+  border-radius: 10px;
+  background: var(--ope-white);
+  box-shadow: 0 8px 24px rgb(24 51 47 / 18%);
+}
+
+.kitchen-staff-select fieldset label {
+  display: flex;
+  grid-column: auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px;
+  color: var(--ope-black);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.kitchen-bwa-field .kitchen-staff-select fieldset label {
+  grid-column: auto;
+}
+
+.kitchen-staff-select fieldset input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
 }
 
 .kitchen-bwa-field label {
