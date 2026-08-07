@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   foodAddOns,
   foodUnitPrice,
+  standardFoodAddOns,
+  tacoBarRefillAddOns,
   type FoodState,
 } from "../checklist-model";
 import { KITCHEN_EVENT_ADD_ON_FIELDS } from "../kitchen/addons";
@@ -28,5 +30,14 @@ describe("Event Host food add-ons", () => {
     expect(
       tacoItems.every((item) => foodUnitPrice(item, emptyFoodState) === 0),
     ).toBe(true);
+  });
+
+  it("separates Taco Bar refills from the standard Food tab without changing saved keys", () => {
+    expect(tacoBarRefillAddOns).toHaveLength(11);
+    expect(tacoBarRefillAddOns.every((item) => item.key.startsWith("taco-"))).toBe(true);
+    expect(standardFoodAddOns.every((item) => !item.key.startsWith("taco-"))).toBe(true);
+    expect([...standardFoodAddOns, ...tacoBarRefillAddOns].map((item) => item.key).sort()).toEqual(
+      foodAddOns.map((item) => item.key).sort(),
+    );
   });
 });

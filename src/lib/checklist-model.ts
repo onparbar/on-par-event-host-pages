@@ -179,6 +179,14 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "taco-salsa", label: "Salsa", kind: "quantity-only" },
 ];
 
+export const tacoBarRefillAddOns = foodAddOns.filter((item) =>
+  item.key.startsWith("taco-"),
+);
+
+export const standardFoodAddOns = foodAddOns.filter(
+  (item) => !item.key.startsWith("taco-"),
+);
+
 export const checklistSections: ChecklistSection[] = [
   {
     key: "morning-of-event",

@@ -25,6 +25,8 @@ import {
   foodUnitPrice,
   numeric,
   recordToChecklistState,
+  standardFoodAddOns,
+  tacoBarRefillAddOns,
   type ChecklistRecord,
   type ChecklistRecordStatus,
   type EventChecklistState,
@@ -38,7 +40,7 @@ type EventChecklistMeta = {
 
 type SaveState = "idle" | "saving" | "saved" | "error" | "submitting" | "submitted";
 type KitchenSyncState = "idle" | "syncing" | "live" | "error";
-type AddOnTab = "food" | "entertainment";
+type AddOnTab = "food" | "taco-bar-refills" | "entertainment";
 type ChecklistWorkspace = "checklist" | "addons";
 
 type ChecklistSaveResponse = {
@@ -437,8 +439,8 @@ export default function ChecklistsClient({
           aside={<PortalStatusBadge>Queue clear</PortalStatusBadge>}
           description={
             isAddOnWorkspace
-              ? "Submitted records remain in Admin, and completed events leave the active queue automatically."
-              : "Submitted checklists remain in Admin, and completed events leave the active queue automatically."
+              ? "Submitted records remain in Admin. Unsubmitted events stay available through the following day."
+              : "Submitted checklists move to Admin. Unsubmitted events stay available through the following day."
           }
           eyebrow="Event Host workspace"
           title={pageTitle}
@@ -450,7 +452,7 @@ export default function ChecklistsClient({
               ? "No active add-on events"
               : "No active checklist events"}
           </strong>
-          <span className="meta">Only current and upcoming draft events stay on this page.</span>
+          <span className="meta">Current, upcoming, and unfinished previous-day drafts stay on this page.</span>
         </section>
       </PortalShell>
     );
@@ -469,6 +471,13 @@ export default function ChecklistsClient({
     return sum + entertainmentUnitPrice(item, state) * numeric(state.quantity);
   }, 0);
   const foodSubtotal = foodAddOns.reduce((sum, item) => {
+    const state = activeChecklist.food[item.key];
+    return sum + foodUnitPrice(item, state) * numeric(state.quantity);
+  }, 0);
+  const activeFoodAddOns = activeAddOnTab === "taco-bar-refills"
+    ? tacoBarRefillAddOns
+    : standardFoodAddOns;
+  const activeFoodSubtotal = activeFoodAddOns.reduce((sum, item) => {
     const state = activeChecklist.food[item.key];
     return sum + foodUnitPrice(item, state) * numeric(state.quantity);
   }, 0);
@@ -656,19 +665,21 @@ export default function ChecklistsClient({
                   <h3>
                     {activeAddOnTab === "food"
                       ? "Food Add-Ons"
-                      : "Entertainment & Drink Add-Ons"}
+                      : activeAddOnTab === "taco-bar-refills"
+                        ? "Taco Bar Refills"
+                        : "Entertainment & Drink Add-Ons"}
                   </h3>
                   <p>
-                    {activeAddOnTab === "food"
-                      ? "Food changes save here and are sent to the Kitchen Dashboard live."
-                      : "Entertainment and drink changes stay out of Kitchen and are included in the final Admin record."}
+                    {activeAddOnTab === "entertainment"
+                      ? "Entertainment and drink changes stay out of Kitchen and are included in the final Admin record."
+                      : "Food changes save here and are sent to the Kitchen Dashboard live."}
                   </p>
                 </div>
                 <strong>
                   {currency(
-                    activeAddOnTab === "food"
-                      ? foodSubtotal
-                      : entertainmentSubtotal,
+                    activeAddOnTab === "entertainment"
+                      ? entertainmentSubtotal
+                      : activeFoodSubtotal,
                   )}
                 </strong>
               </div>
@@ -685,6 +696,16 @@ export default function ChecklistsClient({
                   <small>Live to Kitchen</small>
                 </button>
                 <button
+                  aria-selected={activeAddOnTab === "taco-bar-refills"}
+                  className={activeAddOnTab === "taco-bar-refills" ? "active" : ""}
+                  onClick={() => setActiveAddOnTab("taco-bar-refills")}
+                  role="tab"
+                  type="button"
+                >
+                  <span>Taco Bar Refills</span>
+                  <small>Live to Kitchen</small>
+                </button>
+                <button
                   aria-selected={activeAddOnTab === "entertainment"}
                   className={activeAddOnTab === "entertainment" ? "active" : ""}
                   onClick={() => setActiveAddOnTab("entertainment")}
@@ -696,7 +717,7 @@ export default function ChecklistsClient({
                 </button>
               </div>
 
-              {activeAddOnTab === "food" ? (
+              {activeAddOnTab !== "entertainment" ? (
                 <div
                   className={`kitchen-sync-banner kitchen-sync-${activeKitchenSyncState}`}
                   role="status"
@@ -839,22 +860,13 @@ export default function ChecklistsClient({
                     </article>
                   );
                     })
-                  : foodAddOns.map((item) => {
+                  : activeFoodAddOns.map((item) => {
                   const state = activeChecklist.food[item.key];
                   const unitPrice = foodUnitPrice(item, state);
                   const subtotal = unitPrice * numeric(state.quantity);
 
                   return (
                     <Fragment key={item.key}>
-                      {item.key === "taco-beef" ? (
-                        <div className="addon-grid-section-heading">
-                          <div>
-                            <span className="eyebrow">Taco Bar</span>
-                            <strong>Taco Bar Items</strong>
-                          </div>
-                          <small>Quantities sync live to Kitchen</small>
-                        </div>
-                      ) : null}
                     <article className="addon-row-card">
                       <div className="addon-row-top">
                         <div>
