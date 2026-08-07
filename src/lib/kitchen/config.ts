@@ -186,10 +186,10 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
   },
   {
     code: "MARINARA_EIGHT_OUNCES",
-    title: "Appetizer Bar sauce amount",
-    writtenRule: "Every Appetizer Bar receives one bowl of marinara and one bowl of ranch.",
+    title: "Mozzarella and Appetizer Bar sauce amount",
+    writtenRule: "Every Appetizer Bar receives one bowl of marinara and one bowl of ranch; every Mozzarella Stick Platter receives one bowl of marinara.",
     referenceRule: "The Appetizer sheet says mozzarella sticks receive eight ounces of marinara without saying per pan, group, or event.",
-    currentResolution: "Use one bowl of each sauce per Appetizer Bar, independent of guest count.",
+    currentResolution: "Use one bowl of each sauce per Appetizer Bar and one marinara bowl per Mozzarella Stick Platter.",
     appliesTo: ["appetizer", "sauce-marinara", "sauce-ranch"],
   },
   {
@@ -282,7 +282,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-06.2",
+  ruleVersion: "ope-kitchen-2026-08-07.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -388,7 +388,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         panCapacityKey: "platterMozzarellaSticks",
         sauce: {
           name: "marinara",
-          bowlsPerPlatter: null,
+          bowlsPerPlatter: 1,
         },
       },
       "platter:wings": {

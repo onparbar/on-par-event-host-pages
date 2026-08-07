@@ -982,7 +982,7 @@ describe("live Event Host add-on calculations", () => {
     );
   });
 
-  it("keeps unresolved live mozzarella and veggie requirements under review", () => {
+  it("resolves live mozzarella marinara while keeping veggie ranch under review", () => {
     const liveFoodAddOns = translateEventHostFoodAddOns(
       {
         "mozzarella-sticks": { quantity: 1 },
@@ -996,7 +996,10 @@ describe("live Event Host add-on calculations", () => {
       liveFoodAddOns,
     );
 
-    expect(row(checklist, "sauce-marinara").quantity).toBeNull();
+    expect(row(checklist, "sauce-marinara")).toMatchObject({
+      quantity: 1,
+      unit: "bowl",
+    });
     expect(row(checklist, "sauce-ranch").quantity).toBeNull();
     expect(warningCodes(checklist)).toEqual(
       expect.arrayContaining([
@@ -1223,6 +1226,10 @@ describe("platter packing and chafing dishes", () => {
       numberOfPans: 2,
       panSize: "1/2",
     });
+    expect(row(checklist, "sauce-marinara")).toMatchObject({
+      quantity: 1,
+      unit: "bowl",
+    });
     expect(checklist.chafingDishes).toEqual({
       bars: 1,
       hotPlatters: 1,
@@ -1230,6 +1237,30 @@ describe("platter packing and chafing dishes", () => {
     });
     expect(warningCodes(checklist)).not.toContain(
       "UNAPPROVED_PLATTER_PACKING",
+    );
+    expect(warningCodes(checklist)).not.toContain(
+      "UNRESOLVED_SAUCE_QUANTITY",
+    );
+  });
+
+  it("adds one marinara bowl for every mozzarella platter", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent([
+        {
+          name: "Mozzarella Sticks",
+          quantity: 3,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    expect(row(checklist, "sauce-marinara")).toMatchObject({
+      quantity: 3,
+      unit: "bowls",
+    });
+    expect(warningCodes(checklist)).not.toContain(
+      "UNRESOLVED_SAUCE_QUANTITY",
     );
   });
 

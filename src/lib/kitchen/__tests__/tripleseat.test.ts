@@ -190,6 +190,12 @@ describe("Tripleseat adapter security and normalization", () => {
                     quantity: 48,
                     category: { name: "Dessert" },
                   },
+                  {
+                    id: 505,
+                    description: "Prepare one gluten-free meal for the guest.",
+                    category: { name: "Special Instructions" },
+                    updated_at: "2026-07-28T15:45:00Z",
+                  },
                 ],
               },
             ],
@@ -298,20 +304,13 @@ describe("Tripleseat adapter security and normalization", () => {
     expect(events[0].specialNotes).toEqual([]);
     expect(events[0].foodNotes).toEqual([
       expect.objectContaining({
-        source: "event-description",
-        sourceId: "42",
-      }),
-      expect.objectContaining({
-        source: "event-note",
-        sourceId: "1",
-        sourceUpdatedAt: "2026-07-28T15:30:00Z",
+        text: "Prepare one gluten-free meal for the guest.",
+        source: "event-document",
+        sourceId: "505",
+        sourceUpdatedAt: "2026-07-28T15:45:00Z",
       }),
     ]);
-    const serializedNotes = JSON.stringify(events[0].foodNotes);
-    expect(serializedNotes).not.toContain("planner@example.org");
-    expect(serializedNotes).not.toContain("937-555");
-    expect(serializedNotes).toContain("[email redacted]");
-    expect(serializedNotes).toContain("[phone redacted]");
+    expect(urls.some((url) => url.includes("/notes?"))).toBe(false);
     expect(events[0].documentMetadata).toEqual([
       {
         id: "99",
@@ -402,7 +401,7 @@ describe("Tripleseat adapter security and normalization", () => {
     ]);
   });
 
-  it("uses booking food documents when structured selections are non-food only", async () => {
+  it("uses booking contract selections and Special Instructions while excluding booking notes", async () => {
     const storage = createMemoryKitchenStorage();
     let bookingRequested = false;
     const fetchImpl: typeof fetch = async (input) => {
@@ -467,6 +466,12 @@ describe("Tripleseat adapter security and normalization", () => {
                     quantity: 1,
                     category: { internal_name: "Food Platters" },
                   },
+                  {
+                    id: 921,
+                    description: "Guest has a shellfish allergy.",
+                    category: { internal_name: "Special Instructions" },
+                    updated_at: "2026-07-28T16:45:00Z",
+                  },
                 ],
               },
             ],
@@ -511,9 +516,9 @@ describe("Tripleseat adapter security and normalization", () => {
     expect(event.foodNotes).toEqual([
       {
         text: "Guest has a shellfish allergy.",
-        source: "booking-note",
-        sourceId: "421",
-        sourceUpdatedAt: "2026-07-28T16:30:00Z",
+        source: "booking-document",
+        sourceId: "921",
+        sourceUpdatedAt: "2026-07-28T16:45:00Z",
       },
     ]);
     expect(warningCodes).toContain("SPECIAL_NOTE_REQUIRES_REVIEW");

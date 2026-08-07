@@ -125,7 +125,7 @@ describe("itinerary entertainment projection", () => {
     expect(items).toEqual([
       {
         name: "Duckpin Bowling",
-        quantity: "2 lanes",
+        quantity: "2 lanes · Bowling Lanes 1–2",
         time: "6:30 PM – 8:30 PM",
         duration: "2 hours",
       },
@@ -140,7 +140,7 @@ describe("itinerary entertainment projection", () => {
     expect(current.entertainment).toEqual([
       {
         name: "Pool",
-        quantity: "1 table",
+        quantity: "1 table · Pool Table 1",
         time: "6:30 PM – 8:30 PM",
         duration: "2 hours",
       },

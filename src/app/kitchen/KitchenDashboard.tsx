@@ -1993,7 +1993,7 @@ export function KitchenChecklistSheet({
               ))}
             </ul>
           ) : (
-            <p>No food notes found in the Tripleseat contract or notes.</p>
+            <p>No food notes found in the contract Special Instructions section.</p>
           )}
         </section>
         <details

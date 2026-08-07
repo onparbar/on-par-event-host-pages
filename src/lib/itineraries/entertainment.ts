@@ -94,6 +94,40 @@ function quantityLabel(
   return `${quantity} lane${quantity === 1 ? "" : "s"}`;
 }
 
+function reservedResourcesLabel(
+  reservations: readonly EntertainmentReservation[],
+) {
+  const first = reservations[0];
+  const numberedPrefixes: Partial<
+    Record<EntertainmentReservation["resourceCategory"], string>
+  > = {
+    bowling: "Bowling Lane",
+    darts: "Dart Lane",
+    pool: "Pool Table",
+    shuffleboard: "Shuffleboard Table",
+  };
+  const prefix = numberedPrefixes[first.resourceCategory];
+  const numbers = reservations.flatMap((reservation) => {
+    const match = reservation.resourceId.match(/-(\d+)$/);
+    return match ? [Number(match[1])] : [];
+  });
+  if (prefix && numbers.length === reservations.length) {
+    const sorted = [...new Set(numbers)].sort((left, right) => left - right);
+    const ranges: string[] = [];
+    for (let index = 0; index < sorted.length; index += 1) {
+      const start = sorted[index];
+      let end = start;
+      while (sorted[index + 1] === end + 1) {
+        end = sorted[index + 1];
+        index += 1;
+      }
+      ranges.push(start === end ? String(start) : `${start}–${end}`);
+    }
+    return `${prefix}${sorted.length === 1 ? "" : "s"} ${ranges.join(", ")}`;
+  }
+  return reservations.map((reservation) => reservation.resourceName).join(", ");
+}
+
 export function itineraryEntertainmentFromReservations(
   reservations: readonly EntertainmentReservation[],
 ): EventPlanEntertainmentItem[] {
@@ -106,7 +140,9 @@ export function itineraryEntertainmentFromReservations(
       (left, right) =>
         left.startAt.localeCompare(right.startAt) ||
         left.endAt.localeCompare(right.endAt) ||
-        left.resourceId.localeCompare(right.resourceId),
+        left.resourceName.localeCompare(right.resourceName, undefined, {
+          numeric: true,
+        }),
     )) {
     const resourceKey = reservation.resourceCategory === "private-rooms"
       ? reservation.resourceId
@@ -119,7 +155,7 @@ export function itineraryEntertainmentFromReservations(
     const first = group[0];
     return {
       name: groupName(first),
-      quantity: quantityLabel(first, group.length),
+      quantity: `${quantityLabel(first, group.length)} · ${reservedResourcesLabel(group)}`,
       time: `${formatClock(first.startAt)} – ${formatClock(first.endAt)}`,
       duration: durationLabel(first.startAt, first.endAt),
     };
