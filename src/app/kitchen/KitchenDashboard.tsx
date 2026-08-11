@@ -79,7 +79,7 @@ type FoodDescriptionItem = {
 
 const DISMISSED_ALERTS_STORAGE_KEY = "ope-kitchen-dismissed-alerts-v1";
 const KITCHEN_ZOOM_STORAGE_KEY = "ope-kitchen-dashboard-zoom-v1";
-const KITCHEN_ZOOM_MIN = 70;
+const KITCHEN_ZOOM_MIN = 40;
 const KITCHEN_ZOOM_MAX = 130;
 const KITCHEN_ZOOM_STEP = 10;
 const LIVE_REFRESH_INTERVAL_MS = 3_000;

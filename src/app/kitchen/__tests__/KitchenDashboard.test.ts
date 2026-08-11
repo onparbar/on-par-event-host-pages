@@ -102,14 +102,15 @@ describe("kitchen dashboard zoom", () => {
   it("moves in ten-percent steps within the supported range", () => {
     expect(nextKitchenZoom(100, -1)).toBe(90);
     expect(nextKitchenZoom(100, 1)).toBe(110);
-    expect(nextKitchenZoom(70, -1)).toBe(70);
+    expect(nextKitchenZoom(70, -1)).toBe(60);
+    expect(nextKitchenZoom(40, -1)).toBe(40);
     expect(nextKitchenZoom(130, 1)).toBe(130);
   });
 
   it("normalizes saved zoom values before applying them", () => {
     expect(clampKitchenZoom(84)).toBe(80);
     expect(clampKitchenZoom(86)).toBe(90);
-    expect(clampKitchenZoom(20)).toBe(70);
+    expect(clampKitchenZoom(20)).toBe(40);
     expect(clampKitchenZoom(200)).toBe(130);
     expect(clampKitchenZoom(Number.NaN)).toBe(100);
   });
