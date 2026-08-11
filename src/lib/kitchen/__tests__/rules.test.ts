@@ -786,6 +786,18 @@ describe("dessert and platter quantities", () => {
       1,
       1,
     ],
+    [
+      "Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack.",
+      "platter-fries",
+      1,
+      1,
+    ],
+    [
+      "Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack",
+      "platter-fries",
+      2,
+      2,
+    ],
   ] as const)(
     "recognizes a Tripleseat platter name with its appended description",
     (name, key, platterCount, expectedQuantity) => {

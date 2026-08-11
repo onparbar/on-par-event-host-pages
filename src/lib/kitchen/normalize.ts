@@ -75,6 +75,12 @@ const EXACT_SELECTION_ALIASES: Readonly<
   "veggie trayassorted fresh vegetables served with ranch dressing": [
     "platter:veggie-tray",
   ],
+  "fry plattera shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack.": [
+    "platter:fries",
+  ],
+  "fry plattera shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack": [
+    "platter:fries",
+  ],
   ranch: ["sauce:ranch"],
   "ranch sauce": ["sauce:ranch"],
   marinara: ["sauce:marinara"],
