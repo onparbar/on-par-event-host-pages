@@ -284,13 +284,18 @@ export function FloorPlanCard({
 export function PublishedFloorPlanCard({
   publication,
   isOpen,
+  liveState,
   onOpenChange,
+  onSync,
 }: {
   publication: FloorPlanPublication;
   isOpen: boolean;
+  liveState?: FloorPlanLiveState;
   onOpenChange: (open: boolean) => void;
+  onSync: () => void;
 }) {
-  const { payload, plan } = publication;
+  const payload = liveState?.payload ?? publication.payload;
+  const plan = payload?.plan ?? publication.plan;
   if (!payload) return null;
   const approved = plan.status === "Approved";
   const date = dateBlock(plan.eventDate);
@@ -331,14 +336,22 @@ export function PublishedFloorPlanCard({
             <div className="floor-plan-live-sync-bar">
               <div>
                 <strong>{approved ? "Approved" : "Saved"} Event Host floor plan</strong>
-                <span>
-                  Version {plan.version} · {approved
-                    ? `Approved ${plan.approvedAt
-                        ? new Date(plan.approvedAt).toLocaleString()
-                        : "by Event Host staff"}`
-                    : `Saved ${new Date(plan.updatedAt).toLocaleString()}`}
+                <span aria-live="polite">
+                  {liveState?.status === "syncing"
+                    ? "Refreshing event details from Tripleseat…"
+                    : liveState?.message || syncTime(plan.lastTripleseatSyncAt)}
                 </span>
               </div>
+              <button
+                className="floor-plan-live-sync-button"
+                disabled={liveState?.status === "syncing"}
+                onClick={onSync}
+                type="button"
+              >
+                {liveState?.status === "syncing"
+                  ? "Syncing…"
+                  : "Sync live from Tripleseat"}
+              </button>
             </div>
             <PublishedFloorPlanMap payload={payload} />
           </div>
@@ -534,11 +547,13 @@ export default function FloorPlansClient({
       <PublishedFloorPlanCard
         isOpen={openAssetKey === entry.key}
         key={entry.key}
+        liveState={liveByDate[entry.date]}
         onOpenChange={(open) =>
           setOpenAssetKey((current) =>
             open ? entry.key : current === entry.key ? null : current,
           )
         }
+        onSync={() => void handleLiveSync(entry.date)}
         publication={entry.publication}
       />
     );

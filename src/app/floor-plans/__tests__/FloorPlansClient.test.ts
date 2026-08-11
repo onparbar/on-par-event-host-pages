@@ -196,6 +196,20 @@ describe("floor-plan dashboard organization", () => {
     );
   });
 
+  it("shows live Tripleseat sync on saved and approved floor plans", () => {
+    const html = renderToStaticMarkup(
+      createElement(PublishedFloorPlanCard, {
+        publication: { plan: interactivePlan, payload: interactivePayload },
+        isOpen: true,
+        onOpenChange: () => {},
+        onSync: () => {},
+      }),
+    );
+
+    expect(html).toContain("Sync live from Tripleseat");
+    expect(html).toContain("Approved Event Host floor plan");
+  });
+
   it("shows saved unapproved plans as awaiting Admin approval", () => {
     const html = renderToStaticMarkup(
       createElement(PendingFloorPlanCard, {

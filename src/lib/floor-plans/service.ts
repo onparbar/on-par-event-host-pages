@@ -165,8 +165,18 @@ async function sourceEventsForDate(date: string) {
   const eventPlanStorage = getEventPlanStorage();
   const vipPrepClient = new VipPrepClient();
   let stored: Awaited<ReturnType<typeof eventPlanStorage.plansForWindow>> = [];
+  let sourceWindowWasSynchronized = false;
   try {
-    stored = await eventPlanStorage.plansForWindow({ startDate: date, endDate: date });
+    const [rows, syncState] = await Promise.all([
+      eventPlanStorage.plansForWindow({ startDate: date, endDate: date }),
+      eventPlanStorage.getSyncState(),
+    ]);
+    stored = rows;
+    sourceWindowWasSynchronized = Boolean(
+      syncState?.status === "success" &&
+      syncState.windowStart <= date &&
+      syncState.windowEnd >= date,
+    );
   } catch {
     // Exact-date redacted Event Host plans remain available before migration.
   }
@@ -200,7 +210,8 @@ async function sourceEventsForDate(date: string) {
     rows: rows.filter(
       (row) => sourceValue(row.source, "status")?.toUpperCase() === "DEFINITE",
     ),
-    sourceRowCount: stored.length + vipRows.length,
+    sourceRowCount:
+      stored.length + vipRows.length > 0 || sourceWindowWasSynchronized ? 1 : 0,
   };
 }
 

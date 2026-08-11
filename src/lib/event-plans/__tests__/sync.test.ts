@@ -98,6 +98,48 @@ const legacyPlan: EventPlan = {
 };
 
 describe("rolling Event Host plan synchronization", () => {
+  it("excludes LOST and PROSPECT events from synchronized operational views", async () => {
+    const storage = createMemoryEventPlanStorage();
+    const result = await syncEventPlanWindow(
+      { startDate: "2026-08-15", endDate: "2026-08-15" },
+      {
+        storage,
+        legacyPlans: [],
+        adapter: liveAdapter(async () => [
+          source(),
+          source({ eventId: "62000003", status: " lost " }),
+          source({ eventId: "62000004", status: "Prospect" }),
+        ]),
+      },
+    );
+
+    expect(result.plans.map((plan) => plan.id)).toEqual([62000001]);
+    expect(result.sync?.eventCount).toBe(1);
+  });
+
+  it("hides a previously stored event after its source status becomes LOST", async () => {
+    const storage = createMemoryEventPlanStorage();
+    await storage.replaceWindow(
+      { startDate: "2026-08-11", endDate: "2026-09-11" },
+      [{
+        eventId: "62000003",
+        eventDate: "2026-08-15",
+        plan: structuredClone(legacyPlan) as unknown as Record<string, unknown>,
+        sourceSnapshot: source({ eventId: "62000003", status: "LOST" }) as unknown as Record<string, unknown>,
+        sourceUpdatedAt: "2026-08-11T12:00:00.000Z",
+      }],
+    );
+
+    const loaded = await loadEventPlanWindow({
+      now: new Date("2026-08-11T16:00:00.000Z"),
+      storage,
+      legacyPlans: [],
+    });
+
+    expect(loaded.plans).toEqual([]);
+    expect(await findEventPlanById(62000003, { storage, legacyPlans: [] })).toBeNull();
+  });
+
   it("refreshes an exact requested date for Floor Plans", async () => {
     const storage = createMemoryEventPlanStorage();
     const requestedRanges: string[][] = [];

@@ -60,6 +60,19 @@ function storedPlan(value: EventPlanDocument): EventPlan {
   return structuredClone(value) as unknown as EventPlan;
 }
 
+const EXCLUDED_OPERATIONAL_STATUSES = new Set(["LOST", "PROSPECT"]);
+
+export function isOperationalEventStatus(status: unknown) {
+  return !(
+    typeof status === "string" &&
+    EXCLUDED_OPERATIONAL_STATUSES.has(status.trim().toUpperCase())
+  );
+}
+
+function storedPlanIsOperational(row: { sourceSnapshot: EventPlanDocument }) {
+  return isOperationalEventStatus(row.sourceSnapshot.status);
+}
+
 function legacyPlansForWindow(
   window: EventPlanWindow,
   plans: readonly EventPlan[],
@@ -116,10 +129,9 @@ export async function syncEventPlanWindow(
 
   await storage.start(window);
   try {
-    const sources = await adapter.fetchEventPlansForRange(
-      window.startDate,
-      window.endDate,
-    );
+    const sources = (
+      await adapter.fetchEventPlansForRange(window.startDate, window.endDate)
+    ).filter((source) => isOperationalEventStatus(source.status));
     const syncedAt = now.toISOString();
     const plans = sources.map((source) => ({
       ...buildEventPlan(source, legacyPlans),
@@ -176,7 +188,9 @@ export async function loadEventPlanWindow(
     ]);
     if (rows.length > 0 || syncState?.status === "success") {
       return {
-        plans: rows.map((row) => storedPlan(row.plan)),
+        plans: rows
+          .filter(storedPlanIsOperational)
+          .map((row) => storedPlan(row.plan)),
         sync: syncStateFromStorage(syncState),
       };
     }
@@ -203,7 +217,7 @@ export async function findEventPlanById(
 
   try {
     const row = await storage.findById(String(eventId));
-    if (row?.active) {
+    if (row?.active && storedPlanIsOperational(row)) {
       return storedPlan(row.plan);
     }
   } catch {
