@@ -1236,7 +1236,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const eventDocumentSelections = foodDocumentSelections(detail);
     const structuredSelections = await this.menuSelections(eventId);
     const bookingDocuments =
-      bookingId && eventDocumentSelections.length === 0
+      bookingId
         ? await this.bookingDocuments(bookingId, eventId)
         : {
             selections: [] as KitchenSourceSelection[],

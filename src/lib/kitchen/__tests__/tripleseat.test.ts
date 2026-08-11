@@ -231,6 +231,28 @@ describe("Tripleseat adapter security and normalization", () => {
           ],
         });
       }
+      if (url.includes("/bookings/7?show_financial=true")) {
+        return json({
+          booking: {
+            id: 7,
+            event_ids: [42],
+            documents: [
+              {
+                id: 100,
+                title: "Booking Food Contract",
+                line_items: [
+                  {
+                    id: 506,
+                    description: "Fry Platter",
+                    quantity: 1,
+                    category: { name: "Food Platters" },
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
       if (url.includes("/notes?")) {
         return json({
           notes: [
@@ -270,6 +292,7 @@ describe("Tripleseat adapter security and normalization", () => {
       "Tater Keg Platter",
       "Darts",
       "Cookies — Premium, generously sized cookies designed to be shared.",
+      "Fry Platter",
     ]);
     expect(events[0].selections[2]).toMatchObject({
       quantity: 2,
@@ -301,6 +324,14 @@ describe("Tripleseat adapter security and normalization", () => {
       quantity: 2,
       unit: "pretzel plates",
     });
+    expect(
+      checklist.sections
+        .flatMap((section) => section.rows)
+        .find((row) => row.key === "platter-fries"),
+    ).toMatchObject({
+      foodName: "Fries",
+      quantity: 1,
+    });
     expect(events[0].specialNotes).toEqual([]);
     expect(events[0].foodNotes).toEqual([
       expect.objectContaining({
@@ -318,6 +349,12 @@ describe("Tripleseat adapter security and normalization", () => {
         documentTemplateId: "12",
         viewNames: ["Kitchen Sheet"],
       },
+      {
+        id: "100",
+        title: "Booking Food Contract",
+        documentTemplateId: null,
+        viewNames: [],
+      },
     ]);
     expect(urls.some((url) => url.includes("/api/v1/"))).toBe(false);
     expect(urls.some((url) => url.includes(".json"))).toBe(false);
@@ -325,7 +362,7 @@ describe("Tripleseat adapter security and normalization", () => {
       urls.some((url) =>
         url.endsWith("/v1/bookings/7?show_financial=true"),
       ),
-    ).toBe(false);
+    ).toBe(true);
 
     const encrypted = await storage.getEncryptedTokenState();
     expect(encrypted?.encryptedTokens).not.toContain("rotated-access-token");
