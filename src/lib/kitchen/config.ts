@@ -162,10 +162,10 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
     code: "CHECKLIST_PAN_SIZE_OPTIONS",
     title: "Checklist pan-size columns",
     writtenRule:
-      "Use the approved per-item prep-pan capacities and keep chafing-display packing separate.",
+      "Pack hot platter items together. Use one 1/2 pan per item when the total is even, or one 1/3 pan per item when the total is odd. A single hot platter uses three 1/3 pans.",
     referenceRule: "The checklist displays two unlabeled pan-size subcolumns and shows both 1/2 and 1/3 for several rows.",
     currentResolution:
-      "Use confirmed 1/3-pan capacities for wings, tenders, tater kegs, and Appetizer Bar mozzarella. A Mozzarella Stick Platter uses two 1/2 pans per platter; retain the separate chafing rule.",
+      "Count Appetizer Bar's tater kegs, mozzarella sticks, and chicken tenders as three hot items. Two 1/2 pans or three 1/3 pans fill one chafing dish.",
     appliesTo: ["wing", "appetizer", "platters"],
   },
   {
@@ -258,19 +258,19 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
   "wing-fries":
     "Wing Bar fries; prepare 5 pounds for each started group of 25 guests.",
   "appetizer-tater-kegs":
-    "Appetizer Bar tater kegs; pack up to 25 in each 1/3 pan.",
+    "Appetizer Bar tater kegs; pan size follows the combined hot-platter packing rule.",
   "appetizer-mozzarella-sticks":
-    "Appetizer Bar mozzarella sticks; pack up to 3 pounds in each 1/3 pan.",
+    "Appetizer Bar mozzarella sticks; pan size follows the combined hot-platter packing rule.",
   "appetizer-chicken-tenders":
-    "Appetizer Bar chicken tenders; pack up to 25 in each 1/3 pan.",
+    "Appetizer Bar chicken tenders; pan size follows the combined hot-platter packing rule.",
   "platter-tater-kegs":
-    "Tater Keg Platters contain 64 each; pack up to 25 in each 1/3 pan.",
+    "Tater Keg Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
   "platter-chicken-tenders":
-    "Chicken Tender Platters contain 64 each; pack up to 25 in each 1/3 pan.",
+    "Chicken Tender Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
   "platter-mozzarella-sticks":
-    "Mozzarella Stick Platters contain 4 pounds; pack each platter into two 1/2 pans.",
+    "Mozzarella Stick Platters contain 4 pounds; pan size follows the combined hot-platter packing rule.",
   "platter-wings":
-    "Wing Platters contain 64 each; pack up to 25 in each 1/3 pan.",
+    "Wing Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
   "platter-veggie-tray":
     "Assorted fresh vegetables arranged on pretzel plates with ranch required.",
   "platter-fries":
@@ -282,7 +282,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-07.1",
+  ruleVersion: "ope-kitchen-2026-08-11.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {

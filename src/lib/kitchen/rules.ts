@@ -392,31 +392,16 @@ export function packHotPlatters(
     };
   }
 
-  const approved = {
-    1: { panCount: 2, panSize: "1/2" as const, chafingDishes: 1 },
-    2: { panCount: 2, panSize: "1/2" as const, chafingDishes: 1 },
-    3: { panCount: 3, panSize: "1/3" as const, chafingDishes: 1 },
-    4: { panCount: 4, panSize: "1/2" as const, chafingDishes: 2 },
-    6: { panCount: 6, panSize: "1/3" as const, chafingDishes: 1 },
-  }[totalHotPlatters];
-
-  if (!approved) {
-    return {
-      status: "needs-review",
-      reason: "unapproved-total",
-      totalHotPlatters,
-      panCount: null,
-      panSize: null,
-      chafingDishes: Math.ceil(totalHotPlatters / 3),
-    };
-  }
+  const panSize = totalHotPlatters % 2 === 0 ? "1/2" : "1/3";
+  const panCount = totalHotPlatters === 1 ? 3 : totalHotPlatters;
+  const pansPerChafingDish = panSize === "1/2" ? 2 : 3;
 
   return {
     status: "approved",
     totalHotPlatters,
-    panCount: approved.panCount,
-    panSize: approved.panSize,
-    chafingDishes: approved.chafingDishes,
+    panCount,
+    panSize,
+    chafingDishes: Math.ceil(panCount / pansPerChafingDish),
   };
 }
 
@@ -515,6 +500,7 @@ export function generateKitchenChecklist(
     "marinara" | "ranch",
     Set<string>
   >();
+  const packingItems: PlatterPackingItem[] = [];
   const addApprovedSauceBowls = (
     sauce: "marinara" | "ranch",
     bowlCount: number,
@@ -1011,6 +997,11 @@ export function generateKitchenChecklist(
           minutes: config.prepLeadMinutes.chickenTenders,
         },
       });
+      packingItems.push(
+        { key: "appetizer-tater-kegs", platterCount: 1 },
+        { key: "appetizer-mozzarella-sticks", platterCount: 1 },
+        { key: "appetizer-chicken-tenders", platterCount: 1 },
+      );
       activateConflict("CHECKLIST_PAN_SIZE_OPTIONS", false);
     } else {
       barQuantitiesApproved = false;
@@ -1078,7 +1069,6 @@ export function generateKitchenChecklist(
     }
   }
 
-  const packingItems: PlatterPackingItem[] = [];
   for (const kind of PLATTER_KIND_ORDER) {
     const platterCount = platterCounts.get(kind);
     if (platterCount == null) {
@@ -1222,13 +1212,25 @@ export function generateKitchenChecklist(
   }
 
   const platterPacking = packHotPlatters(packingItems);
-  if (platterPacking.status !== "approved") {
-    addWarning(warnings, warningKeys, {
-      code: "UNAPPROVED_PLATTER_PACKING",
-      message: `Hot-platter packing is approved only for totals 2, 3, 4, and 6; this event has ${platterPacking.totalHotPlatters}.`,
-      requiresReview: true,
-      scope: "event",
-    });
+  if (platterPacking.panSize != null) {
+    const packedCounts = new Map<KitchenFoodKey, number>();
+    for (const item of packingItems) {
+      packedCounts.set(
+        item.key,
+        (packedCounts.get(item.key) ?? 0) + item.platterCount,
+      );
+    }
+    for (const rows of rowsByCategory.values()) {
+      for (const row of rows) {
+        const packedCount = packedCounts.get(row.key);
+        if (packedCount == null) {
+          continue;
+        }
+        row.numberOfPans =
+          platterPacking.totalHotPlatters === 1 ? 3 : packedCount;
+        row.panSize = platterPacking.panSize;
+      }
+    }
   }
 
   if (hasKind(selections, "sauce:marinara")) {
@@ -1299,7 +1301,10 @@ export function generateKitchenChecklist(
         effectiveGuestCount > config.barTables.doubleAboveGuestCount
           ? config.barTables.mirroredTablesPerBar
           : config.barTables.normalTablesPerBar;
-      barChafingDishes = tablesPerBar * activeBars.length;
+      const separatelyCountedBars = activeBars.filter(
+        (bar) => bar !== "appetizer",
+      );
+      barChafingDishes = tablesPerBar * separatelyCountedBars.length;
       activateConflict("MIRRORED_TABLE_TRIGGER", false);
     }
   }

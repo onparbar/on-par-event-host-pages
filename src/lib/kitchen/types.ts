@@ -211,6 +211,9 @@ export type KitchenReferenceConflict = {
 export type PlatterPackingItem = {
   key: Extract<
     KitchenFoodKey,
+    | "appetizer-tater-kegs"
+    | "appetizer-chicken-tenders"
+    | "appetizer-mozzarella-sticks"
     | "platter-tater-kegs"
     | "platter-chicken-tenders"
     | "platter-mozzarella-sticks"
@@ -220,22 +223,13 @@ export type PlatterPackingItem = {
   platterCount: number;
 };
 
-export type PlatterPackingResult =
-  | {
-      status: "approved";
-      totalHotPlatters: number;
-      panCount: number;
-      panSize: PanSize | null;
-      chafingDishes: number;
-    }
-  | {
-      status: "needs-review";
-      reason: "unapproved-total";
-      totalHotPlatters: number;
-      panCount: null;
-      panSize: null;
-      chafingDishes: number;
-    };
+export type PlatterPackingResult = {
+  status: "approved";
+  totalHotPlatters: number;
+  panCount: number;
+  panSize: PanSize | null;
+  chafingDishes: number;
+};
 
 export type KitchenChecklist = {
   ruleVersion: string;

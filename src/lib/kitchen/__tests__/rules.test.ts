@@ -456,7 +456,7 @@ describe("Wing Bar", () => {
     ).toBe(2);
   });
 
-  it("counts one chafing dish per selected bar per buffet table", () => {
+  it("counts buffet-table chafing separately from Appetizer Bar hot items", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent(
         [
@@ -467,7 +467,11 @@ describe("Wing Bar", () => {
         { guestCount: 80 },
       ),
     );
-    expect(checklist.chafingDishes.bars).toBe(4);
+    expect(checklist.chafingDishes).toEqual({
+      bars: 2,
+      hotPlatters: 1,
+      total: 3,
+    });
   });
 
   it("stops at the approved maximum of 250", () => {
@@ -511,21 +515,21 @@ describe("Appetizer Bar", () => {
       );
       expect(row(checklist, "appetizer-tater-kegs")).toMatchObject({
         quantity: groups * 42,
-        numberOfPans: Math.ceil((groups * 42) / 25),
+        numberOfPans: 1,
         panSize: "1/3",
       });
       expect(
         row(checklist, "appetizer-chicken-tenders"),
       ).toMatchObject({
         quantity: groups * 60,
-        numberOfPans: Math.ceil((groups * 60) / 25),
+        numberOfPans: 1,
         panSize: "1/3",
       });
       expect(
         row(checklist, "appetizer-mozzarella-sticks"),
       ).toMatchObject({
         quantity: groups * 6,
-        numberOfPans: Math.ceil((groups * 6) / 3),
+        numberOfPans: 1,
         panSize: "1/3",
       });
       expect(row(checklist, "sauce-marinara")).toMatchObject({
@@ -574,21 +578,21 @@ describe("Appetizer Bar", () => {
 
     expect(row(checklist, "appetizer-tater-kegs")).toMatchObject({
       quantity: 84,
-      numberOfPans: 4,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(
       row(checklist, "appetizer-mozzarella-sticks"),
     ).toMatchObject({
       quantity: 12,
-      numberOfPans: 4,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(
       row(checklist, "appetizer-chicken-tenders"),
     ).toMatchObject({
       quantity: 120,
-      numberOfPans: 5,
+      numberOfPans: 1,
       panSize: "1/3",
     });
   });
@@ -703,14 +707,7 @@ describe("dessert and platter quantities", () => {
     ["Fry Platter", "platter-fries", 1, "Food Platters", null, null],
   ] as const;
 
-  for (const [
-    name,
-    key,
-    multiplier,
-    sourceCategory,
-    panCapacity,
-    panSize,
-  ] of platterCases) {
+  for (const [name, key, multiplier, sourceCategory] of platterCases) {
     it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])(
       `multiplies ${name} quantity and packs %i platter(s)`,
       (platterCount: number) => {
@@ -727,12 +724,21 @@ describe("dessert and platter quantities", () => {
         const generatedRow = row(checklist, key);
         const expectedQuantity = platterCount * multiplier;
         expect(generatedRow.quantity).toBe(expectedQuantity);
+        const isHotPlatter = key !== "platter-veggie-tray";
         expect(generatedRow.numberOfPans).toBe(
-          panCapacity == null
-            ? null
-            : Math.ceil(expectedQuantity / panCapacity),
+          isHotPlatter
+            ? platterCount === 1
+              ? 3
+              : platterCount
+            : null,
         );
-        expect(generatedRow.panSize).toBe(panSize);
+        expect(generatedRow.panSize).toBe(
+          isHotPlatter
+            ? platterCount % 2 === 0
+              ? "1/2"
+              : "1/3"
+            : null,
+        );
       },
     );
   }
@@ -1220,7 +1226,7 @@ describe("platter ranch bowls", () => {
 });
 
 describe("platter packing and chafing dishes", () => {
-  it("packs one mozzarella platter into two half pans and one chafing dish", () => {
+  it("packs one mozzarella platter into three third pans and one chafing dish", () => {
     const checklist = generateKitchenChecklist(
       packageEvent("Taco Bar", 11, [
         {
@@ -1235,8 +1241,8 @@ describe("platter packing and chafing dishes", () => {
     expect(row(checklist, "platter-mozzarella-sticks")).toMatchObject({
       quantity: 4,
       unit: "pounds",
-      numberOfPans: 2,
-      panSize: "1/2",
+      numberOfPans: 3,
+      panSize: "1/3",
     });
     expect(row(checklist, "sauce-marinara")).toMatchObject({
       quantity: 1,
@@ -1277,11 +1283,16 @@ describe("platter packing and chafing dishes", () => {
   });
 
   it.each([
-    [1, 2, "1/2", 1],
+    [1, 3, "1/3", 1],
     [2, 2, "1/2", 1],
     [3, 3, "1/3", 1],
     [4, 4, "1/2", 2],
-    [6, 6, "1/3", 1],
+    [5, 5, "1/3", 2],
+    [6, 6, "1/2", 3],
+    [7, 7, "1/3", 3],
+    [8, 8, "1/2", 4],
+    [9, 9, "1/3", 3],
+    [10, 10, "1/2", 5],
   ] as const)(
     "approves %i same-food hot platters",
     (
@@ -1304,27 +1315,6 @@ describe("platter packing and chafing dishes", () => {
     },
   );
 
-  it.each([
-    [5, 2],
-    [7, 3],
-    [8, 3],
-    [9, 3],
-    [10, 4],
-  ])(
-    "keeps a numeric chafing count for the unapproved pan layout %i",
-    (platterCount: number, chafingDishes: number) => {
-      expect(
-        packHotPlatters([
-          { key: "platter-wings", platterCount },
-        ]),
-      ).toMatchObject({
-        status: "needs-review",
-        reason: "unapproved-total",
-        chafingDishes,
-      });
-    },
-  );
-
   it("applies approved total-hot-platter packing across mixed food types", () => {
     expect(
       packHotPlatters([
@@ -1337,6 +1327,36 @@ describe("platter packing and chafing dishes", () => {
       panCount: 2,
       panSize: "1/2",
       chafingDishes: 1,
+    });
+  });
+
+  it("packs the AGDC appetizer items and fry platter into four half pans and two chafing dishes", () => {
+    const checklist = generateKitchenChecklist(
+      packageEvent("Appetizer Bar", 24, [
+        {
+          name: "Fry Platter",
+          quantity: 1,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    for (const key of [
+      "appetizer-tater-kegs",
+      "appetizer-mozzarella-sticks",
+      "appetizer-chicken-tenders",
+      "platter-fries",
+    ] as const) {
+      expect(row(checklist, key)).toMatchObject({
+        numberOfPans: 1,
+        panSize: "1/2",
+      });
+    }
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 2,
+      total: 2,
     });
   });
 
@@ -1373,19 +1393,19 @@ describe("platter packing and chafing dishes", () => {
     expect(row(checklist, "platter-tater-kegs")).toMatchObject({
       quantity: 64,
       unit: "each",
-      numberOfPans: 3,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(row(checklist, "platter-wings")).toMatchObject({
       quantity: 64,
       unit: "each",
-      numberOfPans: 3,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(row(checklist, "platter-chicken-tenders")).toMatchObject({
       quantity: 64,
       unit: "each",
-      numberOfPans: 3,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(row(checklist, "platter-veggie-tray")).toMatchObject({
@@ -1484,7 +1504,7 @@ describe("platter packing and chafing dishes", () => {
     });
   });
 
-  it("packs the redacted Veterans setup into two total chafing dishes", () => {
+  it("packs the redacted Veterans setup into four total chafing dishes", () => {
     const checklist = generateKitchenChecklist(
       packageEvent("Taco Bar", 50, [
         {
@@ -1510,8 +1530,8 @@ describe("platter packing and chafing dishes", () => {
 
     expect(checklist.chafingDishes).toEqual({
       bars: 1,
-      hotPlatters: 1,
-      total: 2,
+      hotPlatters: 3,
+      total: 4,
     });
   });
 });
