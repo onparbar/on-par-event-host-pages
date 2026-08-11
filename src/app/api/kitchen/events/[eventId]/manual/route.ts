@@ -9,6 +9,8 @@ export const runtime = "nodejs";
 type ManualRequest = {
   foodRunners?: unknown;
   pocs?: unknown;
+  preppedBy?: unknown;
+  verifiedBy?: unknown;
 };
 
 function unauthorized() {
@@ -40,10 +42,12 @@ export async function PATCH(
     !Array.isArray(body.foodRunners) ||
     !body.foodRunners.every((value) => typeof value === "string") ||
     !Array.isArray(body.pocs) ||
-    !body.pocs.every((value) => typeof value === "string")
+    !body.pocs.every((value) => typeof value === "string") ||
+    typeof body.preppedBy !== "string" ||
+    typeof body.verifiedBy !== "string"
   ) {
     return NextResponse.json(
-      { error: "Food Runner and POC must be lists of employee names." },
+      { error: "Kitchen staff selections are invalid." },
       { status: 400 },
     );
   }
@@ -55,6 +59,9 @@ export async function PATCH(
         eventId,
         body.foodRunners,
         body.pocs,
+        {},
+        body.preppedBy,
+        body.verifiedBy,
       ),
     );
   } catch (error) {

@@ -105,6 +105,8 @@ export interface KitchenStorage {
     eventId: string,
     foodRunners: readonly string[],
     pocs: readonly string[],
+    preppedBy?: string,
+    verifiedBy?: string,
   ): Promise<void>;
   saveManualBwa(eventId: string, bwa: string): Promise<void>;
   saveItemReadiness(
@@ -173,6 +175,8 @@ type ManualRow = {
   bwa: string | null;
   food_runners: string[] | null;
   pocs: string[] | null;
+  prepped_by: string | null;
+  verified_by: string | null;
 };
 
 type ItemReadinessRow = {
@@ -483,7 +487,10 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       >("kitchen_event_snapshots", snapshotParams),
       this.jsonRequest<ManualRow[]>(
         "kitchen_manual_assignments",
-        new URLSearchParams({ select: "event_id,bwa,food_runners,pocs" }),
+        new URLSearchParams({
+          select:
+            "event_id,bwa,food_runners,pocs,prepped_by,verified_by",
+        }),
       ),
       this.jsonRequest<SyncRow[]>("kitchen_sync_runs", syncParams),
     ]);
@@ -527,6 +534,8 @@ export class SupabaseKitchenStorage implements KitchenStorage {
                 ? [legacy]
                 : [],
             pocs: row.pocs ?? [],
+            preppedBy: row.prepped_by ?? "",
+            verifiedBy: row.verified_by ?? "",
           },
         ] as const;
       }),
@@ -587,6 +596,8 @@ export class SupabaseKitchenStorage implements KitchenStorage {
           manualByEvent.get(row.event_id)?.foodRunners.join(", ") ?? "",
         foodRunners: manualByEvent.get(row.event_id)?.foodRunners ?? [],
         pocs: manualByEvent.get(row.event_id)?.pocs ?? [],
+        preppedBy: manualByEvent.get(row.event_id)?.preppedBy ?? "",
+        verifiedBy: manualByEvent.get(row.event_id)?.verifiedBy ?? "",
         completedItemKeys: (
           completedItemsByEvent.get(row.event_id) ?? []
         ).sort(),
@@ -714,6 +725,8 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     eventId: string,
     foodRunners: readonly string[],
     pocs: readonly string[],
+    preppedBy = "",
+    verifiedBy = "",
   ) {
     await this.emptyRequest(
       "kitchen_manual_assignments",
@@ -728,6 +741,8 @@ export class SupabaseKitchenStorage implements KitchenStorage {
           bwa: "",
           food_runners: foodRunners,
           pocs,
+          prepped_by: preppedBy,
+          verified_by: verifiedBy,
           updated_at: new Date().toISOString(),
         }),
       },
@@ -1065,7 +1080,12 @@ export class MemoryKitchenStorage implements KitchenStorage {
   private readonly days = new Map<string, StoredKitchenEvent[]>();
   private readonly manualAssignments = new Map<
     string,
-    { foodRunners: string[]; pocs: string[] }
+    {
+      foodRunners: string[];
+      pocs: string[];
+      preppedBy: string;
+      verifiedBy: string;
+    }
   >();
   private readonly itemReadiness = new Map<
     string,
@@ -1113,6 +1133,8 @@ export class MemoryKitchenStorage implements KitchenStorage {
         foodRunners:
           this.manualAssignments.get(eventId)?.foodRunners ?? [],
         pocs: this.manualAssignments.get(eventId)?.pocs ?? [],
+        preppedBy: this.manualAssignments.get(eventId)?.preppedBy ?? "",
+        verifiedBy: this.manualAssignments.get(eventId)?.verifiedBy ?? "",
         completedItemKeys: [
           ...(this.itemReadiness.get(eventId)?.entries() ?? []),
         ]
@@ -1215,10 +1237,14 @@ export class MemoryKitchenStorage implements KitchenStorage {
     eventId: string,
     foodRunners: readonly string[],
     pocs: readonly string[],
+    preppedBy = "",
+    verifiedBy = "",
   ) {
     this.manualAssignments.set(eventId, {
       foodRunners: [...foodRunners],
       pocs: [...pocs],
+      preppedBy,
+      verifiedBy,
     });
   }
 

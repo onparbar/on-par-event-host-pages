@@ -261,6 +261,8 @@ export async function updateKitchenManualAssignments(
   foodRunners: readonly string[],
   pocs: readonly string[],
   options: Pick<KitchenSyncDependencies, "storage"> = {},
+  preppedBy = "",
+  verifiedBy = "",
 ) {
   const normalizedEventId = eventId.trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalizedEventId)) {
@@ -290,16 +292,34 @@ export async function updateKitchenManualAssignments(
   };
   const normalizedFoodRunners = normalizeNames(foodRunners, "Food Runner");
   const normalizedPocs = normalizeNames(pocs, "POC");
+  const normalizeSingleName = (value: string, label: string) => {
+    const normalized = value.trim().replace(/\s+/g, " ");
+    if (
+      normalized &&
+      !KITCHEN_STAFF_ROSTER.includes(
+        normalized as (typeof KITCHEN_STAFF_ROSTER)[number],
+      )
+    ) {
+      throw new Error(`${label} contains an employee outside the approved roster.`);
+    }
+    return normalized;
+  };
+  const normalizedPreppedBy = normalizeSingleName(preppedBy, "Prepped by");
+  const normalizedVerifiedBy = normalizeSingleName(verifiedBy, "Verified by");
 
   await (options.storage ?? getKitchenStorage()).saveManualAssignments(
     normalizedEventId,
     normalizedFoodRunners,
     normalizedPocs,
+    normalizedPreppedBy,
+    normalizedVerifiedBy,
   );
   return {
     eventId: normalizedEventId,
     foodRunners: normalizedFoodRunners,
     pocs: normalizedPocs,
+    preppedBy: normalizedPreppedBy,
+    verifiedBy: normalizedVerifiedBy,
   };
 }
 

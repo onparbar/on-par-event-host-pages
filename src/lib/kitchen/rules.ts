@@ -673,19 +673,6 @@ export function generateKitchenChecklist(
     }
   }
 
-  if (
-    !selections.some(isKnownFoodSelection) &&
-    liveAddOnEffects.length === 0
-  ) {
-    addWarning(warnings, warningKeys, {
-      code: "NO_FOOD_SELECTIONS",
-      message:
-        "No structured food/menu selections were provided for this definite event.",
-      requiresReview: true,
-      scope: "event",
-    });
-  }
-
   const normalizedStatus = sourceEvent.status
     ? normalizeKitchenText(sourceEvent.status)
     : "";
@@ -1062,7 +1049,7 @@ export function generateKitchenChecklist(
       foodName: "Assorted Desserts",
       quantity: dessertCount,
       unit: "pretzel plates",
-      numberOfPans: null,
+      numberOfPans: dessertCount,
       panSize: null,
       prepTiming: {
         kind: "minutes-before-food-ready",

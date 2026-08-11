@@ -246,6 +246,22 @@ function itemTiming(
   if (parsed) {
     return { ...parsed, usedFallback: false };
   }
+  const durationMatch = itemText(item).match(
+    /\b(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b/i,
+  );
+  const eventStartEpoch = Date.parse(source.eventStartAt ?? "");
+  if (durationMatch && Number.isFinite(eventStartEpoch)) {
+    const durationHours = Number(durationMatch[1]);
+    if (durationHours > 0 && durationHours <= 15) {
+      return {
+        startAt: source.eventStartAt!,
+        endAt: new Date(
+          eventStartEpoch + durationHours * 60 * 60 * 1000,
+        ).toISOString(),
+        usedFallback: false,
+      };
+    }
+  }
   if (
     source.eventStartAt &&
     source.eventEndAt &&

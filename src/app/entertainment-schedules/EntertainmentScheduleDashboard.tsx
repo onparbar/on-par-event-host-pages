@@ -44,7 +44,7 @@ import type {
 const TIMELINE_WIDTH = 1_080;
 const PIXELS_PER_MINUTE = 1.2;
 const OPERATING_MINUTES = 15 * 60;
-const RESOURCE_ROW_HEIGHT = 28;
+const RESOURCE_ROW_HEIGHT = 24;
 const RESERVATION_SLOT_HEIGHT = 24;
 const CATEGORY_ORDER: EntertainmentCategory[] = [
   ...ENTERTAINMENT_SCHEDULE_CATEGORIES,
@@ -213,7 +213,7 @@ function layoutReservations(reservations: EntertainmentReservation[]) {
     placed,
     height: Math.max(
       RESOURCE_ROW_HEIGHT,
-      slotEnds.length * RESERVATION_SLOT_HEIGHT + 4,
+      slotEnds.length * RESERVATION_SLOT_HEIGHT,
     ),
   };
 }

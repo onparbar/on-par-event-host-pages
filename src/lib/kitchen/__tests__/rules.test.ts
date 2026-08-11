@@ -632,7 +632,7 @@ describe("dessert and platter quantities", () => {
       foodName: "Assorted Desserts",
       quantity: 4,
       unit: "pretzel plates",
-      numberOfPans: null,
+      numberOfPans: 4,
       panSize: null,
     });
     expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
@@ -657,7 +657,7 @@ describe("dessert and platter quantities", () => {
       );
       expect(row(checklist, "dessert-platter")).toMatchObject({
         quantity: platters,
-        numberOfPans: null,
+        numberOfPans: platters,
         panSize: null,
       });
       expect(
@@ -1420,7 +1420,7 @@ describe("platter packing and chafing dishes", () => {
       panSize: null,
     });
     expect(row(checklist, "dessert-platter")).toMatchObject({
-      numberOfPans: null,
+      numberOfPans: 1,
       panSize: null,
     });
     expect(checklist.chafingDishes).toEqual({
@@ -1714,14 +1714,13 @@ describe("classification, aliases, and review behavior", () => {
     expect(warningCodes(checklist)).toEqual(
       expect.arrayContaining([
         "UNKNOWN_FOOD_ITEM",
-        "NO_FOOD_SELECTIONS",
         "SPECIAL_NOTE_REQUIRES_REVIEW",
       ]),
     );
     expect(checklist.needsReview).toBe(true);
   });
 
-  it("ignores non-food line items but reports a definite event with no food", () => {
+  it("keeps a definite event with no food blank without creating a review warning", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent([
         {
@@ -1737,7 +1736,10 @@ describe("classification, aliases, and review behavior", () => {
       ]),
     );
     expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
-    expect(warningCodes(checklist)).toContain("NO_FOOD_SELECTIONS");
+    expect(
+      checklist.sections.every((section) => section.rows.length === 0),
+    ).toBe(true);
+    expect(warningCodes(checklist)).not.toContain("NO_FOOD_SELECTIONS");
   });
 
   it("requires an identified bar when a package marker exists", () => {
@@ -1882,7 +1884,7 @@ describe("redacted mock fixtures", () => {
       checklists.some((checklist) =>
         warningCodes(checklist).includes("NO_FOOD_SELECTIONS"),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("defaults manual BWA to blank without deriving it from source data", () => {

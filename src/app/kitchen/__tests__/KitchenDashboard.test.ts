@@ -316,7 +316,9 @@ describe("kitchen checklist day layout", () => {
     const completedHeader = html.indexOf(
       '<span class="kitchen-verified-heading">Verified</span>',
     );
-    const preppedHeader = html.indexOf('<th scope="col">Prepped</th>');
+    const preppedHeader = html.indexOf(
+      '<span class="kitchen-verified-heading">Prepped</span>',
+    );
     const beefReadyInput = html.match(
       /<input aria-label="Mark Beef ready"[^>]*>/,
     )?.[0];
@@ -334,6 +336,8 @@ describe("kitchen checklist day layout", () => {
     expect(quantityHeader).toBeGreaterThanOrEqual(0);
     expect(completedHeader).toBeGreaterThan(quantityHeader);
     expect(preppedHeader).toBeGreaterThanOrEqual(0);
+    expect(html).toContain('aria-label="Employee responsible for prep"');
+    expect(html).toContain('aria-label="Employee responsible for verification"');
     expect(html).toContain('<th colSpan="7"');
     expect(beefReadyInput).toContain('checked=""');
     expect(beefCompletedInput).toContain('checked=""');

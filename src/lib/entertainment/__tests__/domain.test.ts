@@ -264,6 +264,37 @@ describe("deterministic schedule construction", () => {
     ).toEqual(new Set(["#297025"]));
   });
 
+  it("uses the contract duration from the event start when no clock range is listed", () => {
+    const result = buildEntertainmentSchedule({
+      sourceEvents: [
+        sourceEvent({
+          items: [
+            sourceItem({
+              name: "Duckpin Bowling",
+              description: "3 lanes for 4 hours",
+              quantity: 12,
+              startAt: null,
+              endAt: null,
+            }),
+          ],
+        }),
+      ],
+      localEvents: [localEvent()],
+      now: NOW,
+    });
+
+    expect(result.reservations).toHaveLength(3);
+    expect(result.reservations[0]).toMatchObject({
+      startAt: START,
+      endAt: "2026-07-29T01:00:00.000Z",
+    });
+    expect(result.events[0].reviewIssues).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "TIME_NEEDS_REVIEW" }),
+      ]),
+    );
+  });
+
   it("does not create reservations or timing warnings for open-play mini golf", () => {
     const result = buildEntertainmentSchedule({
       sourceEvents: [

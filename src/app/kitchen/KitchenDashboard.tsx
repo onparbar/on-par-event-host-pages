@@ -65,6 +65,8 @@ type BwaSaveState = "idle" | "saving" | "saved" | "error";
 type StaffAssignmentDraft = {
   foodRunners: string[];
   pocs: string[];
+  preppedBy: string;
+  verifiedBy: string;
 };
 type FoodDescriptionItem = {
   foodName: string;
@@ -461,6 +463,8 @@ export default function KitchenDashboard() {
                         : []
                     ),
                     pocs: checklist.pocs ?? [],
+                    preppedBy: checklist.preppedBy ?? "",
+                    verifiedBy: checklist.verifiedBy ?? "",
                   },
             ];
           }),
@@ -839,6 +843,8 @@ export default function KitchenDashboard() {
     const assignments = staffDrafts[eventKey] ?? {
       foodRunners: [],
       pocs: [],
+      preppedBy: "",
+      verifiedBy: "",
     };
     setBwaSaveStates((current) => ({ ...current, [eventKey]: "saving" }));
 
@@ -865,6 +871,8 @@ export default function KitchenDashboard() {
                       foodRunnerOrBwa: assignments.foodRunners.join(", "),
                       foodRunners: assignments.foodRunners,
                       pocs: assignments.pocs,
+                      preppedBy: assignments.preppedBy,
+                      verifiedBy: assignments.verifiedBy,
                     }
                   : eventChecklist,
               ),
@@ -1361,7 +1369,14 @@ export default function KitchenDashboard() {
                   key={eventKey}
                 >
                   <KitchenChecklistSheet
-                    staffDraft={staffDrafts[eventKey] ?? { foodRunners: [], pocs: [] }}
+                    staffDraft={
+                      staffDrafts[eventKey] ?? {
+                        foodRunners: [],
+                        pocs: [],
+                        preppedBy: "",
+                        verifiedBy: "",
+                      }
+                    }
                     bwaOptions={day?.bwaOptions ?? []}
                     bwaSaveState={bwaSaveStates[eventKey] ?? "idle"}
                     checklist={checklist}
@@ -1400,7 +1415,14 @@ export default function KitchenDashboard() {
 
       {selectedChecklist && !activeAlert ? (
         <ChecklistPanel
-          staffDraft={staffDrafts[String(selectedChecklist.event.eventId)] ?? { foodRunners: [], pocs: [] }}
+          staffDraft={
+            staffDrafts[String(selectedChecklist.event.eventId)] ?? {
+              foodRunners: [],
+              pocs: [],
+              preppedBy: "",
+              verifiedBy: "",
+            }
+          }
           bwaOptions={day?.bwaOptions ?? []}
           bwaSaveState={bwaSaveStates[String(selectedChecklist.event.eventId)] ?? "idle"}
           checklist={selectedChecklist}
@@ -1639,7 +1661,7 @@ function StaffMultiSelect({
 }
 
 export function KitchenChecklistSheet({
-  staffDraft = { foodRunners: [], pocs: [] },
+  staffDraft = { foodRunners: [], pocs: [], preppedBy: "", verifiedBy: "" },
   bwaDraft: _legacyBwaDraft,
   bwaOptions = [],
   bwaSaveState,
@@ -1836,7 +1858,27 @@ export function KitchenChecklistSheet({
           <thead>
             <tr>
               <th scope="col">Ready</th>
-              <th scope="col">Prepped</th>
+              <th scope="col">
+                <span className="kitchen-verified-heading">Prepped</span>
+                <select
+                  aria-label="Employee responsible for prep"
+                  className="kitchen-column-staff-select"
+                  onChange={(event) =>
+                    onStaffChange({
+                      ...staffDraft,
+                      preppedBy: event.target.value,
+                    })
+                  }
+                  value={staffDraft.preppedBy}
+                >
+                  <option value="">Employee</option>
+                  {availableBwaOptions.map((employee) => (
+                    <option key={employee} value={employee}>
+                      {employee}
+                    </option>
+                  ))}
+                </select>
+              </th>
               <th scope="col">Food Name</th>
               <th scope="col">Number of Pans</th>
               <th scope="col">Pan Size</th>
@@ -1846,6 +1888,24 @@ export function KitchenChecklistSheet({
                 <small className="kitchen-verified-subheading">
                   Different person
                 </small>
+                <select
+                  aria-label="Employee responsible for verification"
+                  className="kitchen-column-staff-select"
+                  onChange={(event) =>
+                    onStaffChange({
+                      ...staffDraft,
+                      verifiedBy: event.target.value,
+                    })
+                  }
+                  value={staffDraft.verifiedBy}
+                >
+                  <option value="">Employee</option>
+                  {availableBwaOptions.map((employee) => (
+                    <option key={employee} value={employee}>
+                      {employee}
+                    </option>
+                  ))}
+                </select>
               </th>
             </tr>
           </thead>
