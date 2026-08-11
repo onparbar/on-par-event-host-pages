@@ -3,9 +3,13 @@ import {
   syncEntertainmentDay,
   updateEntertainmentReservation,
 } from "@/lib/entertainment/sync";
-import { isHexColor } from "@/lib/entertainment/resources";
+import {
+  deterministicEventColor,
+  isHexColor,
+} from "@/lib/entertainment/resources";
 import {
   addCalendarDays,
+  formatClock,
   parseTimeRange,
   isValidEntertainmentDate,
   todayInEntertainmentTimeZone,
@@ -18,6 +22,11 @@ import type {
   EventPlan,
   TripleseatEventPlanSource,
 } from "@/lib/event-plans/types";
+import {
+  VipPrepClient,
+  type VipPrepReservation,
+  vipPrepExternalId,
+} from "@/lib/vip-prep/client";
 import { resolveAreaAlias } from "./configuration/aliases";
 import { selectEntertainmentResources } from "./configuration/adjacency";
 import {
@@ -75,6 +84,7 @@ function normalizedFloorPlanEvent(
   sourceSnapshot: UnknownRecord | null,
   index: number,
   usedColors: readonly string[],
+  sourceEventId = String(plan.id),
 ): FloorPlanEvent {
   const rooms = sourceRooms(sourceSnapshot, plan.rooms);
   const contractedAreaIds = [...new Set(rooms.flatMap((room) => resolveAreaAlias(room) ?? []))];
@@ -86,7 +96,7 @@ function normalizedFloorPlanEvent(
   return {
     id: `floor-plan-event-${plan.id}`,
     floorPlanId,
-    tripleseatEventId: String(plan.id),
+    tripleseatEventId: sourceEventId,
     name: plan.name,
     status,
     guestCount: plan.guest_count,
@@ -118,28 +128,79 @@ function normalizedFloorPlanEvent(
   };
 }
 
+function numericVipEventId(value: string) {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) || 1;
+}
+
+function vipEventPlan(reservation: VipPrepReservation): EventPlan {
+  const externalId = vipPrepExternalId(reservation);
+  const date = new Date(`${reservation.operatingDate}T12:00:00Z`);
+  return {
+    id: numericVipEventId(externalId),
+    name: reservation.eventName,
+    date: reservation.operatingDate,
+    day: new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(date),
+    time: `${formatClock(reservation.startAt)} - ${formatClock(reservation.endAt)}`,
+    guest_count: reservation.partySize,
+    rooms: [reservation.resource.name],
+    color: deterministicEventColor(externalId),
+    food: reservation.foodPrep.map((item) => `${item.quantity} ${item.label}`),
+    drink_options: [],
+    entertainment: [],
+    verification_status: "Paid VIP reservation imported from the read-only VIP Prep API.",
+    needs_review: false,
+    review_reasons: [],
+    tripleseat_booking_id: reservation.confirmationCode,
+    source_updated_at: reservation.updatedAt,
+    synced_at: new Date().toISOString(),
+  };
+}
+
 async function sourceEventsForDate(date: string) {
   const eventPlanStorage = getEventPlanStorage();
+  const vipPrepClient = new VipPrepClient();
   let stored: Awaited<ReturnType<typeof eventPlanStorage.plansForWindow>> = [];
   try {
     stored = await eventPlanStorage.plansForWindow({ startDate: date, endDate: date });
   } catch {
     // Exact-date redacted Event Host plans remain available before migration.
   }
-  const rows = stored.length
+  const tripleseatRows = stored.length
     ? stored.map((row) => ({
         plan: buildEventPlan(
           structuredClone(row.sourceSnapshot) as unknown as TripleseatEventPlanSource,
           [],
         ),
         source: asRecord(row.sourceSnapshot),
+        sourceEventId: row.eventId,
       }))
     : [];
+  const vipPayload = vipPrepClient.configured
+    ? await vipPrepClient.fetchRange(date, date)
+    : null;
+  const vipRows = (vipPayload?.reservations ?? []).map((reservation) => ({
+    plan: vipEventPlan(reservation),
+    source: {
+      status: "DEFINITE",
+      rooms: [reservation.resource.name],
+      eventStartAt: reservation.startAt,
+      eventEndAt: reservation.endAt,
+      sourceUpdatedAt: reservation.updatedAt,
+      sourceSystem: "vip-prep",
+    } satisfies UnknownRecord,
+    sourceEventId: vipPrepExternalId(reservation),
+  }));
+  const rows = [...tripleseatRows, ...vipRows];
   return {
     rows: rows.filter(
       (row) => sourceValue(row.source, "status")?.toUpperCase() === "DEFINITE",
     ),
-    sourceRowCount: stored.length,
+    sourceRowCount: stored.length + vipRows.length,
   };
 }
 
@@ -196,7 +257,14 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   const currentEvents: FloorPlanEvent[] = [];
   for (const [index, row] of sourceRows.entries()) {
     const usedColors = currentEvents.map((event) => event.color);
-    const current = normalizedFloorPlanEvent(planId, row.plan, row.source, index, usedColors);
+    const current = normalizedFloorPlanEvent(
+      planId,
+      row.plan,
+      row.source,
+      index,
+      usedColors,
+      row.sourceEventId,
+    );
     const previous = saved?.events.find(
       (event) => event.tripleseatEventId === current.tripleseatEventId,
     );

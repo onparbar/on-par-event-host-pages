@@ -10,6 +10,7 @@ import {
 } from "../sync";
 import { MemoryEntertainmentStorage } from "../storage";
 import type { EntertainmentSourceEvent } from "../types";
+import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
 
 const DATE = "2026-07-28";
 
@@ -76,6 +77,51 @@ const localEvents = [
 ];
 
 describe("persistent entertainment synchronization", () => {
+  it("reads the VIP schedule directly without Supabase persistence", async () => {
+    const day = await getEntertainmentDay("2026-08-15", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+    });
+
+    expect(day.missingEnvironmentVariables).not.toContain("SUPABASE_SECRET_KEY");
+    expect(day.reservations[0]).toMatchObject({
+      resourceId: "private-room-vip-2",
+      source: "vip-prep",
+    });
+  });
+
+  it("imports a paid VIP reservation onto the exact VIP room", async () => {
+    const synced = await syncEntertainmentDay("2026-08-15", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+    });
+
+    expect(synced.reservations).toHaveLength(1);
+    expect(synced.reservations[0]).toMatchObject({
+      tripleseatEventId: "vip-reservation-uuid",
+      resourceId: "private-room-vip-2",
+      resourceName: "VIP 2",
+      source: "vip-prep",
+      startAt: "2026-08-15T22:00:00.000Z",
+      endAt: "2026-08-16T00:00:00.000Z",
+      needsReview: false,
+    });
+  });
+
   it("uses the known event window when mock entertainment timing needs review", async () => {
     const storage = new MemoryEntertainmentStorage();
     const mockAdapter: TripleseatAdapter = {

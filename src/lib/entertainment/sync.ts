@@ -38,11 +38,17 @@ import type {
   EntertainmentReviewIssue,
   EntertainmentSourceEvent,
 } from "./types";
+import {
+  getMissingVipPrepEnvironmentVariables,
+  VipPrepClient,
+  vipPrepEntertainmentEvents,
+} from "../vip-prep/client";
 
 export type EntertainmentDependencies = {
   adapter?: TripleseatAdapter;
   storage?: EntertainmentStorage;
   localEvents?: LocalEntertainmentEvent[];
+  vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
 };
 
 export type ReservationMutationInput = {
@@ -102,6 +108,8 @@ function safeSyncError(error: unknown) {
     "Missing SUPABASE_SECRET_KEY",
     "TRIPLESEAT_TOKEN_ENCRYPTION_KEY must contain exactly 32 bytes",
     "The existing Tripleseat adapter does not expose entertainment reads.",
+    "VIP Prep API request failed (",
+    "VIP Prep API returned an invalid",
   ];
   return allowedPrefixes.some((prefix) => error.message.startsWith(prefix))
     ? error.message
@@ -278,19 +286,44 @@ export async function getEntertainmentDay(
   assertEntertainmentDate(date);
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEntertainmentStorage();
-  const stored = await storage.getDay(date);
+  const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+  const [stored, vipResult] = await Promise.all([
+    storage.getDay(date),
+    vipPrepClient.configured
+      ? vipPrepClient.fetchRange(date, date).then(
+          (payload) => ({ events: vipPrepEntertainmentEvents(payload.reservations), error: null, refreshed: true }),
+          () => ({ events: [], error: "VIP Prep could not be refreshed; the last saved VIP schedule remains visible.", refreshed: false }),
+        )
+      : Promise.resolve({ events: [], error: null, refreshed: false }),
+  ]);
   const diagnostics = adapter.getDiagnostics();
-  const reservations = stored.reservations.filter(
+  const storedReservations = stored.reservations.filter(
     (reservation) =>
       reservation.active && reservation.resourceCategory !== "mini-golf",
   );
+  const liveVip = buildEntertainmentSchedule({
+    sourceEvents: vipResult.events,
+    localEvents: floorPlanContext(options).localEvents,
+    existingReservations: storedReservations,
+  });
+  const reservations = [
+    ...storedReservations.filter(
+      (reservation) =>
+        !vipResult.refreshed || reservation.source !== "vip-prep",
+    ),
+    ...liveVip.reservations,
+  ];
   const events = [
-    ...stored.events,
+    ...stored.events.filter(
+      (event) => event.sourceSnapshot.sourceSystem !== "vip-prep",
+    ),
+    ...liveVip.events,
     ...manualEventSnapshots(date, reservations, stored.events),
   ].sort((left, right) =>
     (left.eventStartAt ?? "").localeCompare(right.eventStartAt ?? ""),
   );
   const warnings = [...diagnostics.warnings];
+  if (vipResult.error) warnings.push(vipResult.error);
   if (stored.sync?.status === "error" && stored.sync.errorSummary) {
     warnings.push(
       "The latest Tripleseat sync failed. The last saved schedule remains visible.",
@@ -306,8 +339,11 @@ export async function getEntertainmentDay(
     warnings: unique(warnings),
     missingEnvironmentVariables: unique([
       ...diagnostics.missingEnvironmentVariables,
-      ...(options.storage == null
+      ...(storage.persistence === "database" && options.storage == null
         ? getMissingEntertainmentEnvironmentVariables()
+        : []),
+      ...(options.vipPrepClient == null
+        ? getMissingVipPrepEnvironmentVariables()
         : []),
     ]),
     canEdit: true,
@@ -377,7 +413,15 @@ export async function syncEntertainmentDay(
         "The existing Tripleseat adapter does not expose entertainment reads.",
       );
     }
-    let sourceEvents = await adapter.fetchEntertainmentEventsForDate(date);
+    const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+    const [tripleseatSourceEvents, vipPayload] = await Promise.all([
+      adapter.fetchEntertainmentEventsForDate(date),
+      vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
+    ]);
+    let sourceEvents = [
+      ...tripleseatSourceEvents,
+      ...vipPrepEntertainmentEvents(vipPayload?.reservations ?? []),
+    ];
     if (
       adapter.sourceMode === "mock" &&
       storage.persistence === "memory" &&

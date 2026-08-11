@@ -21,6 +21,11 @@ import type {
   KitchenAddOnCompletion,
   KitchenChecklist,
 } from "./types";
+import {
+  getMissingVipPrepEnvironmentVariables,
+  VipPrepClient,
+  vipPrepKitchenEvents,
+} from "../vip-prep/client";
 
 export type KitchenDayPayload = {
   date: string;
@@ -42,6 +47,7 @@ export type KitchenSyncDependencies = {
   adapter?: TripleseatAdapter;
   storage?: KitchenStorage;
   now?: Date;
+  vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
 };
 
 export class KitchenSyncError extends Error {
@@ -101,6 +107,8 @@ function safeSyncError(error: unknown) {
     "Tripleseat API request failed (",
     "Tripleseat OAuth response did not include an access token.",
     "Tripleseat event detail response was invalid.",
+    "VIP Prep API request failed (",
+    "VIP Prep API returned an invalid",
     "Kitchen database request failed (",
     "Missing SUPABASE_SECRET_KEY",
     "TRIPLESEAT_TOKEN_ENCRYPTION_KEY must contain exactly 32 bytes",
@@ -122,18 +130,25 @@ export async function getKitchenDay(
 ): Promise<KitchenDayPayload> {
   assertKitchenDate(date);
   const { adapter, storage } = dependencies(options);
-  const [stored, diagnostics] = await Promise.all([
+  const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+  const [stored, diagnostics, liveVipResult] = await Promise.all([
     storage.getDay(date),
     Promise.resolve(adapter.getDiagnostics()),
+    vipPrepClient.configured
+      ? vipPrepClient.fetchRange(date, date).then(
+          (payload) => ({ events: vipPrepKitchenEvents(payload.reservations), error: null, refreshed: true }),
+          () => ({ events: [], error: "VIP Prep could not be refreshed; the last saved VIP checklist remains visible.", refreshed: false }),
+        )
+      : Promise.resolve({ events: [], error: null, refreshed: false }),
   ]);
   const databaseMissing =
-    options.storage == null
+    storage.persistence === "database" && options.storage == null
       ? getMissingSupabaseEnvironmentVariables()
       : [];
   const liveSourceUnavailable =
     adapter.sourceMode === "mock" &&
     storage.persistence === "database";
-  const eventsWithSourceStatus =
+  const storedEventsWithSourceStatus =
     stored.sync?.status === "error"
       ? markSourceWarning(
           stored.events,
@@ -147,6 +162,14 @@ export async function getKitchenDay(
             "Live Tripleseat configuration is unavailable; this stored checklist may be stale.",
           )
       : stored.events;
+  const eventsWithSourceStatus = [
+    ...storedEventsWithSourceStatus.filter(
+      (event) =>
+        !liveVipResult.refreshed ||
+        !String(event.event.eventId).startsWith("vip-"),
+    ),
+    ...liveVipResult.events.map((event) => generateKitchenChecklist(event)),
+  ];
   const events = activeKitchenChecklists(
     eventsWithSourceStatus,
     options.now ?? new Date(),
@@ -171,10 +194,16 @@ export async function getKitchenDay(
     source: diagnostics.sourceMode,
     syncStatus: stored.sync?.status ?? "never",
     syncError: stored.sync?.errorMessage ?? null,
-    warnings: diagnostics.warnings,
+    warnings: unique([
+      ...diagnostics.warnings,
+      ...(liveVipResult.error ? [liveVipResult.error] : []),
+    ]),
     missingEnvironmentVariables: unique([
       ...diagnostics.missingEnvironmentVariables,
       ...databaseMissing,
+      ...(options.vipPrepClient == null
+        ? getMissingVipPrepEnvironmentVariables()
+        : []),
     ]),
   };
 }
@@ -196,7 +225,15 @@ export async function syncKitchenDay(
   await storage.startSync(date);
 
   try {
-    const sourceEvents = await adapter.fetchEventsForDate(date);
+    const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+    const [tripleseatEvents, vipPayload] = await Promise.all([
+      adapter.fetchEventsForDate(date),
+      vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
+    ]);
+    const sourceEvents = [
+      ...tripleseatEvents,
+      ...vipPrepKitchenEvents(vipPayload?.reservations ?? []),
+    ];
     const storedEvents = sourceEvents.map((sourceEvent) => ({
       sourceEvent,
       checklist: generateKitchenChecklist(sourceEvent),

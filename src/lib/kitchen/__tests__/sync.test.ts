@@ -19,6 +19,7 @@ import type {
   TripleseatAdapter,
   TripleseatKitchenSourceEvent,
 } from "../tripleseat";
+import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
 
 function testAdapter(
   getEvents: () => TripleseatKitchenSourceEvent[],
@@ -50,6 +51,50 @@ function viewingTime(date: string) {
 }
 
 describe("kitchen synchronization", () => {
+  it("reads VIP Kitchen prep directly without Supabase persistence", async () => {
+    const day = await getKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.missingEnvironmentVariables).not.toContain("SUPABASE_SECRET_KEY");
+    expect(day.events[0].event.eventId).toBe("vip-reservation-uuid");
+  });
+
+  it("imports paid VIP food quantities into the Kitchen checklist", async () => {
+    const storage = createMemoryKitchenStorage();
+    const day = await syncKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.events).toHaveLength(1);
+    expect(day.events[0].event).toMatchObject({
+      eventId: "vip-reservation-uuid",
+      name: "Redacted VIP",
+      room: "VIP 2",
+    });
+    expect(day.events[0].sections.flatMap((section) => section.rows)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ foodName: "Wings", quantity: 128 }),
+      ]),
+    );
+  });
+
   it("refuses to persist mock events in the database backend", async () => {
     let requested = false;
     const storage = new SupabaseKitchenStorage({

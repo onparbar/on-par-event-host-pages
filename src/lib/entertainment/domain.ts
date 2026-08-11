@@ -302,14 +302,14 @@ export function buildEntertainmentSchedule({
     const match = matchLocalEvent(source, localEvents);
     const localEvent = match?.event ?? null;
     const eventIssues: EntertainmentReviewIssue[] = [];
-    if (!localEvent) {
+    if (!localEvent && source.sourceSystem !== "vip-prep") {
       eventIssues.push({
         code: "UNMATCHED_EVENT",
         message: "Tripleseat event could not be matched to an Event Host event.",
       });
     }
     const color = colorForEvent(source, localEvent);
-    if (color.source === "deterministic-fallback") {
+    if (color.source === "deterministic-fallback" && source.sourceSystem !== "vip-prep") {
       eventIssues.push({
         code: "FLOOR_PLAN_COLOR_MISSING",
         message:
@@ -509,9 +509,11 @@ export function buildEntertainmentSchedule({
           sourceResourceId: resource.id,
           eventColor: color.color,
           colorSource: color.source,
-          source: usingLocalFallback
-            ? "event-host-fallback"
-            : "tripleseat",
+          source: source.sourceSystem === "vip-prep"
+            ? "vip-prep"
+            : usingLocalFallback
+              ? "event-host-fallback"
+              : "tripleseat",
           sourceReference: item.sourceId,
           manualOverride: false,
           hasSourceUpdate: false,
@@ -521,11 +523,11 @@ export function buildEntertainmentSchedule({
             !exactFromSource.includes(resourceId),
           notes: "",
           sourceUpdatedAt: source.sourceUpdatedAt,
-          lastTripleseatSyncAt: now,
+          lastTripleseatSyncAt: source.sourceSystem === "vip-prep" ? null : now,
           active: true,
           createdAt: now,
           updatedAt: now,
-          updatedBy: "tripleseat-sync",
+          updatedBy: source.sourceSystem === "vip-prep" ? "vip-prep-sync" : "tripleseat-sync",
         };
         eventReservations.push(reservation);
         occupied.push(reservation);
@@ -616,7 +618,7 @@ export function mergeReservationsForSync(
             {
               code: "SOURCE_HAS_NEWER_INFORMATION" as const,
               message:
-                "Tripleseat has newer resource or time information. The manual value remains in use.",
+                "The source has newer resource or time information. The manual value remains in use.",
             },
           ]
         : []),

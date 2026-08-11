@@ -62,6 +62,7 @@ export type EntertainmentSourceEvent = {
   categoryNames: string[];
   sourceUpdatedAt: string | null;
   noteCount: number;
+  sourceSystem?: "tripleseat" | "vip-prep";
 };
 
 export type EntertainmentColorSource =
@@ -92,6 +93,7 @@ export type EntertainmentEventSnapshot = {
 
 export type EntertainmentReservationSource =
   | "tripleseat"
+  | "vip-prep"
   | "event-host-fallback"
   | "manual";
 
