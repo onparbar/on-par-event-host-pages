@@ -175,8 +175,6 @@ type ManualRow = {
   bwa: string | null;
   food_runners: string[] | null;
   pocs: string[] | null;
-  prepped_by: string | null;
-  verified_by: string | null;
 };
 
 type ItemReadinessRow = {
@@ -220,6 +218,26 @@ function savedBwaOptions() {
   return [...KITCHEN_STAFF_ROSTER].sort((left, right) =>
     left.localeCompare(right, "en", { sensitivity: "base" }),
   );
+}
+
+const KITCHEN_ROLE_METADATA_PREFIX = "__kitchen_roles__:";
+
+function manualRoleMetadata(value: string | null) {
+  if (!value?.startsWith(KITCHEN_ROLE_METADATA_PREFIX)) {
+    return { preppedBy: "", verifiedBy: "" };
+  }
+  try {
+    const parsed = JSON.parse(
+      value.slice(KITCHEN_ROLE_METADATA_PREFIX.length),
+    ) as { preppedBy?: unknown; verifiedBy?: unknown };
+    return {
+      preppedBy: typeof parsed.preppedBy === "string" ? parsed.preppedBy : "",
+      verifiedBy:
+        typeof parsed.verifiedBy === "string" ? parsed.verifiedBy : "",
+    };
+  } catch {
+    return { preppedBy: "", verifiedBy: "" };
+  }
 }
 
 function checklistForCurrentRules(
@@ -487,10 +505,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       >("kitchen_event_snapshots", snapshotParams),
       this.jsonRequest<ManualRow[]>(
         "kitchen_manual_assignments",
-        new URLSearchParams({
-          select:
-            "event_id,bwa,food_runners,pocs,prepped_by,verified_by",
-        }),
+        new URLSearchParams({ select: "event_id,bwa,food_runners,pocs" }),
       ),
       this.jsonRequest<SyncRow[]>("kitchen_sync_runs", syncParams),
     ]);
@@ -524,7 +539,11 @@ export class SupabaseKitchenStorage implements KitchenStorage {
 
     const manualByEvent = new Map(
       manualRows.map((row) => {
-        const legacy = row.bwa?.trim();
+        const storedBwa = row.bwa?.trim() ?? "";
+        const legacy = storedBwa.startsWith(KITCHEN_ROLE_METADATA_PREFIX)
+          ? ""
+          : storedBwa;
+        const roleMetadata = manualRoleMetadata(storedBwa);
         return [
           row.event_id,
           {
@@ -534,8 +553,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
                 ? [legacy]
                 : [],
             pocs: row.pocs ?? [],
-            preppedBy: row.prepped_by ?? "",
-            verifiedBy: row.verified_by ?? "",
+            ...roleMetadata,
           },
         ] as const;
       }),
@@ -738,11 +756,12 @@ export class SupabaseKitchenStorage implements KitchenStorage {
         },
         body: JSON.stringify({
           event_id: eventId,
-          bwa: "",
+          bwa: `${KITCHEN_ROLE_METADATA_PREFIX}${JSON.stringify({
+            preppedBy,
+            verifiedBy,
+          })}`,
           food_runners: foodRunners,
           pocs,
-          prepped_by: preppedBy,
-          verified_by: verifiedBy,
           updated_at: new Date().toISOString(),
         }),
       },
