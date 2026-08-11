@@ -51,4 +51,20 @@ describe("VIP Prep API client", () => {
       rooms: [{ id: "VIPL", name: "VIP 2" }],
     });
   });
+
+  it("keeps paid VIP reservations visible when they have no advance food", () => {
+    const kitchen = vipPrepKitchenEvents([
+      {
+        ...vipPrepPayload.reservations[0],
+        id: "reservation-without-food",
+        foodPrep: [],
+      },
+    ]);
+
+    expect(kitchen).toHaveLength(1);
+    expect(kitchen[0]).toMatchObject({
+      eventId: "vip-reservation-without-food",
+      selections: [],
+    });
+  });
 });

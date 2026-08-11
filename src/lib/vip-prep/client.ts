@@ -209,7 +209,7 @@ export function vipPrepExternalId(reservation: Pick<VipPrepReservation, "id">) {
 export function vipPrepKitchenEvents(
   reservations: readonly VipPrepReservation[],
 ): KitchenSourceEvent[] {
-  return reservations.filter((reservation) => reservation.foodPrep.length > 0).map((reservation) => ({
+  return reservations.map((reservation) => ({
     eventId: vipPrepExternalId(reservation),
     bookingId: reservation.confirmationCode,
     eventName: reservation.eventName,
