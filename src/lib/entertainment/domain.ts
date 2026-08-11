@@ -434,6 +434,13 @@ export function buildEntertainmentSchedule({
         quantityForText(text, category, item.quantity) ??
         exactFromSource.length;
 
+      if (quantity < 1) {
+        itemIssues.push({
+          code: "SOURCE_DETAILS_UNAVAILABLE",
+          message: `${item.name} does not state a reserved lane or table count in the contract wording; the Qty column was intentionally ignored.`,
+        });
+      }
+
       const chosenIds = [...new Set(exactFromSource)];
       const desiredCount = Math.max(quantity, chosenIds.length);
       const needed = Math.max(0, desiredCount - chosenIds.length);

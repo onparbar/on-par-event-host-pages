@@ -163,9 +163,19 @@ describe("canonical entertainment resources", () => {
 
   it("uses an explicit resource count before billable unit-hours", () => {
     expect(quantityForText("2 bowling lanes", "bowling", 4)).toBe(2);
+    expect(quantityForText("3 lanes for 4 hours", "bowling", 12)).toBe(3);
+    expect(quantityForText("1 lane for 4 hours", "darts", 4)).toBe(1);
     expect(quantityForText("1 pool table for 2 hours", "pool", 2)).toBe(1);
     expect(quantityForText("1 shuffleboard table for 2 hours", "shuffleboard", 2)).toBe(1);
     expect(quantityForText("3 dart boards", "darts", null)).toBe(3);
+    expect(
+      quantityForText(
+        "1 Hour Bowling Lane Rental - Friday-Saturday",
+        "bowling",
+        1,
+      ),
+    ).toBe(1);
+    expect(quantityForText("Duckpin Bowling per hour", "bowling", 12)).toBeNull();
   });
 
   it("produces stable accessible fallback colors and contrast text", () => {
@@ -264,15 +274,35 @@ describe("deterministic schedule construction", () => {
     ).toEqual(new Set(["#297025"]));
   });
 
-  it("uses the contract duration from the event start when no clock range is listed", () => {
+  it("uses reserved-entertainment wording instead of billable quantities", () => {
     const result = buildEntertainmentSchedule({
       sourceEvents: [
         sourceEvent({
           items: [
             sourceItem({
+              sourceId: "bowling-line",
               name: "Duckpin Bowling",
               description: "3 lanes for 4 hours",
+              categoryName: "Bowling",
               quantity: 12,
+              startAt: null,
+              endAt: null,
+            }),
+            sourceItem({
+              sourceId: "darts-line",
+              name: "Darts per hour, per lane Sunday-Thursday",
+              description: "1 lane for 4 hours",
+              categoryName: "Darts",
+              quantity: 4,
+              startAt: null,
+              endAt: null,
+            }),
+            sourceItem({
+              sourceId: "pool-line",
+              name: "Pool Table Sunday-Thursday",
+              description: "1 table for 4 hours",
+              categoryName: "Pool",
+              quantity: 4,
               startAt: null,
               endAt: null,
             }),
@@ -283,11 +313,24 @@ describe("deterministic schedule construction", () => {
       now: NOW,
     });
 
-    expect(result.reservations).toHaveLength(3);
-    expect(result.reservations[0]).toMatchObject({
-      startAt: START,
-      endAt: "2026-07-29T01:00:00.000Z",
-    });
+    expect(result.reservations).toHaveLength(5);
+    expect(
+      result.reservations.filter((item) => item.resourceCategory === "bowling"),
+    ).toHaveLength(3);
+    expect(
+      result.reservations.filter((item) => item.resourceCategory === "darts"),
+    ).toHaveLength(1);
+    expect(
+      result.reservations.filter((item) => item.resourceCategory === "pool"),
+    ).toHaveLength(1);
+    expect(result.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startAt: START,
+          endAt: "2026-07-29T01:00:00.000Z",
+        }),
+      ]),
+    );
     expect(result.events[0].reviewIssues).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "TIME_NEEDS_REVIEW" }),

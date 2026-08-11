@@ -313,20 +313,13 @@ export function exactResourceIdsForText(
 export function quantityForText(
   value: string,
   category: EntertainmentCategory,
-  structuredQuantity: number | null,
+  _structuredQuantity: number | null,
 ) {
   if (category === "mini-golf") {
     return exactResourceIdsForText(value, category).length || 1;
   }
   if (category === "private-rooms") {
-    return (
-      exactResourceIdsForText(value, category).length ||
-      (structuredQuantity != null &&
-      Number.isInteger(structuredQuantity) &&
-      structuredQuantity > 0
-        ? structuredQuantity
-        : 1)
-    );
+    return exactResourceIdsForText(value, category).length || 1;
   }
   const exactResourceCount = exactResourceIdsForText(value, category).length;
   if (exactResourceCount > 0) {
@@ -337,7 +330,7 @@ export function quantityForText(
     string
   > = {
     bowling: "(?:duckpin\\s+)?(?:bowling\\s+)?lanes?",
-    darts: "dart\\s+(?:lanes?|boards?)",
+    darts: "(?:dart\\s+)?(?:lanes?|boards?)",
     pool: "(?:(?:pool|billiard)\\s+)?tables?",
     shuffleboard: "(?:(?:neo\\s*)?shuffle(?:board)?\\s+)?tables?",
   };
@@ -347,12 +340,17 @@ export function quantityForText(
   if (match) {
     return Number(match[1]);
   }
-  if (
-    structuredQuantity != null &&
-    Number.isInteger(structuredQuantity) &&
-    structuredQuantity > 0
-  ) {
-    return structuredQuantity;
+  const singularRentalPattern: Record<
+    Exclude<EntertainmentCategory, "private-rooms" | "mini-golf">,
+    RegExp
+  > = {
+    bowling: /\bbowling\s+lane\s+rental\b/i,
+    darts: /\bdart\s+(?:lane|board)\s+rental\b/i,
+    pool: /\b(?:pool|billiard)\s+table\s+rental\b/i,
+    shuffleboard: /\b(?:neo\s*)?shuffle(?:board)?\s+table\s+rental\b/i,
+  };
+  if (singularRentalPattern[category].test(value)) {
+    return 1;
   }
   return null;
 }

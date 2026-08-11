@@ -487,6 +487,10 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
       isLaneRentalDurationDetail(text, category)
     ) {
       previous.item.duration = duration;
+      if (previous.numericQuantity == null && quantity != null) {
+        previous.numericQuantity = quantity;
+        previous.item.quantity = quantityLabel(category, quantity, exactResourceIds);
+      }
       appendEvidence();
       continue;
     }
