@@ -257,7 +257,7 @@ export class GoTabClient {
     }
     const payload = {
       externalId: input.externalId,
-      openTab: true,
+      openTab: false,
       spotUuid: this.configuration.eventSpotUuid,
       phoneNumber: this.configuration.eventCustomerPhone,
       name: input.ticketName.slice(0, 80),
@@ -301,11 +301,18 @@ export class GoTabClient {
     const orders = Array.isArray(result?.orders) ? result.orders.map(record) : [];
     const firstOrder = orders.find(Boolean) ?? record(result?.order);
     const items = Array.isArray(firstOrder?.items) ? firstOrder.items.map(record) : [];
-    return {
+    const identifiers = {
       tabUuid: text(result?.tabUuid) ?? text(result?.tab_uuid),
       orderUuid: text(firstOrder?.orderUuid) ?? text(firstOrder?.order_uuid),
       itemUuid: text(items.find(Boolean)?.itemUuid) ?? text(items.find(Boolean)?.item_uuid),
     };
+    if (!identifiers.orderUuid || !identifiers.itemUuid) {
+      throw new GoTabApiError(
+        "response",
+        "GoTab accepted the Event Food request but did not create a KDS order.",
+      );
+    }
+    return identifiers;
   }
 
   async getAuthorizedLocations(): Promise<GoTabLocation[]> {

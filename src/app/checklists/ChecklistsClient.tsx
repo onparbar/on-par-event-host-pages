@@ -689,7 +689,7 @@ export default function ChecklistsClient({
                   <p>
                     {activeAddOnTab === "entertainment"
                       ? "Entertainment and drink changes stay out of Kitchen and are included in the final Admin record."
-                      : "Food changes save here and are sent to the Kitchen Dashboard live."}
+                      : "Food changes save here and are sent to the Kitchen Dashboard and GoTab KDS live."}
                   </p>
                 </div>
                 <strong>
@@ -764,10 +764,10 @@ export default function ChecklistsClient({
                       {activeKitchenSyncState === "syncing"
                         ? "Sending food changes to Kitchen…"
                         : activeKitchenSyncState === "live"
-                          ? "Food add-ons are live in Kitchen"
+                          ? "Food add-ons are live in Kitchen + KDS"
                           : activeKitchenSyncState === "error"
-                            ? "Kitchen live sync needs a retry"
-                            : "Food add-ons save live to Kitchen"}
+                            ? "Kitchen + KDS live sync needs a retry"
+                            : "Food add-ons save live to Kitchen + KDS"}
                     </strong>
                     <span>
                       The complete Food and Entertainment add-on record is still

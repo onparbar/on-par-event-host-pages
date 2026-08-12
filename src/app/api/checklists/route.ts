@@ -115,14 +115,25 @@ export async function PUT(request: Request) {
             kitchenEventId,
             body.checklist.food,
           );
+      const dispatchedToKds =
+        kitchenSync.queued > 0 &&
+        kitchenSync.exceptions === 0 &&
+        kitchenSync.sent === kitchenSync.queued;
       return NextResponse.json({
         record,
         kitchenSync: {
-          status: "live",
+          status: dispatchedToKds ? "live" : "error",
           updatedAt: kitchenSync.saved.updatedAt,
           queued: kitchenSync.queued,
           exceptions: kitchenSync.exceptions,
           sent: kitchenSync.sent,
+          error: dispatchedToKds
+            ? undefined
+            : kitchenSync.exceptions > 0
+              ? "This food item is not fully mapped to a verified GoTab Event Food product."
+              : kitchenSync.queued === 0
+                ? "No new food quantity change was available to send to the KDS."
+                : "GoTab did not confirm that the complete order reached the KDS.",
         },
       });
     } catch {

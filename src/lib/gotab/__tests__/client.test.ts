@@ -125,7 +125,7 @@ describe("GoTab server client", () => {
     expect(String(graphRequest?.body)).toContain("productsList(includeArchived: NO)");
   });
 
-  it("creates an open zero-dollar Event Food tab without payment fields", async () => {
+  it("creates a closed zero-dollar Event Food order that fires to KDS without payment fields", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.endsWith("/api/oauth/token")) {
         return json({ token: "server-token", expiresIn: 86400 });
@@ -154,11 +154,30 @@ describe("GoTab server client", () => {
     )?.[1];
     const body = JSON.parse(String(orderRequest?.body));
     expect(body).toMatchObject({
-      openTab: true,
+      openTab: false,
       spotUuid: "spot",
       phoneNumber: "+19377056024",
       items: [{ productUuid: "prd_salsa", quantity: 2 }],
     });
     expect(JSON.stringify(body).toLowerCase()).not.toContain("payment");
+  });
+
+  it("rejects a successful GoTab response that did not create a KDS order", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      return json({ tabUuid: "tab-without-order" });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await expect(client.createEventFoodTab({
+      externalId: "event:REFILL:salsa:2:DISPATCH",
+      ticketName: "[REFILL] Missing KDS Order",
+      productUuid: "prd_salsa",
+      quantity: 1,
+      itemName: "Salsa Refill",
+      itemNotes: {},
+    })).rejects.toThrow("did not create a KDS order");
   });
 });
