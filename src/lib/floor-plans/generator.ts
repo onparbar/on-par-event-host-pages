@@ -149,6 +149,9 @@ function eventBaseReservations(
     if (contracted?.type === "room") {
       generated.push(reservation(event, contracted.id, "room", contracted.shortLabel));
     }
+    if (event.tripleseatEventId.startsWith("vip-")) {
+      continue;
+    }
     for (const fixture of fixedSeatingHighlightsForArea(contractedArea)) {
       if (!unavailable.has(fixture.id)) {
         generated.push(
@@ -197,6 +200,12 @@ export function generateFloorPlanReservations(
   mode: FloorPlanGenerationMode,
 ) {
   const preserved = plan.reservations.filter((item) => {
+    const event = plan.events.find(
+      (candidate) => candidate.id === item.floorPlanEventId,
+    );
+    if (event && !reservationAllowedForFloorPlanEvent(event, item)) {
+      return false;
+    }
     if (mode === "fill-missing") return true;
     if (mode === "replace-generated") return item.source === "manual" || item.lockedByUser;
     return false;
@@ -217,4 +226,15 @@ export function generateFloorPlanReservations(
     }
   }
   return next;
+}
+
+export function reservationAllowedForFloorPlanEvent(
+  event: FloorPlanEvent,
+  reservation: FloorPlanReservation,
+) {
+  if (!event.tripleseatEventId.startsWith("vip-")) return true;
+  return (
+    reservation.reservationType === "room" &&
+    event.contractedAreaIds.includes(reservation.areaId)
+  );
 }

@@ -263,6 +263,53 @@ describe("floor-plan capacities and generation", () => {
     ]);
   });
 
+  it("removes surrounding VIP 1 tables and custom highlights from paid VIP bookings", () => {
+    const vipEvent = floorPlanEvent({
+      tripleseatEventId: "vip-reservation-uuid",
+      contractedAreaIds: ["vip-1"],
+      guestCount: 16,
+      source: {
+        rooms: ["VIP 1"],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    });
+    const document = plan([vipEvent]);
+    document.reservations = [
+      {
+        id: "legacy-vip-table",
+        floorPlanEventId: vipEvent.id,
+        areaId: "vip1-extra-front-1",
+        reservationType: "seating",
+        startAt: vipEvent.startAt,
+        endAt: vipEvent.endAt,
+        label: "VIP table",
+        source: "manual",
+        lockedByUser: true,
+      },
+      {
+        id: "legacy-vip-custom",
+        floorPlanEventId: vipEvent.id,
+        areaId: "vip-1",
+        reservationType: "custom",
+        startAt: vipEvent.startAt,
+        endAt: vipEvent.endAt,
+        label: "Surrounding tables",
+        source: "manual",
+        lockedByUser: true,
+        customGeometry: { x: 1000, y: 390, width: 200, height: 120 },
+      },
+    ];
+
+    const generated = generateFloorPlanReservations(document, "fill-missing");
+
+    expect(generated).toEqual([
+      expect.objectContaining({ areaId: "vip-1", reservationType: "room" }),
+    ]);
+  });
+
   it("assigns exactly one designated ADA food table per event", () => {
     const generated = generateFloorPlanReservations(plan(), "fill-missing");
     const food = generated.filter((item) => item.reservationType === "food-table");
