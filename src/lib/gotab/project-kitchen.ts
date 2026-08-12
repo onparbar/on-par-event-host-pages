@@ -1,4 +1,5 @@
 import { zonedDateTimeToIso } from "@/lib/entertainment/time";
+import { resolveKitchenLiveFoodAddOns } from "@/lib/kitchen/addons";
 import type { KitchenChecklist } from "@/lib/kitchen/types";
 import {
   normalizeEventFoodItem,
@@ -30,9 +31,11 @@ type ProjectableKitchenRow = {
   foodName: string;
   description: string;
   quantity: number | null;
+  orderQuantity?: number | null;
   unit: string;
   numberOfPans: number | null;
   panSize: "1/3" | "1/2" | null;
+  selectedPanSize?: "1/3" | "1/2" | null;
 };
 
 function mappingKey(row: ProjectableKitchenRow) {
@@ -59,6 +62,12 @@ export function projectKitchenChecklist(
   },
 ): EventFoodProjection {
   const eventId = String(checklist.event.eventId);
+  const liveAddOnOrderQuantities = new Map(
+    resolveKitchenLiveFoodAddOns(checklist.liveFoodAddOns).map((effect) => [
+      effect.item.itemKey,
+      effect.sourceQuantity,
+    ]),
+  );
   const rows: ProjectableKitchenRow[] = [
     ...checklist.sections.flatMap((section) => section.rows),
     ...checklist.liveFoodAddOns.map((item) => ({
@@ -66,9 +75,11 @@ export function projectKitchenChecklist(
       foodName: item.foodName,
       description: item.description,
       quantity: item.quantity,
+      orderQuantity: liveAddOnOrderQuantities.get(item.itemKey) ?? null,
       unit: item.unit,
       numberOfPans: item.numberOfPans,
       panSize: item.panSize,
+      selectedPanSize: item.selectedPanSize ?? null,
     })),
   ];
   const mappingByKey = new Map(mappings.map((mapping) => [

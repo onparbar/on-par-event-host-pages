@@ -53,6 +53,7 @@ export async function synchronizeKitchenChecklistToEventFood(
   const projection = projectKitchenChecklist(checklist, mappings, {
     sourceType,
     sourceVersion: options.sourceVersion,
+    requesterName: checklist.pocs?.find((name) => name.trim()) ?? null,
     defaultPrepLeadMinutes: configuration.defaultPrepLeadMinutes ?? 60,
   });
   await storage.saveProjectionExceptions({

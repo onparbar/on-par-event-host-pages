@@ -75,4 +75,65 @@ describe("Tripleseat kitchen projection", () => {
       gotabProductUuid: "prd_mozzarella",
     }));
   });
+
+  it.each([
+    {
+      label: "one platter in 1/3 pans",
+      food: { "tater-kegs": { quantity: 1 } },
+      expectedSourceQuantity: 1,
+      expectedKitchenQuantity: 64,
+      expectedPanCount: 3,
+      expectedPanSize: "1/3" as const,
+      expectedSelectedPanSize: null,
+      mappedPanSize: "THIRD_PAN" as const,
+    },
+    {
+      label: "two platters in 1/2 pans",
+      food: { "tater-kegs": { quantity: 2, panSize: "1/2" as const } },
+      expectedSourceQuantity: 2,
+      expectedKitchenQuantity: 128,
+      expectedPanCount: 4,
+      expectedPanSize: "1/2" as const,
+      expectedSelectedPanSize: "1/2" as const,
+      mappedPanSize: "HALF_PAN" as const,
+    },
+  ])("keeps $label as platter quantity on the KDS", ({
+    food,
+    expectedSourceQuantity,
+    expectedKitchenQuantity,
+    expectedPanCount,
+    expectedPanSize,
+    expectedSelectedPanSize,
+    mappedPanSize,
+  }) => {
+    const liveFoodAddOns = translateEventHostFoodAddOns(
+      food,
+      "2026-08-15T16:00:00.000Z",
+    );
+    const checklist = generateKitchenChecklist(sourceEvent, undefined, liveFoodAddOns);
+    const row = checklist.liveFoodAddOns
+      .find((item) => item.itemKey === "addon:tater-kegs")!;
+    const result = projectKitchenChecklist(checklist, [{
+      id: "mapping-tater-kegs",
+      canonicalProductKey: "addon:tater-kegs",
+      displayName: "Tater Kegs",
+      aliases: [],
+      panSize: mappedPanSize,
+      preparationStation: "FRYER",
+      gotabProductUuid: "prd_tater_kegs",
+      verifiedAt: "2026-08-11T12:00:00.000Z",
+    }], { sourceVersion: 3, sourceType: "EVENT_HOST_ADDON" });
+
+    expect(row).toMatchObject({
+      quantity: expectedKitchenQuantity,
+      numberOfPans: expectedPanCount,
+      panSize: expectedPanSize,
+    });
+    expect(row.selectedPanSize ?? null).toBe(expectedSelectedPanSize);
+    expect(result.requests).toContainEqual(expect.objectContaining({
+      sourceRecordId: "addon:tater-kegs",
+      quantity: expectedSourceQuantity,
+      selectedPanSize: expectedSelectedPanSize,
+    }));
+  });
 });

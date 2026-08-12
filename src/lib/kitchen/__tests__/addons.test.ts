@@ -277,8 +277,24 @@ describe("translateEventHostFoodAddOns", () => {
         itemKey: "addon:mozzarella-sticks",
         numberOfPans: 2,
         panSize: "1/2",
+        selectedPanSize: "1/2",
       },
     ]);
+  });
+
+  it("keeps an automatic pan size distinct from a staff-selected one", () => {
+    const [addOn] = translateEventHostFoodAddOns(
+      { "tater-kegs": { quantity: 1 } },
+      "2026-08-11T20:00:00.000Z",
+    );
+    expect(addOn).toMatchObject(
+      {
+        itemKey: "addon:tater-kegs",
+        numberOfPans: 3,
+        panSize: "1/3",
+      },
+    );
+    expect(addOn).not.toHaveProperty("selectedPanSize");
   });
 
   it("accepts positive whole number values and ignores invalid or unknown entries", () => {

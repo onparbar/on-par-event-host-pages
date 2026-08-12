@@ -54,6 +54,15 @@ export type GoTabEventFoodTabResult = {
   itemUuid: string | null;
 };
 
+type GoTabEmployee = {
+  employeeId: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  acl: string | null;
+  hasPin: boolean;
+};
+
 export type GoTabCapabilityCheck = {
   connected: boolean;
   configuredLocationUuid: string;
@@ -105,7 +114,10 @@ function identifier(value: unknown) {
   return text(value) ?? (number(value) != null ? String(value) : null);
 }
 
-function eventKdsItemName(itemName: string) {
+export function eventKdsItemName(
+  itemName: string,
+  selectedPanSize: "1/3" | "1/2" | null = null,
+) {
   const normalized = itemName.trim();
   const aliases: Record<string, string> = {
     "Assorted Desserts": "Desserts",
@@ -115,7 +127,54 @@ function eventKdsItemName(itemName: string) {
     "Lettuce Wrap Refill": "Wrap Refill",
     "Mozzarella Sticks": "Mozz Sticks",
   };
-  return `EVENT-${aliases[normalized] ?? normalized}`.slice(0, 20);
+  const panAliases: Record<string, string> = {
+    "Assorted Desserts": "Dsert",
+    "BBQ Sauce": "BBQ",
+    "Black Beans": "Beans",
+    "Black Beans Refill": "Beans",
+    "Buffalo Sauce": "Buff",
+    "Chicken": "Chix",
+    "Chicken Tenders": "Tend",
+    "Dessert Platter": "Dsert",
+    "Diced Onion": "Onion",
+    "Fry Platter": "Fries",
+    "Garlic Parm": "GParm",
+    "Garlic Parmesan": "GParm",
+    "Lettuce": "Lett",
+    "Lettuce Wrap Refill": "Wraps",
+    "Lettuce Wraps": "Wraps",
+    "Marinara": "Marin",
+    "Mozzarella Stick Platter": "Mozz",
+    "Mozzarella Sticks": "Mozz",
+    "Shredded Cheese": "Chees",
+    "Sour Cream": "Sour",
+    "Tater Keg Platter": "Tater",
+    "Tater Kegs": "Tater",
+    "Tomatoes": "Tom",
+    "Tortillas": "Tort",
+    "Veggie Tray": "Veg",
+    "Wing Platter": "Wings",
+    "Wings": "Wings",
+  };
+  const panSuffix = selectedPanSize ? ` ${selectedPanSize} PANS` : "";
+  const maximumItemNameLength = 20 - "EVENT-".length - panSuffix.length;
+  const productName = (
+    selectedPanSize
+      ? panAliases[normalized] ?? aliases[normalized] ?? normalized
+      : aliases[normalized] ?? normalized
+  )
+    .slice(0, maximumItemNameLength)
+    .trimEnd();
+  return `EVENT-${productName}${panSuffix}`;
+}
+
+function normalizedPersonName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+}
+
+function uniqueEmployeeId(employees: readonly GoTabEmployee[]) {
+  const employeeIds = [...new Set(employees.map((employee) => employee.employeeId))];
+  return employeeIds.length === 1 ? employeeIds[0] : null;
 }
 
 function temporaryStatus(status: number) {
@@ -160,6 +219,7 @@ function goTabErrorDetail(value: unknown) {
 
 export class GoTabClient {
   private token: { value: string; expiresAt: number } | null = null;
+  private eventFoodEmployees: Promise<GoTabEmployee[]> | null = null;
 
   constructor(
     private readonly configuration: GoTabConfiguration = requireGoTabConfiguration(),
@@ -282,6 +342,79 @@ export class GoTabClient {
     throw new GoTabApiError("temporary", "GoTab is temporarily unavailable.");
   }
 
+  private async loadEventFoodEmployees() {
+    const location = await this.verifyConfiguredLocation();
+    const locationIdentifier = location.urlName ?? location.locationUuid;
+    const response = await this.authorizedRequest(
+      `/api/loc/${encodeURIComponent(locationIdentifier)}/users`,
+    );
+    const payload = await response.json().catch(() => null);
+    const payloadRecord = record(payload);
+    const values = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payloadRecord?.data)
+        ? payloadRecord.data
+        : [];
+    return values.flatMap((item) => {
+      const value = record(item);
+      const metadata = record(value?.metadata);
+      const employeeId = identifier(value?.customerId);
+      const displayName = text(value?.displayName);
+      if (!employeeId || !displayName) return [];
+      return [{
+        employeeId,
+        displayName,
+        firstName: text(metadata?.firstName),
+        lastName: text(metadata?.lastName),
+        acl: text(value?.acl),
+        hasPin: value?.hasPin === true,
+      }];
+    });
+  }
+
+  private async resolveEventFoodEmployeeId(serverName: string) {
+    if (!this.eventFoodEmployees) {
+      this.eventFoodEmployees = this.loadEventFoodEmployees();
+    }
+    let employees: GoTabEmployee[];
+    try {
+      employees = await this.eventFoodEmployees;
+    } catch (error) {
+      this.eventFoodEmployees = null;
+      throw error;
+    }
+    const requestedName = normalizedPersonName(serverName);
+    const displayMatches = employees.filter(
+      (employee) => normalizedPersonName(employee.displayName) === requestedName,
+    );
+    const displayEmployeeId = uniqueEmployeeId(displayMatches);
+    if (displayEmployeeId) return displayEmployeeId;
+
+    const fullNameMatches = employees.filter((employee) =>
+      normalizedPersonName(
+        [employee.firstName, employee.lastName].filter(Boolean).join(" "),
+      ) === requestedName,
+    );
+    const fullNameEmployeeId = uniqueEmployeeId(fullNameMatches);
+    if (fullNameEmployeeId) return fullNameEmployeeId;
+
+    const firstNameMatches = employees.filter(
+      (employee) =>
+        employee.firstName != null &&
+        normalizedPersonName(employee.firstName) === requestedName,
+    );
+    const firstNameEmployeeId = uniqueEmployeeId(firstNameMatches);
+    if (firstNameEmployeeId) return firstNameEmployeeId;
+
+    return uniqueEmployeeId(
+      firstNameMatches.filter(
+        (employee) =>
+          employee.hasPin &&
+          employee.acl?.split("|").includes("server"),
+      ),
+    );
+  }
+
   async createEventFoodTab(input: {
     externalId: string;
     ticketName: string;
@@ -289,6 +422,8 @@ export class GoTabClient {
     quantity: number;
     itemName: string;
     itemNotes: Record<string, unknown>;
+    serverName?: string | null;
+    selectedPanSize?: "1/3" | "1/2" | null;
   }): Promise<GoTabEventFoodTabResult> {
     if (
       !input.externalId.trim() ||
@@ -301,17 +436,21 @@ export class GoTabClient {
     if (!Number.isSafeInteger(input.quantity) || input.quantity < 1) {
       throw new GoTabApiError("response", "The Event Food quantity is invalid.");
     }
+    const employeeId = input.serverName?.trim()
+      ? await this.resolveEventFoodEmployeeId(input.serverName).catch(() => null)
+      : null;
     const payload = {
       externalId: input.externalId,
       openTab: true,
       spotUuid: this.configuration.eventSpotUuid,
       phoneNumber: this.configuration.eventCustomerPhone,
       name: input.ticketName.slice(0, 80),
+      ...(employeeId ? { employeeId } : {}),
       items: [{
         externalId: input.externalId,
         quantity: input.quantity,
         product: { productUuid: input.productUuid },
-        name: eventKdsItemName(input.itemName),
+        name: eventKdsItemName(input.itemName, input.selectedPanSize ?? null),
         modifiers: [],
       }],
     };

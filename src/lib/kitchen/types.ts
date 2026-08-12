@@ -114,6 +114,7 @@ export type KitchenLiveFoodAddOn = {
   unit: string;
   numberOfPans: number | null;
   panSize: PanSize | null;
+  selectedPanSize?: PanSize | null;
   sourceUpdatedAt: string | null;
 };
 

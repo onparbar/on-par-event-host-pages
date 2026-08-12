@@ -35,6 +35,7 @@ export async function processGoTabDispatches(options?: {
     failed: 0,
     lastError: null,
   };
+  let liveClient = options?.client ?? null;
 
   for (const dispatch of dispatches) {
     if (!configuration.configured || !configuration.enabled || configuration.dryRun) {
@@ -60,20 +61,26 @@ export async function processGoTabDispatches(options?: {
     const productUuid = typeof payload?.gotabProductUuid === "string" ? payload.gotabProductUuid : "";
     const product = typeof payload?.product === "string" ? payload.product : "";
     const quantity = typeof payload?.quantity === "number" ? payload.quantity : 0;
+    const requesterName = typeof payload?.requesterName === "string" ? payload.requesterName : null;
+    const selectedPanSize = payload?.selectedPanSize === "1/3" || payload?.selectedPanSize === "1/2"
+      ? payload.selectedPanSize
+      : null;
     if (!ticketName || !productUuid || !product || !Number.isSafeInteger(quantity) || quantity < 1) {
       await storage.finishDispatch(dispatch.id, { status: "HELD", lastError: "The saved Event Food payload is incomplete." });
       summary.held += 1;
       continue;
     }
     try {
-      const client = options?.client ?? new GoTabClient(requireGoTabConfiguration(options?.env));
-      const result = await client.createEventFoodTab({
+      liveClient ??= new GoTabClient(requireGoTabConfiguration(options?.env));
+      const result = await liveClient.createEventFoodTab({
         externalId: dispatch.idempotency_key,
         ticketName,
         productUuid,
         quantity,
         itemName: product,
         itemNotes: payload,
+        serverName: requesterName,
+        selectedPanSize,
       });
       await storage.finishDispatch(dispatch.id, {
         status: "SENT",

@@ -64,6 +64,7 @@ describe("Event Food synchronization", () => {
   });
 
   it("enqueues a verified mapped product with a sanitized dry-run preview", async () => {
+    const assignedChecklist = { ...checklist, pocs: ["Ryan", "Diana"] };
     const storage = {
       listMappings: vi.fn().mockResolvedValue([{
         id: "mapping-1",
@@ -83,15 +84,22 @@ describe("Event Food synchronization", () => {
       saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
       enqueueRequest: vi.fn().mockResolvedValue({ request_id: "r1", dispatch_id: "d1", duplicate: false }),
     };
-    const result = await synchronize(checklist, {
+    const result = await synchronize(assignedChecklist, {
       sourceVersion: 1,
       storage: storage as never,
       env,
     });
     expect(result.requestCount).toBe(1);
     expect(storage.enqueueRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ eventName: "OPE KDS Integration Test", panSize: "TRAY" }),
-      expect.objectContaining({ warnings: expect.arrayContaining(["GoTab dispatch is disabled."]) }),
+      expect.objectContaining({
+        eventName: "OPE KDS Integration Test",
+        panSize: "TRAY",
+        requesterName: "Ryan",
+      }),
+      expect.objectContaining({
+        requesterName: "Ryan",
+        warnings: expect.arrayContaining(["GoTab dispatch is disabled."]),
+      }),
       "SYSTEM",
     );
   });

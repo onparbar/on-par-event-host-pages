@@ -3,9 +3,10 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 let GoTabClient: typeof import("../client").GoTabClient;
+let eventKdsItemName: typeof import("../client").eventKdsItemName;
 
 beforeAll(async () => {
-  ({ GoTabClient } = await import("../client"));
+  ({ GoTabClient, eventKdsItemName } = await import("../client"));
 });
 
 const configuration = {
@@ -237,6 +238,202 @@ describe("GoTab server client", () => {
     const body = JSON.parse(String(orderRequest?.body));
     expect(body.items[0].name).toBe("EVENT-Mozz Sticks");
     expect(body.items[0].name.length).toBeLessThanOrEqual(20);
+  });
+
+  it.each([
+    { selectedPanSize: "1/3" as const, expectedName: "EVENT-Mozz 1/3 PANS" },
+    { selectedPanSize: "1/2" as const, expectedName: "EVENT-Mozz 1/2 PANS" },
+  ])("shows an explicitly selected $selectedPanSize pan on the KDS item", async ({
+    selectedPanSize,
+    expectedName,
+  }) => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      return json({
+        data: {
+          tabUuid: `tab-${selectedPanSize}`,
+          status: "OPEN",
+          orders: [{ orderId: "138103010" }],
+        },
+      });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await client.createEventFoodTab({
+      externalId: `event:ADDON:mozzarella:${selectedPanSize}:DISPATCH`,
+      ticketName: "[FOOD ADD-ON] Event",
+      productUuid: "prd_mozzarella",
+      quantity: 1,
+      itemName: "Mozzarella Sticks",
+      itemNotes: {},
+      selectedPanSize,
+    });
+
+    const orderRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
+      ([url]) => url.includes("gotab.io/api/loc/"),
+    )?.[1];
+    const body = JSON.parse(String(orderRequest?.body));
+    expect(body.items[0].name).toBe(expectedName);
+    expect(body.items[0].name.length).toBeLessThanOrEqual(20);
+  });
+
+  it("formats every add-on as an EVENT item within GoTab's KDS limit", () => {
+    const foodNames = [
+      "Wings",
+      "Mozzarella Sticks",
+      "Tater Kegs",
+      "Fries",
+      "Chicken Tenders",
+      "Veggie Tray",
+      "BBQ Sauce",
+      "Garlic Parm",
+      "Buffalo Sauce",
+      "Ranch",
+      "Dessert Platter",
+      "Beef",
+      "Chicken",
+      "Black Beans",
+      "Tortillas",
+      "Lettuce Wraps",
+      "Tomatoes",
+      "Lettuce",
+      "Sour Cream",
+      "Diced Onion",
+      "Shredded Cheese",
+      "Salsa",
+      "Marinara",
+    ];
+
+    for (const foodName of foodNames) {
+      const automatic = eventKdsItemName(foodName);
+      expect(automatic).toMatch(/^EVENT-/);
+      expect(automatic).not.toContain("PANS");
+      expect(automatic.length).toBeLessThanOrEqual(20);
+      for (const panSize of ["1/3", "1/2"] as const) {
+        const explicit = eventKdsItemName(foodName, panSize);
+        expect(explicit).toMatch(/^EVENT-/);
+        expect(explicit).toMatch(new RegExp(` ${panSize.replace("/", "\\/")} PANS$`));
+        expect(explicit.length).toBeLessThanOrEqual(20);
+      }
+    }
+
+    expect(eventKdsItemName("Tater Keg Platter", "1/2"))
+      .toBe("EVENT-Tater 1/2 PANS");
+  });
+
+  it("assigns the unique matching GoTab employee to the KDS Server field", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      if (url.endsWith("/api/loc")) {
+        return json([{
+          locationUuid: "location-2",
+          locationId: "112479",
+          name: "On Par",
+          urlName: "on-par",
+        }]);
+      }
+      if (url.endsWith("/api/loc/on-par/users")) {
+        return json({
+          data: [{
+            displayName: "Ryan Smith",
+            userUuid: "user-ryan",
+            customerId: "8001",
+            acl: "labor:time-clock|server",
+            hasPin: true,
+            metadata: { firstName: "Ryan", lastName: "Smith" },
+          }],
+        });
+      }
+      return json({
+        data: {
+          tabUuid: "tab-server",
+          status: "OPEN",
+          orders: [{ orderId: "138103001" }],
+        },
+      });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await client.createEventFoodTab({
+      externalId: "event:ADDON:tater-kegs:1:DISPATCH",
+      ticketName: "[FOOD ADD-ON] Event",
+      productUuid: "prd_tater_kegs",
+      quantity: 1,
+      itemName: "Tater Kegs",
+      itemNotes: {},
+      serverName: "Ryan",
+    });
+
+    const orderRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
+      ([url]) => url.includes("/api/loc/location-2/tabs"),
+    )?.[1];
+    expect(JSON.parse(String(orderRequest?.body))).toMatchObject({
+      employeeId: "8001",
+      items: [{ quantity: 1 }],
+    });
+  });
+
+  it("does not guess the KDS Server when a POC name is ambiguous", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      if (url.endsWith("/api/loc")) {
+        return json([{
+          locationUuid: "location-2",
+          locationId: "112479",
+          name: "On Par",
+          urlName: "on-par",
+        }]);
+      }
+      if (url.endsWith("/api/loc/on-par/users")) {
+        return json({
+          data: [
+            {
+              displayName: "Julio One",
+              customerId: "8002",
+              acl: "server",
+              hasPin: true,
+              metadata: { firstName: "Julio", lastName: "One" },
+            },
+            {
+              displayName: "Julio Two",
+              customerId: "8003",
+              acl: "server",
+              hasPin: true,
+              metadata: { firstName: "Julio", lastName: "Two" },
+            },
+          ],
+        });
+      }
+      return json({
+        data: {
+          tabUuid: "tab-no-server",
+          status: "OPEN",
+          orders: [{ orderId: "138103002" }],
+        },
+      });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await client.createEventFoodTab({
+      externalId: "event:ADDON:tater-kegs:2:DISPATCH",
+      ticketName: "[FOOD ADD-ON] Event",
+      productUuid: "prd_tater_kegs",
+      quantity: 1,
+      itemName: "Tater Kegs",
+      itemNotes: {},
+      serverName: "Julio",
+    });
+
+    const orderRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
+      ([url]) => url.includes("/api/loc/location-2/tabs"),
+    )?.[1];
+    expect(JSON.parse(String(orderRequest?.body))).not.toHaveProperty("employeeId");
   });
 
   it("accepts a closed-order response when GoTab omits the immediate item UUID", async () => {

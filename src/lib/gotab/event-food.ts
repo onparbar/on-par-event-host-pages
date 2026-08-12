@@ -59,9 +59,11 @@ export type EventFoodSourceItem = {
   foodName: string;
   description: string;
   quantity: number | null;
+  orderQuantity?: number | null;
   unit: string;
   numberOfPans: number | null;
   panSize: "1/3" | "1/2" | null;
+  selectedPanSize?: "1/3" | "1/2" | null;
 };
 
 export type EventFoodContext = {
@@ -96,6 +98,7 @@ export type NormalizedEventFoodItem = {
   originalSourceName: string;
   displayName: string;
   panSize: EventFoodPanSize;
+  selectedPanSize: "1/3" | "1/2" | null;
   quantity: number;
   preparationStation: EventFoodStation;
   eventArea: string | null;
@@ -157,6 +160,9 @@ export function normalizeEventFoodItem(
   if (source.numberOfPans != null && (!Number.isSafeInteger(source.numberOfPans) || source.numberOfPans <= 0)) {
     throw new Error(`${source.foodName} requires a positive whole pan count.`);
   }
+  if (source.orderQuantity != null && (!Number.isSafeInteger(source.orderQuantity) || source.orderQuantity <= 0)) {
+    throw new Error(`${source.foodName} requires a positive whole order quantity.`);
+  }
   const sourcePanSize = normalizedPanSize(source);
   if (mapping && mapping.panSize !== sourcePanSize) {
     throw new Error(`${source.foodName} does not match the mapped pan-size behavior.`);
@@ -181,7 +187,8 @@ export function normalizeEventFoodItem(
     originalSourceName: context.originalSourceName,
     displayName: mapping?.displayName ?? source.foodName,
     panSize: sourcePanSize,
-    quantity: source.numberOfPans ?? source.quantity,
+    selectedPanSize: source.selectedPanSize ?? null,
+    quantity: source.orderQuantity ?? source.numberOfPans ?? source.quantity,
     preparationStation: mapping?.preparationStation ?? "EXPO",
     eventArea: context.eventArea,
     foodServiceAt: isoTimestamp(context.foodServiceAt, "Food service time"),
@@ -205,6 +212,7 @@ export type GoTabKdsPreview = {
   requestType: EventFoodSourceType;
   product: string;
   panSize: EventFoodPanSize;
+  selectedPanSize: "1/3" | "1/2" | null;
   quantity: number;
   preparationStation: EventFoodStation;
   foodServiceAt: string;
@@ -266,6 +274,7 @@ export function buildGoTabKdsPreview(
     requestType: request.sourceType,
     product: request.displayName,
     panSize: request.panSize,
+    selectedPanSize: request.selectedPanSize,
     quantity: request.quantity,
     preparationStation: request.preparationStation,
     foodServiceAt: request.foodServiceAt,

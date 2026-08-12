@@ -61,6 +61,11 @@ describe("GoTab dispatch worker", () => {
   });
 
   it("sends a documented payment-free catalog order only when live dispatch is enabled", async () => {
+    const createEventFoodTab = vi.fn().mockResolvedValue({
+      tabUuid: "tab-1",
+      orderUuid: "order-1",
+      itemUuid: "item-1",
+    });
     const storage = {
       claimDueDispatches: vi.fn().mockResolvedValue([{
         id: "dispatch-2",
@@ -74,6 +79,8 @@ describe("GoTab dispatch worker", () => {
           product: "Wings",
           gotabProductUuid: "prd_wings",
           quantity: 2,
+          requesterName: "Ryan",
+          selectedPanSize: "1/2",
         },
       }]),
       finishDispatch: vi.fn().mockResolvedValue(undefined),
@@ -87,11 +94,7 @@ describe("GoTab dispatch worker", () => {
         EVENT_KDS_DRY_RUN: "false",
       }),
       client: {
-        createEventFoodTab: vi.fn().mockResolvedValue({
-          tabUuid: "tab-1",
-          orderUuid: "order-1",
-          itemUuid: "item-1",
-        }),
+        createEventFoodTab,
       },
     });
 
@@ -103,5 +106,10 @@ describe("GoTab dispatch worker", () => {
         orderUuid: "order-1",
       }),
     );
+    expect(createEventFoodTab).toHaveBeenCalledWith(expect.objectContaining({
+      quantity: 2,
+      serverName: "Ryan",
+      selectedPanSize: "1/2",
+    }));
   });
 });

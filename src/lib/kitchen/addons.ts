@@ -299,6 +299,7 @@ export type KitchenAddOnItem = {
   unit: AddOnUnit;
   numberOfPans: number | null;
   panSize: "1/3" | "1/2" | null;
+  selectedPanSize?: "1/3" | "1/2" | null;
   sourceUpdatedAt: string | null;
 };
 
@@ -412,6 +413,7 @@ export function translateEventHostFoodAddOns(
         unit: rule.unit,
         numberOfPans: selectedPanCount,
         panSize: selectedPanSize ?? (panCapacity === undefined ? null : "1/3"),
+        ...(selectedPanSize ? { selectedPanSize } : {}),
         sourceUpdatedAt,
       },
     ];

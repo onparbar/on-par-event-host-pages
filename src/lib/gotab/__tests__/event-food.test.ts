@@ -108,9 +108,15 @@ describe("normalized Event Food", () => {
       unit: "pounds",
       numberOfPans: 2,
       panSize: "1/2",
+      selectedPanSize: "1/2",
     }, context, mapping);
-    expect(buildGoTabKdsPreview(request, context.eventName, { enabled: false, dryRun: true }).warnings)
-      .toEqual(expect.arrayContaining([
+    const preview = buildGoTabKdsPreview(
+      request,
+      context.eventName,
+      { enabled: false, dryRun: true },
+    );
+    expect(preview.selectedPanSize).toBe("1/2");
+    expect(preview.warnings).toEqual(expect.arrayContaining([
         "GoTab dispatch is disabled.",
         "DRY-RUN MODE — no KDS ticket will be created.",
       ]));
