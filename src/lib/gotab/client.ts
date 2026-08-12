@@ -6,7 +6,7 @@ import {
 } from "./config";
 
 const GOTAB_ORIGIN = "https://gotab.io";
-const GOTAB_ORDERING_ORIGIN = "https://api.gotab.io";
+const GOTAB_ORDERING_ORIGIN = `${GOTAB_ORIGIN}/api`;
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_TEMPORARY_RETRIES = 2;
 const TOKEN_REFRESH_SKEW_MS = 60_000;
@@ -101,6 +101,10 @@ function number(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function identifier(value: unknown) {
+  return text(value) ?? (number(value) != null ? String(value) : null);
+}
+
 function temporaryStatus(status: number) {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
@@ -119,11 +123,24 @@ function pause(milliseconds: number) {
 
 function goTabErrorDetail(value: unknown) {
   const payload = record(value);
+  const errorValues = Array.isArray(value)
+    ? value
+    : Array.isArray(payload?.errors)
+      ? payload.errors
+      : [];
+  const errors = errorValues.flatMap((item) => {
+    const error = record(item);
+    return [text(error?.message), text(error?.detail), text(item)].filter(
+      (detail): detail is string => Boolean(detail),
+    );
+  });
   const details = [
     text(payload?.message),
     text(payload?.error),
     text(payload?.detail),
     text(record(payload?.error)?.message),
+    ...errors,
+    text(value),
   ].filter((item): item is string => Boolean(item));
   return details[0]?.replace(/[\r\n]+/g, " ").slice(0, 240) ?? null;
 }
@@ -268,19 +285,16 @@ export class GoTabClient {
     }
     const payload = {
       externalId: input.externalId,
-      openTab: false,
+      openTab: true,
       spotUuid: this.configuration.eventSpotUuid,
       phoneNumber: this.configuration.eventCustomerPhone,
       name: input.ticketName.slice(0, 80),
       items: [{
         externalId: input.externalId,
         quantity: input.quantity,
-        product: { productUuid: input.productUuid },
-        name: input.itemName.slice(0, 20),
+        productUuid: input.productUuid,
         modifiers: [],
-        notes: { event_host: input.itemNotes },
       }],
-      payments: [],
     };
     const token = await this.authenticateGoTab();
     let response: Response;
@@ -301,7 +315,18 @@ export class GoTabClient {
       throw new GoTabApiError("temporary", "GoTab ordering is temporarily unavailable.");
     }
     if (!response.ok) {
-      const detail = goTabErrorDetail(await response.json().catch(() => null));
+      const responseBody = await response.text().catch(() => "");
+      const detail = goTabErrorDetail(
+        responseBody
+          ? (() => {
+              try {
+                return JSON.parse(responseBody) as unknown;
+              } catch {
+                return responseBody;
+              }
+            })()
+          : null,
+      );
       throw new GoTabApiError(
         response.status === 401 ? "authentication" : temporaryStatus(response.status) ? "temporary" : "response",
         response.status === 401
@@ -333,13 +358,22 @@ export class GoTabClient {
         text(data?.tab_uuid) ??
         text(tab?.tabUuid) ??
         text(tab?.tab_uuid),
-      orderUuid: text(firstOrder?.orderUuid) ?? text(firstOrder?.order_uuid),
-      itemUuid: text(items.find(Boolean)?.itemUuid) ?? text(items.find(Boolean)?.item_uuid),
+      orderUuid:
+        text(firstOrder?.orderUuid) ??
+        text(firstOrder?.order_uuid) ??
+        identifier(firstOrder?.orderId) ??
+        identifier(firstOrder?.order_id),
+      itemUuid:
+        text(items.find(Boolean)?.itemUuid) ??
+        text(items.find(Boolean)?.item_uuid) ??
+        identifier(items.find(Boolean)?.itemId) ??
+        identifier(items.find(Boolean)?.item_id),
     };
-    if (!identifiers.orderUuid) {
+    const tabStatus = text(result?.status) ?? text(data?.status) ?? text(tab?.status);
+    if (!identifiers.orderUuid || tabStatus === "PENDING") {
       throw new GoTabApiError(
         "response",
-        "GoTab accepted the Event Food request but did not create a KDS order.",
+        "GoTab accepted the Event Food request but did not send it to the KDS.",
       );
     }
     return identifiers;

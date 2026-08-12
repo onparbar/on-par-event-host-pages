@@ -45,10 +45,10 @@ The implementation uses only documented public interfaces:
 - Authorized locations: `GET https://gotab.io/api/loc`; the configured UUID must match exactly and the first result is never selected implicitly.
 - Catalog reads: `POST https://gotab.io/api/graph`, using the documented location/menu/category/product query shapes.
 - Menu read: `GET https://gotab.io/api/loc/{locationUuid}/menus`.
-- Ordering: `POST https://api.gotab.io/loc/{locationUuid}/tabs` with `openTab=false`, the dedicated spot/customer, verified catalog products, and no payment object when the $0 balance is already zero.
+- Ordering: `POST https://gotab.io/api/loc/{locationUuid}/tabs` with `openTab=true`, the dedicated spot/customer, verified catalog products, and no payment object. This is the production API host and the tested combination that immediately places the $0 item onto KDS.
 - Webhooks: raw-body HMAC-SHA256 verification against `X-GoTab-Signature`.
 
-The integration uses a separate closed $0 tab for each dispatch batch because GoTab's guide states that the public API currently supports closed tabs while examples also discuss open tabs. Each request uses Event Host's stable idempotency key as its external reference. The system never invents a payment and cannot create an order while the kill switch is disabled or dry-run mode is enabled.
+The integration uses a separate open $0 tab for each dispatch batch. A live acceptance test confirmed that `openTab=true` immediately placed the item while `openTab=false` left it pending. Each request uses Event Host's stable idempotency key as its external reference. The system never invents a payment and cannot create an order while the kill switch is disabled or dry-run mode is enabled.
 
 ## Product mapping and provisioning
 

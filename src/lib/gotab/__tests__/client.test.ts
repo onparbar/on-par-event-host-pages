@@ -125,15 +125,21 @@ describe("GoTab server client", () => {
     expect(String(graphRequest?.body)).toContain("productsList(includeArchived: NO)");
   });
 
-  it("creates a closed zero-dollar Event Food order with an empty payment list", async () => {
+  it("creates an open zero-dollar Event Food order without payment data", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.endsWith("/api/oauth/token")) {
         return json({ token: "server-token", expiresIn: 86400 });
       }
-      if (url.includes("api.gotab.io/loc/")) {
+      if (url.includes("gotab.io/api/loc/")) {
         return json({
-          tabUuid: "tab-1",
-          orders: [{ orderUuid: "order-1", items: [{ itemUuid: "item-1" }] }],
+          data: {
+            tabId: "82202236",
+            tabUuid: "tab-1",
+            status: "OPEN",
+            orders: [{ orderId: "138102718" }],
+            items: [{ orderId: "138102718", name: "Salsa Refill" }],
+            payments: [],
+          },
         });
       }
       return json([]);
@@ -147,28 +153,46 @@ describe("GoTab server client", () => {
       quantity: 2,
       itemName: "Salsa Refill",
       itemNotes: { eventName: "OPE KDS Integration Test" },
-    })).resolves.toEqual({ tabUuid: "tab-1", orderUuid: "order-1", itemUuid: "item-1" });
+    })).resolves.toEqual({
+      tabUuid: "tab-1",
+      orderUuid: "138102718",
+      itemUuid: null,
+    });
 
     const orderRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
-      ([url]) => url.includes("api.gotab.io/loc/"),
+      ([url]) => url.includes("gotab.io/api/loc/"),
     )?.[1];
+    expect(fetchImpl.mock.calls.some(
+      ([url]) => String(url) === "https://gotab.io/api/loc/location-2/tabs",
+    )).toBe(true);
     const body = JSON.parse(String(orderRequest?.body));
     expect(body).toMatchObject({
-      openTab: false,
+      openTab: true,
       spotUuid: "spot",
       phoneNumber: "+19377056024",
-      items: [{ product: { productUuid: "prd_salsa" }, quantity: 2 }],
-      payments: [],
+      items: [{ productUuid: "prd_salsa", quantity: 2 }],
     });
-    expect(body.payments).toEqual([]);
+    expect(body.items[0]).toEqual({
+      externalId: "event:REFILL:salsa:1:DISPATCH",
+      productUuid: "prd_salsa",
+      quantity: 2,
+      modifiers: [],
+    });
+    expect(body).not.toHaveProperty("payments");
   });
 
-  it("rejects a successful GoTab response that did not create a KDS order", async () => {
+  it("rejects a successful GoTab response that stayed pending", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.endsWith("/api/oauth/token")) {
         return json({ token: "server-token", expiresIn: 86400 });
       }
-      return json({ tabUuid: "tab-without-order" });
+      return json({
+        data: {
+          tabUuid: "tab-pending",
+          status: "PENDING",
+          orders: [{ orderId: "138102999" }],
+        },
+      });
     });
     const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
 
@@ -179,7 +203,7 @@ describe("GoTab server client", () => {
       quantity: 1,
       itemName: "Salsa Refill",
       itemNotes: {},
-    })).rejects.toThrow("did not create a KDS order");
+    })).rejects.toThrow("did not send it to the KDS");
   });
 
   it("accepts a closed-order response when GoTab omits the immediate item UUID", async () => {
@@ -191,6 +215,7 @@ describe("GoTab server client", () => {
         data: {
           tab: {
             tabUuid: "closed-tab-1",
+            status: "OPEN",
             orders: [{ orderUuid: "placed-order-1" }],
           },
         },
@@ -230,6 +255,27 @@ describe("GoTab server client", () => {
       itemNotes: {},
     })).rejects.toThrow(
       "GoTab could not create the Event Food order (HTTP 422): Spot is not available for this order.",
+    );
+  });
+
+  it("preserves a plain-text validation message for a rejected order", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      return new Response("productUuid is required", { status: 400 });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await expect(client.createEventFoodTab({
+      externalId: "event:REFILL:wings:5:DISPATCH",
+      ticketName: "[REFILL] Wing Platter",
+      productUuid: "prd_wings",
+      quantity: 1,
+      itemName: "Wing Platter",
+      itemNotes: {},
+    })).rejects.toThrow(
+      "GoTab could not create the Event Food order (HTTP 400): productUuid is required",
     );
   });
 });
