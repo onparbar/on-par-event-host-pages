@@ -156,6 +156,8 @@ export default function ChecklistsClient({
     useState<Record<number, KitchenSyncState>>(
       () => buildInitialKitchenSyncMap(events),
     );
+  const [kitchenSyncErrorByEvent, setKitchenSyncErrorByEvent] =
+    useState<Record<number, string>>({});
   const [dirtyEventIds, setDirtyEventIds] = useState<number[]>([]);
   const [dirtyFoodEventIds, setDirtyFoodEventIds] = useState<number[]>([]);
   const [foodSubmitByItem, setFoodSubmitByItem] = useState<Record<string, FoodSubmitState>>({});
@@ -281,6 +283,10 @@ export default function ChecklistsClient({
           setKitchenSyncByEvent((current) => ({
             ...current,
             [eventId]: "syncing",
+          }));
+          setKitchenSyncErrorByEvent((current) => ({
+            ...current,
+            [eventId]: payload.kitchenSync?.error ?? "Kitchen and KDS sync failed.",
           }));
         }
         const response = await fetch("/api/checklists", {
@@ -775,7 +781,10 @@ export default function ChecklistsClient({
                     </span>
                   </div>
                   {activeKitchenSyncState === "error" ? (
-                    <span>Use Retry Submit beside the affected food item.</span>
+                    <span>
+                      {kitchenSyncErrorByEvent[activeEvent.id] ??
+                        "Use Retry Submit beside the affected food item."}
+                    </span>
                   ) : null}
                 </div>
               ) : (
@@ -1103,7 +1112,7 @@ export default function ChecklistsClient({
       });
       const payload = (await response.json()) as ChecklistSaveResponse;
       if (!response.ok || payload.kitchenSync?.status !== "live") {
-        throw new Error("Kitchen submission failed.");
+        throw new Error(payload.kitchenSync?.error ?? "Kitchen submission failed.");
       }
       const event = events.find((candidate) => candidate.id === eventId);
       if (event) {
@@ -1114,9 +1123,13 @@ export default function ChecklistsClient({
       }
       setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "sent" }));
       setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "live" }));
-    } catch {
+    } catch (error) {
       setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "error" }));
       setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "error" }));
+      setKitchenSyncErrorByEvent((current) => ({
+        ...current,
+        [eventId]: error instanceof Error ? error.message : "Kitchen and KDS sync failed.",
+      }));
     }
   }
 

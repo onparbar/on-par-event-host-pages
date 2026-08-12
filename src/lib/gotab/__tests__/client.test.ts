@@ -211,4 +211,25 @@ describe("GoTab server client", () => {
       itemUuid: null,
     });
   });
+
+  it("preserves GoTab's safe validation message for a rejected order", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      return json({ message: "Spot is not available for this order." }, 422);
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await expect(client.createEventFoodTab({
+      externalId: "event:REFILL:wings:4:DISPATCH",
+      ticketName: "[REFILL] Wing Platter",
+      productUuid: "prd_wings",
+      quantity: 1,
+      itemName: "Wing Platter",
+      itemNotes: {},
+    })).rejects.toThrow(
+      "GoTab could not create the Event Food order (HTTP 422): Spot is not available for this order.",
+    );
+  });
 });

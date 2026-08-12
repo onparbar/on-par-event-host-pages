@@ -43,7 +43,7 @@ describe("Event Add-Ons Kitchen and KDS synchronization", () => {
       requestCount: 1,
       exceptionCount: 0,
     });
-    gotabMocks.processGoTabDispatches.mockResolvedValue({ sent: 1 });
+    gotabMocks.processGoTabDispatches.mockResolvedValue({ sent: 1, lastError: null });
 
     await expect(
       synchronizeChecklistFoodAddOns("event-1", {

@@ -117,6 +117,17 @@ function pause(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function goTabErrorDetail(value: unknown) {
+  const payload = record(value);
+  const details = [
+    text(payload?.message),
+    text(payload?.error),
+    text(payload?.detail),
+    text(record(payload?.error)?.message),
+  ].filter((item): item is string => Boolean(item));
+  return details[0]?.replace(/[\r\n]+/g, " ").slice(0, 240) ?? null;
+}
+
 export class GoTabClient {
   private token: { value: string; expiresAt: number } | null = null;
 
@@ -290,11 +301,12 @@ export class GoTabClient {
       throw new GoTabApiError("temporary", "GoTab ordering is temporarily unavailable.");
     }
     if (!response.ok) {
+      const detail = goTabErrorDetail(await response.json().catch(() => null));
       throw new GoTabApiError(
         response.status === 401 ? "authentication" : temporaryStatus(response.status) ? "temporary" : "response",
         response.status === 401
           ? "GoTab authentication failed. Verify the server-side Vercel credentials."
-          : `GoTab could not create the Event Food order (HTTP ${response.status}).`,
+          : `GoTab could not create the Event Food order (HTTP ${response.status})${detail ? `: ${detail}` : "."}`,
         response.status,
       );
     }

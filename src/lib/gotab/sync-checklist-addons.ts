@@ -65,5 +65,6 @@ export async function synchronizeChecklistFoodAddOns(
     queued: synchronization.requestCount,
     exceptions: synchronization.exceptionCount,
     sent: dispatch.sent,
+    error: dispatch.lastError,
   };
 }

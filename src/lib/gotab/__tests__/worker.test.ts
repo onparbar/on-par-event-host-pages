@@ -52,6 +52,7 @@ describe("GoTab dispatch worker", () => {
       liveDispatchBlocked: 0,
       sent: 0,
       failed: 0,
+      lastError: null,
     });
     expect(storage.finishDispatch).toHaveBeenCalledWith(
       "dispatch-1",

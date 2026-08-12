@@ -12,6 +12,7 @@ export type GoTabWorkerSummary = {
   liveDispatchBlocked: number;
   sent: number;
   failed: number;
+  lastError: string | null;
 };
 
 export async function processGoTabDispatches(options?: {
@@ -32,6 +33,7 @@ export async function processGoTabDispatches(options?: {
     liveDispatchBlocked: 0,
     sent: 0,
     failed: 0,
+    lastError: null,
   };
 
   for (const dispatch of dispatches) {
@@ -82,6 +84,7 @@ export async function processGoTabDispatches(options?: {
       });
       summary.sent += 1;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "GoTab dispatch failed.";
       const temporary = error instanceof GoTabApiError && error.kind === "temporary";
       const exhausted = dispatch.attempt_count >= 5;
       await storage.finishDispatch(dispatch.id, {
@@ -89,8 +92,9 @@ export async function processGoTabDispatches(options?: {
         nextAttemptAt: temporary && !exhausted
           ? new Date(Date.now() + Math.min(60_000 * 2 ** Math.max(0, dispatch.attempt_count - 1), 15 * 60_000)).toISOString()
           : undefined,
-        lastError: error instanceof Error ? error.message : "GoTab dispatch failed.",
+        lastError: errorMessage,
       });
+      summary.lastError = errorMessage;
       if (temporary) summary.failed += 1;
       else summary.held += 1;
     }

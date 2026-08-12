@@ -129,11 +129,11 @@ export async function PUT(request: Request) {
           sent: kitchenSync.sent,
           error: dispatchedToKds
             ? undefined
-            : kitchenSync.exceptions > 0
+            : kitchenSync.error ?? (kitchenSync.exceptions > 0
               ? "This food item is not fully mapped to a verified GoTab Event Food product."
               : kitchenSync.queued === 0
                 ? "No new food quantity change was available to send to the KDS."
-                : "GoTab did not confirm that the complete order reached the KDS.",
+                : "GoTab did not confirm that the complete order reached the KDS."),
         },
       });
     } catch {
