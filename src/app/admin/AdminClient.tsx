@@ -300,6 +300,11 @@ export default function AdminClient({
             <strong>Event Add-Ons</strong>
             <span>Enter Food and Entertainment additions; only Food is mirrored live to Kitchen.</span>
           </Link>
+          <Link className="portal-operation-card" href="/admin/integrations/gotab">
+            <span className="portal-module-kicker">Dry-run integration</span>
+            <strong>GoTab Kitchen Dispatch</strong>
+            <span>Verify server configuration, location access, product reads, and dispatch safety.</span>
+          </Link>
         </section>
 
         <section className="sheet-tab-strip" aria-label="Admin sections">

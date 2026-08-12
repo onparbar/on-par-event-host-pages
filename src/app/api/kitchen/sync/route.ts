@@ -48,7 +48,28 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(await syncKitchenDay(date));
+    const payload = await syncKitchenDay(date);
+    if (process.env.EVENT_KDS_DRY_RUN?.trim()) {
+      try {
+        const [{ getGoTabConfigurationStatus }, integration] = await Promise.all([
+          import("@/lib/gotab/config"),
+          import("@/lib/gotab/sync-event-food"),
+        ]);
+        if (getGoTabConfigurationStatus().configured) {
+          for (const checklist of payload.events) {
+            await integration.synchronizeKitchenChecklistToEventFood(checklist, {
+              sourceVersion: integration.eventFoodSourceVersion(checklist),
+              actor: "TRIPLESEAT_SYNC",
+            });
+          }
+        }
+      } catch {
+        payload.warnings.push(
+          "Event Food dry-run projection could not be saved. Kitchen synchronization still completed.",
+        );
+      }
+    }
+    return NextResponse.json(payload);
   } catch (error) {
     const message =
       error instanceof KitchenSyncError
