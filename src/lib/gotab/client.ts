@@ -6,7 +6,7 @@ import {
 } from "./config";
 
 const GOTAB_ORIGIN = "https://gotab.io";
-const GOTAB_ORDERING_ORIGIN = "https://gotab.io/api";
+const GOTAB_ORDERING_ORIGIN = "https://api.gotab.io";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_TEMPORARY_RETRIES = 2;
 const TOKEN_REFRESH_SKEW_MS = 60_000;
@@ -275,7 +275,7 @@ export class GoTabClient {
       items: [{
         externalId: input.externalId,
         quantity: input.quantity,
-        productUuid: input.productUuid,
+        product: { productUuid: input.productUuid },
         name: input.itemName.slice(0, 20),
         modifiers: [],
         notes: { event_host: input.itemNotes },

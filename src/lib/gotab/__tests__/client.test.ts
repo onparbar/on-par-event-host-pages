@@ -130,7 +130,7 @@ describe("GoTab server client", () => {
       if (url.endsWith("/api/oauth/token")) {
         return json({ token: "server-token", expiresIn: 86400 });
       }
-      if (url.includes("gotab.io/api/loc/")) {
+      if (url.includes("api.gotab.io/loc/")) {
         return json({
           tabUuid: "tab-1",
           orders: [{ orderUuid: "order-1", items: [{ itemUuid: "item-1" }] }],
@@ -150,14 +150,14 @@ describe("GoTab server client", () => {
     })).resolves.toEqual({ tabUuid: "tab-1", orderUuid: "order-1", itemUuid: "item-1" });
 
     const orderRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
-      ([url]) => url.includes("gotab.io/api/loc/"),
+      ([url]) => url.includes("api.gotab.io/loc/"),
     )?.[1];
     const body = JSON.parse(String(orderRequest?.body));
     expect(body).toMatchObject({
       openTab: false,
       spotUuid: "spot",
       phoneNumber: "+19377056024",
-      items: [{ productUuid: "prd_salsa", quantity: 2 }],
+      items: [{ product: { productUuid: "prd_salsa" }, quantity: 2 }],
       payments: [],
     });
     expect(body.payments).toEqual([]);
