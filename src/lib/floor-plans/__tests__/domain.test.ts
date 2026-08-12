@@ -239,6 +239,30 @@ describe("floor-plan capacities and generation", () => {
     ).toBe(true);
   });
 
+  it("reserves only the booked room for paid VIP reservations", () => {
+    const generated = generateFloorPlanReservations(
+      plan([
+        floorPlanEvent({
+          tripleseatEventId: "vip-reservation-uuid",
+          contractedAreaIds: ["vip-2"],
+          guestCount: 16,
+          source: {
+            rooms: ["VIP 2"],
+            food: [],
+            entertainment: [],
+            operationalNotes: [],
+            reviewReasons: [],
+          },
+        }),
+      ]),
+      "fill-missing",
+    );
+
+    expect(generated).toEqual([
+      expect.objectContaining({ areaId: "vip-2", reservationType: "room" }),
+    ]);
+  });
+
   it("assigns exactly one designated ADA food table per event", () => {
     const generated = generateFloorPlanReservations(plan(), "fill-missing");
     const food = generated.filter((item) => item.reservationType === "food-table");

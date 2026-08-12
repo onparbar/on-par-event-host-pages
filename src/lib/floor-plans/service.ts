@@ -26,6 +26,7 @@ import {
   VipPrepClient,
   type VipPrepReservation,
   vipPrepExternalId,
+  numericVipEventId,
 } from "@/lib/vip-prep/client";
 import { resolveAreaAlias } from "./configuration/aliases";
 import { selectEntertainmentResources } from "./configuration/adjacency";
@@ -126,15 +127,6 @@ function normalizedFloorPlanEvent(
       reviewReasons: [...(plan.review_reasons ?? [])],
     },
   };
-}
-
-function numericVipEventId(value: string) {
-  let hash = 2166136261;
-  for (const character of value) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) || 1;
 }
 
 function vipEventPlan(reservation: VipPrepReservation): EventPlan {

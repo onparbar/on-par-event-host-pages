@@ -1,4 +1,5 @@
 import type { EntertainmentSourceEvent } from "@/lib/entertainment/types";
+import type { EventPlan } from "@/lib/event-plans/types";
 import type { KitchenSourceEvent } from "@/lib/kitchen/types";
 
 const DEFAULT_VIP_PREP_API_URL = "https://rexreplace.vercel.app/api/vip-prep";
@@ -49,7 +50,7 @@ export type VipPrepPayload = {
 };
 
 type VipPrepClientOptions = {
-  env?: NodeJS.ProcessEnv;
+  env?: Readonly<Record<string, string | undefined>>;
   fetchImpl?: typeof fetch;
   endpoint?: string;
 };
@@ -204,6 +205,61 @@ export function getMissingVipPrepEnvironmentVariables(env = process.env) {
 
 export function vipPrepExternalId(reservation: Pick<VipPrepReservation, "id">) {
   return `vip-${reservation.id}`;
+}
+
+export function numericVipEventId(value: string) {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) || 1;
+}
+
+function vipClock(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+export function vipPrepEventPlan(reservation: VipPrepReservation): EventPlan {
+  const externalId = vipPrepExternalId(reservation);
+  return {
+    id: numericVipEventId(externalId),
+    name: reservation.eventName,
+    date: reservation.operatingDate,
+    day: new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      timeZone: "UTC",
+    }).format(new Date(`${reservation.operatingDate}T12:00:00Z`)),
+    time: `${vipClock(reservation.startAt)} - ${vipClock(reservation.endAt)}`,
+    guest_count: reservation.partySize,
+    rooms: [reservation.resource.name],
+    color: reservation.resource.code === "VIPS" ? "#526D52" : "#297025",
+    food: reservation.foodPrep.map((item) => `${item.quantity} ${item.label}`),
+    drink_options: [],
+    entertainment: [],
+    verification_status: "Paid VIP reservation imported from the read-only VIP Prep API.",
+    needs_review: false,
+    review_reasons: [],
+    tripleseat_booking_id: reservation.confirmationCode,
+    source_updated_at: reservation.updatedAt,
+  };
+}
+
+export async function findVipPrepReservationByEventId(
+  eventId: number,
+  from: string,
+  to: string,
+  client = new VipPrepClient(),
+) {
+  if (!client.configured) return null;
+  const payload = await client.fetchRange(from, to);
+  return payload.reservations.find(
+    (reservation) => numericVipEventId(vipPrepExternalId(reservation)) === eventId,
+  ) ?? null;
 }
 
 export function vipPrepKitchenEvents(

@@ -6,6 +6,9 @@ import { loadAdminState } from "@/lib/admin-state";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
 import { activeEvents } from "@/lib/event-lifecycle";
 import { loadEventPlanWindow } from "@/lib/event-plans/sync";
+import { rollingEventPlanHorizon } from "@/lib/event-plans/horizon";
+import type { EventPlan } from "@/lib/event-plans/types";
+import { VipPrepClient, vipPrepEventPlan } from "@/lib/vip-prep/client";
 
 export const metadata = {
   title: "Event Host Add-Ons | On Par Entertainment",
@@ -28,7 +31,23 @@ export default async function EventHostAddOnsPage() {
     loadAdminState(),
     loadEventPlanWindow(),
   ]);
-  const checklistEvents = checklistEventsForPlans(eventPlanWindow.plans);
+  const horizon = rollingEventPlanHorizon();
+  const vipClient = new VipPrepClient();
+  let vipPlans: EventPlan[] = [];
+  if (vipClient.configured) {
+    try {
+      vipPlans = (await vipClient.fetchRange(
+        horizon.startDate,
+        horizon.endDate,
+      )).reservations.map(vipPrepEventPlan);
+    } catch {
+      // Keep Tripleseat add-on sheets available during a temporary VIP API outage.
+    }
+  }
+  const checklistEvents = checklistEventsForPlans([
+    ...eventPlanWindow.plans,
+    ...vipPlans,
+  ]);
   const activeEventIds = activeEvents(
     checklistEvents,
     adminState.archivedEventIds,

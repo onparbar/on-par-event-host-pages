@@ -4,6 +4,12 @@ import { hasAdminSession } from "../../../lib/admin-auth";
 import { checklistEventsForPlans } from "../../../lib/checklist-events";
 import type { EventChecklistState } from "../../../lib/checklist-model";
 import { findEventPlanById } from "../../../lib/event-plans/sync";
+import { rollingEventPlanHorizon } from "../../../lib/event-plans/horizon";
+import {
+  findVipPrepReservationByEventId,
+  vipPrepEventPlan,
+  vipPrepExternalId,
+} from "../../../lib/vip-prep/client";
 import {
   listChecklistRecords,
   saveChecklist,
@@ -64,7 +70,20 @@ export async function PUT(request: Request) {
     return badRequest("Missing eventId or checklist.");
   }
 
-  const plan = await findEventPlanById(body.eventId);
+  let plan = await findEventPlanById(body.eventId);
+  let kitchenEventId = String(body.eventId);
+  if (!plan) {
+    const horizon = rollingEventPlanHorizon();
+    const reservation = await findVipPrepReservationByEventId(
+      body.eventId,
+      horizon.startDate,
+      horizon.endDate,
+    );
+    if (reservation) {
+      plan = vipPrepEventPlan(reservation);
+      kitchenEventId = vipPrepExternalId(reservation);
+    }
+  }
   if (!plan) {
     return badRequest("Unknown event.");
   }
@@ -86,7 +105,7 @@ export async function PUT(request: Request) {
 
     try {
       const kitchenAddOns = await updateKitchenEventFoodAddOns(
-        String(event.id),
+        kitchenEventId,
         body.checklist.food,
       );
       return NextResponse.json({

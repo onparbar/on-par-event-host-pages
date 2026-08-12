@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   VipPrepApiError,
   VipPrepClient,
+  numericVipEventId,
+  vipPrepEventPlan,
+  vipPrepExternalId,
   vipPrepEntertainmentEvents,
   vipPrepKitchenEvents,
 } from "../client";
@@ -66,5 +69,19 @@ describe("VIP Prep API client", () => {
       eventId: "vip-reservation-without-food",
       selections: [],
     });
+  });
+
+  it("creates a stable add-on sheet event for the booked VIP section only", () => {
+    const reservation = vipPrepPayload.reservations[0];
+    const event = vipPrepEventPlan(reservation);
+
+    expect(event).toMatchObject({
+      id: numericVipEventId(vipPrepExternalId(reservation)),
+      name: "Redacted VIP",
+      date: "2026-08-15",
+      rooms: ["VIP 2"],
+      guest_count: 16,
+    });
+    expect(event.rooms).not.toContain("Main Dining Room");
   });
 });

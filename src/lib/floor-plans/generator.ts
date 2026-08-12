@@ -157,6 +157,9 @@ function eventBaseReservations(
       }
     }
   }
+  if (event.tripleseatEventId.startsWith("vip-")) {
+    return generated;
+  }
   const existingSeatingAreaIds = new Set(
     existing.flatMap((item) =>
       item.floorPlanEventId === event.id && item.reservationType === "seating"
