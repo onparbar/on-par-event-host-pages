@@ -269,6 +269,7 @@ export class GoTabClient {
         modifiers: [],
         notes: { event_host: input.itemNotes },
       }],
+      payments: [],
     };
     const token = await this.authenticateGoTab();
     let response: Response;
@@ -293,7 +294,7 @@ export class GoTabClient {
         response.status === 401 ? "authentication" : temporaryStatus(response.status) ? "temporary" : "response",
         response.status === 401
           ? "GoTab authentication failed. Verify the server-side Vercel credentials."
-          : "GoTab could not create the Event Food order.",
+          : `GoTab could not create the Event Food order (HTTP ${response.status}).`,
         response.status,
       );
     }

@@ -125,7 +125,7 @@ describe("GoTab server client", () => {
     expect(String(graphRequest?.body)).toContain("productsList(includeArchived: NO)");
   });
 
-  it("creates a closed zero-dollar Event Food order that fires to KDS without payment fields", async () => {
+  it("creates a closed zero-dollar Event Food order with an empty payment list", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.endsWith("/api/oauth/token")) {
         return json({ token: "server-token", expiresIn: 86400 });
@@ -158,8 +158,9 @@ describe("GoTab server client", () => {
       spotUuid: "spot",
       phoneNumber: "+19377056024",
       items: [{ productUuid: "prd_salsa", quantity: 2 }],
+      payments: [],
     });
-    expect(JSON.stringify(body).toLowerCase()).not.toContain("payment");
+    expect(body.payments).toEqual([]);
   });
 
   it("rejects a successful GoTab response that did not create a KDS order", async () => {
