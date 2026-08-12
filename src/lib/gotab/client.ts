@@ -57,10 +57,7 @@ export type GoTabEventFoodTabResult = {
 type GoTabEmployee = {
   employeeId: string;
   displayName: string;
-  firstName: string | null;
-  lastName: string | null;
-  acl: string | null;
-  hasPin: boolean;
+  fullName: string | null;
 };
 
 export type GoTabCapabilityCheck = {
@@ -344,30 +341,36 @@ export class GoTabClient {
 
   private async loadEventFoodEmployees() {
     const location = await this.verifyConfiguredLocation();
-    const locationIdentifier = location.urlName ?? location.locationUuid;
-    const response = await this.authorizedRequest(
-      `/api/loc/${encodeURIComponent(locationIdentifier)}/users`,
-    );
-    const payload = await response.json().catch(() => null);
-    const payloadRecord = record(payload);
-    const values = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payloadRecord?.data)
-        ? payloadRecord.data
-        : [];
+    const response = await this.authorizedRequest("/api/graph", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        query: `query EventFoodEmployees($locationUuid: String!) {
+          employeesList(condition: { locationUuid: $locationUuid }) {
+            userId name displayName archived
+          }
+        }`,
+        variables: { locationUuid: location.locationUuid },
+      }),
+    });
+    const payload = record(await response.json().catch(() => null));
+    if (Array.isArray(payload?.errors)) {
+      throw new GoTabApiError("response", "GoTab could not read the employee directory.");
+    }
+    const values = record(payload?.data)?.employeesList;
+    if (!Array.isArray(values)) {
+      throw new GoTabApiError("response", "GoTab returned an invalid employee response.");
+    }
     return values.flatMap((item) => {
       const value = record(item);
-      const metadata = record(value?.metadata);
-      const employeeId = identifier(value?.customerId);
-      const displayName = text(value?.displayName);
+      const employeeId = identifier(value?.userId);
+      const displayName = text(value?.displayName) ?? text(value?.name);
+      if (value?.archived != null) return [];
       if (!employeeId || !displayName) return [];
       return [{
         employeeId,
         displayName,
-        firstName: text(metadata?.firstName),
-        lastName: text(metadata?.lastName),
-        acl: text(value?.acl),
-        hasPin: value?.hasPin === true,
+        fullName: text(value?.name),
       }];
     });
   }
@@ -390,29 +393,21 @@ export class GoTabClient {
     const displayEmployeeId = uniqueEmployeeId(displayMatches);
     if (displayEmployeeId) return displayEmployeeId;
 
-    const fullNameMatches = employees.filter((employee) =>
-      normalizedPersonName(
-        [employee.firstName, employee.lastName].filter(Boolean).join(" "),
-      ) === requestedName,
+    const fullNameMatches = employees.filter(
+      (employee) =>
+        employee.fullName != null &&
+        normalizedPersonName(employee.fullName) === requestedName,
     );
     const fullNameEmployeeId = uniqueEmployeeId(fullNameMatches);
     if (fullNameEmployeeId) return fullNameEmployeeId;
 
     const firstNameMatches = employees.filter(
-      (employee) =>
-        employee.firstName != null &&
-        normalizedPersonName(employee.firstName) === requestedName,
+      (employee) => {
+        const firstName = (employee.fullName ?? employee.displayName).trim().split(/\s+/)[0];
+        return normalizedPersonName(firstName) === requestedName;
+      },
     );
-    const firstNameEmployeeId = uniqueEmployeeId(firstNameMatches);
-    if (firstNameEmployeeId) return firstNameEmployeeId;
-
-    return uniqueEmployeeId(
-      firstNameMatches.filter(
-        (employee) =>
-          employee.hasPin &&
-          employee.acl?.split("|").includes("server"),
-      ),
-    );
+    return uniqueEmployeeId(firstNameMatches);
   }
 
   async createEventFoodTab(input: {

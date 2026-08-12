@@ -324,7 +324,7 @@ describe("GoTab server client", () => {
   });
 
   it("assigns the unique matching GoTab employee to the KDS Server field", async () => {
-    const fetchImpl = vi.fn(async (url: string) => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/api/oauth/token")) {
         return json({ token: "server-token", expiresIn: 86400 });
       }
@@ -336,17 +336,22 @@ describe("GoTab server client", () => {
           urlName: "on-par",
         }]);
       }
-      if (url.endsWith("/api/loc/on-par/users")) {
+      if (url.endsWith("/api/graph")) {
         return json({
-          data: [{
-            displayName: "Ryan Smith",
-            userUuid: "user-ryan",
-            customerId: "8001",
-            acl: "labor:time-clock|server",
-            hasPin: true,
-            metadata: { firstName: "Ryan", lastName: "Smith" },
-          }],
+          data: {
+            employeesList: [{
+              userId: "191108",
+              userUuid: "user-ryan",
+              name: "Ryan Smith",
+              displayName: "Ryan Smith",
+              archived: null,
+            }],
+          },
         });
+      }
+      const body = JSON.parse(String(init?.body));
+      if (body.employeeId !== "191108") {
+        return json({ message: "Something went wrong, Please try again later." }, 500);
       }
       return json({
         data: {
@@ -366,14 +371,15 @@ describe("GoTab server client", () => {
       itemName: "Tater Kegs",
       itemNotes: {},
       serverName: "Ryan",
+      selectedPanSize: "1/2",
     });
 
     const orderRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
       ([url]) => url.includes("/api/loc/location-2/tabs"),
     )?.[1];
     expect(JSON.parse(String(orderRequest?.body))).toMatchObject({
-      employeeId: "8001",
-      items: [{ quantity: 1 }],
+      employeeId: "191108",
+      items: [{ quantity: 1, name: "EVENT-Tater 1/2 PANS" }],
     });
   });
 
@@ -390,24 +396,24 @@ describe("GoTab server client", () => {
           urlName: "on-par",
         }]);
       }
-      if (url.endsWith("/api/loc/on-par/users")) {
+      if (url.endsWith("/api/graph")) {
         return json({
-          data: [
-            {
-              displayName: "Julio One",
-              customerId: "8002",
-              acl: "server",
-              hasPin: true,
-              metadata: { firstName: "Julio", lastName: "One" },
-            },
-            {
-              displayName: "Julio Two",
-              customerId: "8003",
-              acl: "server",
-              hasPin: true,
-              metadata: { firstName: "Julio", lastName: "Two" },
-            },
-          ],
+          data: {
+            employeesList: [
+              {
+                userId: "191109",
+                name: "Julio One",
+                displayName: "Julio One",
+                archived: null,
+              },
+              {
+                userId: "191110",
+                name: "Julio Two",
+                displayName: "Julio Two",
+                archived: null,
+              },
+            ],
+          },
         });
       }
       return json({
