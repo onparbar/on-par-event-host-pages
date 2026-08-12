@@ -62,4 +62,35 @@ describe("Event Add-Ons Kitchen and KDS synchronization", () => {
     );
     expect(gotabMocks.processGoTabDispatches).toHaveBeenCalledOnce();
   });
+
+  it("retries an explicitly submitted item even when its saved quantity is unchanged", async () => {
+    const food = { "wing-refill-wings": { quantity: 1 } };
+    kitchenMocks.getKitchenEventFoodAddOns.mockResolvedValue({ food });
+    kitchenMocks.updateKitchenEventFoodAddOns.mockResolvedValue({
+      eventId: "event-1",
+      food,
+      revision: 3,
+      updatedAt: "2026-08-12T17:05:00.000Z",
+    });
+    kitchenMocks.getKitchenEventChecklist.mockResolvedValue({ event: {} });
+    gotabMocks.synchronizeKitchenLiveAddOnsToEventFood.mockResolvedValue({
+      requestCount: 1,
+      exceptionCount: 0,
+    });
+    gotabMocks.processGoTabDispatches.mockResolvedValue({ sent: 1, lastError: null });
+
+    await expect(
+      synchronizeChecklistFoodAddOns("event-1", food, ["wing-refill-wings"]),
+    ).resolves.toMatchObject({ queued: 1, exceptions: 0, sent: 1 });
+    expect(
+      gotabMocks.synchronizeKitchenLiveAddOnsToEventFood,
+    ).toHaveBeenCalledWith(
+      { event: {} },
+      {
+        sourceVersion: 3,
+        changedSourceKeys: ["wing-refill-wings"],
+        dispatchImmediately: true,
+      },
+    );
+  });
 });

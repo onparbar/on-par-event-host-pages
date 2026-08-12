@@ -41,8 +41,9 @@ export async function synchronizeChecklistFoodAddOns(
     : [...new Set([...Object.keys(previousFood), ...Object.keys(savedFood)])];
   const changedSourceKeys = candidateKeys.filter(
     (key) =>
+      submittedSourceKeys?.includes(key) ||
       JSON.stringify(previousFood[key] ?? null) !==
-      JSON.stringify(savedFood[key] ?? null),
+        JSON.stringify(savedFood[key] ?? null),
   );
 
   if (changedSourceKeys.length === 0) {
