@@ -105,6 +105,19 @@ function identifier(value: unknown) {
   return text(value) ?? (number(value) != null ? String(value) : null);
 }
 
+function eventKdsItemName(itemName: string) {
+  const normalized = itemName.trim();
+  const aliases: Record<string, string> = {
+    "Assorted Desserts": "Desserts",
+    "Black Beans Refill": "Beans Refill",
+    "Chicken Tenders": "Tenders",
+    "Garlic Parmesan": "Garlic Parm",
+    "Lettuce Wrap Refill": "Wrap Refill",
+    "Mozzarella Sticks": "Mozz Sticks",
+  };
+  return `EVENT-${aliases[normalized] ?? normalized}`.slice(0, 20);
+}
+
 function temporaryStatus(status: number) {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
@@ -277,7 +290,12 @@ export class GoTabClient {
     itemName: string;
     itemNotes: Record<string, unknown>;
   }): Promise<GoTabEventFoodTabResult> {
-    if (!input.externalId.trim() || !input.ticketName.trim() || !input.productUuid.trim()) {
+    if (
+      !input.externalId.trim() ||
+      !input.ticketName.trim() ||
+      !input.productUuid.trim() ||
+      !input.itemName.trim()
+    ) {
       throw new GoTabApiError("response", "The Event Food order is incomplete.");
     }
     if (!Number.isSafeInteger(input.quantity) || input.quantity < 1) {
@@ -292,7 +310,8 @@ export class GoTabClient {
       items: [{
         externalId: input.externalId,
         quantity: input.quantity,
-        productUuid: input.productUuid,
+        product: { productUuid: input.productUuid },
+        name: eventKdsItemName(input.itemName),
         modifiers: [],
       }],
     };
