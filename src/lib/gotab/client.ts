@@ -298,15 +298,32 @@ export class GoTabClient {
       );
     }
     const result = record(await response.json().catch(() => null));
-    const orders = Array.isArray(result?.orders) ? result.orders.map(record) : [];
-    const firstOrder = orders.find(Boolean) ?? record(result?.order);
-    const items = Array.isArray(firstOrder?.items) ? firstOrder.items.map(record) : [];
+    const data = record(result?.data);
+    const tab = record(result?.tab) ?? record(data?.tab);
+    const orderValues = [result?.orders, data?.orders, tab?.orders]
+      .find(Array.isArray) as unknown[] | undefined;
+    const orders = (orderValues ?? []).map(record);
+    const firstOrder =
+      orders.find(Boolean) ??
+      record(result?.order) ??
+      record(data?.order) ??
+      record(tab?.order) ??
+      (text(result?.orderUuid) || text(result?.order_uuid) ? result : null);
+    const itemValues = [firstOrder?.items, firstOrder?.itemsList]
+      .find(Array.isArray) as unknown[] | undefined;
+    const items = (itemValues ?? []).map(record);
     const identifiers = {
-      tabUuid: text(result?.tabUuid) ?? text(result?.tab_uuid),
+      tabUuid:
+        text(result?.tabUuid) ??
+        text(result?.tab_uuid) ??
+        text(data?.tabUuid) ??
+        text(data?.tab_uuid) ??
+        text(tab?.tabUuid) ??
+        text(tab?.tab_uuid),
       orderUuid: text(firstOrder?.orderUuid) ?? text(firstOrder?.order_uuid),
       itemUuid: text(items.find(Boolean)?.itemUuid) ?? text(items.find(Boolean)?.item_uuid),
     };
-    if (!identifiers.orderUuid || !identifiers.itemUuid) {
+    if (!identifiers.orderUuid) {
       throw new GoTabApiError(
         "response",
         "GoTab accepted the Event Food request but did not create a KDS order.",

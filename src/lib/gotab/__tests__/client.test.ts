@@ -180,4 +180,34 @@ describe("GoTab server client", () => {
       itemNotes: {},
     })).rejects.toThrow("did not create a KDS order");
   });
+
+  it("accepts a closed-order response when GoTab omits the immediate item UUID", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      return json({
+        data: {
+          tab: {
+            tabUuid: "closed-tab-1",
+            orders: [{ orderUuid: "placed-order-1" }],
+          },
+        },
+      });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await expect(client.createEventFoodTab({
+      externalId: "event:REFILL:wings:3:DISPATCH",
+      ticketName: "[REFILL] Wing Platter",
+      productUuid: "prd_wings",
+      quantity: 1,
+      itemName: "Wing Platter",
+      itemNotes: {},
+    })).resolves.toEqual({
+      tabUuid: "closed-tab-1",
+      orderUuid: "placed-order-1",
+      itemUuid: null,
+    });
+  });
 });
