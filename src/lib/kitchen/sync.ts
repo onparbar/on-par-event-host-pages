@@ -448,6 +448,26 @@ export async function getKitchenEventFoodAddOns(
   };
 }
 
+export async function getKitchenEventChecklist(
+  eventId: string,
+  options: Pick<KitchenSyncDependencies, "storage"> = {},
+) {
+  const normalizedEventId = normalizeKitchenEventId(eventId);
+  const storage = options.storage ?? getKitchenStorage();
+  const date = await storage.getEventDate(normalizedEventId);
+  if (date === null) {
+    throw new Error("Kitchen event was not found.");
+  }
+  const day = await storage.getDay(date);
+  const checklist = day.events.find(
+    (event) => String(event.event.eventId) === normalizedEventId,
+  );
+  if (!checklist) {
+    throw new Error("Kitchen event was not found.");
+  }
+  return checklist;
+}
+
 export async function updateKitchenEventFoodAddOns(
   eventId: string,
   food: unknown,

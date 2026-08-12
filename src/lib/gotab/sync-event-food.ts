@@ -83,3 +83,34 @@ export async function synchronizeKitchenChecklistToEventFood(
     duplicateCount: results.filter((result) => result.duplicate).length,
   };
 }
+
+export async function synchronizeKitchenLiveAddOnsToEventFood(
+  checklist: KitchenChecklist,
+  options: {
+    sourceVersion: number;
+    changedSourceKeys: readonly string[];
+    actor?: string;
+    storage?: EventFoodSyncStorage;
+    env?: Readonly<Record<string, string | undefined>>;
+  },
+) {
+  const changedItemKeys = new Set(
+    options.changedSourceKeys.map((key) => `addon:${key}`),
+  );
+  const addOnOnlyChecklist: KitchenChecklist = {
+    ...checklist,
+    sections: [],
+    liveFoodAddOns: checklist.liveFoodAddOns.filter((item) =>
+      changedItemKeys.has(item.itemKey),
+    ),
+  };
+  return synchronizeKitchenChecklistToEventFood(addOnOnlyChecklist, {
+    sourceVersion: options.sourceVersion,
+    sourceType: String(checklist.event.eventId).startsWith("vip-")
+      ? "VIP_ADDON"
+      : "EVENT_HOST_ADDON",
+    actor: options.actor ?? "EVENT_HOST_ADDON_SAVE",
+    storage: options.storage,
+    env: options.env,
+  });
+}

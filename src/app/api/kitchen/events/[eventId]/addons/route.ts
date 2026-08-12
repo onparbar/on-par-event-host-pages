@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { hasAdminSession } from "@/lib/admin-auth";
 import {
+  getKitchenEventChecklist,
   getKitchenEventFoodAddOns,
   updateKitchenEventFoodAddOns,
 } from "@/lib/kitchen/sync";
@@ -78,11 +79,57 @@ export async function PUT(
 
   const { eventId } = await context.params;
   try {
-    return NextResponse.json(
-      await updateKitchenEventFoodAddOns(eventId, body.food, {
-        expectedRevision: body.expectedRevision,
-      }),
+    const previous = await getKitchenEventFoodAddOns(eventId);
+    const saved = await updateKitchenEventFoodAddOns(eventId, body.food, {
+      expectedRevision: body.expectedRevision,
+    });
+    const previousFood = previous.food as Record<string, unknown>;
+    const savedFood = saved.food as Record<string, unknown>;
+    const changedSourceKeys = [...new Set([
+      ...Object.keys(previousFood),
+      ...Object.keys(savedFood),
+    ])].filter(
+      (key) =>
+        JSON.stringify(previousFood[key] ?? null) !==
+        JSON.stringify(savedFood[key] ?? null),
     );
+    let kds: Record<string, unknown> = {
+      queued: 0,
+      changedSourceKeys,
+    };
+    if (changedSourceKeys.length > 0) {
+      try {
+        const [{ synchronizeKitchenLiveAddOnsToEventFood }, { processGoTabDispatches }] =
+          await Promise.all([
+            import("@/lib/gotab/sync-event-food"),
+            import("@/lib/gotab/worker"),
+          ]);
+        const checklist = await getKitchenEventChecklist(eventId);
+        const synchronization = await synchronizeKitchenLiveAddOnsToEventFood(
+          checklist,
+          {
+            sourceVersion: saved.revision,
+            changedSourceKeys,
+          },
+        );
+        const dispatch = await processGoTabDispatches();
+        kds = {
+          queued: synchronization.requestCount,
+          exceptions: synchronization.exceptionCount,
+          duplicates: synchronization.duplicateCount,
+          dispatch,
+          changedSourceKeys,
+        };
+      } catch {
+        kds = {
+          queued: 0,
+          changedSourceKeys,
+          warning:
+            "The add-on was saved, but its GoTab KDS dispatch could not be completed.",
+        };
+      }
+    }
+    return NextResponse.json({ ...saved, kds });
   } catch (error) {
     if (error instanceof KitchenFoodAddOnConflictError) {
       const current = await getKitchenEventFoodAddOns(eventId);

@@ -4,8 +4,13 @@ import { GET, PUT } from "../route";
 import { KitchenFoodAddOnConflictError } from "@/lib/kitchen/storage";
 
 const syncMocks = vi.hoisted(() => ({
+  getKitchenEventChecklist: vi.fn(),
   getKitchenEventFoodAddOns: vi.fn(),
   updateKitchenEventFoodAddOns: vi.fn(),
+}));
+const gotabMocks = vi.hoisted(() => ({
+  synchronizeKitchenLiveAddOnsToEventFood: vi.fn(),
+  processGoTabDispatches: vi.fn(),
 }));
 const authMocks = vi.hoisted(() => ({
   hasAdminSession: vi.fn(),
@@ -17,6 +22,13 @@ vi.mock("next/headers", () => ({
 
 vi.mock("@/lib/kitchen/sync", () => syncMocks);
 vi.mock("@/lib/admin-auth", () => authMocks);
+vi.mock("@/lib/gotab/sync-event-food", () => ({
+  synchronizeKitchenLiveAddOnsToEventFood:
+    gotabMocks.synchronizeKitchenLiveAddOnsToEventFood,
+}));
+vi.mock("@/lib/gotab/worker", () => ({
+  processGoTabDispatches: gotabMocks.processGoTabDispatches,
+}));
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -50,6 +62,20 @@ describe("kitchen event add-on API", () => {
       food: { ranch: { quantity: 1 } },
       updatedAt: "2026-07-29T14:01:00Z",
       revision: 3,
+    });
+    syncMocks.getKitchenEventChecklist.mockResolvedValue({
+      event: { eventId: "preview-alpha", name: "Preview event" },
+      sections: [],
+      liveFoodAddOns: [],
+    });
+    gotabMocks.synchronizeKitchenLiveAddOnsToEventFood.mockResolvedValue({
+      requestCount: 1,
+      exceptionCount: 0,
+      duplicateCount: 0,
+    });
+    gotabMocks.processGoTabDispatches.mockResolvedValue({
+      claimed: 1,
+      sent: 1,
     });
     const context = {
       params: Promise.resolve({ eventId: "preview-alpha" }),
@@ -92,12 +118,31 @@ describe("kitchen event add-on API", () => {
       food: { ranch: { quantity: 1 } },
       updatedAt: "2026-07-29T14:01:00Z",
       revision: 3,
+      kds: {
+        queued: 1,
+        exceptions: 0,
+        duplicates: 0,
+        changedSourceKeys: ["wings", "ranch"],
+        dispatch: { claimed: 1, sent: 1 },
+      },
     });
     expect(syncMocks.updateKitchenEventFoodAddOns).toHaveBeenCalledWith(
       "preview-alpha",
       { ranch: { quantity: "1", manualPrice: "5" } },
       { expectedRevision: 2 },
     );
+    expect(
+      gotabMocks.synchronizeKitchenLiveAddOnsToEventFood,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({ eventId: "preview-alpha" }),
+      }),
+      {
+        sourceVersion: 3,
+        changedSourceKeys: ["wings", "ranch"],
+      },
+    );
+    expect(gotabMocks.processGoTabDispatches).toHaveBeenCalledOnce();
   });
 
   it("returns the current revision when another staff session wins the write", async () => {

@@ -4,11 +4,13 @@ import { generateKitchenChecklist } from "@/lib/kitchen/rules";
 vi.mock("server-only", () => ({}));
 
 let synchronize: typeof import("../sync-event-food").synchronizeKitchenChecklistToEventFood;
+let synchronizeLiveAddOns: typeof import("../sync-event-food").synchronizeKitchenLiveAddOnsToEventFood;
 let sourceVersion: typeof import("../sync-event-food").eventFoodSourceVersion;
 
 beforeAll(async () => {
   ({
     synchronizeKitchenChecklistToEventFood: synchronize,
+    synchronizeKitchenLiveAddOnsToEventFood: synchronizeLiveAddOns,
     eventFoodSourceVersion: sourceVersion,
   } = await import("../sync-event-food"));
 });
@@ -91,6 +93,81 @@ describe("Event Food synchronization", () => {
       expect.objectContaining({ eventName: "OPE KDS Integration Test", panSize: "TRAY" }),
       expect.objectContaining({ warnings: expect.arrayContaining(["GoTab dispatch is disabled."]) }),
       "SYSTEM",
+    );
+  });
+
+  it("queues only the changed VIP live add-on with the VIP ticket label", async () => {
+    const vipChecklist = generateKitchenChecklist({
+      eventId: "vip-reservation-1",
+      bookingId: null,
+      eventName: "Taylor Smith VIP",
+      localDate: "2026-08-15",
+      startTime: "6:00 PM",
+      guestCount: 16,
+      status: "DEFINITE",
+      room: "VIP 2",
+      selections: [],
+    }, undefined, [
+      {
+        itemKey: "addon:mozzarella-sticks",
+        foodName: "Mozzarella Sticks",
+        description: "Live add-on",
+        quantity: 1,
+        unit: "platter",
+        numberOfPans: 1,
+        panSize: "1/2",
+        sourceUpdatedAt: "2026-08-15T16:00:00.000Z",
+      },
+      {
+        itemKey: "addon:ranch",
+        foodName: "Ranch",
+        description: "Live add-on",
+        quantity: 1,
+        unit: "bowl",
+        numberOfPans: null,
+        panSize: null,
+        sourceUpdatedAt: "2026-08-15T16:00:00.000Z",
+      },
+    ]);
+    const storage = {
+      listMappings: vi.fn().mockResolvedValue([{
+        id: "mapping-mozzarella",
+        canonical_product_key: "addon:mozzarella-sticks",
+        aliases: [],
+        display_name: "Mozzarella Stick Platter",
+        pan_size: "HALF_PAN",
+        preparation_station: "HOT_LINE",
+        gotab_product_uuid: "product-mozzarella",
+        mapping_status: "VERIFIED",
+        verified_at: "2026-08-11T12:00:00.000Z",
+      }]),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn().mockResolvedValue({
+        request_id: "r1",
+        dispatch_id: "d1",
+        duplicate: false,
+      }),
+    };
+
+    const result = await synchronizeLiveAddOns(vipChecklist, {
+      sourceVersion: 4,
+      changedSourceKeys: ["mozzarella-sticks"],
+      storage: storage as never,
+      env,
+    });
+
+    expect(result.requestCount).toBe(1);
+    expect(storage.enqueueRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: "VIP_ADDON",
+        eventName: "Taylor Smith VIP",
+        originalSourceName: "Mozzarella Sticks",
+      }),
+      expect.objectContaining({
+        ticketName: "[VIP FOOD] Taylor Smith VIP",
+        product: "Mozzarella Stick Platter",
+      }),
+      "EVENT_HOST_ADDON_SAVE",
     );
   });
 });
