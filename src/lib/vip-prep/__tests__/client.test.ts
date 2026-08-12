@@ -77,7 +77,7 @@ describe("VIP Prep API client", () => {
 
     expect(event).toMatchObject({
       id: numericVipEventId(vipPrepExternalId(reservation)),
-      name: "Redacted VIP",
+      name: "Redacted VIP · VIP 2",
       date: "2026-08-15",
       rooms: ["VIP 2"],
       guest_count: 16,

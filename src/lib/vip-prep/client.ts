@@ -228,7 +228,7 @@ export function vipPrepEventPlan(reservation: VipPrepReservation): EventPlan {
   const externalId = vipPrepExternalId(reservation);
   return {
     id: numericVipEventId(externalId),
-    name: reservation.eventName,
+    name: `${reservation.eventName} · ${reservation.resource.name}`,
     date: reservation.operatingDate,
     day: new Intl.DateTimeFormat("en-US", {
       weekday: "long",

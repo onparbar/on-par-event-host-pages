@@ -46,7 +46,12 @@ export default async function EventHostAddOnsPage() {
   const checklistEvents = checklistEventsForPlans([
     ...eventPlanWindow.plans,
     ...vipPlans,
-  ]);
+  ]).sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) ||
+      left.time.localeCompare(right.time) ||
+      left.name.localeCompare(right.name),
+  );
   const archivedEventIds = new Set(adminState.archivedEventIds);
   const activeEventIds = checklistEvents
     .filter((event) => !archivedEventIds.has(event.id))
