@@ -16,7 +16,7 @@ type UnknownRecord = Record<string, unknown>;
 
 export type GoTabLocation = {
   locationUuid: string;
-  locationId: number;
+  locationId: number | string;
   name: string;
   timezone: string | null;
   urlName: string | null;
@@ -311,13 +311,19 @@ export class GoTabClient {
   async getAuthorizedLocations(): Promise<GoTabLocation[]> {
     const response = await this.authorizedRequest("/api/loc");
     const payload = await response.json().catch(() => null);
-    if (!Array.isArray(payload)) {
+    const responseRecord = record(payload);
+    const locations = Array.isArray(payload)
+      ? payload
+      : Array.isArray(responseRecord?.data)
+        ? responseRecord.data
+        : null;
+    if (!locations) {
       throw new GoTabApiError("response", "GoTab returned an invalid location response.");
     }
-    return payload.flatMap((item) => {
+    return locations.flatMap((item) => {
       const value = record(item);
       const locationUuid = text(value?.locationUuid);
-      const locationId = number(value?.locationId);
+      const locationId = number(value?.locationId) ?? text(value?.locationId);
       const name = text(value?.name);
       return locationUuid && locationId != null && name
         ? [{

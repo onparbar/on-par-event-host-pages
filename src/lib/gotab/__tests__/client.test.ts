@@ -63,6 +63,28 @@ describe("GoTab server client", () => {
     );
   });
 
+  it("reads the wrapped location response returned by GoTab", async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.endsWith("/api/oauth/token")
+        ? json({ token: "server-token", expiresIn: 86400 })
+        : json({
+            data: [{
+              locationUuid: "location-2",
+              locationId: "112479",
+              name: "On Par",
+              timezone: "America/New_York",
+            }],
+          }),
+    );
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await expect(client.verifyConfiguredLocation()).resolves.toMatchObject({
+      locationUuid: "location-2",
+      locationId: "112479",
+      name: "On Par",
+    });
+  });
+
   it("returns sanitized authentication errors", async () => {
     const fetchImpl = vi.fn(async () => json({ detail: "secret response" }, 401));
     const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
