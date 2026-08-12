@@ -168,6 +168,7 @@ describe("Event Food synchronization", () => {
         product: "Mozzarella Stick Platter",
       }),
       "EVENT_HOST_ADDON_SAVE",
+      { immediate: true },
     );
   });
 });

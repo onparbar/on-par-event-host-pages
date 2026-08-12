@@ -314,8 +314,11 @@ export class GoTabIntegrationStorage {
     request: NormalizedEventFoodItem,
     preview: Record<string, unknown>,
     actor: string,
+    options: { immediate?: boolean } = {},
   ) {
-    const scheduledAt = request.prepDueAt;
+    const scheduledAt = options.immediate
+      ? new Date().toISOString()
+      : request.prepDueAt;
     const status = Date.parse(scheduledAt) <= Date.now() ? "QUEUED" : "SCHEDULED";
     const response = await this.request("rpc/enqueue_event_food_request", null, {
       method: "POST",

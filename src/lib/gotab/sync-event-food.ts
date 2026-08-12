@@ -31,6 +31,7 @@ export async function synchronizeKitchenChecklistToEventFood(
     actor?: string;
     storage?: EventFoodSyncStorage;
     env?: Readonly<Record<string, string | undefined>>;
+    dispatchImmediately?: boolean;
   },
 ) {
   const storage = options.storage ?? new GoTabIntegrationStorage();
@@ -70,11 +71,18 @@ export async function synchronizeKitchenChecklistToEventFood(
       enabled: configuration.enabled,
       dryRun: configuration.dryRun,
     });
-    results.push(await storage.enqueueRequest(
-      request,
-      preview as unknown as Record<string, unknown>,
-      options.actor ?? "SYSTEM",
-    ));
+    results.push(options.dispatchImmediately
+      ? await storage.enqueueRequest(
+          request,
+          preview as unknown as Record<string, unknown>,
+          options.actor ?? "SYSTEM",
+          { immediate: true },
+        )
+      : await storage.enqueueRequest(
+          request,
+          preview as unknown as Record<string, unknown>,
+          options.actor ?? "SYSTEM",
+        ));
   }
   return {
     eventId: String(checklist.event.eventId),
@@ -92,6 +100,7 @@ export async function synchronizeKitchenLiveAddOnsToEventFood(
     actor?: string;
     storage?: EventFoodSyncStorage;
     env?: Readonly<Record<string, string | undefined>>;
+    dispatchImmediately?: boolean;
   },
 ) {
   const changedItemKeys = new Set(
@@ -112,5 +121,6 @@ export async function synchronizeKitchenLiveAddOnsToEventFood(
     actor: options.actor ?? "EVENT_HOST_ADDON_SAVE",
     storage: options.storage,
     env: options.env,
+    dispatchImmediately: options.dispatchImmediately ?? true,
   });
 }

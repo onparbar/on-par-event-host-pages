@@ -421,7 +421,16 @@ export function normalizeKitchenEventAddOnFood(
       field.sourceUnitLabel,
     );
     if (quantity !== null) {
-      normalized[field.sourceKey] = { quantity };
+      const rawValue = value[field.sourceKey];
+      const panSize =
+        isRecord(rawValue) &&
+        (rawValue.panSize === "1/3" || rawValue.panSize === "1/2")
+          ? rawValue.panSize
+          : undefined;
+      normalized[field.sourceKey] = {
+        quantity,
+        ...(panSize ? { panSize } : {}),
+      };
     }
   }
   return normalized;

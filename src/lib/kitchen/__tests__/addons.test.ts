@@ -10,7 +10,7 @@ import {
 describe("translateEventHostFoodAddOns", () => {
   it("exports the canonical Event Host entry fields and source units", () => {
     expect(
-      KITCHEN_EVENT_ADD_ON_FIELDS.map(
+      KITCHEN_EVENT_ADD_ON_FIELDS.slice(0, 22).map(
         ({ sourceKey, foodName, sourceUnitLabel }) => ({
           sourceKey,
           foodName,
@@ -129,11 +129,34 @@ describe("translateEventHostFoodAddOns", () => {
         sourceUnitLabel: "requested units",
       },
     ]);
+    expect(
+      KITCHEN_EVENT_ADD_ON_FIELDS.slice(22).map(
+        ({ sourceKey, foodName, sourceUnitLabel }) => ({
+          sourceKey,
+          foodName,
+          sourceUnitLabel,
+        }),
+      ),
+    ).toEqual([
+      { sourceKey: "appetizer-refill-tater-kegs", foodName: "Tater Kegs", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-mozzarella-sticks", foodName: "Mozzarella Sticks", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-chicken-tenders", foodName: "Chicken Tenders", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-marinara", foodName: "Marinara", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-ranch", foodName: "Ranch", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-wings", foodName: "Wings", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-fries", foodName: "Fries", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-ranch", foodName: "Ranch", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-bbq", foodName: "BBQ", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-garlic-parm", foodName: "Garlic Parm", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-buffalo", foodName: "Buffalo Sauce", sourceUnitLabel: "requested units" },
+    ]);
     expect(KITCHEN_EVENT_ADD_ON_SECTIONS).toEqual([
       { key: "party-platters", label: "Party Platters" },
       { key: "sauces", label: "Sauces" },
       { key: "dessert", label: "Dessert" },
       { key: "taco-bar", label: "Taco Bar" },
+      { key: "appetizer-bar-refills", label: "Appetizer Bar Refills" },
+      { key: "wing-bar-refills", label: "Wing Bar Refills" },
     ]);
   });
 
@@ -241,6 +264,21 @@ describe("translateEventHostFoodAddOns", () => {
     expect(addOns.every((item) => item.sourceUpdatedAt === sourceUpdatedAt)).toBe(
       true,
     );
+  });
+
+  it("uses a staff-selected pan size for a live food add-on", () => {
+    expect(
+      translateEventHostFoodAddOns(
+        { "mozzarella-sticks": { quantity: 2, panSize: "1/2" } },
+        "2026-08-11T20:00:00.000Z",
+      ),
+    ).toMatchObject([
+      {
+        itemKey: "addon:mozzarella-sticks",
+        numberOfPans: 2,
+        panSize: "1/2",
+      },
+    ]);
   });
 
   it("accepts positive whole number values and ignores invalid or unknown entries", () => {

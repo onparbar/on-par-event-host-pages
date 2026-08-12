@@ -11,7 +11,7 @@ import {
   vipPrepEventPlan,
   vipPrepExternalId,
 } from "../../../../lib/vip-prep/client";
-import { updateKitchenEventFoodAddOns } from "../../../../lib/kitchen/sync";
+import { synchronizeChecklistFoodAddOns } from "../../../../lib/gotab/sync-checklist-addons";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     });
 
     try {
-      const kitchenAddOns = await updateKitchenEventFoodAddOns(
+      const kitchenSync = await synchronizeChecklistFoodAddOns(
         kitchenEventId,
         body.checklist.food,
       );
@@ -90,7 +90,10 @@ export async function POST(request: Request) {
         record,
         kitchenSync: {
           status: "live",
-          updatedAt: kitchenAddOns.updatedAt,
+          updatedAt: kitchenSync.saved.updatedAt,
+          queued: kitchenSync.queued,
+          exceptions: kitchenSync.exceptions,
+          sent: kitchenSync.sent,
         },
       });
     } catch {

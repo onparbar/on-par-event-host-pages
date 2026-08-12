@@ -433,13 +433,13 @@ export class GoTabClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        query: `query EventFoodProducts($locationId: BigInt!) {
-          location(locationId: $locationId) {
-            categoriesList(includeArchived: NO) { categoryId label }
+        query: `query EventFoodProducts($locationUuid: String!) {
+          location(locationUuid: $locationUuid) {
+            categoriesList(includeArchived: NO) { categoryId name }
             productsList(includeArchived: NO) { productId productUuid name categoryId }
           }
         }`,
-        variables: { locationId: String(location.locationId) },
+        variables: { locationUuid: location.locationUuid },
       }),
     });
     const payload = record(await response.json().catch(() => null));
@@ -454,7 +454,7 @@ export class GoTabClient {
     }
     const eventFoodCategory = categories
       .map(record)
-      .find((category) => text(category?.label)?.toLowerCase() === "event food");
+      .find((category) => text(category?.name)?.toLowerCase() === "event food");
     const categoryId = text(eventFoodCategory?.categoryId) ?? number(eventFoodCategory?.categoryId)?.toString();
     if (!categoryId) return [];
     return products.flatMap((productValue) => {

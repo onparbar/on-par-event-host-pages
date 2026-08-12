@@ -38,6 +38,7 @@ export type EntertainmentState = {
 export type FoodState = {
   quantity: string;
   manualPrice: string;
+  panSize?: "" | "1/3" | "1/2";
 };
 
 export type EventChecklistState = {
@@ -100,6 +101,16 @@ export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
     options: [
       { key: "sun-thu", label: "Sun-Thursday · $30 per hour", price: 30 },
       { key: "fri-sat", label: "Friday-Saturday · $40 per hour", price: 40 },
+    ],
+  },
+  {
+    key: "pool-tables",
+    label: "Pool Tables",
+    kind: "rate-select",
+    unitLabel: "hours",
+    options: [
+      { key: "sun-thu", label: "Sunday-Thursday · $12 per hour", price: 12 },
+      { key: "fri-sat", label: "Friday-Saturday · $18 per hour", price: 18 },
     ],
   },
   {
@@ -177,14 +188,36 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "taco-diced-onion", label: "Diced Onion", kind: "quantity-only" },
   { key: "taco-shredded-cheese", label: "Shredded Cheese", kind: "quantity-only" },
   { key: "taco-salsa", label: "Salsa", kind: "quantity-only" },
+  { key: "appetizer-refill-tater-kegs", label: "Tater Kegs", kind: "quantity-only" },
+  { key: "appetizer-refill-mozzarella-sticks", label: "Mozzarella Sticks", kind: "quantity-only" },
+  { key: "appetizer-refill-chicken-tenders", label: "Chicken Tenders", kind: "quantity-only" },
+  { key: "appetizer-refill-marinara", label: "Marinara", kind: "quantity-only" },
+  { key: "appetizer-refill-ranch", label: "Ranch", kind: "quantity-only" },
+  { key: "wing-refill-wings", label: "Wings", kind: "quantity-only" },
+  { key: "wing-refill-fries", label: "Fries", kind: "quantity-only" },
+  { key: "wing-refill-ranch", label: "Ranch", kind: "quantity-only" },
+  { key: "wing-refill-bbq", label: "BBQ", kind: "quantity-only" },
+  { key: "wing-refill-garlic-parm", label: "Garlic Parm", kind: "quantity-only" },
+  { key: "wing-refill-buffalo", label: "Buffalo Sauce", kind: "quantity-only" },
 ];
 
 export const tacoBarRefillAddOns = foodAddOns.filter((item) =>
   item.key.startsWith("taco-"),
 );
 
+export const appetizerBarRefillAddOns = foodAddOns.filter((item) =>
+  item.key.startsWith("appetizer-refill-"),
+);
+
+export const wingBarRefillAddOns = foodAddOns.filter((item) =>
+  item.key.startsWith("wing-refill-"),
+);
+
 export const standardFoodAddOns = foodAddOns.filter(
-  (item) => !item.key.startsWith("taco-"),
+  (item) =>
+    !item.key.startsWith("taco-") &&
+    !item.key.startsWith("appetizer-refill-") &&
+    !item.key.startsWith("wing-refill-"),
 );
 
 export const checklistSections: ChecklistSection[] = [
@@ -325,6 +358,7 @@ export function defaultChecklistState(dateValue: string): EventChecklistState {
       {
         quantity: "",
         manualPrice: "",
+        panSize: "" as const,
       },
     ]),
   );

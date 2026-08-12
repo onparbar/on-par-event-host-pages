@@ -16,6 +16,7 @@ import {
 import type { ChecklistEvent } from "@/lib/checklist-events";
 import {
   checklistSections,
+  appetizerBarRefillAddOns,
   currency,
   defaultChecklistState,
   entertainmentAddOns,
@@ -27,6 +28,7 @@ import {
   recordToChecklistState,
   standardFoodAddOns,
   tacoBarRefillAddOns,
+  wingBarRefillAddOns,
   type ChecklistRecord,
   type ChecklistRecordStatus,
   type EventChecklistState,
@@ -40,7 +42,13 @@ type EventChecklistMeta = {
 
 type SaveState = "idle" | "saving" | "saved" | "error" | "submitting" | "submitted";
 type KitchenSyncState = "idle" | "syncing" | "live" | "error";
-type AddOnTab = "food" | "taco-bar-refills" | "entertainment";
+type FoodSubmitState = "idle" | "submitting" | "sent" | "error";
+type AddOnTab =
+  | "food"
+  | "taco-bar-refills"
+  | "appetizer-bar-refills"
+  | "wing-bar-refills"
+  | "entertainment";
 type ChecklistWorkspace = "checklist" | "addons";
 
 type ChecklistSaveResponse = {
@@ -150,6 +158,7 @@ export default function ChecklistsClient({
     );
   const [dirtyEventIds, setDirtyEventIds] = useState<number[]>([]);
   const [dirtyFoodEventIds, setDirtyFoodEventIds] = useState<number[]>([]);
+  const [foodSubmitByItem, setFoodSubmitByItem] = useState<Record<string, FoodSubmitState>>({});
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const revisionByEventRef = useRef<Record<number, number>>(
     buildInitialRevisionMap(events),
@@ -476,7 +485,11 @@ export default function ChecklistsClient({
   }, 0);
   const activeFoodAddOns = activeAddOnTab === "taco-bar-refills"
     ? tacoBarRefillAddOns
-    : standardFoodAddOns;
+    : activeAddOnTab === "appetizer-bar-refills"
+      ? appetizerBarRefillAddOns
+      : activeAddOnTab === "wing-bar-refills"
+        ? wingBarRefillAddOns
+        : standardFoodAddOns;
   const activeFoodSubtotal = activeFoodAddOns.reduce((sum, item) => {
     const state = activeChecklist.food[item.key];
     return sum + foodUnitPrice(item, state) * numeric(state.quantity);
@@ -667,6 +680,10 @@ export default function ChecklistsClient({
                       ? "Food Add-Ons"
                       : activeAddOnTab === "taco-bar-refills"
                         ? "Taco Bar Refills"
+                        : activeAddOnTab === "appetizer-bar-refills"
+                          ? "Appetizer Bar Refills"
+                          : activeAddOnTab === "wing-bar-refills"
+                            ? "Wing Bar Refills"
                         : "Entertainment & Drink Add-Ons"}
                   </h3>
                   <p>
@@ -694,6 +711,26 @@ export default function ChecklistsClient({
                 >
                   <span>Food</span>
                   <small>Live to Kitchen</small>
+                </button>
+                <button
+                  aria-selected={activeAddOnTab === "appetizer-bar-refills"}
+                  className={activeAddOnTab === "appetizer-bar-refills" ? "active" : ""}
+                  onClick={() => setActiveAddOnTab("appetizer-bar-refills")}
+                  role="tab"
+                  type="button"
+                >
+                  <span>Appetizer Bar Refills</span>
+                  <small>Live to Kitchen + KDS</small>
+                </button>
+                <button
+                  aria-selected={activeAddOnTab === "wing-bar-refills"}
+                  className={activeAddOnTab === "wing-bar-refills" ? "active" : ""}
+                  onClick={() => setActiveAddOnTab("wing-bar-refills")}
+                  role="tab"
+                  type="button"
+                >
+                  <span>Wing Bar Refills</span>
+                  <small>Live to Kitchen + KDS</small>
                 </button>
                 <button
                   aria-selected={activeAddOnTab === "taco-bar-refills"}
@@ -738,13 +775,7 @@ export default function ChecklistsClient({
                     </span>
                   </div>
                   {activeKitchenSyncState === "error" ? (
-                    <button
-                      disabled={!isEditable}
-                      onClick={() => retryKitchenSync(activeEvent.id)}
-                      type="button"
-                    >
-                      Retry Kitchen Sync
-                    </button>
+                    <span>Use Retry Submit beside the affected food item.</span>
                   ) : null}
                 </div>
               ) : (
@@ -897,16 +928,9 @@ export default function ChecklistsClient({
                               disabled={!isEditable}
                               value={state.manualPrice}
                               onChange={(event) =>
-                                updateEventChecklist(activeEvent.id, (current) => ({
-                                  ...current,
-                                  food: {
-                                    ...current.food,
-                                    [item.key]: {
-                                      ...current.food[item.key],
-                                      manualPrice: event.target.value,
-                                    },
-                                  },
-                                }))
+                                updateFoodAddOn(activeEvent.id, item.key, {
+                                  manualPrice: event.target.value,
+                                })
                               }
                               placeholder="0.00"
                             />
@@ -936,12 +960,48 @@ export default function ChecklistsClient({
                               updateFoodAddOn(
                                 activeEvent.id,
                                 item.key,
-                                event.target.value,
+                                { quantity: event.target.value },
                               )
                             }
                             placeholder="0"
                           />
                         </label>
+
+                        <label className="control-block">
+                          <span>Pan size</span>
+                          <select
+                            aria-label={`${item.label} pan size`}
+                            disabled={!isEditable}
+                            value={state.panSize}
+                            onChange={(event) =>
+                              updateFoodAddOn(
+                                activeEvent.id,
+                                item.key,
+                                {
+                                  panSize: event.target.value as "" | "1/3" | "1/2",
+                                },
+                              )
+                            }
+                          >
+                            <option value="">Automatic</option>
+                            <option value="1/3">1/3 pan</option>
+                            <option value="1/2">1/2 pan</option>
+                          </select>
+                        </label>
+                        <button
+                          className="submit-button"
+                          disabled={!isEditable || foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "submitting"}
+                          onClick={() => void submitFoodAddOn(activeEvent.id, item.key)}
+                          type="button"
+                        >
+                          {foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "submitting"
+                            ? "Sending…"
+                            : foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "sent"
+                              ? "Sent to Kitchen"
+                              : foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "error"
+                                ? "Retry Submit"
+                                : "Submit to Kitchen"}
+                        </button>
                       </div>
                     </article>
                     </Fragment>
@@ -1001,45 +1061,65 @@ export default function ChecklistsClient({
   function updateFoodAddOn(
     eventId: number,
     key: string,
-    quantity: string,
+    changes: { quantity?: string; manualPrice?: string; panSize?: "" | "1/3" | "1/2" },
   ) {
-    updateEventChecklist(eventId, (current) => ({
+    if (metaByEvent[eventId]?.status === "submitted") return;
+    setChecklistsByEvent((current) => ({
       ...current,
-      food: {
-        ...current.food,
-        [key]: {
-          ...current.food[key],
-          quantity,
+      [eventId]: {
+        ...current[eventId],
+        food: {
+          ...current[eventId].food,
+          [key]: { ...current[eventId].food[key], ...changes },
         },
       },
     }));
-    setDirtyFoodEventIds((current) =>
-      current.includes(eventId) ? current : [...current, eventId],
-    );
+    setFoodSubmitByItem((current) => ({
+      ...current,
+      [`${eventId}:${key}`]: "idle",
+    }));
     setKitchenSyncByEvent((current) => ({
       ...current,
       [eventId]: "idle",
     }));
   }
 
-  function retryKitchenSync(eventId: number) {
-    if (metaByEvent[eventId]?.status === "submitted") {
-      return;
+  async function submitFoodAddOn(eventId: number, key: string) {
+    const checklist = checklistsByEvent[eventId];
+    if (!checklist || metaByEvent[eventId]?.status === "submitted") return;
+    const itemStateKey = `${eventId}:${key}`;
+    setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "submitting" }));
+    setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "syncing" }));
+    try {
+      const response = await fetch("/api/checklists", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          checklist,
+          syncFoodAddOns: true,
+          syncFoodAddOnKeys: [key],
+        }),
+      });
+      const payload = (await response.json()) as ChecklistSaveResponse;
+      if (!response.ok || payload.kitchenSync?.status !== "live") {
+        throw new Error("Kitchen submission failed.");
+      }
+      const event = events.find((candidate) => candidate.id === eventId);
+      if (event) {
+        setMetaByEvent((current) => ({
+          ...current,
+          [eventId]: metaFromRecord(payload.record),
+        }));
+      }
+      setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "sent" }));
+      setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "live" }));
+    } catch {
+      setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "error" }));
+      setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "error" }));
     }
-
-    revisionByEventRef.current[eventId] =
-      (revisionByEventRef.current[eventId] ?? 0) + 1;
-    setDirtyFoodEventIds((current) =>
-      current.includes(eventId) ? current : [...current, eventId],
-    );
-    setDirtyEventIds((current) =>
-      current.includes(eventId) ? current : [...current, eventId],
-    );
-    setKitchenSyncByEvent((current) => ({
-      ...current,
-      [eventId]: "idle",
-    }));
   }
+
 }
 
 function Field({ label, value }: { label: string; value: string }) {

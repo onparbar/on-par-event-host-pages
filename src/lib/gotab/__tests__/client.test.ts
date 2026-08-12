@@ -104,7 +104,7 @@ describe("GoTab server client", () => {
       return json({
         data: {
           location: {
-            categoriesList: [{ categoryId: "105186", label: "Event Food" }],
+            categoriesList: [{ categoryId: "105186", name: "Event Food" }],
             productsList: [
               { productId: "1", productUuid: "prd_ranch", name: "Ranch", categoryId: "105186" },
               { productId: "2", productUuid: "prd_other", name: "Other", categoryId: "200" },
@@ -121,6 +121,7 @@ describe("GoTab server client", () => {
     const graphRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
       ([url]) => url.endsWith("/api/graph"),
     )?.[1];
+    expect(String(graphRequest?.body)).toContain("locationUuid");
     expect(String(graphRequest?.body)).toContain("productsList(includeArchived: NO)");
   });
 

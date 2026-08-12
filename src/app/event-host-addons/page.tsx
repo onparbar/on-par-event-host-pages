@@ -4,7 +4,6 @@ import ChecklistsClient from "@/app/checklists/ChecklistsClient";
 import { hasAdminSession } from "@/lib/admin-auth";
 import { loadAdminState } from "@/lib/admin-state";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
-import { activeEvents } from "@/lib/event-lifecycle";
 import { loadEventPlanWindow } from "@/lib/event-plans/sync";
 import { rollingEventPlanHorizon } from "@/lib/event-plans/horizon";
 import type { EventPlan } from "@/lib/event-plans/types";
@@ -48,10 +47,10 @@ export default async function EventHostAddOnsPage() {
     ...eventPlanWindow.plans,
     ...vipPlans,
   ]);
-  const activeEventIds = activeEvents(
-    checklistEvents,
-    adminState.archivedEventIds,
-  ).map((event) => event.id);
+  const archivedEventIds = new Set(adminState.archivedEventIds);
+  const activeEventIds = checklistEvents
+    .filter((event) => !archivedEventIds.has(event.id))
+    .map((event) => event.id);
 
   return (
     <ChecklistsClient

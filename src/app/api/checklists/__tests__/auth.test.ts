@@ -7,7 +7,7 @@ import {
   type ChecklistRecord,
 } from "@/lib/checklist-model";
 import { saveChecklist } from "@/lib/checklist-storage";
-import { updateKitchenEventFoodAddOns } from "@/lib/kitchen/sync";
+import { synchronizeChecklistFoodAddOns } from "@/lib/gotab/sync-checklist-addons";
 import { GET, PUT } from "../route";
 import { POST } from "../submit/route";
 
@@ -20,8 +20,8 @@ vi.mock("@/lib/checklist-storage", () => ({
   saveChecklist: vi.fn(),
 }));
 
-vi.mock("@/lib/kitchen/sync", () => ({
-  updateKitchenEventFoodAddOns: vi.fn(),
+vi.mock("@/lib/gotab/sync-checklist-addons", () => ({
+  synchronizeChecklistFoodAddOns: vi.fn(),
 }));
 
 afterEach(() => {
@@ -123,11 +123,16 @@ describe("Event Host checklist add-on routing", () => {
     configureValidProductionSession();
     const { checklist, event, record } = checklistFixture();
     vi.mocked(saveChecklist).mockResolvedValue(record);
-    vi.mocked(updateKitchenEventFoodAddOns).mockResolvedValue({
-      eventId: String(event.id),
-      food: { wings: { quantity: 2 } },
-      revision: 1,
-      updatedAt: "2026-07-30T15:00:00.000Z",
+    vi.mocked(synchronizeChecklistFoodAddOns).mockResolvedValue({
+      saved: {
+        eventId: String(event.id),
+        food: { wings: { quantity: 2 } },
+        revision: 1,
+        updatedAt: "2026-07-30T15:00:00.000Z",
+      },
+      queued: 1,
+      exceptions: 0,
+      sent: 1,
     });
 
     const response = await PUT(
@@ -143,7 +148,7 @@ describe("Event Host checklist add-on routing", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(updateKitchenEventFoodAddOns).toHaveBeenCalledWith(
+    expect(synchronizeChecklistFoodAddOns).toHaveBeenCalledWith(
       String(event.id),
       checklist.food,
     );
@@ -170,7 +175,7 @@ describe("Event Host checklist add-on routing", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(updateKitchenEventFoodAddOns).not.toHaveBeenCalled();
+    expect(synchronizeChecklistFoodAddOns).not.toHaveBeenCalled();
   });
 
   it("preserves the final Admin submission if Kitchen is unavailable", async () => {
@@ -182,7 +187,7 @@ describe("Event Host checklist add-on routing", () => {
       submittedAt: "2026-07-30T15:01:00.000Z",
     };
     vi.mocked(saveChecklist).mockResolvedValue(submittedRecord);
-    vi.mocked(updateKitchenEventFoodAddOns).mockRejectedValue(
+    vi.mocked(synchronizeChecklistFoodAddOns).mockRejectedValue(
       new Error("Kitchen event was not found."),
     );
 

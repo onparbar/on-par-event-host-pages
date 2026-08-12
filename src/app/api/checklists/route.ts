@@ -14,7 +14,7 @@ import {
   listChecklistRecords,
   saveChecklist,
 } from "../../../lib/checklist-storage";
-import { updateKitchenEventFoodAddOns } from "../../../lib/kitchen/sync";
+import { synchronizeChecklistFoodAddOns } from "../../../lib/gotab/sync-checklist-addons";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,7 @@ type SaveChecklistRequest = {
   eventId?: number;
   checklist?: EventChecklistState;
   syncFoodAddOns?: boolean;
+  syncFoodAddOnKeys?: string[];
 };
 
 function badRequest(message: string) {
@@ -104,15 +105,24 @@ export async function PUT(request: Request) {
     }
 
     try {
-      const kitchenAddOns = await updateKitchenEventFoodAddOns(
-        kitchenEventId,
-        body.checklist.food,
-      );
+      const kitchenSync = body.syncFoodAddOnKeys
+        ? await synchronizeChecklistFoodAddOns(
+            kitchenEventId,
+            body.checklist.food,
+            body.syncFoodAddOnKeys,
+          )
+        : await synchronizeChecklistFoodAddOns(
+            kitchenEventId,
+            body.checklist.food,
+          );
       return NextResponse.json({
         record,
         kitchenSync: {
           status: "live",
-          updatedAt: kitchenAddOns.updatedAt,
+          updatedAt: kitchenSync.saved.updatedAt,
+          queued: kitchenSync.queued,
+          exceptions: kitchenSync.exceptions,
+          sent: kitchenSync.sent,
         },
       });
     } catch {
