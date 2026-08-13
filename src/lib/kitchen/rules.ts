@@ -381,6 +381,7 @@ export function packHotPlatters(
     (sum, item) => sum + item.platterCount,
     0,
   );
+  const distinctPannedItemCount = new Set(items.map((item) => item.key)).size;
 
   if (totalHotPlatters === 0) {
     return {
@@ -392,7 +393,7 @@ export function packHotPlatters(
     };
   }
 
-  const panSize = totalHotPlatters % 2 === 0 ? "1/2" : "1/3";
+  const panSize = distinctPannedItemCount % 2 === 0 ? "1/2" : "1/3";
   const panCount = totalHotPlatters === 1 ? 3 : totalHotPlatters;
   const pansPerChafingDish = panSize === "1/2" ? 2 : 3;
 

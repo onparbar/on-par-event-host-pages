@@ -2,6 +2,7 @@ import {
   fixedSeatingHighlightsForArea,
   foodTablesNearArea,
   getFloorPlanArea,
+  requiredFoodTableCount,
   seatingTablesForArea,
 } from "./configuration/areas";
 import { timeRangesOverlap } from "./conflicts";
@@ -187,10 +188,28 @@ function eventBaseReservations(
     generated.push(reservation(event, table.id, "seating", table.shortLabel));
   }
 
-  const foodCandidate = (primaryContractedArea ? foodTablesNearArea(primaryContractedArea) : foodTablesNearArea("main-dining"))
-    .find((table) => !unavailable.has(table.id));
-  if (foodCandidate) {
+  const foodTableCount = requiredFoodTableCount(event.guestCount);
+  const existingFoodAreaIds = new Set(
+    existing.flatMap((item) =>
+      item.floorPlanEventId === event.id &&
+      item.reservationType === "food-table"
+        ? [item.areaId]
+        : [],
+    ),
+  );
+  const foodCandidates = primaryContractedArea
+    ? foodTablesNearArea(primaryContractedArea)
+    : foodTablesNearArea("main-dining");
+  for (const foodCandidate of foodCandidates) {
+    if (existingFoodAreaIds.size >= foodTableCount) break;
+    if (
+      unavailable.has(foodCandidate.id) ||
+      existingFoodAreaIds.has(foodCandidate.id)
+    ) {
+      continue;
+    }
     generated.push(reservation(event, foodCandidate.id, "food-table", "F"));
+    existingFoodAreaIds.add(foodCandidate.id);
   }
   return generated;
 }
@@ -220,8 +239,6 @@ export function generateFloorPlanReservations(
   });
   const next = [...preserved];
   for (const event of plan.events) {
-    const existingForEvent = next.filter((item) => item.floorPlanEventId === event.id);
-    const hasFood = existingForEvent.some((item) => item.reservationType === "food-table");
     const generated = eventBaseReservations(plan, event, next);
     for (const item of generated) {
       if (
@@ -231,8 +248,7 @@ export function generateFloorPlanReservations(
             (existing.floorPlanEventId === item.floorPlanEventId &&
               existing.areaId === item.areaId &&
               existing.reservationType === item.reservationType),
-        ) ||
-        (mode === "fill-missing" && item.reservationType === "food-table" && hasFood)
+        )
       ) {
         continue;
       }

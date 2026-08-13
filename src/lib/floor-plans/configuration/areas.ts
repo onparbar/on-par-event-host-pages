@@ -248,16 +248,24 @@ export function foodTablesNearArea(areaId: string) {
   const direct = AREAS.filter(
     (item) => item.canBeFoodTable && item.parentAreaId === areaId,
   );
-  return direct.length
-    ? direct
-    : AREAS.filter((item) => item.canBeFoodTable).sort((left, right) => {
-        const parent = getFloorPlanArea(areaId);
-        if (!parent) return left.id.localeCompare(right.id);
-        const distance = (item: FloorPlanArea) =>
-          Math.hypot(
-            item.x + item.width / 2 - (parent.x + parent.width / 2),
-            item.y + item.height / 2 - (parent.y + parent.height / 2),
-          );
-        return distance(left) - distance(right);
-      });
+  const directIds = new Set(direct.map((item) => item.id));
+  const parent = getFloorPlanArea(areaId);
+  const distance = (item: FloorPlanArea) =>
+    parent
+      ? Math.hypot(
+          item.x + item.width / 2 - (parent.x + parent.width / 2),
+          item.y + item.height / 2 - (parent.y + parent.height / 2),
+        )
+      : 0;
+  const nearby = AREAS.filter(
+    (item) => item.canBeFoodTable && !directIds.has(item.id),
+  ).sort((left, right) => {
+    const distanceDifference = distance(left) - distance(right);
+    return distanceDifference || left.id.localeCompare(right.id);
+  });
+  return [...direct, ...nearby];
+}
+
+export function requiredFoodTableCount(guestCount: number) {
+  return guestCount > 100 ? 2 : 1;
 }

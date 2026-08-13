@@ -407,12 +407,42 @@ describe("floor-plan capacities and generation", () => {
     ]));
   });
 
-  it("does not add a second food table for more than 100 guests", () => {
-    const source = plan([floorPlanEvent({ guestCount: 140 })]);
+  it.each([
+    [100, 1],
+    [101, 2],
+    [150, 2],
+  ])("assigns %i guests the required food-table count", (guestCount, expected) => {
+    const source = plan([floorPlanEvent({ guestCount })]);
     const food = generateFloorPlanReservations(source, "fill-missing").filter(
       (item) => item.reservationType === "food-table",
     );
-    expect(food).toHaveLength(1);
+    expect(food).toHaveLength(expected);
+  });
+
+  it("adds the missing mirrored food table without replacing a saved table", () => {
+    const event = floorPlanEvent({ guestCount: 150 });
+    const savedFoodTable: FloorPlanReservation = {
+      ...reservation(event, "main-food-1"),
+      id: "saved-food-table",
+      reservationType: "food-table",
+      label: "F",
+      source: "manual",
+      lockedByUser: true,
+    };
+
+    const generated = generateFloorPlanReservations(
+      plan([event], [savedFoodTable]),
+      "fill-missing",
+    );
+    const food = generated.filter(
+      (item) => item.reservationType === "food-table",
+    );
+
+    expect(food).toHaveLength(2);
+    expect(food).toContainEqual(savedFoodTable);
+    expect(food).toEqual(expect.arrayContaining([
+      expect.objectContaining({ areaId: "main-food-2" }),
+    ]));
   });
 
   it("preserves manual locked assignments during partial regeneration", () => {
@@ -507,6 +537,41 @@ describe("time and buyout conflicts", () => {
 });
 
 describe("validation, lifecycle, and shared records", () => {
+  it("blocks approval when an event over 100 guests has only one food table", () => {
+    const event = floorPlanEvent({ guestCount: 150 });
+    const food = (areaId: string): FloorPlanReservation => ({
+      ...reservation(event, areaId),
+      reservationType: "food-table",
+      label: "F",
+    });
+
+    const oneTableValidation = validateFloorPlan(
+      plan([event], [food("main-food-1")]),
+      [],
+      [],
+      [],
+    );
+    const twoTableValidation = validateFloorPlan(
+      plan([event], [food("main-food-1"), food("main-food-2")]),
+      [],
+      [],
+      [],
+    );
+
+    expect(
+      oneTableValidation.find((item) => item.code === "FOOD_TABLE")?.status,
+    ).toBe("Failed");
+    expect(
+      oneTableValidation.find((item) => item.code === "FOOD_TABLE_ADA")?.status,
+    ).toBe("Failed");
+    expect(
+      twoTableValidation.find((item) => item.code === "FOOD_TABLE")?.status,
+    ).toBe("Passed");
+    expect(
+      twoTableValidation.find((item) => item.code === "FOOD_TABLE_ADA")?.status,
+    ).toBe("Passed");
+  });
+
   it("does not require an Entertainment Schedule reservation for mini golf", () => {
     const event = floorPlanEvent({
       source: {

@@ -6,7 +6,11 @@ import type {
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
 import { preferredInventory } from "./configuration/adjacency";
-import { getAreaForEntertainmentResource, getFloorPlanArea } from "./configuration/areas";
+import {
+  getAreaForEntertainmentResource,
+  getFloorPlanArea,
+  requiredFoodTableCount,
+} from "./configuration/areas";
 import { floorPlanEventColorsAreDistinct } from "./configuration/colors";
 import type {
   FloorPlanConflict,
@@ -72,6 +76,11 @@ export function validateFloorPlan(
     );
     const food = reservations.filter(
       (reservation) => reservation.reservationType === "food-table",
+    );
+    const foodTableCount = requiredFoodTableCount(event.guestCount);
+    const foodTableCountPasses = food.length >= foodTableCount;
+    const foodTableLabelsPass = food.every(
+      (reservation) => reservation.label === "F",
     );
     const eventEntertainment = entertainmentReservations.filter(
       (reservation) => reservation.active && reservationMatchesEvent(reservation, event),
@@ -153,18 +162,18 @@ export function validateFloorPlan(
         "FOOD_TABLE",
         event.id,
         "Food table assigned",
-        food.length >= 1 && food.every((reservation) => reservation.label === "F")
+        foodTableCountPasses && foodTableLabelsPass
           ? "Passed"
           : "Failed",
-        food.length >= 1
-          ? food.every((reservation) => reservation.label === "F")
+        foodTableCountPasses
+          ? foodTableLabelsPass
             ? `${food.length} authorized food table${food.length === 1 ? " is" : "s are"} assigned and labeled F.`
             : "Every food table must be labeled F."
-          : "No food table is assigned.",
+          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${food.length} assigned.`,
       ),
     );
     const foodIsAda =
-      food.length > 0 &&
+      foodTableCountPasses &&
       food.every((reservation) => {
         const area = getFloorPlanArea(reservation.areaId);
         return area?.isAda && area.canBeFoodTable;

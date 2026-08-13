@@ -734,9 +734,7 @@ describe("dessert and platter quantities", () => {
         );
         expect(generatedRow.panSize).toBe(
           isHotPlatter
-            ? platterCount % 2 === 0
-              ? "1/2"
-              : "1/3"
+            ? "1/3"
             : null,
         );
       },
@@ -1284,15 +1282,15 @@ describe("platter packing and chafing dishes", () => {
 
   it.each([
     [1, 3, "1/3", 1],
-    [2, 2, "1/2", 1],
+    [2, 2, "1/3", 1],
     [3, 3, "1/3", 1],
-    [4, 4, "1/2", 2],
+    [4, 4, "1/3", 2],
     [5, 5, "1/3", 2],
-    [6, 6, "1/2", 3],
+    [6, 6, "1/3", 2],
     [7, 7, "1/3", 3],
-    [8, 8, "1/2", 4],
+    [8, 8, "1/3", 3],
     [9, 9, "1/3", 3],
-    [10, 10, "1/2", 5],
+    [10, 10, "1/3", 4],
   ] as const)(
     "approves %i same-food hot platters",
     (
@@ -1357,6 +1355,48 @@ describe("platter packing and chafing dishes", () => {
       bars: 0,
       hotPlatters: 2,
       total: 2,
+    });
+  });
+
+  it("packs WPAFB's four distinct hot platter items into half pans", () => {
+    const platter = (name: string, quantity: number): KitchenSourceSelection => ({
+      name,
+      quantity,
+      sourceCategory: "Food Platters",
+      isFood: true,
+    });
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          platter("Tater Keg Platter", 2),
+          platter("Chicken Tender Platter", 1),
+          platter("Wing Platter", 2),
+          platter("Veggie Tray", 2),
+          platter("Fry Platter", 2),
+        ],
+        { eventName: "WPAFB 9/04/2026", guestCount: 150 },
+      ),
+    );
+
+    for (const [key, pans] of [
+      ["platter-tater-kegs", 2],
+      ["platter-chicken-tenders", 1],
+      ["platter-wings", 2],
+      ["platter-fries", 2],
+    ] as const) {
+      expect(row(checklist, key)).toMatchObject({
+        numberOfPans: pans,
+        panSize: "1/2",
+      });
+    }
+    expect(row(checklist, "platter-veggie-tray")).toMatchObject({
+      numberOfPans: null,
+      panSize: null,
+    });
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 4,
+      total: 4,
     });
   });
 
@@ -1504,7 +1544,7 @@ describe("platter packing and chafing dishes", () => {
     });
   });
 
-  it("packs the redacted Veterans setup into four total chafing dishes", () => {
+  it("packs the redacted Veterans setup by its three distinct hot platter items", () => {
     const checklist = generateKitchenChecklist(
       packageEvent("Taco Bar", 50, [
         {
@@ -1530,8 +1570,8 @@ describe("platter packing and chafing dishes", () => {
 
     expect(checklist.chafingDishes).toEqual({
       bars: 1,
-      hotPlatters: 3,
-      total: 4,
+      hotPlatters: 2,
+      total: 3,
     });
   });
 });

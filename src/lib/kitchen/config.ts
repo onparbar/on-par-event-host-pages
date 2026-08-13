@@ -162,7 +162,7 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
     code: "CHECKLIST_PAN_SIZE_OPTIONS",
     title: "Checklist pan-size columns",
     writtenRule:
-      "Pack hot platter items together. Use one 1/2 pan per item when the total is even, or one 1/3 pan per item when the total is odd. A single hot platter uses three 1/3 pans.",
+      "Pack hot platter items together. Use 1/2 pans when the number of distinct panned food items is even, or 1/3 pans when it is odd. A single hot platter uses three 1/3 pans.",
     referenceRule: "The checklist displays two unlabeled pan-size subcolumns and shows both 1/2 and 1/3 for several rows.",
     currentResolution:
       "Count Appetizer Bar's tater kegs, mozzarella sticks, and chicken tenders as three hot items. Two 1/2 pans or three 1/3 pans fill one chafing dish.",
@@ -282,7 +282,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-11.1",
+  ruleVersion: "ope-kitchen-2026-08-13.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
