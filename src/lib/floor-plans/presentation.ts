@@ -30,6 +30,19 @@ export function eventForFloorPlanEntertainment(
   );
 }
 
+export function displayEventForFloorPlanArea(
+  plan: FloorPlanDocument,
+  local: FloorPlanReservation | null,
+  shared: EntertainmentReservation | null,
+) {
+  return (
+    eventForFloorPlanEntertainment(plan, shared) ??
+    (local
+      ? plan.events.find((event) => event.id === local.floorPlanEventId) ?? null
+      : null)
+  );
+}
+
 export function floorPlanOverlayLabel(
   area: FloorPlanArea,
   local: FloorPlanReservation | null,
@@ -81,6 +94,7 @@ export type EntertainmentMultipleReservationOutline = {
   color: string;
   category: EntertainmentCategory;
   resourceNames: string[];
+  timeLabel: string | null;
   x: number;
   y: number;
   width: number;
@@ -262,6 +276,10 @@ export function entertainmentMultipleReservationOutlines(
           color: group.event.color,
           category: group.category,
           resourceNames: run.map((reservation) => reservation.resourceName),
+          timeLabel:
+            group.category === "private-rooms"
+              ? entertainmentTimingLabel(run[0], group.event, areas[0])
+              : null,
           x: left,
           y: top,
           width: right - left,

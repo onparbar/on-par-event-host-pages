@@ -279,6 +279,17 @@ describe("floor-plan capacities and generation", () => {
     const document = plan([vipEvent]);
     document.reservations = [
       {
+        id: "legacy-vip-room",
+        floorPlanEventId: vipEvent.id,
+        areaId: "vip-1",
+        reservationType: "room",
+        startAt: "2026-08-15T13:00:00-04:00",
+        endAt: "2026-08-15T15:00:00-04:00",
+        label: "VIP 1",
+        source: "generated",
+        lockedByUser: false,
+      },
+      {
         id: "legacy-vip-table",
         floorPlanEventId: vipEvent.id,
         areaId: "vip1-extra-front-1",
@@ -306,7 +317,12 @@ describe("floor-plan capacities and generation", () => {
     const generated = generateFloorPlanReservations(document, "fill-missing");
 
     expect(generated).toEqual([
-      expect.objectContaining({ areaId: "vip-1", reservationType: "room" }),
+      expect.objectContaining({
+        areaId: "vip-1",
+        reservationType: "room",
+        startAt: vipEvent.startAt,
+        endAt: vipEvent.endAt,
+      }),
     ]);
   });
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { EntertainmentReservation } from "@/lib/entertainment/types";
+import { detectFloorPlanConflicts } from "../conflicts";
 import {
+  displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   localHighlightIdsForDeletion,
   visibleEntertainmentReservations,
@@ -207,5 +209,97 @@ describe("multiple entertainment reservation outlines", () => {
         secondEvent.id,
       )[0],
     ).toEqual(expect.objectContaining({ eventId: firstEvent.id }));
+  });
+
+  it("keeps the earlier VIP room orange and labels the later VIP booking's blue border with its own time", () => {
+    const adfEvent = {
+      ...floorPlanEvent("event-adf", "adf", "ADF", "#B45309"),
+      startAt: "2026-08-15T17:00:00.000Z",
+      endAt: "2026-08-15T19:00:00.000Z",
+    };
+    const cassieEvent = {
+      ...floorPlanEvent(
+        "event-cassie",
+        "vip-cassie",
+        "Cassie Perks VIP",
+        "#1D4ED8",
+      ),
+      startAt: "2026-08-16T01:00:00.000Z",
+      endAt: "2026-08-16T03:00:00.000Z",
+    };
+    const vipPlan: FloorPlanDocument = {
+      ...plan,
+      eventDate: "2026-08-15",
+      events: [adfEvent, cassieEvent],
+      reservations: [
+        {
+          id: "cassie-vip-1",
+          floorPlanEventId: cassieEvent.id,
+          areaId: "vip-1",
+          reservationType: "room",
+          startAt: cassieEvent.startAt,
+          endAt: cassieEvent.endAt,
+          label: "VIP 1",
+          source: "generated",
+          lockedByUser: false,
+        },
+        {
+          id: "adf-vip-1",
+          floorPlanEventId: adfEvent.id,
+          areaId: "vip-1",
+          reservationType: "room",
+          startAt: adfEvent.startAt,
+          endAt: adfEvent.endAt,
+          label: "VIP 1",
+          source: "generated",
+          lockedByUser: false,
+        },
+      ],
+    };
+    const reservations: EntertainmentReservation[] = [
+      {
+        ...entertainmentReservation(
+          "cassie-shared-vip-1",
+          cassieEvent,
+          "private-room-vip-1",
+          cassieEvent.startAt!,
+          cassieEvent.endAt!,
+        ),
+        operatingDate: "2026-08-15",
+        resourceCategory: "private-rooms",
+        resourceName: "VIP 1",
+      },
+      {
+        ...entertainmentReservation(
+          "adf-shared-vip-1",
+          adfEvent,
+          "private-room-vip-1",
+          adfEvent.startAt!,
+          adfEvent.endAt!,
+        ),
+        operatingDate: "2026-08-15",
+        resourceCategory: "private-rooms",
+        resourceName: "VIP 1",
+      },
+    ];
+
+    const primary = visibleEntertainmentReservations(vipPlan, reservations)[0];
+    const local = vipPlan.reservations[0];
+
+    expect(primary.id).toBe("adf-shared-vip-1");
+    expect(displayEventForFloorPlanArea(vipPlan, local, primary)).toBe(adfEvent);
+    expect(entertainmentMultipleReservationOutlines(vipPlan, reservations)).toEqual([
+      expect.objectContaining({
+        eventName: "Cassie Perks VIP",
+        color: "#1D4ED8",
+        resourceNames: ["VIP 1"],
+        timeLabel: "9:00 PM – 11:00 PM",
+        x: 1068,
+        y: 540,
+        width: 128,
+        height: 88,
+      }),
+    ]);
+    expect(detectFloorPlanConflicts(vipPlan)).toEqual([]);
   });
 });

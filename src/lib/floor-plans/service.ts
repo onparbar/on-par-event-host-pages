@@ -39,7 +39,7 @@ import { getFloorPlanArea } from "./configuration/areas";
 import { detectFloorPlanConflicts, timeRangesOverlap } from "./conflicts";
 import {
   generateFloorPlanReservations,
-  reservationAllowedForFloorPlanEvent,
+  reservationForCurrentFloorPlanEvent,
 } from "./generator";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
 import { getFloorPlanStorage, type FloorPlanStorage } from "./storage";
@@ -305,15 +305,13 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   }
 
   const currentIds = new Set(currentEvents.map((event) => event.id));
-  const retainedReservations = saved.reservations.filter((reservation) => {
+  const retainedReservations = saved.reservations.flatMap((reservation) => {
     const event = currentEvents.find(
       (candidate) => candidate.id === reservation.floorPlanEventId,
     );
-    return Boolean(
-      event &&
-      currentIds.has(reservation.floorPlanEventId) &&
-      reservationAllowedForFloorPlanEvent(event, reservation),
-    );
+    if (!event || !currentIds.has(reservation.floorPlanEventId)) return [];
+    const current = reservationForCurrentFloorPlanEvent(event, reservation);
+    return current ? [current] : [];
   });
   const changed = currentEvents.some((current) => {
     const previous = saved.events.find((event) => event.id === current.id);

@@ -24,6 +24,7 @@ import {
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
 import {
+  displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
   eventForFloorPlanEntertainment,
@@ -705,6 +706,20 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       context.strokeStyle = outline.color;
       context.lineWidth = 7;
       context.strokeRect(outline.x, outline.y, outline.width, outline.height);
+      if (outline.timeLabel) {
+        context.font = "700 15px Arial";
+        const width = Math.ceil(context.measureText(outline.timeLabel).width) + 22;
+        const x = outline.x + outline.width + 8;
+        const y = outline.y + outline.height / 2 + 16;
+        context.globalAlpha = 0.38;
+        context.fillStyle = outline.color;
+        context.fillRect(x, y, width, 28);
+        context.globalAlpha = 1;
+        context.strokeStyle = outline.color;
+        context.strokeRect(x, y, width, 28);
+        context.fillStyle = "#000000";
+        context.fillText(outline.timeLabel, x + 11, y + 19);
+      }
     }
     const link = document.createElement("a");
     link.download = `${date}-event-host-floor-plan.png`;
@@ -811,7 +826,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 <div className="floor-plan-area-layer">
                   {multipleReservationOutlines.map((outline) => (
                     <span
-                      aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}`}
+                      aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}${outline.timeLabel ? `, ${outline.timeLabel}` : ""}`}
                       className="floor-plan-entertainment-multiple-outline"
                       key={outline.id}
                       role="img"
@@ -822,16 +837,20 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                         height: `${(outline.height / 1080) * 100}%`,
                         "--event-color": outline.color,
                       } as React.CSSProperties}
-                    />
+                    >
+                      {outline.timeLabel ? <small className="floor-plan-entertainment-outline-time">{outline.timeLabel}</small> : null}
+                    </span>
                   ))}
                   {AREAS.filter((area) => area.id !== "facility" || plan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
                     const local = plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom" && (reservation.floorPlanEventId === activeEventId || !activeEventId)) ?? plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom") ?? null;
                     const shared = area.entertainmentResourceId
                       ? visibleEntertainment.find((reservation) => reservation.resourceId === area.entertainmentResourceId) ?? null
                       : null;
-                    const assignedEvent = local
-                      ? plan.events.find((event) => event.id === local.floorPlanEventId) ?? null
-                      : eventForFloorPlanEntertainment(plan, shared);
+                    const assignedEvent = displayEventForFloorPlanArea(
+                      plan,
+                      local,
+                      shared,
+                    );
                     const label = floorPlanOverlayLabel(area, local, shared);
                     const showTimeLabel = Boolean(
                       shared &&

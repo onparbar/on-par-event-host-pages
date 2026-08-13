@@ -508,6 +508,22 @@
   pointer-events: none;
 }
 
+.floor-plan-entertainment-outline-time {
+  position: absolute;
+  z-index: 8;
+  top: calc(50% + 16px);
+  left: calc(100% + 7px);
+  min-width: max-content;
+  padding: 5px 10px;
+  border: 1.5px solid var(--event-color);
+  background: color-mix(in srgb, var(--event-color) 38%, white);
+  color: #000000;
+  font-size: clamp(5px, 0.58vw, 11px);
+  font-weight: 950;
+  line-height: 1;
+  text-shadow: none;
+}
+
 .floor-plan-area,
 .floor-plan-custom-note {
   position: absolute;
@@ -988,6 +1004,12 @@
 
   .floor-plan-entertainment-multiple-outline {
     background: transparent !important;
+  }
+
+  .floor-plan-entertainment-outline-time {
+    border-color: #000000 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 
   .floor-plan-map-date span {

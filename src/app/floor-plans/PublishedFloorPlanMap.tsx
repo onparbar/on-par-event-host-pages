@@ -4,9 +4,9 @@ import {
 } from "@/lib/floor-plans/configuration/areas";
 import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
 import {
+  displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
-  eventForFloorPlanEntertainment,
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
@@ -57,7 +57,7 @@ export default function PublishedFloorPlanMap({
         <div className="floor-plan-area-layer published-floor-plan-area-layer">
           {multipleReservationOutlines.map((outline) => (
             <span
-              aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}`}
+              aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}${outline.timeLabel ? `, ${outline.timeLabel}` : ""}`}
               className="floor-plan-entertainment-multiple-outline"
               key={outline.id}
               role="img"
@@ -68,7 +68,13 @@ export default function PublishedFloorPlanMap({
                 height: `${(outline.height / 1080) * 100}%`,
                 "--event-color": outline.color,
               } as React.CSSProperties}
-            />
+            >
+              {outline.timeLabel ? (
+                <small className="floor-plan-entertainment-outline-time">
+                  {outline.timeLabel}
+                </small>
+              ) : null}
+            </span>
           ))}
           {AREAS.map((area) => {
             const local = plan.reservations.find(
@@ -82,11 +88,7 @@ export default function PublishedFloorPlanMap({
                     reservation.resourceId === area.entertainmentResourceId,
                 ) ?? null
               : null;
-            const event = local
-              ? plan.events.find(
-                  (candidate) => candidate.id === local.floorPlanEventId,
-                ) ?? null
-              : eventForFloorPlanEntertainment(plan, shared);
+            const event = displayEventForFloorPlanArea(plan, local, shared);
             if (!event) return null;
             const showTime = Boolean(
               shared &&

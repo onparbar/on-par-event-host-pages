@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { EntertainmentReservation } from "@/lib/entertainment/types";
 import type { DateAsset } from "@/lib/events";
 import {
   AwaitingApprovalSection,
@@ -11,6 +12,7 @@ import {
   organizeFloorPlanAssets,
   syncFloorPlanFromTripleseat,
 } from "../FloorPlansClient";
+import PublishedFloorPlanMap from "../PublishedFloorPlanMap";
 import type {
   FloorPlanDayPayload,
   FloorPlanDocument,
@@ -99,6 +101,45 @@ const interactivePayload: FloorPlanDayPayload = {
   sourceMode: "live",
   warnings: [],
 };
+
+function sharedVipReservation(
+  id: string,
+  event: FloorPlanDocument["events"][number],
+): EntertainmentReservation {
+  return {
+    id,
+    syncKey: null,
+    localEventId: event.id,
+    tripleseatEventId: event.tripleseatEventId,
+    tripleseatBookingId: null,
+    eventName: event.name,
+    operatingDate: "2026-08-15",
+    resourceId: "private-room-vip-1",
+    resourceCategory: "private-rooms",
+    resourceName: "VIP 1",
+    startAt: event.startAt!,
+    endAt: event.endAt!,
+    sourceStartAt: event.startAt,
+    sourceEndAt: event.endAt,
+    sourceResourceId: "private-room-vip-1",
+    eventColor: event.color,
+    colorSource: "floor-plan-assignment",
+    source: event.tripleseatEventId.startsWith("vip-") ? "vip-prep" : "tripleseat",
+    sourceReference: null,
+    manualOverride: false,
+    hasSourceUpdate: false,
+    needsReview: false,
+    reviewIssues: [],
+    autoAssigned: false,
+    notes: "",
+    sourceUpdatedAt: null,
+    lastTripleseatSyncAt: null,
+    active: true,
+    createdAt: event.startAt!,
+    updatedAt: event.startAt!,
+    updatedBy: "test",
+  };
+}
 
 describe("floor-plan dashboard organization", () => {
   it("opens the nearest upcoming plan and archives past plans", () => {
@@ -296,6 +337,7 @@ describe("floor-plan dashboard organization", () => {
         },
         isOpen: true,
         onOpenChange: () => {},
+        onSync: () => {},
       }),
     );
 
@@ -312,11 +354,76 @@ describe("floor-plan dashboard organization", () => {
         },
         isOpen: true,
         onOpenChange: () => {},
+        onSync: () => {},
       }),
     );
 
     expect(html).toContain("Approved");
     expect(html).toContain("Redacted August 5 Event");
     expect(html).toContain("VIP 1 assigned to Redacted August 5 Event");
+  });
+
+  it("renders ADF as the orange VIP 1 fill and Cassie's 9–11 PM reservation as the blue border", () => {
+    const adfEvent = {
+      ...interactivePlan.events[0],
+      id: "event-adf",
+      tripleseatEventId: "adf",
+      name: "ADF",
+      startAt: "2026-08-15T17:00:00.000Z",
+      endAt: "2026-08-15T19:00:00.000Z",
+      color: "#B45309",
+    };
+    const cassieEvent = {
+      ...interactivePlan.events[0],
+      id: "event-cassie",
+      tripleseatEventId: "vip-cassie",
+      name: "Cassie Perks VIP",
+      startAt: "2026-08-16T01:00:00.000Z",
+      endAt: "2026-08-16T03:00:00.000Z",
+      color: "#1D4ED8",
+    };
+    const plan: FloorPlanDocument = {
+      ...interactivePlan,
+      id: "floor-plan-2026-08-15",
+      eventDate: "2026-08-15",
+      events: [adfEvent, cassieEvent],
+      reservations: [
+        {
+          ...interactivePlan.reservations[0],
+          id: "cassie-vip-1",
+          floorPlanEventId: cassieEvent.id,
+          startAt: cassieEvent.startAt,
+          endAt: cassieEvent.endAt,
+        },
+        {
+          ...interactivePlan.reservations[0],
+          id: "adf-vip-1",
+          floorPlanEventId: adfEvent.id,
+          startAt: adfEvent.startAt,
+          endAt: adfEvent.endAt,
+        },
+      ],
+    };
+    const payload: FloorPlanDayPayload = {
+      ...interactivePayload,
+      date: plan.eventDate,
+      plan,
+      entertainmentReservations: [
+        sharedVipReservation("cassie-shared-vip-1", cassieEvent),
+        sharedVipReservation("adf-shared-vip-1", adfEvent),
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(PublishedFloorPlanMap, { payload }),
+    );
+
+    expect(html).toMatch(
+      /aria-label="VIP 1 assigned to ADF"[^>]+--event-color:#B45309/,
+    );
+    expect(html).toMatch(
+      /aria-label="VIP 1 also reserved by Cassie Perks VIP, 9:00 PM – 11:00 PM"[^>]+--event-color:#1D4ED8/,
+    );
+    expect(html).toContain(">9:00 PM – 11:00 PM</small>");
   });
 });

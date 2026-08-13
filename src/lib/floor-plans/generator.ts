@@ -199,16 +199,24 @@ export function generateFloorPlanReservations(
   plan: FloorPlanDocument,
   mode: FloorPlanGenerationMode,
 ) {
-  const preserved = plan.reservations.filter((item) => {
+  const preserved = plan.reservations.flatMap((item) => {
     const event = plan.events.find(
       (candidate) => candidate.id === item.floorPlanEventId,
     );
-    if (event && !reservationAllowedForFloorPlanEvent(event, item)) {
-      return false;
+    if (event) {
+      const current = reservationForCurrentFloorPlanEvent(event, item);
+      if (!current) return [];
+      if (mode === "fill-missing") return [current];
+      if (mode === "replace-generated") {
+        return item.source === "manual" || item.lockedByUser ? [current] : [];
+      }
+      return [];
     }
-    if (mode === "fill-missing") return true;
-    if (mode === "replace-generated") return item.source === "manual" || item.lockedByUser;
-    return false;
+    if (mode === "fill-missing") return [item];
+    if (mode === "replace-generated") {
+      return item.source === "manual" || item.lockedByUser ? [item] : [];
+    }
+    return [];
   });
   const next = [...preserved];
   for (const event of plan.events) {
@@ -217,7 +225,13 @@ export function generateFloorPlanReservations(
     const generated = eventBaseReservations(plan, event, next);
     for (const item of generated) {
       if (
-        next.some((existing) => existing.id === item.id) ||
+        next.some(
+          (existing) =>
+            existing.id === item.id ||
+            (existing.floorPlanEventId === item.floorPlanEventId &&
+              existing.areaId === item.areaId &&
+              existing.reservationType === item.reservationType),
+        ) ||
         (mode === "fill-missing" && item.reservationType === "food-table" && hasFood)
       ) {
         continue;
@@ -237,4 +251,17 @@ export function reservationAllowedForFloorPlanEvent(
     reservation.reservationType === "room" &&
     event.contractedAreaIds.includes(reservation.areaId)
   );
+}
+
+export function reservationForCurrentFloorPlanEvent(
+  event: FloorPlanEvent,
+  reservation: FloorPlanReservation,
+) {
+  if (!reservationAllowedForFloorPlanEvent(event, reservation)) return null;
+  if (!event.tripleseatEventId.startsWith("vip-")) return reservation;
+  return {
+    ...reservation,
+    startAt: event.startAt,
+    endAt: event.endAt,
+  };
 }
