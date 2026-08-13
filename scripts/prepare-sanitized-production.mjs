@@ -48,6 +48,7 @@ const allowlist = [
   "src/lib/event-lifecycle.ts",
   "src/lib/event-plans",
   "src/lib/floor-plans",
+  "src/lib/gotab",
   "src/lib/itineraries",
   "src/lib/events.ts",
   "src/lib/kitchen",
