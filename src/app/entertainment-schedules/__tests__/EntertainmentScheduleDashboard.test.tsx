@@ -1,13 +1,18 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { EntertainmentDayPayload } from "@/lib/entertainment/types";
+import type {
+  EntertainmentDayPayload,
+  EntertainmentReservation,
+} from "@/lib/entertainment/types";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/entertainment-schedules",
 }));
 
 import EntertainmentScheduleDashboard, {
+  calculateEntertainmentColumnSlotUnits,
+  calculateEntertainmentFitRowHeight,
   calculateEntertainmentFitZoom,
 } from "../EntertainmentScheduleDashboard";
 
@@ -23,16 +28,97 @@ const loadedPayload: EntertainmentDayPayload = {
   canEdit: true,
 };
 
+function reservation(
+  overrides: Partial<EntertainmentReservation> = {},
+): EntertainmentReservation {
+  return {
+    id: "reservation-1",
+    syncKey: null,
+    localEventId: "77",
+    tripleseatEventId: "77",
+    tripleseatBookingId: null,
+    eventName: "Current Event",
+    operatingDate: "2026-08-14",
+    resourceId: "bowling-1",
+    resourceCategory: "bowling",
+    resourceName: "Bowling Lane 1",
+    startAt: "2026-08-14T16:00:00.000Z",
+    endAt: "2026-08-14T18:00:00.000Z",
+    sourceStartAt: null,
+    sourceEndAt: null,
+    sourceResourceId: null,
+    eventColor: "#0F766E",
+    colorSource: "manual",
+    source: "manual",
+    sourceReference: null,
+    manualOverride: true,
+    hasSourceUpdate: false,
+    needsReview: false,
+    reviewIssues: [],
+    autoAssigned: false,
+    notes: "",
+    sourceUpdatedAt: null,
+    lastTripleseatSyncAt: null,
+    active: true,
+    createdAt: "2026-08-14T12:00:00.000Z",
+    updatedAt: "2026-08-14T12:00:00.000Z",
+    updatedBy: "test",
+    ...overrides,
+  };
+}
+
 describe("entertainment schedule kiosk fit", () => {
   it.each([
     [1912, 79],
-    [1358, 51],
+    [1358, 50],
     [1341, 50],
-    [1255, 46],
-    [1123, 40],
+    [1255, 45],
+    [1180, 41],
+    [1123, 38],
+    [1024, 33],
+    [960, 30],
+    [900, 27],
+    [892, 27],
     [4000, 120],
   ])("fits a %ipx schedule container at %i%%", (width, zoom) => {
     expect(calculateEntertainmentFitZoom(width)).toBe(zoom);
+  });
+
+  it.each([
+    [580, 20, 10, 22],
+    [448, 20, 10, 17],
+    [448, 23, 10, 15],
+    [300, 20, 10, 14],
+    [4000, 20, 10, 22],
+  ])(
+    "fits resource rows inside %ipx with %i main and %i compact slots at %ipx",
+    (height, mainSlots, compactSlots, rowHeight) => {
+      expect(
+        calculateEntertainmentFitRowHeight(
+          height,
+          mainSlots,
+          compactSlots,
+        ),
+      ).toBe(rowHeight);
+    },
+  );
+
+  it("counts overlapping reservations as extra vertical slots", () => {
+    const reservations = [
+      reservation(),
+      reservation({
+        id: "reservation-2",
+        startAt: "2026-08-14T17:00:00.000Z",
+        endAt: "2026-08-14T19:00:00.000Z",
+      }),
+    ];
+
+    expect(
+      calculateEntertainmentColumnSlotUnits(reservations, ["bowling"]),
+    ).toBe(13);
+    expect(
+      calculateEntertainmentColumnSlotUnits(reservations, ["darts"]),
+    ).toBe(5);
   });
 });
 
@@ -62,6 +148,7 @@ describe("entertainment schedule dashboard controls", () => {
     expect(html).toContain(
       '<details class="entertainment-event-panel">',
     );
+    expect(html).toContain('class="entertainment-event-panel-body"');
     expect(html).toContain("Tripleseat events");
     expect(html).not.toContain("Search event name");
     expect(html).not.toContain("All Resources");

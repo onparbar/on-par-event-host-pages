@@ -47,14 +47,17 @@ const COMPACT_PIXELS_PER_MINUTE = 0.98;
 const OPERATING_MINUTES = 15 * 60;
 const RESOURCE_COLUMN_WIDTH = 190;
 const COMPACT_RESOURCE_COLUMN_WIDTH = 140;
-const RESOURCE_ROW_HEIGHT = 22;
-const RESERVATION_SLOT_HEIGHT = 22;
-const ENTERTAINMENT_ZOOM_MIN = 40;
+const RESOURCE_ROW_HEIGHT_MIN = 14;
+const RESOURCE_ROW_HEIGHT_MAX = 22;
+const ENTERTAINMENT_ZOOM_MIN = 27;
 const ENTERTAINMENT_ZOOM_MAX = 120;
 const ENTERTAINMENT_ZOOM_STEP = 10;
 const ENTERTAINMENT_ZOOM_DEFAULT = 80;
 const ENTERTAINMENT_LAYOUT_GAP = 8;
-const ENTERTAINMENT_FIT_GUTTER = 8;
+const ENTERTAINMENT_FIT_GUTTER = 20;
+const ENTERTAINMENT_KIOSK_GRID_HEADER_HEIGHT = 30;
+const ENTERTAINMENT_KIOSK_GROUP_HEADER_HEIGHT = 18;
+const ENTERTAINMENT_VERTICAL_FIT_GUTTER = 28;
 const CATEGORY_ORDER: EntertainmentCategory[] = [
   "bowling",
   "darts",
@@ -90,6 +93,33 @@ export function calculateEntertainmentFitZoom(availableWidth: number) {
   return Math.max(
     ENTERTAINMENT_ZOOM_MIN,
     Math.min(ENTERTAINMENT_ZOOM_MAX, fittedZoom),
+  );
+}
+
+export function calculateEntertainmentFitRowHeight(
+  availableHeight: number,
+  mainSlotUnits: number,
+  compactSlotUnits: number,
+) {
+  function fitColumn(slotUnits: number, groupCount: number) {
+    const fixedHeight =
+      ENTERTAINMENT_KIOSK_GRID_HEADER_HEIGHT +
+      groupCount * ENTERTAINMENT_KIOSK_GROUP_HEADER_HEIGHT +
+      ENTERTAINMENT_VERTICAL_FIT_GUTTER;
+    return Math.floor(
+      (Math.max(0, availableHeight) - fixedHeight) /
+        Math.max(1, slotUnits),
+    );
+  }
+
+  const fittedHeight = Math.min(
+    fitColumn(mainSlotUnits, MAIN_CATEGORIES.length),
+    fitColumn(compactSlotUnits, COMPACT_CATEGORIES.length),
+  );
+
+  return Math.max(
+    RESOURCE_ROW_HEIGHT_MIN,
+    Math.min(RESOURCE_ROW_HEIGHT_MAX, fittedHeight),
   );
 }
 
@@ -228,7 +258,10 @@ function hourLabels() {
   });
 }
 
-function layoutReservations(reservations: EntertainmentReservation[]) {
+function layoutReservations(
+  reservations: EntertainmentReservation[],
+  rowHeight: number,
+) {
   const sorted = [...reservations].sort(
     (left, right) =>
       Date.parse(left.startAt) - Date.parse(right.startAt) ||
@@ -247,11 +280,28 @@ function layoutReservations(reservations: EntertainmentReservation[]) {
   });
   return {
     placed,
-    height: Math.max(
-      RESOURCE_ROW_HEIGHT,
-      slotEnds.length * RESERVATION_SLOT_HEIGHT,
-    ),
+    slotCount: Math.max(1, slotEnds.length),
+    height: Math.max(1, slotEnds.length) * rowHeight,
   };
+}
+
+export function calculateEntertainmentColumnSlotUnits(
+  reservations: EntertainmentReservation[],
+  categories: readonly EntertainmentCategory[],
+) {
+  return categories
+    .flatMap((category) => resourcesForCategory(category))
+    .reduce(
+      (total, resource) =>
+        total +
+        layoutReservations(
+          reservations.filter(
+            (reservation) => reservation.resourceId === resource.id,
+          ),
+          1,
+        ).slotCount,
+      0,
+    );
 }
 
 function eventTimes(event: EntertainmentEventSnapshot) {
@@ -696,6 +746,9 @@ export default function EntertainmentScheduleDashboard({
   const [scheduleFitZoom, setScheduleFitZoom] = useState(
     ENTERTAINMENT_ZOOM_DEFAULT,
   );
+  const [scheduleRowHeight, setScheduleRowHeight] = useState(
+    RESOURCE_ROW_HEIGHT_MAX,
+  );
   const [modal, setModal] = useState<ReservationDraft | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const dragPreviewRef = useRef<DragPreview | null>(null);
@@ -785,6 +838,23 @@ export default function EntertainmentScheduleDashboard({
     return () => window.clearInterval(interval);
   }, []);
 
+  const mainSlotUnits = useMemo(
+    () =>
+      calculateEntertainmentColumnSlotUnits(
+        payload?.reservations ?? [],
+        MAIN_CATEGORIES,
+      ),
+    [payload?.reservations],
+  );
+  const compactSlotUnits = useMemo(
+    () =>
+      calculateEntertainmentColumnSlotUnits(
+        payload?.reservations ?? [],
+        COMPACT_CATEGORIES,
+      ),
+    [payload?.reservations],
+  );
+
   useEffect(() => {
     const scheduleScroll = scheduleScrollRef.current;
     if (!scheduleScroll) {
@@ -796,8 +866,14 @@ export default function EntertainmentScheduleDashboard({
       const nextFitZoom = calculateEntertainmentFitZoom(
         observedScheduleScroll.clientWidth,
       );
+      const nextRowHeight = calculateEntertainmentFitRowHeight(
+        observedScheduleScroll.clientHeight,
+        mainSlotUnits,
+        compactSlotUnits,
+      );
       const previousFitZoom = previousFitZoomRef.current;
       setScheduleFitZoom(nextFitZoom);
+      setScheduleRowHeight(nextRowHeight);
       setScheduleZoom((currentZoom) =>
         currentZoom === previousFitZoom
           ? nextFitZoom
@@ -810,7 +886,7 @@ export default function EntertainmentScheduleDashboard({
     const resizeObserver = new ResizeObserver(updateScheduleFit);
     resizeObserver.observe(observedScheduleScroll);
     return () => resizeObserver.disconnect();
-  }, [state]);
+  }, [compactSlotUnits, mainSlotUnits, state]);
 
   async function syncDay(automatic = false) {
     if (state === "syncing") {
@@ -937,11 +1013,12 @@ export default function EntertainmentScheduleDashboard({
           displayedReservations.filter(
             (reservation) => reservation.resourceId === resource.id,
           ),
+          scheduleRowHeight,
         ),
       );
     }
     return map;
-  }, [displayedReservations]);
+  }, [displayedReservations, scheduleRowHeight]);
 
   function draftForReservation(reservation: EntertainmentReservation) {
     setModal({
@@ -1419,7 +1496,8 @@ export default function EntertainmentScheduleDashboard({
             {resourcesForCategory(category).map((resource) => {
               const layout = reservationsByResource.get(resource.id) ?? {
                 placed: [],
-                height: RESOURCE_ROW_HEIGHT,
+                slotCount: 1,
+                height: scheduleRowHeight,
               };
               return (
                 <div
@@ -1471,9 +1549,15 @@ export default function EntertainmentScheduleDashboard({
                       <span
                         className="entertainment-range-draft"
                         style={{
+                          height: Math.max(
+                            12,
+                            scheduleRowHeight -
+                              (scheduleRowHeight <= 14 ? 2 : 3),
+                          ),
                           left:
                             rangeDraft.startMinute *
                             columnPixelsPerMinute,
+                          top: scheduleRowHeight <= 14 ? 1 : 2,
                           width:
                             (rangeDraft.endMinute -
                               rangeDraft.startMinute) *
@@ -1541,8 +1625,15 @@ export default function EntertainmentScheduleDashboard({
                             color: textColorForBackground(
                               reservation.eventColor,
                             ),
+                            height: Math.max(
+                              12,
+                              scheduleRowHeight -
+                                (scheduleRowHeight <= 14 ? 2 : 3),
+                            ),
                             left,
-                            top: slot * RESERVATION_SLOT_HEIGHT + 3,
+                            top:
+                              slot * scheduleRowHeight +
+                              (scheduleRowHeight <= 14 ? 1 : 2),
                             width,
                           }}
                           tabIndex={isEditing ? 0 : -1}
@@ -1853,6 +1944,7 @@ export default function EntertainmentScheduleDashboard({
                 <span aria-hidden="true">⌄</span>
               </span>
             </summary>
+            <div className="entertainment-event-panel-body">
             {selectedEvent ? (
               <button
                 className="entertainment-clear-filter"
@@ -1966,6 +2058,7 @@ export default function EntertainmentScheduleDashboard({
                   </span>
                 </div>
               )}
+            </div>
             </div>
           </details>
         </div>
