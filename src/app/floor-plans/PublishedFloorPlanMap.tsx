@@ -23,8 +23,10 @@ function eventTime(startAt: string | null, endAt: string | null) {
 
 export default function PublishedFloorPlanMap({
   payload,
+  zoom = 100,
 }: {
   payload: FloorPlanDayPayload;
+  zoom?: number;
 }) {
   const { plan } = payload;
   const visibleEntertainment = visibleEntertainmentReservations(
@@ -38,7 +40,13 @@ export default function PublishedFloorPlanMap({
 
   return (
     <div className="published-floor-plan-map">
-      <div className="floor-plan-map-canvas">
+      <div
+        className="floor-plan-map-canvas"
+        style={{
+          minWidth: `${9.8 * zoom}px`,
+          width: `${zoom}%`,
+        }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           alt="On Par Entertainment floor map"

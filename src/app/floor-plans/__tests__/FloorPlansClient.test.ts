@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { PortalZoomControls } from "@/app/_components/PortalShell";
 import type { EntertainmentReservation } from "@/lib/entertainment/types";
 import type { DateAsset } from "@/lib/events";
 import {
@@ -205,6 +206,61 @@ describe("floor-plan dashboard organization", () => {
     ]) {
       expect(html).not.toContain(editorCopy);
     }
+  });
+
+  it("applies floor-plan zoom without exposing editing controls", () => {
+    const plan = organizeFloorPlanAssets(
+      [nextPlan],
+      [],
+      "2026-08-04",
+    ).upcoming[0];
+    const staticHtml = renderToStaticMarkup(
+      createElement(FloorPlanCard, {
+        asset: plan,
+        isOpen: true,
+        onOpenChange: () => {},
+        onSync: () => {},
+        overlays: [],
+        zoom: 70,
+      }),
+    );
+    const interactiveHtml = renderToStaticMarkup(
+      createElement(PublishedFloorPlanCard, {
+        publication: { plan: interactivePlan, payload: interactivePayload },
+        isOpen: true,
+        onOpenChange: () => {},
+        onSync: () => {},
+        zoom: 70,
+      }),
+    );
+
+    expect(staticHtml).toContain(
+      'class="floor-plan-zoom-stage" style="width:70%"',
+    );
+    expect(interactiveHtml).toContain(
+      'class="floor-plan-map-canvas" style="min-width:686px;width:70%"',
+    );
+    expect(staticHtml).not.toContain("Add Highlight");
+    expect(interactiveHtml).not.toContain("Add Highlight");
+  });
+
+  it("renders accessible zoom controls with a reset value", () => {
+    const html = renderToStaticMarkup(
+      createElement(PortalZoomControls, {
+        label: "Floor plan zoom",
+        maximum: 200,
+        minimum: 50,
+        onChange: () => {},
+        resetValue: 100,
+        step: 10,
+        value: 80,
+      }),
+    );
+
+    expect(html).toContain('aria-label="Floor plan zoom"');
+    expect(html).toContain('aria-label="Floor plan zoom: zoom out"');
+    expect(html).toContain("80%");
+    expect(html).toContain('aria-label="Floor plan zoom: zoom in"');
   });
 
   it("runs the real Tripleseat floor-plan refresh action for the selected date", async () => {

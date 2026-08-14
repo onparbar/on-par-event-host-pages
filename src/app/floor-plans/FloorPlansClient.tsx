@@ -8,6 +8,7 @@ import {
   PortalPageHeader,
   PortalShell,
   PortalStatusBadge,
+  PortalZoomControls,
 } from "@/app/_components/PortalShell";
 import type { AdminAssetOverlay, AdminState } from "@/lib/admin-types";
 import type { DateAsset } from "@/lib/events";
@@ -17,6 +18,10 @@ import type {
   FloorPlanEvent,
 } from "@/lib/floor-plans/types";
 import PublishedFloorPlanMap from "./PublishedFloorPlanMap";
+
+const FLOOR_PLAN_ZOOM_MIN = 50;
+const FLOOR_PLAN_ZOOM_MAX = 200;
+const FLOOR_PLAN_ZOOM_STEP = 10;
 
 export type FloorPlanDisplayAsset = DateAsset & {
   archiveReason: "manual" | "past" | null;
@@ -177,6 +182,7 @@ export function FloorPlanCard({
   onOpenChange,
   onSync,
   overlays,
+  zoom = 100,
 }: {
   asset: FloorPlanDisplayAsset;
   isOpen: boolean;
@@ -184,6 +190,7 @@ export function FloorPlanCard({
   onOpenChange: (open: boolean) => void;
   onSync: () => void;
   overlays: AdminAssetOverlay[];
+  zoom?: number;
 }) {
   const date = dateBlock(asset.date);
   const liveEvents = liveState?.payload?.plan.events ?? null;
@@ -268,11 +275,16 @@ export function FloorPlanCard({
               </>
             )}
             <div className="floor-plan-image-frame">
-              <AssetImageWithOverlays
-                alt={`Floor plan for ${asset.label}`}
-                image={asset.image}
-                overlays={overlays}
-              />
+              <div
+                className="floor-plan-zoom-stage"
+                style={{ width: `${zoom}%` }}
+              >
+                <AssetImageWithOverlays
+                  alt={`Floor plan for ${asset.label}`}
+                  image={asset.image}
+                  overlays={overlays}
+                />
+              </div>
             </div>
           </div>
         ) : null}
@@ -287,12 +299,14 @@ export function PublishedFloorPlanCard({
   liveState,
   onOpenChange,
   onSync,
+  zoom = 100,
 }: {
   publication: FloorPlanPublication;
   isOpen: boolean;
   liveState?: FloorPlanLiveState;
   onOpenChange: (open: boolean) => void;
   onSync: () => void;
+  zoom?: number;
 }) {
   const payload = liveState?.payload ?? publication.payload;
   const plan = payload?.plan ?? publication.plan;
@@ -353,7 +367,7 @@ export function PublishedFloorPlanCard({
                   : "Sync live from Tripleseat"}
               </button>
             </div>
-            <PublishedFloorPlanMap payload={payload} />
+            <PublishedFloorPlanMap payload={payload} zoom={zoom} />
           </div>
         ) : null}
       </details>
@@ -480,6 +494,7 @@ export default function FloorPlansClient({
     upcoming[0]?.key ?? organized.archived[0]?.image ?? null,
   );
   const [liveByDate, setLiveByDate] = useState<Record<string, FloorPlanLiveState>>({});
+  const [planZoom, setPlanZoom] = useState(100);
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -538,6 +553,7 @@ export default function FloorPlansClient({
         }
         onSync={() => void handleLiveSync(asset.date)}
         overlays={initialState.overlaysByAsset[asset.image] ?? []}
+        zoom={planZoom}
       />
     );
   }
@@ -555,12 +571,24 @@ export default function FloorPlansClient({
         }
         onSync={() => void handleLiveSync(entry.date)}
         publication={entry.publication}
+        zoom={planZoom}
       />
     );
   }
 
   return (
     <PortalShell
+      actions={
+        <PortalZoomControls
+          label="Floor plan zoom"
+          maximum={FLOOR_PLAN_ZOOM_MAX}
+          minimum={FLOOR_PLAN_ZOOM_MIN}
+          onChange={setPlanZoom}
+          resetValue={100}
+          step={FLOOR_PLAN_ZOOM_STEP}
+          value={planZoom}
+        />
+      }
       allowFullscreen
       mainClassName="floor-plan-page"
       onLock={() => void handleLogout()}

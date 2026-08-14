@@ -5,10 +5,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import {
   PortalFrame,
   PortalHeader,
+  PortalZoomControls,
 } from "@/app/_components/PortalShell";
 import {
   ENTERTAINMENT_CATEGORY_LABELS,
@@ -41,21 +43,18 @@ import type {
   EntertainmentResource,
 } from "@/lib/entertainment/types";
 
-const TIMELINE_WIDTH = 1_080;
 const PIXELS_PER_MINUTE = 1.2;
 const OPERATING_MINUTES = 15 * 60;
+const RESOURCE_COLUMN_WIDTH = 190;
 const RESOURCE_ROW_HEIGHT = 24;
 const RESERVATION_SLOT_HEIGHT = 24;
+const ENTERTAINMENT_ZOOM_MIN = 40;
+const ENTERTAINMENT_ZOOM_MAX = 120;
+const ENTERTAINMENT_ZOOM_STEP = 10;
+const ENTERTAINMENT_ZOOM_DEFAULT = 80;
 const CATEGORY_ORDER: EntertainmentCategory[] = [
   ...ENTERTAINMENT_SCHEDULE_CATEGORIES,
 ];
-
-type ScheduleFilter =
-  | "all"
-  | "conflicts"
-  | "review"
-  | "manual"
-  | EntertainmentCategory;
 
 type DragPreview = {
   reservationId: string;
@@ -650,9 +649,11 @@ export default function EntertainmentScheduleDashboard({
   >("loading");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [filter, setFilter] = useState<ScheduleFilter>("all");
-  const [search, setSearch] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [scheduleZoom, setScheduleZoom] = useState(
+    ENTERTAINMENT_ZOOM_DEFAULT,
+  );
   const [modal, setModal] = useState<ReservationDraft | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const dragPreviewRef = useRef<DragPreview | null>(null);
@@ -669,6 +670,10 @@ export default function EntertainmentScheduleDashboard({
     selectedDate === today
       ? operatingMinutesForIso(now.toISOString(), selectedDate)
       : null;
+  const pixelsPerMinute =
+    PIXELS_PER_MINUTE * (scheduleZoom / 100);
+  const timelineWidth = OPERATING_MINUTES * pixelsPerMinute;
+  const scheduleGridWidth = RESOURCE_COLUMN_WIDTH + timelineWidth;
 
   async function loadDay(date: string, signal?: AbortSignal) {
     const response = await fetch(
@@ -706,6 +711,11 @@ export default function EntertainmentScheduleDashboard({
     setError("");
     setNotice("");
     setSelectedEvent(null);
+    setIsEditing(false);
+    setModal(null);
+    setDragPreview(null);
+    dragPreviewRef.current = null;
+    setRangeDraft(null);
     void loadDay(selectedDate, controller.signal).catch((loadError) => {
       if (controller.signal.aborted) {
         return;
@@ -731,6 +741,11 @@ export default function EntertainmentScheduleDashboard({
     }
     setState("syncing");
     setError("");
+    setIsEditing(false);
+    setModal(null);
+    setRangeDraft(null);
+    setDragPreview(null);
+    dragPreviewRef.current = null;
     if (!automatic) {
       setNotice("");
     }
@@ -784,6 +799,18 @@ export default function EntertainmentScheduleDashboard({
     window.location.reload();
   }
 
+  function finishEditing() {
+    if (state === "saving") {
+      return;
+    }
+    setIsEditing(false);
+    setModal(null);
+    setRangeDraft(null);
+    setDragPreview(null);
+    dragPreviewRef.current = null;
+    setNotice("Schedule saved. Editing is locked.");
+  }
+
   const conflictReservationIds = useMemo(
     () =>
       new Set(
@@ -794,7 +821,7 @@ export default function EntertainmentScheduleDashboard({
   );
 
   const displayedReservations = useMemo(() => {
-    const values = (payload?.reservations ?? []).map((reservation) => {
+    return (payload?.reservations ?? []).map((reservation) => {
       if (dragPreview?.reservationId !== reservation.id) {
         return reservation;
       }
@@ -815,35 +842,9 @@ export default function EntertainmentScheduleDashboard({
         ),
       };
     });
-    return values.filter((reservation) => {
-      const queryMatches =
-        !search.trim() ||
-        reservation.eventName
-          .toLowerCase()
-          .includes(search.trim().toLowerCase());
-      if (!queryMatches) {
-        return false;
-      }
-      if (filter === "all") {
-        return true;
-      }
-      if (filter === "conflicts") {
-        return conflictReservationIds.has(reservation.id);
-      }
-      if (filter === "review") {
-        return reservation.needsReview;
-      }
-      if (filter === "manual") {
-        return reservation.manualOverride;
-      }
-      return reservation.resourceCategory === filter;
-    });
   }, [
-    conflictReservationIds,
     dragPreview,
-    filter,
     payload?.reservations,
-    search,
     selectedDate,
   ]);
 
@@ -865,11 +866,7 @@ export default function EntertainmentScheduleDashboard({
     return map;
   }, [displayedReservations]);
 
-  const displayedCategories = CATEGORY_ORDER.includes(
-    filter as EntertainmentCategory,
-  )
-    ? [filter as EntertainmentCategory]
-    : CATEGORY_ORDER;
+  const displayedCategories = CATEGORY_ORDER;
 
   function draftForReservation(reservation: EntertainmentReservation) {
     setModal({
@@ -1115,6 +1112,9 @@ export default function EntertainmentScheduleDashboard({
     reservation: EntertainmentReservation,
     mode: "move" | "resize-start" | "resize-end",
   ) {
+    if (!isEditing) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const originStart =
@@ -1140,7 +1140,7 @@ export default function EntertainmentScheduleDashboard({
         moved = true;
       }
       const deltaMinutes = snapOperatingMinutes(
-        deltaX / PIXELS_PER_MINUTE,
+        deltaX / pixelsPerMinute,
       );
       let startMinute = originStart;
       let endMinute = originEnd;
@@ -1214,6 +1214,7 @@ export default function EntertainmentScheduleDashboard({
     resource: EntertainmentResource,
   ) {
     if (
+      !isEditing ||
       event.button !== 0 ||
       (event.target as HTMLElement).closest(".entertainment-reservation-block")
     ) {
@@ -1223,7 +1224,7 @@ export default function EntertainmentScheduleDashboard({
     const rect = row.getBoundingClientRect();
     const startMinute = clampOperatingMinutes(
       snapOperatingMinutes(
-        (event.clientX - rect.left) / PIXELS_PER_MINUTE,
+        (event.clientX - rect.left) / pixelsPerMinute,
       ),
     );
     let currentMinute = startMinute;
@@ -1236,7 +1237,7 @@ export default function EntertainmentScheduleDashboard({
     function handleMove(pointerEvent: PointerEvent) {
       currentMinute = clampOperatingMinutes(
         snapOperatingMinutes(
-          (pointerEvent.clientX - rect.left) / PIXELS_PER_MINUTE,
+          (pointerEvent.clientX - rect.left) / pixelsPerMinute,
         ),
       );
       const low = Math.min(startMinute, currentMinute);
@@ -1270,21 +1271,27 @@ export default function EntertainmentScheduleDashboard({
     window.addEventListener("pointerup", handleUp, { once: true });
   }
 
-  const filteredEventList = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return (payload?.events ?? []).filter(
-      (event) =>
-        !query || event.eventName.toLowerCase().includes(query),
-    );
-  }, [payload?.events, search]);
-
-  const pageConflictCount = payload?.conflicts.length ?? 0;
-  const pageReviewCount =
-    payload?.events.filter((event) => event.needsReview).length ?? 0;
+  const eventList = payload?.events ?? [];
+  const visibleWarnings = (payload?.warnings ?? []).filter(
+    (warning) =>
+      warning !==
+      "The latest Tripleseat sync failed. The last saved schedule remains visible.",
+  );
 
   return (
     <PortalFrame className="entertainment-dashboard-shell">
       <PortalHeader
+        actions={
+          <PortalZoomControls
+            label="Entertainment schedule zoom"
+            maximum={ENTERTAINMENT_ZOOM_MAX}
+            minimum={ENTERTAINMENT_ZOOM_MIN}
+            onChange={setScheduleZoom}
+            resetValue={ENTERTAINMENT_ZOOM_DEFAULT}
+            step={ENTERTAINMENT_ZOOM_STEP}
+            value={scheduleZoom}
+          />
+        }
         allowFullscreen
         blocked={Boolean(modal)}
         onLock={() => void lockDashboard()}
@@ -1348,79 +1355,64 @@ export default function EntertainmentScheduleDashboard({
             })}
           </div>
           <div className="entertainment-sync-area">
-            <div>
+            <div className="entertainment-sync-status">
               <strong>{syncLabel(payload)}</strong>
               <span>
-                {payload?.sync?.status === "error"
+                {isEditing
+                  ? "Editing enabled · changes save as they are made"
+                  : payload?.sync?.status === "error"
                   ? "Last saved schedule retained"
-                  : `${payload?.sync?.warningsCreated ?? 0} review items`}
+                  : "Editing locked"}
               </span>
             </div>
-            <button
-              className="entertainment-primary-button"
-              disabled={state === "syncing" || state === "saving"}
-              onClick={() => void syncDay()}
-              type="button"
-            >
-              {state === "syncing"
-                ? "Syncing…"
-                : (
-                    <>
-                      <span className="entertainment-sync-label-long">
-                        ↻ Sync from Tripleseat
-                      </span>
-                      <span className="entertainment-sync-label-short">
-                        ↻ Sync
-                      </span>
-                    </>
-                  )}
-            </button>
-          </div>
-          </section>
-
-          <section className="entertainment-filter-bar">
-          <label>
-            <span className="entertainment-visually-hidden">
-              Search by event name
-            </span>
-            <input
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search event name"
-              type="search"
-              value={search}
-            />
-          </label>
-          <div aria-label="Schedule filters" className="entertainment-filters">
-            {[
-              ["all", "All Resources"],
-              ["conflicts", "Review Conflicts"],
-              ["review", "Needs Review"],
-              ["manual", "Manually Edited"],
-              ["bowling", "Bowling"],
-              ["darts", "Darts"],
-              ["pool", "Pool"],
-              ["shuffleboard", "Shuffleboard"],
-              ["private-rooms", "Private Rooms"],
-            ].map(([value, label]) => (
+            <div className="entertainment-sync-actions">
               <button
-                className={filter === value ? "is-active" : ""}
-                key={value}
-                onClick={() => setFilter(value as ScheduleFilter)}
+                className="entertainment-primary-button"
+                disabled={
+                  isEditing || state === "syncing" || state === "saving"
+                }
+                onClick={() => void syncDay()}
                 type="button"
               >
-                {label}
+                {state === "syncing"
+                  ? "Syncing…"
+                  : (
+                      <>
+                        <span className="entertainment-sync-label-long">
+                          ↻ Sync from Tripleseat
+                        </span>
+                        <span className="entertainment-sync-label-short">
+                          ↻ Sync
+                        </span>
+                      </>
+                    )}
               </button>
-            ))}
-          </div>
-          <div className="entertainment-summary">
-            <span>{payload?.events.length ?? 0} events</span>
-            <span>{payload?.reservations.length ?? 0} reservations</span>
-            <span className={pageConflictCount ? "is-danger" : ""}>
-              {pageConflictCount} conflicts
-            </span>
-            <span className={pageReviewCount ? "is-warning" : ""}>
-              {pageReviewCount} need review
-            </span>
+              <button
+                aria-pressed={isEditing}
+                className="entertainment-secondary-button entertainment-edit-mode-button"
+                disabled={
+                  isEditing ||
+                  state === "loading" ||
+                  state === "syncing" ||
+                  state === "saving"
+                }
+                onClick={() => {
+                  setIsEditing(true);
+                  setNotice("Editing enabled. Select Save when you are finished.");
+                }}
+                type="button"
+              >
+                Edit
+              </button>
+              <button
+                className="entertainment-primary-button entertainment-save-mode-button"
+                disabled={!isEditing || state === "saving"}
+                onClick={finishEditing}
+                type="button"
+              >
+                {state === "saving" ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
           </section>
 
@@ -1435,9 +1427,9 @@ export default function EntertainmentScheduleDashboard({
               <span>{error}</span>
             </div>
           ) : null}
-          {payload?.warnings.length ? (
+          {visibleWarnings.length ? (
             <div className="entertainment-warning-message">
-              {payload.warnings.join(" ")}
+              {visibleWarnings.join(" ")}
             </div>
           ) : null}
           {payload?.missingEnvironmentVariables.length ? (
@@ -1451,7 +1443,9 @@ export default function EntertainmentScheduleDashboard({
         <div className="entertainment-workspace">
           <section
             aria-busy={state === "loading"}
-            className="entertainment-schedule-card"
+            className={`entertainment-schedule-card ${
+              isEditing ? "is-editing" : "is-locked"
+            }`}
           >
             {state === "loading" && !payload ? (
               <div className="entertainment-loading-state">
@@ -1471,14 +1465,22 @@ export default function EntertainmentScheduleDashboard({
               </div>
             ) : (
               <div className="entertainment-grid-scroll">
-                <div className="entertainment-grid">
+                <div
+                  className="entertainment-grid"
+                  style={{
+                    "--ent-grid-width": `${scheduleGridWidth}px`,
+                    "--ent-hour-width": `${60 * pixelsPerMinute}px`,
+                    "--ent-quarter-width": `${15 * pixelsPerMinute}px`,
+                    "--ent-timeline-width": `${timelineWidth}px`,
+                  } as CSSProperties}
+                >
                   <div className="entertainment-grid-header">
                     <div className="entertainment-resource-heading">
                       Physical resource
                     </div>
                     <div
                       className="entertainment-time-heading"
-                      style={{ width: TIMELINE_WIDTH }}
+                      style={{ width: timelineWidth }}
                     >
                       {hourLabels().map((hour, index) => (
                         <span
@@ -1489,7 +1491,7 @@ export default function EntertainmentScheduleDashboard({
                           }
                           key={hour.label}
                           style={{
-                            left: hour.minute * PIXELS_PER_MINUTE,
+                            left: hour.minute * pixelsPerMinute,
                           }}
                         >
                           {hour.label}
@@ -1523,15 +1525,24 @@ export default function EntertainmentScheduleDashboard({
                               {resource.canonicalName}
                             </div>
                             <div
-                              aria-label={`${resource.canonicalName} timeline. Drag an empty range to add a reservation.`}
-                              className="entertainment-resource-timeline"
+                              aria-label={`${resource.canonicalName} timeline${
+                                isEditing
+                                  ? ". Drag an empty range to add a reservation."
+                                  : ". Editing is locked."
+                              }`}
+                              className={`entertainment-resource-timeline${
+                                isEditing ? " is-editable" : ""
+                              }`}
                               data-resource-id={resource.id}
-                              onPointerDown={(event) =>
-                                beginRangeSelection(event, resource)
+                              onPointerDown={
+                                isEditing
+                                  ? (event) =>
+                                      beginRangeSelection(event, resource)
+                                  : undefined
                               }
                               style={{
                                 height: layout.height,
-                                width: TIMELINE_WIDTH,
+                                width: timelineWidth,
                               }}
                             >
                               {nowMinutes != null &&
@@ -1542,7 +1553,7 @@ export default function EntertainmentScheduleDashboard({
                                   className="entertainment-now-line"
                                   style={{
                                     left:
-                                      nowMinutes * PIXELS_PER_MINUTE,
+                                      nowMinutes * pixelsPerMinute,
                                   }}
                                 />
                               ) : null}
@@ -1552,11 +1563,11 @@ export default function EntertainmentScheduleDashboard({
                                   style={{
                                     left:
                                       rangeDraft.startMinute *
-                                      PIXELS_PER_MINUTE,
+                                      pixelsPerMinute,
                                     width:
                                       (rangeDraft.endMinute -
                                         rangeDraft.startMinute) *
-                                      PIXELS_PER_MINUTE,
+                                      pixelsPerMinute,
                                   }}
                                 />
                               ) : null}
@@ -1574,7 +1585,7 @@ export default function EntertainmentScheduleDashboard({
                                     ) ?? startMinute + 15;
                                   const left =
                                     Math.max(0, startMinute) *
-                                    PIXELS_PER_MINUTE;
+                                    pixelsPerMinute;
                                   const width =
                                     Math.max(
                                       15,
@@ -1582,7 +1593,7 @@ export default function EntertainmentScheduleDashboard({
                                         OPERATING_MINUTES,
                                         endMinute,
                                       ) - Math.max(0, startMinute),
-                                    ) * PIXELS_PER_MINUTE;
+                                    ) * pixelsPerMinute;
                                   const hasConflict =
                                     conflictReservationIds.has(
                                       reservation.id,
@@ -1593,6 +1604,7 @@ export default function EntertainmentScheduleDashboard({
                                       selectedEvent;
                                   return (
                                     <button
+                                      aria-disabled={!isEditing}
                                       aria-label={`${reservation.eventName}, ${reservation.resourceName}, ${formatClock(
                                         reservation.startAt,
                                       )} to ${formatClock(
@@ -1609,16 +1621,20 @@ export default function EntertainmentScheduleDashboard({
                                           : "",
                                         hasConflict ? "has-conflict" : "",
                                         isUnrelated ? "is-dimmed" : "",
+                                        isEditing ? "is-editable" : "",
                                       ]
                                         .filter(Boolean)
                                         .join(" ")}
                                       key={reservation.id}
-                                      onPointerDown={(event) =>
-                                        beginBlockInteraction(
-                                          event,
-                                          reservation,
-                                          "move",
-                                        )
+                                      onPointerDown={
+                                        isEditing
+                                          ? (event) =>
+                                              beginBlockInteraction(
+                                                event,
+                                                reservation,
+                                                "move",
+                                              )
+                                          : undefined
                                       }
                                       style={{
                                         backgroundColor:
@@ -1631,6 +1647,7 @@ export default function EntertainmentScheduleDashboard({
                                           slot * RESERVATION_SLOT_HEIGHT + 3,
                                         width,
                                       }}
+                                      tabIndex={isEditing ? 0 : -1}
                                       title={`${formatClock(
                                         reservation.startAt,
                                       )} – ${formatClock(
@@ -1640,17 +1657,19 @@ export default function EntertainmentScheduleDashboard({
                                       }`}
                                       type="button"
                                     >
-                                      <span
-                                        aria-hidden="true"
-                                        className="entertainment-resize-handle is-left"
-                                        onPointerDown={(event) =>
-                                          beginBlockInteraction(
-                                            event,
-                                            reservation,
-                                            "resize-start",
-                                          )
-                                        }
-                                      />
+                                      {isEditing ? (
+                                        <span
+                                          aria-hidden="true"
+                                          className="entertainment-resize-handle is-left"
+                                          onPointerDown={(event) =>
+                                            beginBlockInteraction(
+                                              event,
+                                              reservation,
+                                              "resize-start",
+                                            )
+                                          }
+                                        />
+                                      ) : null}
                                       <span className="entertainment-block-copy">
                                         <strong>
                                           {formatClock(
@@ -1688,17 +1707,19 @@ export default function EntertainmentScheduleDashboard({
                                           !
                                         </span>
                                       ) : null}
-                                      <span
-                                        aria-hidden="true"
-                                        className="entertainment-resize-handle is-right"
-                                        onPointerDown={(event) =>
-                                          beginBlockInteraction(
-                                            event,
-                                            reservation,
-                                            "resize-end",
-                                          )
-                                        }
-                                      />
+                                      {isEditing ? (
+                                        <span
+                                          aria-hidden="true"
+                                          className="entertainment-resize-handle is-right"
+                                          onPointerDown={(event) =>
+                                            beginBlockInteraction(
+                                              event,
+                                              reservation,
+                                              "resize-end",
+                                            )
+                                          }
+                                        />
+                                      ) : null}
                                     </button>
                                   );
                                 },
@@ -1714,7 +1735,7 @@ export default function EntertainmentScheduleDashboard({
             )}
           </section>
 
-          <details className="entertainment-event-panel" open>
+          <details className="entertainment-event-panel">
             <summary>
               <span>
                 <span className="entertainment-eyebrow">Tripleseat events</span>
@@ -1735,8 +1756,8 @@ export default function EntertainmentScheduleDashboard({
               </button>
             ) : null}
             <div className="entertainment-event-list">
-              {filteredEventList.length ? (
-                filteredEventList.map((event) => {
+              {eventList.length ? (
+                eventList.map((event) => {
                   const key = eventKey(event);
                   const eventReservations =
                     payload?.reservations.filter(
