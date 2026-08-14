@@ -121,7 +121,7 @@ describe("Floor Plan Tripleseat source enforcement", () => {
 
     expect(payload.plan.events).toEqual([
       expect.objectContaining({
-        name: "Manager Outing",
+        name: "Amazon 08/21/2026",
         guestCount: 50,
         contractedAreaIds: ["vip-1"],
       }),
@@ -135,14 +135,14 @@ describe("Floor Plan Tripleseat source enforcement", () => {
     expect(
       payload.entertainmentReservations.filter(
         (reservation) =>
-          reservation.eventName === "Manager Outing" &&
+          reservation.eventName === "Amazon 08/21/2026" &&
           reservation.resourceCategory === "bowling",
       ),
     ).toHaveLength(5);
     expect(
       payload.entertainmentReservations.filter(
         (reservation) =>
-          reservation.eventName === "Manager Outing" &&
+          reservation.eventName === "Amazon 08/21/2026" &&
           reservation.resourceCategory === "darts",
       ),
     ).toHaveLength(4);

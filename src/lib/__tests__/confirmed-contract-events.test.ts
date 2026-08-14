@@ -8,7 +8,7 @@ import {
 } from "../confirmed-contract-events";
 
 describe("confirmed contract event evidence", () => {
-  it("projects the August 21 Manager Outing contract into every dashboard source", () => {
+  it("projects the August 21 Amazon contract into every dashboard source", () => {
     const [eventPlan] = mergeConfirmedContractEventPlans(
       [],
       "2026-08-21",
@@ -22,8 +22,8 @@ describe("confirmed contract event evidence", () => {
       confirmedContractEntertainmentSourcesForDate("2026-08-21");
 
     expect(eventPlan).toMatchObject({
-      id: 2026082101,
-      name: "Manager Outing",
+      id: 62238275,
+      name: "Amazon 08/21/2026",
       date: "2026-08-21",
       time: "4:00 PM - 7:00 PM",
       guest_count: 50,
@@ -46,7 +46,7 @@ describe("confirmed contract event evidence", () => {
         }),
       ],
     });
-    expect(eventPlanSource.source.status).toBe("MANUAL CONFIRMED");
+    expect(eventPlanSource.source.status).toBe("DEFINITE");
     expect(kitchen.selections).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "Wing Bar", quantity: 50 }),
@@ -76,7 +76,7 @@ describe("confirmed contract event evidence", () => {
         "2026-08-21",
       )[0],
       id: 12345678,
-      name: "  MANAGER   OUTING ",
+      name: "  AMAZON   08/21/2026 ",
       verification_status: "Live Tripleseat record",
     };
 

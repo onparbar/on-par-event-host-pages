@@ -69,7 +69,7 @@ describe("kitchen synchronization", () => {
     });
 
     const checklist = day.events.find(
-      (event) => event.event.name === "Manager Outing",
+      (event) => event.event.name === "Amazon 08/21/2026",
     );
     expect(checklist).toBeDefined();
     expect(checklist?.event).toMatchObject({
@@ -108,11 +108,11 @@ describe("kitchen synchronization", () => {
       ]),
     );
     expect(checklist?.chafingDishes.total).toBe(1);
-    await expect(storage.getEventDate("2026082101")).resolves.toBe(
+    await expect(storage.getEventDate("62238275")).resolves.toBe(
       "2026-08-21",
     );
     await updateKitchenManualAssignments(
-      "2026082101",
+      "62238275",
       ["Ryan"],
       ["Diana"],
       { storage },
@@ -164,17 +164,59 @@ describe("kitchen synchronization", () => {
     const day = await getKitchenDay("2026-08-21", {
       adapter: testAdapter(() => []),
       storage,
-      vipPrepClient: { configured: false, fetchRange: async () => vipPrepPayload },
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
       now: viewingTime("2026-08-21"),
     });
 
     expect(
-      day.events.filter((event) => event.event.name === "Manager Outing"),
+      day.events.filter((event) => event.event.name === "Amazon 08/21/2026"),
     ).toEqual([
       expect.objectContaining({
-        event: expect.objectContaining({ eventId: "2026082101" }),
+        event: expect.objectContaining({ eventId: "62238275" }),
       }),
     ]);
+  });
+
+  it("replaces an older incomplete live Amazon kitchen source during sync", async () => {
+    const incomplete = confirmedContractKitchenSourcesForDate("2026-08-21")[0];
+    incomplete.selections = [];
+    incomplete.sourceUpdatedAt = "2026-08-14T20:00:00.000Z";
+
+    const day = await syncKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => [incomplete]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
+      now: new Date("2026-08-14T22:00:00.000Z"),
+    });
+
+    expect(day.events).toHaveLength(1);
+    expect(day.events[0].event.eventId).toBe("62238275");
+    expect(day.events[0].sections.flatMap((section) => section.rows)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ foodName: "Wings", quantity: 400 }),
+        expect.objectContaining({ foodName: "Assorted Desserts", quantity: 5 }),
+      ]),
+    );
+  });
+
+  it("does not restore the confirmed Amazon kitchen event after Tripleseat marks it LOST", async () => {
+    const lost = confirmedContractKitchenSourcesForDate("2026-08-21")[0];
+    lost.status = "LOST";
+
+    const day = await syncKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => [lost]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: { configured: false, fetchRange: async () => vipPrepPayload },
+      now: new Date("2026-08-14T22:00:00.000Z"),
+    });
+
+    expect(day.events).toEqual([]);
   });
 
   it("imports paid VIP food quantities into the Kitchen checklist", async () => {

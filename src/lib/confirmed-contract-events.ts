@@ -18,14 +18,15 @@ export type ConfirmedContractSyncCoverage = {
   endDate: string;
 };
 
-const MANAGER_OUTING_ID = "2026082101";
-const MANAGER_OUTING_CONFIRMED_AT = "2026-08-14T21:29:11.000Z";
+const AMAZON_AUG_21_ID = "62238275";
+const AMAZON_AUG_21_BOOKING_ID = "58621092";
+const AMAZON_AUG_21_CONFIRMED_AT = "2026-08-14T21:29:11.000Z";
 
-const managerOuting: ConfirmedContractEvent = {
-  confirmedAt: MANAGER_OUTING_CONFIRMED_AT,
+const amazonAug21: ConfirmedContractEvent = {
+  confirmedAt: AMAZON_AUG_21_CONFIRMED_AT,
   plan: {
-    id: Number(MANAGER_OUTING_ID),
-    name: "Manager Outing",
+    id: Number(AMAZON_AUG_21_ID),
+    name: "Amazon 08/21/2026",
     date: "2026-08-21",
     day: "Friday",
     time: "4:00 PM - 7:00 PM",
@@ -53,27 +54,26 @@ const managerOuting: ConfirmedContractEvent = {
       },
     ],
     verification_status:
-      "Confirmed from the August 21 contract image supplied to Event Host on August 14, 2026. The exact Tripleseat event ID is not visible in the supplied image.",
+      "Confirmed from the August 21 contract image supplied on August 14, 2026 and matched to Tripleseat event 62238275 (Amazon 08/21/2026).",
     needs_review: true,
     review_reasons: [
-      "Temporary contract-evidence record: replace the synthetic Event Host ID with the exact Tripleseat event ID after the live connection is restored.",
       "Bowling and dart lane numbers were not listed; adjacent physical resources are assigned automatically and require staff verification.",
       "Only page 1 of the 2-page contract was supplied; review the contract Special Instructions on page 2.",
     ],
-    tripleseat_booking_id: null,
-    source_updated_at: MANAGER_OUTING_CONFIRMED_AT,
-    synced_at: MANAGER_OUTING_CONFIRMED_AT,
+    tripleseat_booking_id: AMAZON_AUG_21_BOOKING_ID,
+    source_updated_at: AMAZON_AUG_21_CONFIRMED_AT,
+    synced_at: AMAZON_AUG_21_CONFIRMED_AT,
     rule_version: "event-plan-v1.0.2",
   },
   eventPlanSource: {
-    eventId: MANAGER_OUTING_ID,
-    bookingId: null,
-    eventName: "Manager Outing",
+    eventId: AMAZON_AUG_21_ID,
+    bookingId: AMAZON_AUG_21_BOOKING_ID,
+    eventName: "Amazon 08/21/2026",
     localDate: "2026-08-21",
     eventStartAt: "2026-08-21T20:00:00.000Z",
     eventEndAt: "2026-08-21T23:00:00.000Z",
     guestCount: 50,
-    status: "MANUAL CONFIRMED",
+    status: "DEFINITE",
     rooms: ["VIP 1"],
     selections: [
       {
@@ -83,13 +83,13 @@ const managerOuting: ConfirmedContractEvent = {
         isFood: true,
       },
       {
-        name: "Wing Bar",
+        name: "Jumbo Wing Bar",
         quantity: 50,
         sourceCategory: "Food Packages",
         isFood: true,
       },
       {
-        name: "Dessert Platter",
+        name: "5 Dessert Platters",
         quantity: 5,
         sourceCategory: "Food Platters",
         isFood: true,
@@ -119,20 +119,20 @@ const managerOuting: ConfirmedContractEvent = {
     operationalNotes: [],
     operationalNotesAvailable: false,
     operationalNotesTruncated: true,
-    sourceUpdatedAt: MANAGER_OUTING_CONFIRMED_AT,
+    sourceUpdatedAt: AMAZON_AUG_21_CONFIRMED_AT,
     sourceSystem: "contract-evidence",
   },
   kitchenSource: {
-    eventId: MANAGER_OUTING_ID,
-    bookingId: null,
-    eventName: "Manager Outing",
+    eventId: AMAZON_AUG_21_ID,
+    bookingId: AMAZON_AUG_21_BOOKING_ID,
+    eventName: "Amazon 08/21/2026",
     localDate: "2026-08-21",
     localDateVerified: true,
     startTime: "2026-08-21T16:00:00-04:00",
     endTime: "2026-08-21T19:00:00-04:00",
     guestCount: 50,
-    status: "MANUAL CONFIRMED",
-    statusVerified: false,
+    status: "DEFINITE",
+    statusVerified: true,
     room: "VIP 1",
     selections: [
       {
@@ -158,17 +158,17 @@ const managerOuting: ConfirmedContractEvent = {
     specialNotes: [
       "Only page 1 of the 2-page contract was supplied; review the contract Special Instructions on page 2.",
     ],
-    sourceUpdatedAt: MANAGER_OUTING_CONFIRMED_AT,
+    sourceUpdatedAt: AMAZON_AUG_21_CONFIRMED_AT,
     sourceState: "stale",
   },
   entertainmentSource: {
-    tripleseatEventId: MANAGER_OUTING_ID,
-    tripleseatBookingId: null,
-    eventName: "Manager Outing",
+    tripleseatEventId: AMAZON_AUG_21_ID,
+    tripleseatBookingId: AMAZON_AUG_21_BOOKING_ID,
+    eventName: "Amazon 08/21/2026",
     localDate: "2026-08-21",
     eventStartAt: "2026-08-21T20:00:00.000Z",
     eventEndAt: "2026-08-21T23:00:00.000Z",
-    status: "MANUAL CONFIRMED",
+    status: "DEFINITE",
     rooms: [{ id: null, name: "VIP 1" }],
     items: [
       {
@@ -192,13 +192,13 @@ const managerOuting: ConfirmedContractEvent = {
       },
     ],
     categoryNames: ["Bowling", "Darts", "Private Rooms"],
-    sourceUpdatedAt: MANAGER_OUTING_CONFIRMED_AT,
+    sourceUpdatedAt: AMAZON_AUG_21_CONFIRMED_AT,
     noteCount: 0,
     sourceSystem: "contract-evidence",
   },
 };
 
-const CONFIRMED_CONTRACT_EVENTS = [managerOuting] as const;
+const CONFIRMED_CONTRACT_EVENTS = [amazonAug21] as const;
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -308,11 +308,13 @@ export function mergeConfirmedContractEventPlans(
     lastSuccessfulSyncAt,
     coverage,
   )) {
-    const matchingIndex = merged.findIndex((plan) =>
-      matchingIdentity(
-        { date: plan.date, name: plan.name },
-        { date: event.plan.date, name: event.plan.name },
-      ),
+    const matchingIndex = merged.findIndex(
+      (plan) =>
+        plan.id === event.plan.id ||
+        matchingIdentity(
+          { date: plan.date, name: plan.name },
+          { date: event.plan.date, name: event.plan.name },
+        ),
     );
     if (
       matchingIndex >= 0 &&

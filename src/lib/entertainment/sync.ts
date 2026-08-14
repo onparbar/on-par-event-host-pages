@@ -99,6 +99,12 @@ function unique(values: readonly string[]) {
   return [...new Set(values)];
 }
 
+function isOperationalEntertainmentStatus(status: string | null) {
+  return !["LOST", "PROSPECT"].includes(
+    status?.trim().toLocaleUpperCase("en-US") ?? "",
+  );
+}
+
 function safeSyncError(error: unknown) {
   if (!(error instanceof Error)) {
     return "Entertainment synchronization failed.";
@@ -538,39 +544,49 @@ export async function syncEntertainmentDay(
       adapter.fetchEntertainmentEventsForDate(date),
       vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
     ]);
-    let sourceEvents = [
+    let allSourceEvents = [
       ...tripleseatSourceEvents,
       ...vipPrepEntertainmentEvents(vipPayload?.reservations ?? []),
     ];
     if (
       adapter.sourceMode === "mock" &&
       storage.persistence === "memory" &&
-      sourceEvents.length === 0
+      allSourceEvents.length === 0
     ) {
-      sourceEvents = mockSourceEvents(date, context.localEvents);
+      allSourceEvents = mockSourceEvents(date, context.localEvents);
     }
+    let sourceEvents = allSourceEvents.filter((event) =>
+      isOperationalEntertainmentStatus(event.status),
+    );
     const confirmedSources = confirmedContractEntertainmentSourcesForDate(
       date,
     ).filter(
-      (source) =>
-        !sourceEvents.some(
+      (source) => {
+        const matchingSource = allSourceEvents.find(
           (candidate) =>
+            candidate.tripleseatEventId === source.tripleseatEventId ||
             eventMatchesConfirmedContract(
               candidate.localDate,
               candidate.eventName,
               source.localDate,
               source.eventName,
-            ) &&
-            sourceIsAtLeastAsNew(
-              candidate.sourceUpdatedAt,
-              source.sourceUpdatedAt,
             ),
-        ),
+        );
+        return !(
+          matchingSource &&
+          (!isOperationalEntertainmentStatus(matchingSource.status) ||
+            sourceIsAtLeastAsNew(
+              matchingSource.sourceUpdatedAt,
+              source.sourceUpdatedAt,
+            ))
+        );
+      },
     );
     sourceEvents = [
       ...sourceEvents.filter(
         (candidate) =>
           !confirmedSources.some((source) =>
+            candidate.tripleseatEventId === source.tripleseatEventId ||
             eventMatchesConfirmedContract(
               candidate.localDate,
               candidate.eventName,

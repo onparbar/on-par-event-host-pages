@@ -1,8 +1,12 @@
 import { events as legacyEventPlans } from "@/lib/events";
 import {
+  confirmedContractDatesInWindow,
   confirmedContractEventPlanById,
+  confirmedContractEventPlanSourcesForDate,
+  eventMatchesConfirmedContract,
   isConfirmedContractEventPlanId,
   mergeConfirmedContractEventPlans,
+  sourceIsAtLeastAsNew,
 } from "@/lib/confirmed-contract-events";
 import { getTripleseatAdapter, type TripleseatAdapter } from "@/lib/kitchen/tripleseat";
 
@@ -153,9 +157,57 @@ export async function syncEventPlanWindow(
 
   await storage.start(window);
   try {
-    const sources = (
-      await adapter.fetchEventPlansForRange(window.startDate, window.endDate)
-    ).filter((source) => isOperationalEventStatus(source.status));
+    const fetchedSources = await adapter.fetchEventPlansForRange(
+      window.startDate,
+      window.endDate,
+    );
+    let sources = fetchedSources.filter((source) =>
+      isOperationalEventStatus(source.status),
+    );
+    const confirmedRows = confirmedContractDatesInWindow(
+      window.startDate,
+      window.endDate,
+    )
+      .flatMap((date) => confirmedContractEventPlanSourcesForDate(date))
+      .filter(
+        (row) =>
+          Date.parse(row.source.sourceUpdatedAt ?? "") <= now.getTime(),
+      );
+    for (const confirmed of confirmedRows) {
+      const matchingFetched = fetchedSources.find(
+        (source) =>
+          source.eventId === confirmed.source.eventId ||
+          eventMatchesConfirmedContract(
+            source.localDate,
+            source.eventName,
+            confirmed.source.localDate,
+            confirmed.source.eventName,
+          ),
+      );
+      if (
+        matchingFetched &&
+        (!isOperationalEventStatus(matchingFetched.status) ||
+          sourceIsAtLeastAsNew(
+            matchingFetched.sourceUpdatedAt,
+            confirmed.source.sourceUpdatedAt,
+          ))
+      ) {
+        continue;
+      }
+      sources = [
+        ...sources.filter(
+          (source) =>
+            source.eventId !== confirmed.source.eventId &&
+            !eventMatchesConfirmedContract(
+              source.localDate,
+              source.eventName,
+              confirmed.source.localDate,
+              confirmed.source.eventName,
+            ),
+        ),
+        confirmed.source,
+      ];
+    }
     const syncedAt = now.toISOString();
     const plans = sources.map((source) => ({
       ...buildEventPlan(source, legacyPlans),

@@ -14,6 +14,9 @@ import {
 } from "../storage";
 import type { EntertainmentSourceEvent } from "../types";
 import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
+import {
+  confirmedContractEntertainmentSourcesForDate,
+} from "../../confirmed-contract-events";
 
 const DATE = "2026-07-28";
 
@@ -94,7 +97,7 @@ describe("persistent entertainment synchronization", () => {
     });
 
     const managerReservations = day.reservations.filter(
-      (reservation) => reservation.eventName === "Manager Outing",
+      (reservation) => reservation.eventName === "Amazon 08/21/2026",
     );
     expect(
       managerReservations.filter(
@@ -129,7 +132,7 @@ describe("persistent entertainment synchronization", () => {
     );
     expect(bowling).toBeDefined();
     await expect(storage.getReservation(bowling!.id)).resolves.toMatchObject({
-      eventName: "Manager Outing",
+      eventName: "Amazon 08/21/2026",
     });
     await updateEntertainmentReservation(
       bowling!.id,
@@ -152,6 +155,56 @@ describe("persistent entertainment synchronization", () => {
       eventColor: "#7C3AED",
       notes: "Staff verified the assigned lane.",
     });
+  });
+
+  it("replaces an older incomplete live Amazon entertainment source during sync", async () => {
+    const incomplete =
+      confirmedContractEntertainmentSourcesForDate("2026-08-21")[0];
+    incomplete.items = [];
+    incomplete.sourceUpdatedAt = "2026-08-14T20:00:00.000Z";
+
+    const day = await syncEntertainmentDay("2026-08-21", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([incomplete]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
+    });
+
+    const amazon = day.reservations.filter(
+      (reservation) => reservation.tripleseatEventId === "62238275",
+    );
+    expect(
+      amazon.filter(
+        (reservation) => reservation.resourceCategory === "bowling",
+      ),
+    ).toHaveLength(5);
+    expect(
+      amazon.filter(
+        (reservation) => reservation.resourceCategory === "darts",
+      ),
+    ).toHaveLength(4);
+  });
+
+  it("does not restore the confirmed Amazon schedule after Tripleseat marks it PROSPECT", async () => {
+    const prospect =
+      confirmedContractEntertainmentSourcesForDate("2026-08-21")[0];
+    prospect.status = "PROSPECT";
+
+    const day = await syncEntertainmentDay("2026-08-21", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([prospect]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
+    });
+
+    expect(day.events).toEqual([]);
+    expect(day.reservations).toEqual([]);
   });
 
   it("reads the VIP schedule directly without Supabase persistence", async () => {

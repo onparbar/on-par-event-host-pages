@@ -67,6 +67,12 @@ function unique(values: readonly string[]) {
   return [...new Set(values)];
 }
 
+function isOperationalKitchenStatus(status: string | null) {
+  return !["LOST", "PROSPECT"].includes(
+    status?.trim().toLocaleUpperCase("en-US") ?? "",
+  );
+}
+
 function dedupeConfirmedContractKitchenEvents(events: KitchenChecklist[]) {
   const contractEvent = events.find((event) =>
     isConfirmedContractEventPlanId(Number(event.event.eventId)),
@@ -328,30 +334,40 @@ export async function syncKitchenDay(
       adapter.fetchEventsForDate(date),
       vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
     ]);
-    const upstreamEvents = [
+    const allUpstreamEvents = [
       ...tripleseatEvents,
       ...vipPrepKitchenEvents(vipPayload?.reservations ?? []),
     ];
+    const upstreamEvents = allUpstreamEvents.filter((event) =>
+      isOperationalKitchenStatus(event.status),
+    );
     const confirmedEvents = confirmedContractKitchenSourcesForDate(date).filter(
-      (source) =>
-        !upstreamEvents.some(
+      (source) => {
+        const matchingSource = allUpstreamEvents.find(
           (candidate) =>
+            candidate.eventId === source.eventId ||
             eventMatchesConfirmedContract(
               candidate.localDate,
               candidate.eventName,
               source.localDate,
               source.eventName,
-            ) &&
-            sourceIsAtLeastAsNew(
-              candidate.sourceUpdatedAt,
-              source.sourceUpdatedAt,
             ),
-        ),
+        );
+        return !(
+          matchingSource &&
+          (!isOperationalKitchenStatus(matchingSource.status) ||
+            sourceIsAtLeastAsNew(
+              matchingSource.sourceUpdatedAt,
+              source.sourceUpdatedAt,
+            ))
+        );
+      },
     );
     const sourceEvents = [
       ...upstreamEvents.filter(
         (candidate) =>
           !confirmedEvents.some((source) =>
+            candidate.eventId === source.eventId ||
             eventMatchesConfirmedContract(
               candidate.localDate,
               candidate.eventName,
