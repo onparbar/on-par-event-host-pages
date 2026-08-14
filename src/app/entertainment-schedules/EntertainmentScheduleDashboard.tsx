@@ -311,11 +311,25 @@ function eventTimes(event: EntertainmentEventSnapshot) {
   return `${formatClock(event.eventStartAt)} – ${formatClock(event.eventEndAt)}`;
 }
 
-function sourceIcon(reservation: EntertainmentReservation) {
-  if (reservation.manualOverride) {
-    return "✎";
+function compactClock(iso: string) {
+  const match = formatClock(iso).match(/^(\d{1,2}):(\d{2})\s(AM|PM)$/);
+  if (!match) {
+    return formatClock(iso);
   }
-  return reservation.source === "tripleseat" ? "↻" : "!";
+  const time = match[2] === "00" ? match[1] : `${match[1]}:${match[2]}`;
+  return { time, period: match[3].toLowerCase().charAt(0) };
+}
+
+function compactTimeRange(startAt: string, endAt: string) {
+  const start = compactClock(startAt);
+  const end = compactClock(endAt);
+  if (typeof start === "string" || typeof end === "string") {
+    return `${formatClock(startAt)} – ${formatClock(endAt)}`;
+  }
+  if (start.period === end.period) {
+    return `${start.time}–${end.time}${end.period}`;
+  }
+  return `${start.time}${start.period}–${end.time}${end.period}`;
 }
 
 async function responseError(response: Response) {
@@ -1660,33 +1674,17 @@ export default function EntertainmentScheduleDashboard({
                           ) : null}
                           <span className="entertainment-block-copy">
                             <strong>
-                              {formatClock(reservation.startAt)} –{" "}
-                              {formatClock(reservation.endAt)}
+                              {width >= 140
+                                ? `${formatClock(reservation.startAt)} – ${formatClock(reservation.endAt)}`
+                                : compactTimeRange(
+                                    reservation.startAt,
+                                    reservation.endAt,
+                                  )}
                             </strong>
                             {width >= 210 ? (
                               <span>{reservation.eventName}</span>
                             ) : null}
                           </span>
-                          <span
-                            aria-label={
-                              reservation.manualOverride
-                                ? "Manual override"
-                                : reservation.source === "tripleseat"
-                                  ? "Imported from Tripleseat"
-                                  : "Needs review"
-                            }
-                            className="entertainment-source-icon"
-                          >
-                            {sourceIcon(reservation)}
-                          </span>
-                          {hasConflict ? (
-                            <span
-                              aria-hidden="true"
-                              className="entertainment-conflict-icon"
-                            >
-                              !
-                            </span>
-                          ) : null}
                           {isEditing ? (
                             <span
                               aria-hidden="true"

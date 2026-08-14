@@ -1781,7 +1781,7 @@
   min-width: 18px;
   align-items: center;
   gap: 4px;
-  padding: 1px 18px 1px 6px;
+  padding: 1px 3px;
   border: 2px solid rgba(0, 0, 0, 0.2);
   border-radius: 4px;
   cursor: default;
@@ -1840,35 +1840,6 @@
   font-size: 0.62rem;
   font-weight: 800;
   text-overflow: ellipsis;
-}
-
-.entertainment-source-icon,
-.entertainment-conflict-icon {
-  display: grid;
-  position: absolute;
-  z-index: 2;
-  width: 15px;
-  height: 15px;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.88);
-  color: #151515;
-  font-size: 0.62rem;
-  font-weight: 900;
-}
-
-.entertainment-source-icon {
-  right: 3px;
-}
-
-.entertainment-conflict-icon {
-  left: 3px;
-  background: #e2251a;
-  color: #fff;
-}
-
-.entertainment-reservation-block.has-conflict {
-  padding-left: 22px;
 }
 
 .entertainment-resize-handle {

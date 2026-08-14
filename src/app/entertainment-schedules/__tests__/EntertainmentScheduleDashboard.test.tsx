@@ -209,4 +209,20 @@ describe("entertainment schedule dashboard controls", () => {
       );
     }
   });
+
+  it("uses compact time labels without reservation icons", () => {
+    const html = renderToStaticMarkup(
+      createElement(EntertainmentScheduleDashboard, {
+        initialDate: "2026-08-14",
+        initialPayload: {
+          ...loadedPayload,
+          reservations: [reservation()],
+        },
+      }),
+    );
+
+    expect(html).toContain("12–2p");
+    expect(html).not.toContain("entertainment-source-icon");
+    expect(html).not.toContain("entertainment-conflict-icon");
+  });
 });
