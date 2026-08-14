@@ -15,6 +15,7 @@ import {
   deterministicEventColor,
   exactResourceIdsForText,
   quantityForText,
+  resourcesForCategory,
   textColorForBackground,
 } from "../resources";
 import {
@@ -136,6 +137,21 @@ describe("canonical entertainment resources", () => {
 
   it("keeps mini golf out of the reservable schedule categories", () => {
     expect(ENTERTAINMENT_SCHEDULE_CATEGORIES).not.toContain("mini-golf");
+  });
+
+  it("keeps every schedule resource in its intended layout category", () => {
+    expect(ENTERTAINMENT_SCHEDULE_CATEGORIES).toEqual([
+      "bowling",
+      "darts",
+      "pool",
+      "shuffleboard",
+      "private-rooms",
+    ]);
+    expect(resourcesForCategory("bowling")).toHaveLength(12);
+    expect(resourcesForCategory("darts")).toHaveLength(5);
+    expect(resourcesForCategory("pool")).toHaveLength(3);
+    expect(resourcesForCategory("shuffleboard")).toHaveLength(2);
+    expect(resourcesForCategory("private-rooms")).toHaveLength(8);
   });
 
   it.each([

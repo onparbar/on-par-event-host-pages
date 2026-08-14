@@ -1525,13 +1525,28 @@
 
 .entertainment-grid {
   position: relative;
-  min-width: var(--ent-grid-width, 1270px);
+  min-width: var(--ent-layout-width, 1270px);
+}
+
+.entertainment-grid-layout {
+  display: grid;
+  align-items: start;
+  gap: 8px;
+  grid-template-columns:
+    var(--ent-main-grid-width, 1270px)
+    var(--ent-compact-grid-width, 846px);
+}
+
+.entertainment-grid-column {
+  min-width: 0;
 }
 
 .entertainment-grid-header,
 .entertainment-resource-row {
   display: grid;
-  grid-template-columns: 190px var(--ent-timeline-width, 1080px);
+  grid-template-columns:
+    var(--ent-resource-width, 190px)
+    var(--ent-timeline-width, 1080px);
 }
 
 .entertainment-grid-header {
@@ -1600,7 +1615,7 @@
   display: flex;
   min-height: 22px;
   align-items: center;
-  width: var(--ent-grid-width, 1270px);
+  width: 100%;
   padding: 0 8px;
   border-bottom: 1px solid #cbd3cc;
   background: #dfe6dc;
@@ -1609,6 +1624,78 @@
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.entertainment-resource-group {
+  position: relative;
+  --ent-category-accent: #18332f;
+  --ent-category-tint: #eef2ef;
+}
+
+.entertainment-resource-group.has-category-border {
+  border-top: 1px solid var(--ent-category-accent);
+  border-bottom: 1px solid var(--ent-category-accent);
+}
+
+.entertainment-resource-group.has-category-border::after {
+  position: absolute;
+  z-index: 15;
+  inset: 0;
+  border: 2px solid var(--ent-category-accent);
+  content: "";
+  pointer-events: none;
+}
+
+.entertainment-resource-group.category-bowling {
+  --ent-category-accent: #18332f;
+  --ent-category-tint: #edf2f0;
+}
+
+.entertainment-resource-group.category-darts {
+  --ent-category-accent: #1d4ed8;
+  --ent-category-tint: #e8efff;
+}
+
+.entertainment-resource-group.category-pool {
+  --ent-category-accent: #9a4e00;
+  --ent-category-tint: #fff0dc;
+}
+
+.entertainment-resource-group.category-shuffleboard {
+  --ent-category-accent: #6d28d9;
+  --ent-category-tint: #f1e9ff;
+}
+
+.entertainment-resource-group.category-private-rooms {
+  --ent-category-accent: #526d52;
+  --ent-category-tint: #edf2e9;
+}
+
+.entertainment-resource-group.has-category-border
+  .entertainment-group-heading {
+  border-bottom-color: var(--ent-category-accent);
+  background: var(--ent-category-accent);
+  color: #fff;
+}
+
+.entertainment-resource-group.has-category-border
+  .entertainment-resource-name {
+  border-right-color: var(--ent-category-accent);
+  background: var(--ent-category-tint);
+}
+
+.entertainment-grid-column.is-compact
+  :is(
+    .entertainment-resource-heading,
+    .entertainment-group-heading,
+    .entertainment-resource-name
+  ) {
+  position: static;
+}
+
+.entertainment-grid-column.is-compact .entertainment-resource-name {
+  padding-inline: 6px;
+  font-size: 0.62rem;
 }
 
 .entertainment-resource-row {
@@ -2279,6 +2366,13 @@
 .entertainment-destructive-actions {
   flex-wrap: wrap;
   justify-content: flex-start !important;
+}
+
+@media (max-width: 1599px) {
+  .entertainment-grid-layout {
+    min-width: var(--ent-main-grid-width, 1270px);
+    grid-template-columns: var(--ent-main-grid-width, 1270px);
+  }
 }
 
 @media (max-width: 1280px) {
