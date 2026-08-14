@@ -7,7 +7,9 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/entertainment-schedules",
 }));
 
-import EntertainmentScheduleDashboard from "../EntertainmentScheduleDashboard";
+import EntertainmentScheduleDashboard, {
+  calculateEntertainmentFitZoom,
+} from "../EntertainmentScheduleDashboard";
 
 const loadedPayload: EntertainmentDayPayload = {
   date: "2026-08-14",
@@ -20,6 +22,19 @@ const loadedPayload: EntertainmentDayPayload = {
   missingEnvironmentVariables: [],
   canEdit: true,
 };
+
+describe("entertainment schedule kiosk fit", () => {
+  it.each([
+    [1912, 79],
+    [1358, 51],
+    [1341, 50],
+    [1255, 46],
+    [1123, 40],
+    [4000, 120],
+  ])("fits a %ipx schedule container at %i%%", (width, zoom) => {
+    expect(calculateEntertainmentFitZoom(width)).toBe(zoom);
+  });
+});
 
 describe("entertainment schedule dashboard controls", () => {
   it("starts locked with explicit Edit and Save controls", () => {

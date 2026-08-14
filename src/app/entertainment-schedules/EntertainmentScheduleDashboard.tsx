@@ -47,12 +47,14 @@ const COMPACT_PIXELS_PER_MINUTE = 0.98;
 const OPERATING_MINUTES = 15 * 60;
 const RESOURCE_COLUMN_WIDTH = 190;
 const COMPACT_RESOURCE_COLUMN_WIDTH = 140;
-const RESOURCE_ROW_HEIGHT = 24;
-const RESERVATION_SLOT_HEIGHT = 24;
+const RESOURCE_ROW_HEIGHT = 22;
+const RESERVATION_SLOT_HEIGHT = 22;
 const ENTERTAINMENT_ZOOM_MIN = 40;
 const ENTERTAINMENT_ZOOM_MAX = 120;
 const ENTERTAINMENT_ZOOM_STEP = 10;
 const ENTERTAINMENT_ZOOM_DEFAULT = 80;
+const ENTERTAINMENT_LAYOUT_GAP = 8;
+const ENTERTAINMENT_FIT_GUTTER = 8;
 const CATEGORY_ORDER: EntertainmentCategory[] = [
   "bowling",
   "darts",
@@ -69,6 +71,27 @@ const COMPACT_CATEGORIES: EntertainmentCategory[] = [
   "pool",
   "shuffleboard",
 ];
+
+export function calculateEntertainmentFitZoom(availableWidth: number) {
+  const fixedWidth =
+    RESOURCE_COLUMN_WIDTH +
+    COMPACT_RESOURCE_COLUMN_WIDTH +
+    ENTERTAINMENT_LAYOUT_GAP +
+    ENTERTAINMENT_FIT_GUTTER;
+  const timelineWidthAtFullScale =
+    OPERATING_MINUTES *
+    (PIXELS_PER_MINUTE + COMPACT_PIXELS_PER_MINUTE);
+  const fittedZoom = Math.floor(
+    ((Math.max(0, availableWidth) - fixedWidth) /
+      timelineWidthAtFullScale) *
+      100,
+  );
+
+  return Math.max(
+    ENTERTAINMENT_ZOOM_MIN,
+    Math.min(ENTERTAINMENT_ZOOM_MAX, fittedZoom),
+  );
+}
 
 type DragPreview = {
   reservationId: string;
@@ -670,11 +693,16 @@ export default function EntertainmentScheduleDashboard({
   const [scheduleZoom, setScheduleZoom] = useState(
     ENTERTAINMENT_ZOOM_DEFAULT,
   );
+  const [scheduleFitZoom, setScheduleFitZoom] = useState(
+    ENTERTAINMENT_ZOOM_DEFAULT,
+  );
   const [modal, setModal] = useState<ReservationDraft | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const dragPreviewRef = useRef<DragPreview | null>(null);
   const [rangeDraft, setRangeDraft] = useState<RangeDraft | null>(null);
   const autoSyncDates = useRef(new Set<string>());
+  const scheduleScrollRef = useRef<HTMLDivElement>(null);
+  const previousFitZoomRef = useRef(ENTERTAINMENT_ZOOM_DEFAULT);
   const [now, setNow] = useState(() => new Date());
 
   const weekStart = startOfWeek(selectedDate);
@@ -756,6 +784,33 @@ export default function EntertainmentScheduleDashboard({
     const interval = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const scheduleScroll = scheduleScrollRef.current;
+    if (!scheduleScroll) {
+      return;
+    }
+    const observedScheduleScroll = scheduleScroll;
+
+    function updateScheduleFit() {
+      const nextFitZoom = calculateEntertainmentFitZoom(
+        observedScheduleScroll.clientWidth,
+      );
+      const previousFitZoom = previousFitZoomRef.current;
+      setScheduleFitZoom(nextFitZoom);
+      setScheduleZoom((currentZoom) =>
+        currentZoom === previousFitZoom
+          ? nextFitZoom
+          : currentZoom,
+      );
+      previousFitZoomRef.current = nextFitZoom;
+    }
+
+    updateScheduleFit();
+    const resizeObserver = new ResizeObserver(updateScheduleFit);
+    resizeObserver.observe(observedScheduleScroll);
+    return () => resizeObserver.disconnect();
+  }, [state]);
 
   async function syncDay(automatic = false) {
     if (state === "syncing") {
@@ -1311,11 +1366,8 @@ export default function EntertainmentScheduleDashboard({
   ) {
     const labels = hourLabels();
     const visibleLabels =
-      variant === "compact"
-        ? labels.filter(
-            (_, index) =>
-              index % 2 === 0 || index === labels.length - 1,
-          )
+      variant === "compact" || columnPixelsPerMinute < 0.62
+        ? labels.filter((_, index) => index % 2 === 0)
         : labels;
 
     return (
@@ -1580,7 +1632,7 @@ export default function EntertainmentScheduleDashboard({
             maximum={ENTERTAINMENT_ZOOM_MAX}
             minimum={ENTERTAINMENT_ZOOM_MIN}
             onChange={setScheduleZoom}
-            resetValue={ENTERTAINMENT_ZOOM_DEFAULT}
+            resetValue={scheduleFitZoom}
             step={ENTERTAINMENT_ZOOM_STEP}
             value={scheduleZoom}
           />
@@ -1757,11 +1809,14 @@ export default function EntertainmentScheduleDashboard({
                 </button>
               </div>
             ) : (
-              <div className="entertainment-grid-scroll">
+              <div
+                className="entertainment-grid-scroll"
+                ref={scheduleScrollRef}
+              >
                 <div
                   className="entertainment-grid entertainment-grid-layout"
                   style={{
-                    "--ent-layout-width": `${scheduleGridWidth + compactScheduleGridWidth + 8}px`,
+                    "--ent-layout-width": `${scheduleGridWidth + compactScheduleGridWidth + ENTERTAINMENT_LAYOUT_GAP}px`,
                     "--ent-main-grid-width": `${scheduleGridWidth}px`,
                     "--ent-compact-grid-width": `${compactScheduleGridWidth}px`,
                   } as CSSProperties}

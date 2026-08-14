@@ -1695,11 +1695,11 @@
 
 .entertainment-grid-column.is-compact .entertainment-resource-name {
   padding-inline: 6px;
-  font-size: 0.62rem;
+  font-size: 0.625rem;
 }
 
 .entertainment-resource-row {
-  min-height: 24px;
+  min-height: 22px;
   border-bottom: 1px solid #e2e7e2;
 }
 
@@ -1764,7 +1764,7 @@
   position: absolute;
   z-index: 5;
   top: 3px;
-  height: 22px;
+  height: 19px;
   min-width: 18px;
   border: 2px dashed var(--ent-action);
   border-radius: 5px;
@@ -1777,7 +1777,7 @@
   z-index: 6;
   display: flex;
   overflow: hidden;
-  height: 21px;
+  height: 19px;
   min-width: 18px;
   align-items: center;
   gap: 4px;
@@ -2368,7 +2368,7 @@
   justify-content: flex-start !important;
 }
 
-@media (max-width: 1599px) {
+@media (max-width: 1199px) {
   .entertainment-grid-layout {
     min-width: var(--ent-main-grid-width, 1270px);
     grid-template-columns: var(--ent-main-grid-width, 1270px);
@@ -2581,6 +2581,67 @@
   .entertainment-legend i {
     width: 18px;
     height: 10px;
+  }
+}
+
+@media (min-width: 1200px) and (max-height: 800px) {
+  .entertainment-dashboard-shell > .portal-header {
+    min-height: 60px;
+    gap: 10px;
+    padding: 4px 14px;
+  }
+
+  .entertainment-dashboard-shell .portal-brand {
+    min-width: 220px;
+    gap: 10px;
+  }
+
+  .entertainment-dashboard-shell .portal-brand-logo {
+    width: 92px;
+  }
+
+  .entertainment-dashboard-shell .portal-brand-copy {
+    padding-left: 10px;
+  }
+
+  .entertainment-dashboard-shell .portal-brand-copy > strong {
+    font-size: 1.05rem;
+  }
+
+  .entertainment-dashboard-shell .portal-brand-copy > span {
+    margin-top: 2px;
+    font-size: 0.56rem;
+  }
+
+  .entertainment-dashboard-shell
+    :is(.portal-header-button, .portal-menu-button) {
+    min-height: 34px;
+    padding: 5px 8px;
+    font-size: 0.68rem;
+  }
+
+  .entertainment-dashboard-shell
+    .portal-zoom-controls
+    .portal-header-button {
+    min-width: 34px;
+  }
+
+  .entertainment-event-panel > summary {
+    min-height: 26px;
+    padding-block: 2px;
+  }
+
+  .entertainment-grid-header,
+  .entertainment-time-heading {
+    min-height: 30px;
+  }
+
+  .entertainment-time-heading > span {
+    top: 9px;
+  }
+
+  .entertainment-group-heading {
+    min-height: 18px;
   }
 }
 
