@@ -294,6 +294,39 @@ function colorForEvent(
   };
 }
 
+function sameInstant(left: string, right: string) {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+  return (
+    Number.isFinite(leftTime) &&
+    Number.isFinite(rightTime) &&
+    leftTime === rightTime
+  );
+}
+
+function manualReservationMatchesSourceEvent(
+  reservation: EntertainmentReservation,
+  source: EntertainmentSourceEvent,
+  localEvent: LocalEntertainmentEvent | null,
+) {
+  const sourceIds = new Set(
+    [source.tripleseatEventId, localEvent?.id]
+      .filter((value): value is string => Boolean(value)),
+  );
+  if (
+    [reservation.tripleseatEventId, reservation.localEventId]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => sourceIds.has(value))
+  ) {
+    return true;
+  }
+  return (
+    reservation.operatingDate === source.localDate &&
+    normalizeEventName(reservation.eventName) ===
+      normalizeEventName(source.eventName)
+  );
+}
+
 export function buildEntertainmentSchedule({
   sourceEvents,
   localEvents,
@@ -395,6 +428,7 @@ export function buildEntertainmentSchedule({
     }
 
     const duplicateKeys = new Set<string>();
+    const consumedManualReservationIds = new Set<string>();
     const occupied = [...manuallyOccupied, ...reservations];
     const eventReservations: EntertainmentReservation[] = [];
 
@@ -457,9 +491,37 @@ export function buildEntertainmentSchedule({
         });
       }
 
-      const chosenIds = [...new Set(exactFromSource)];
-      const desiredCount = Math.max(quantity, chosenIds.length);
-      const needed = Math.max(0, desiredCount - chosenIds.length);
+      const desiredCount = Math.max(
+        quantity,
+        new Set(exactFromSource).size,
+      );
+      const matchingManualReservations = manuallyOccupied
+        .filter(
+          (reservation) =>
+            !consumedManualReservationIds.has(reservation.id) &&
+            reservation.resourceCategory === category &&
+            sameInstant(reservation.startAt, timing.startAt) &&
+            sameInstant(reservation.endAt, timing.endAt) &&
+            manualReservationMatchesSourceEvent(
+              reservation,
+              source,
+              localEvent,
+            ),
+        )
+        .slice(0, desiredCount);
+      matchingManualReservations.forEach((reservation) =>
+        consumedManualReservationIds.add(reservation.id),
+      );
+      const manuallyAssignedResourceIds = new Set(
+        matchingManualReservations.map((reservation) => reservation.resourceId),
+      );
+      const chosenIds = [...new Set(exactFromSource)].filter(
+        (resourceId) => !manuallyAssignedResourceIds.has(resourceId),
+      );
+      const needed = Math.max(
+        0,
+        desiredCount - matchingManualReservations.length - chosenIds.length,
+      );
       if (needed > 0) {
         const autoAssigned = findAdjacentAvailableResources(
           category,

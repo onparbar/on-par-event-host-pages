@@ -545,6 +545,46 @@ describe("deterministic schedule construction", () => {
     });
   });
 
+  it("counts same-event manual lanes toward an ambiguous contract quantity", () => {
+    const existingManualReservations = [1, 2, 3, 4].map((lane) =>
+      reservation({
+        id: `manual-bowling-${lane}`,
+        syncKey: null,
+        localEventId: "ts-100",
+        tripleseatEventId: null,
+        resourceId: `bowling-${lane}`,
+        resourceName: `Bowling Lane ${lane}`,
+        source: "manual",
+        manualOverride: true,
+      }),
+    );
+    const built = buildEntertainmentSchedule({
+      sourceEvents: [
+        sourceEvent({
+          items: [
+            sourceItem({
+              name: "Duckpin Bowling",
+              description: "5 Duckpin Bowling lanes for 2 hours",
+              quantity: 5,
+            }),
+          ],
+        }),
+      ],
+      localEvents: [localEvent()],
+      existingReservations: existingManualReservations,
+      now: NOW,
+    });
+    const merged = mergeReservationsForSync(
+      existingManualReservations,
+      built.reservations,
+      NOW,
+    );
+
+    expect(built.reservations).toHaveLength(1);
+    expect(built.reservations[0].resourceId).toBe("bowling-5");
+    expect(merged.filter((item) => item.active)).toHaveLength(5);
+  });
+
   it("deactivates a removed Tripleseat reservation without deleting it", () => {
     expect(
       mergeReservationsForSync([reservation()], [], NOW)[0],
