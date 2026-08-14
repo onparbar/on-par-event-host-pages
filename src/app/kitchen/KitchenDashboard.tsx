@@ -221,6 +221,23 @@ function formatTimestamp(value: string | null) {
   }).format(parsed);
 }
 
+export function formatPreppedTimestamp(value: string | null) {
+  if (!value) {
+    return "Time not recorded";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Time not recorded";
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+  }).format(parsed);
+}
+
 export function timeSortValue(value: string | null) {
   if (!value) {
     return Number.POSITIVE_INFINITY;
@@ -1033,11 +1050,22 @@ export default function KitchenDashboard() {
     checklist: KitchenChecklist,
     itemKey: string,
     prepped: boolean,
+    employeeName: string,
   ) {
+    if (prepped && !employeeName) {
+      setError(
+        `Select the employee responsible for prep before marking ${checklist.event.name} items Prepped.`,
+      );
+      return;
+    }
     const eventId = String(checklist.event.eventId);
     const requestKey = readinessRequestKey(eventId, itemKey);
     const wasPrepped = (checklist.preppedItemKeys ?? []).includes(itemKey);
-    const updateLocalState = (nextPrepped: boolean) => {
+    const previousDetail = checklist.preppedItemDetails?.[itemKey];
+    const updateLocalState = (
+      nextPrepped: boolean,
+      detail?: { employeeName: string | null; preppedAt: string | null },
+    ) => {
       setDay((current) =>
         current
           ? {
@@ -1049,11 +1077,20 @@ export default function KitchenDashboard() {
                 const preppedKeys = new Set(
                   eventChecklist.preppedItemKeys ?? [],
                 );
+                const preppedItemDetails = {
+                  ...(eventChecklist.preppedItemDetails ?? {}),
+                };
                 if (nextPrepped) preppedKeys.add(itemKey);
                 else preppedKeys.delete(itemKey);
+                if (nextPrepped && detail) {
+                  preppedItemDetails[itemKey] = detail;
+                } else if (!nextPrepped) {
+                  delete preppedItemDetails[itemKey];
+                }
                 return {
                   ...eventChecklist,
                   preppedItemKeys: [...preppedKeys].sort(),
+                  preppedItemDetails,
                 };
               }),
             }
@@ -1061,7 +1098,10 @@ export default function KitchenDashboard() {
       );
     };
 
-    updateLocalState(prepped);
+    updateLocalState(
+      prepped,
+      prepped ? { employeeName, preppedAt: null } : undefined,
+    );
     setPreppedPending((current) => new Set(current).add(requestKey));
     try {
       const response = await fetch(
@@ -1069,17 +1109,31 @@ export default function KitchenDashboard() {
         {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ prepped }),
+          body: JSON.stringify({
+            prepped,
+            ...(prepped ? { preppedBy: employeeName } : {}),
+          }),
         },
       );
       const payload = (await response.json().catch(() => null)) as {
         error?: string;
+        employeeName?: string | null;
+        preppedAt?: string | null;
       } | null;
       if (!response.ok) {
         throw new Error(payload?.error || "Unable to save item preparation.");
       }
+      updateLocalState(
+        prepped,
+        prepped
+          ? {
+              employeeName: payload?.employeeName ?? employeeName,
+              preppedAt: payload?.preppedAt ?? null,
+            }
+          : undefined,
+      );
     } catch {
-      updateLocalState(wasPrepped);
+      updateLocalState(wasPrepped, previousDetail);
       setError(
         `Could not save the Prepped checkbox for ${checklist.event.name}. Try again.`,
       );
@@ -1399,8 +1453,13 @@ export default function KitchenDashboard() {
                     onReadyChange={(itemKey, ready) =>
                       void saveItemReadiness(checklist, itemKey, ready)
                     }
-                    onPreppedChange={(itemKey, prepped) =>
-                      void saveItemPrepped(checklist, itemKey, prepped)
+                    onPreppedChange={(itemKey, prepped, employeeName) =>
+                      void saveItemPrepped(
+                        checklist,
+                        itemKey,
+                        prepped,
+                        employeeName,
+                      )
                     }
                     preppedPending={preppedPending}
                     onSaveStaff={() => void saveStaffAssignments(checklist)}
@@ -1445,8 +1504,13 @@ export default function KitchenDashboard() {
           onReadyChange={(itemKey, ready) =>
             void saveItemReadiness(selectedChecklist, itemKey, ready)
           }
-          onPreppedChange={(itemKey, prepped) =>
-            void saveItemPrepped(selectedChecklist, itemKey, prepped)
+          onPreppedChange={(itemKey, prepped, employeeName) =>
+            void saveItemPrepped(
+              selectedChecklist,
+              itemKey,
+              prepped,
+              employeeName,
+            )
           }
           preppedPending={preppedPending}
           onSaveStaff={() => void saveStaffAssignments(selectedChecklist)}
@@ -1525,7 +1589,11 @@ function ChecklistPanel({
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription: (item: FoodDescriptionItem) => void;
   onPrint: () => void;
-  onPreppedChange?: (itemKey: string, prepped: boolean) => void;
+  onPreppedChange?: (
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string,
+  ) => void;
   onReadyChange: (itemKey: string, ready: boolean) => void;
   onSaveStaff: () => void;
   readinessPending: ReadonlySet<string>;
@@ -1694,7 +1762,11 @@ export function KitchenChecklistSheet({
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
   onPrint?: () => void;
-  onPreppedChange?: (itemKey: string, prepped: boolean) => void;
+  onPreppedChange?: (
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string,
+  ) => void;
   onReadyChange?: (itemKey: string, ready: boolean) => void;
   onSaveStaff?: () => void;
   onSaveBwa?: () => void;
@@ -1713,7 +1785,9 @@ export function KitchenChecklistSheet({
   const bwaChanged =
     JSON.stringify(staffDraft.foodRunners) !==
       JSON.stringify(checklist.foodRunners ?? []) ||
-    JSON.stringify(staffDraft.pocs) !== JSON.stringify(checklist.pocs ?? []);
+    JSON.stringify(staffDraft.pocs) !== JSON.stringify(checklist.pocs ?? []) ||
+    staffDraft.preppedBy !== (checklist.preppedBy ?? "") ||
+    staffDraft.verifiedBy !== (checklist.verifiedBy ?? "");
   const availableBwaOptions = [
     ...new Set(
       [...bwaOptions]
@@ -1725,6 +1799,7 @@ export function KitchenChecklistSheet({
   );
   const completedItemKeys = new Set(checklist.completedItemKeys ?? []);
   const preppedItemKeys = new Set(checklist.preppedItemKeys ?? []);
+  const preppedItemDetails = checklist.preppedItemDetails ?? {};
   const finalCompletedItemKeys = new Set(
     checklist.finalCompletedItemKeys ?? [],
   );
@@ -1914,6 +1989,8 @@ export function KitchenChecklistSheet({
               <ChecklistSection
                 completedItemKeys={completedItemKeys}
                 preppedItemKeys={preppedItemKeys}
+                preppedItemDetails={preppedItemDetails}
+                preppedBy={staffDraft.preppedBy}
                 finalCompletedItemKeys={finalCompletedItemKeys}
                 isCompletionPending={isCompletionPending}
                 isReadinessPending={isReadinessPending}
@@ -1974,24 +2051,33 @@ export function KitchenChecklistSheet({
                       />
                       <span>Ready</span>
                     </label>
-                    <label className="kitchen-ready-control">
-                      <input
-                        aria-label={`Mark add-on ${item.foodName} prepped`}
-                        checked={isPrepped}
-                        disabled={
-                          !onPreppedChange ||
-                          isPreppedPending(readinessKey)
-                        }
-                        onChange={(event) =>
-                          onPreppedChange?.(
-                            readinessKey,
-                            event.target.checked,
-                          )
-                        }
-                        type="checkbox"
-                      />
-                      <span>Prepped</span>
-                    </label>
+                    <div className="kitchen-addon-prepped-control">
+                      <label className="kitchen-ready-control">
+                        <input
+                          aria-label={`Mark add-on ${item.foodName} prepped`}
+                          checked={isPrepped}
+                          disabled={
+                            !onPreppedChange ||
+                            isPreppedPending(readinessKey)
+                          }
+                          onChange={(event) =>
+                            onPreppedChange?.(
+                              readinessKey,
+                              event.target.checked,
+                              staffDraft.preppedBy,
+                            )
+                          }
+                          type="checkbox"
+                        />
+                        <span>Prepped</span>
+                      </label>
+                      {isPrepped ? (
+                        <PreppedAudit
+                          detail={preppedItemDetails[readinessKey]}
+                          pending={isPreppedPending(readinessKey)}
+                        />
+                      ) : null}
+                    </div>
                     <button
                       aria-haspopup="dialog"
                       className="kitchen-food-button"
@@ -2101,9 +2187,36 @@ function ChecklistFact({
   );
 }
 
+function PreppedAudit({
+  detail,
+  pending,
+}: {
+  detail:
+    | { employeeName: string | null; preppedAt: string | null }
+    | undefined;
+  pending: boolean;
+}) {
+  return (
+    <span className="kitchen-prepped-audit">
+      <strong>{detail?.employeeName ?? "Employee not recorded"}</strong>
+      {pending && !detail?.preppedAt ? (
+        <span>Saving…</span>
+      ) : detail?.preppedAt ? (
+        <time dateTime={detail.preppedAt}>
+          {formatPreppedTimestamp(detail.preppedAt)}
+        </time>
+      ) : (
+        <span>Time not recorded</span>
+      )}
+    </span>
+  );
+}
+
 function ChecklistSection({
   completedItemKeys,
   preppedItemKeys,
+  preppedItemDetails,
+  preppedBy,
   finalCompletedItemKeys,
   isCompletionPending,
   isReadinessPending,
@@ -2117,6 +2230,11 @@ function ChecklistSection({
 }: {
   completedItemKeys: ReadonlySet<string>;
   preppedItemKeys: ReadonlySet<string>;
+  preppedItemDetails: Record<
+    string,
+    { employeeName: string | null; preppedAt: string | null }
+  >;
+  preppedBy: string;
   finalCompletedItemKeys: ReadonlySet<string>;
   isCompletionPending: (itemKey: string) => boolean;
   isReadinessPending: (itemKey: string) => boolean;
@@ -2124,7 +2242,11 @@ function ChecklistSection({
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
   onReadyChange?: (itemKey: string, ready: boolean) => void;
-  onPreppedChange?: (itemKey: string, prepped: boolean) => void;
+  onPreppedChange?: (
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string,
+  ) => void;
   ruleVersion: string;
   section: KitchenChecklistSection;
 }) {
@@ -2170,20 +2292,32 @@ function ChecklistSection({
               </label>
             </td>
             <td className="kitchen-ready-cell" data-label="Prepped">
-              <label className="kitchen-ready-control">
-                <input
-                  aria-label={`Mark ${row.foodName} prepped`}
-                  checked={isPrepped}
-                  disabled={
-                    !onPreppedChange || isPreppedPending(readinessKey)
-                  }
-                  onChange={(event) =>
-                    onPreppedChange?.(readinessKey, event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                <span className="kitchen-visually-hidden">Prepped</span>
-              </label>
+              <div className="kitchen-prepped-control">
+                <label className="kitchen-ready-control">
+                  <input
+                    aria-label={`Mark ${row.foodName} prepped`}
+                    checked={isPrepped}
+                    disabled={
+                      !onPreppedChange || isPreppedPending(readinessKey)
+                    }
+                    onChange={(event) =>
+                      onPreppedChange?.(
+                        readinessKey,
+                        event.target.checked,
+                        preppedBy,
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span className="kitchen-visually-hidden">Prepped</span>
+                </label>
+                {isPrepped ? (
+                  <PreppedAudit
+                    detail={preppedItemDetails[readinessKey]}
+                    pending={isPreppedPending(readinessKey)}
+                  />
+                ) : null}
+              </div>
             </td>
             <td data-label="Food name">
               <button

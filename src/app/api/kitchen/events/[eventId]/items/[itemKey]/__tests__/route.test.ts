@@ -4,6 +4,7 @@ import { PATCH } from "../route";
 
 const syncMocks = vi.hoisted(() => ({
   updateKitchenItemCompletion: vi.fn(),
+  updateKitchenItemPrepped: vi.fn(),
   updateKitchenItemReadiness: vi.fn(),
 }));
 const authMocks = vi.hoisted(() => ({
@@ -86,6 +87,54 @@ describe("kitchen item state API", () => {
       "taco-beef",
       true,
     );
+  });
+
+  it("persists Prepped with the selected employee and server audit timestamp", async () => {
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn() } as never);
+    authMocks.hasAdminSession.mockReturnValue(true);
+    syncMocks.updateKitchenItemPrepped.mockResolvedValue({
+      eventId: "preview-alpha",
+      itemKey: "taco-beef",
+      prepped: true,
+      employeeName: "Diana",
+      preppedAt: "2026-08-14T16:05:00.000Z",
+    });
+
+    const response = await PATCH(
+      request({ prepped: true, preppedBy: "Diana" }),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      prepped: true,
+      employeeName: "Diana",
+      preppedAt: "2026-08-14T16:05:00.000Z",
+    });
+    expect(syncMocks.updateKitchenItemPrepped).toHaveBeenCalledWith(
+      "preview-alpha",
+      "taco-beef",
+      true,
+      "Diana",
+    );
+  });
+
+  it("requires an employee when marking an item Prepped", async () => {
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn() } as never);
+    authMocks.hasAdminSession.mockReturnValue(true);
+
+    const missingEmployee = await PATCH(
+      request({ prepped: true }),
+      context,
+    );
+    const invalidEmployee = await PATCH(
+      request({ prepped: true, preppedBy: 42 }),
+      context,
+    );
+
+    expect(missingEmployee.status).toBe(400);
+    expect(invalidEmployee.status).toBe(400);
+    expect(syncMocks.updateKitchenItemPrepped).not.toHaveBeenCalled();
   });
 
   it("requires exactly one boolean state", async () => {

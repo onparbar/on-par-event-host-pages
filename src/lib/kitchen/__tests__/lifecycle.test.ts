@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activeKitchenChecklists,
+  isKitchenChecklistArchived,
   isKitchenEventOver,
   kitchenEventInterval,
   type KitchenLifecycleEvent,
@@ -198,7 +199,7 @@ describe("kitchen event lifecycle", () => {
     ).toBe(false);
   });
 
-  it("filters ended checklists without changing active checklist order", () => {
+  it("keeps ended checklists visible through the New York operating day", () => {
     const checklists = [
       {
         id: "already-ended",
@@ -217,8 +218,70 @@ describe("kitchen event lifecycle", () => {
     expect(
       activeKitchenChecklists(
         checklists,
-        new Date("2026-07-30T23:00:00.000Z"),
+        new Date("2026-07-31T03:59:59.999Z"),
       ).map((checklist) => checklist.id),
-    ).toEqual(["still-active", "needs-review"]);
+    ).toEqual(["already-ended", "still-active", "needs-review"]);
+
+    expect(
+      activeKitchenChecklists(
+        checklists,
+        new Date("2026-07-31T04:00:00.000Z"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("uses New York midnight as the winter archive boundary", () => {
+    const winter = event({
+      localDate: "2026-12-15",
+      startTime: "17:00",
+      endTime: "19:00",
+    });
+
+    expect(
+      isKitchenChecklistArchived(
+        winter,
+        new Date("2026-12-16T04:59:59.999Z"),
+      ),
+    ).toBe(false);
+    expect(
+      isKitchenChecklistArchived(
+        winter,
+        new Date("2026-12-16T05:00:00.000Z"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps an overnight checklist visible until its actual end", () => {
+    const overnight = event({
+      startTime: "23:00",
+      endTime: "01:00",
+    });
+
+    expect(
+      isKitchenChecklistArchived(
+        overnight,
+        new Date("2026-07-31T04:00:00.000Z"),
+      ),
+    ).toBe(false);
+    expect(
+      isKitchenChecklistArchived(
+        overnight,
+        new Date("2026-07-31T05:00:00.000Z"),
+      ),
+    ).toBe(true);
+  });
+
+  it("archives missing or malformed end times after the operating day", () => {
+    const archiveTime = new Date("2026-07-31T04:00:00.000Z");
+
+    expect(
+      isKitchenChecklistArchived(event({ endTime: null }), archiveTime),
+    ).toBe(true);
+    expect(
+      isKitchenChecklistArchived(
+        event({ endTime: "not a time" }),
+        archiveTime,
+      ),
+    ).toBe(true);
   });
 });

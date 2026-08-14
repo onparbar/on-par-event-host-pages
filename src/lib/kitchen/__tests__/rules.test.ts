@@ -456,6 +456,51 @@ describe("Wing Bar", () => {
     ).toBe(2);
   });
 
+  it("doubles the complete chafing setup only above 200 guests", () => {
+    const event = (guestCount: number) =>
+      packageEvent("Wing Bar", guestCount, [
+        {
+          name: "Wing Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]);
+
+    expect(generateKitchenChecklist(event(200)).chafingDishes).toEqual({
+      bars: 2,
+      hotPlatters: 1,
+      total: 3,
+    });
+    expect(generateKitchenChecklist(event(201)).chafingDishes).toEqual({
+      bars: 4,
+      hotPlatters: 2,
+      total: 6,
+    });
+  });
+
+  it("doubles platter-only chafing above 200 guests", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "Wing Platter",
+            quantity: 2,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+        ],
+        { guestCount: 201 },
+      ),
+    );
+
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 2,
+      total: 2,
+    });
+  });
+
   it("counts buffet-table chafing separately from Appetizer Bar hot items", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent(
@@ -481,7 +526,11 @@ describe("Wing Bar", () => {
     expect(warningCodes(checklist)).toContain(
       "GUEST_COUNT_OUT_OF_RANGE",
     );
-    expect(checklist.chafingDishes.bars).toBeNull();
+    expect(checklist.chafingDishes).toEqual({
+      bars: null,
+      hotPlatters: 0,
+      total: null,
+    });
   });
 });
 

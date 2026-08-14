@@ -84,6 +84,10 @@ export type KitchenRuleConfig = {
     normalTablesPerBar: number;
     mirroredTablesPerBar: number;
   };
+  chafingSetup: {
+    doubleAboveGuestCount: number;
+    largeEventMultiplier: number;
+  };
   prepLeadMinutes: {
     tacoBeef: number;
     tacoChicken: number;
@@ -282,7 +286,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-13.1",
+  ruleVersion: "ope-kitchen-2026-08-14.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -342,6 +346,10 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
     doubleAboveGuestCount: 75,
     normalTablesPerBar: 1,
     mirroredTablesPerBar: 2,
+  },
+  chafingSetup: {
+    doubleAboveGuestCount: 200,
+    largeEventMultiplier: 2,
   },
   prepLeadMinutes: {
     tacoBeef: 180,

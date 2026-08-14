@@ -11,6 +11,7 @@ import {
   syncKitchenDay,
   updateKitchenEventFoodAddOns,
   updateKitchenItemCompletion,
+  updateKitchenItemPrepped,
   updateKitchenItemReadiness,
   updateKitchenManualAssignments,
   updateKitchenManualBwa,
@@ -155,6 +156,46 @@ describe("kitchen synchronization", () => {
     });
     expect(day.events[0].foodRunners).toEqual(["Ryan", "Diana"]);
     expect(day.events[0].pocs).toEqual(["Molly", "Taylor"]);
+  });
+
+  it("validates and records the Prepped employee with one server timestamp", async () => {
+    const storage = createMemoryKitchenStorage();
+    const now = new Date("2026-08-14T16:05:00.000Z");
+
+    await expect(
+      updateKitchenItemPrepped(
+        "staff-123",
+        "taco-beef",
+        true,
+        null,
+        { storage, now },
+      ),
+    ).rejects.toThrow("Select the employee who prepped this item.");
+    await expect(
+      updateKitchenItemPrepped(
+        "staff-123",
+        "taco-beef",
+        true,
+        "Not On Roster",
+        { storage, now },
+      ),
+    ).rejects.toThrow("outside the approved roster");
+
+    await expect(
+      updateKitchenItemPrepped(
+        "staff-123",
+        "taco-beef",
+        true,
+        "  Diana  ",
+        { storage, now },
+      ),
+    ).resolves.toEqual({
+      eventId: "staff-123",
+      itemKey: "taco-beef",
+      prepped: true,
+      employeeName: "Diana",
+      preppedAt: "2026-08-14T16:05:00.000Z",
+    });
   });
 
   it("marks stored database events stale when live Tripleseat is unavailable", async () => {
@@ -415,7 +456,7 @@ describe("kitchen synchronization", () => {
     expect(uncheckedDay.events[0].finalCompletedItemKeys).toEqual([]);
   });
 
-  it("archives ended events without deleting active add-on alert metadata", async () => {
+  it("keeps ended events visible through their operating day", async () => {
     const storage = createMemoryKitchenStorage();
     const baseEvent = {
       bookingId: null,
@@ -477,16 +518,27 @@ describe("kitchen synchronization", () => {
       now: viewingTime("2026-07-29"),
     });
 
-    expect(visibleDay.archivedEventCount).toBe(1);
+    expect(visibleDay.archivedEventCount).toBe(0);
     expect(
       visibleDay.events.map((event) => String(event.event.eventId)),
-    ).toEqual(["active-event"]);
+    ).toEqual(["ended-event", "active-event"]);
     expect(
       visibleDay.addOnActivity.map((activity) => activity.eventId),
-    ).toEqual(["active-event"]);
+    ).toEqual(["ended-event", "active-event"]);
     expect(
       visibleDay.addOnCompletions.map((completion) => completion.eventId),
-    ).toEqual(["active-event"]);
+    ).toEqual(["ended-event", "active-event"]);
+
+    const archivedDay = await getKitchenDay("2026-07-29", {
+      adapter,
+      storage,
+      now: new Date("2026-07-30T04:00:00.000Z"),
+    });
+
+    expect(archivedDay.archivedEventCount).toBe(2);
+    expect(archivedDay.events).toEqual([]);
+    expect(archivedDay.addOnActivity).toEqual([]);
+    expect(archivedDay.addOnCompletions).toEqual([]);
     expect(await storage.getEventDate("ended-event")).toBe("2026-07-29");
   });
 

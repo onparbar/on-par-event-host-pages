@@ -7178,6 +7178,33 @@ a {
   cursor: wait;
 }
 
+.kitchen-prepped-control,
+.kitchen-addon-prepped-control {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.kitchen-prepped-audit {
+  display: grid;
+  justify-items: center;
+  max-width: 100%;
+  color: var(--ope-forest);
+  font-size: 0.56rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: none;
+}
+
+.kitchen-prepped-audit strong,
+.kitchen-prepped-audit time,
+.kitchen-prepped-audit span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .kitchen-food-button {
   max-width: 100%;
   padding: 2px 0;
@@ -8112,6 +8139,11 @@ a {
   .kitchen-completed-control input {
     width: 16px;
     height: 16px;
+  }
+
+  .kitchen-prepped-audit {
+    color: var(--ope-black);
+    font-size: 6.5pt;
   }
 
   .kitchen-category-heading th {

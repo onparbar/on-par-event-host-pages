@@ -273,6 +273,13 @@ export type KitchenChecklist = {
   liveFoodAddOns: KitchenLiveFoodAddOn[];
   completedItemKeys: string[];
   preppedItemKeys?: string[];
+  preppedItemDetails?: Record<
+    string,
+    {
+      employeeName: string | null;
+      preppedAt: string | null;
+    }
+  >;
   finalCompletedItemKeys: string[];
   chafingDishes: {
     bars: number | null;

@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 type ItemStateRequest = {
   ready?: unknown;
   prepped?: unknown;
+  preppedBy?: unknown;
   completed?: unknown;
 };
 
@@ -65,6 +66,12 @@ export async function PATCH(
   if (
     (hasReady && typeof body.ready !== "boolean") ||
     (hasPrepped && typeof body.prepped !== "boolean") ||
+    (hasPrepped &&
+      body.prepped === true &&
+      typeof body.preppedBy !== "string") ||
+    (hasPrepped &&
+      Object.hasOwn(body, "preppedBy") &&
+      typeof body.preppedBy !== "string") ||
     (hasCompleted && typeof body.completed !== "boolean")
   ) {
     return NextResponse.json(
@@ -87,6 +94,7 @@ export async function PATCH(
               eventId,
               itemKey,
               body.prepped as boolean,
+              typeof body.preppedBy === "string" ? body.preppedBy : null,
             )
           : await updateKitchenItemCompletion(
             eventId,

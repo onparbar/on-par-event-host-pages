@@ -1310,7 +1310,16 @@ export function generateKitchenChecklist(
     }
   }
 
-  const hotPlatterChafingDishes = platterPacking.chafingDishes;
+  const chafingSetupMultiplier =
+    validGuestCount(effectiveGuestCount) &&
+    effectiveGuestCount > config.chafingSetup.doubleAboveGuestCount
+      ? config.chafingSetup.largeEventMultiplier
+      : 1;
+  if (barChafingDishes != null) {
+    barChafingDishes *= chafingSetupMultiplier;
+  }
+  const hotPlatterChafingDishes =
+    platterPacking.chafingDishes * chafingSetupMultiplier;
   const totalChafingDishes =
     barChafingDishes == null || hotPlatterChafingDishes == null
       ? null

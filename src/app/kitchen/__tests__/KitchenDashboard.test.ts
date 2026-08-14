@@ -8,6 +8,7 @@ import {
   clockParts,
   clampKitchenZoom,
   ensureAudioContextRunning,
+  formatPreppedTimestamp,
   formatTime,
   KitchenChecklistSheet,
   KitchenEventAccordion,
@@ -46,6 +47,9 @@ describe("kitchen dashboard time display", () => {
       "7:05 PM",
     );
     expect(formatTime("2026-07-29T16:05:00")).toBe("4:05 PM");
+    expect(formatPreppedTimestamp("2026-08-14T16:05:00.000Z")).toBe(
+      "Aug 14, 12:05 PM",
+    );
   });
 });
 
@@ -352,6 +356,78 @@ describe("kitchen checklist day layout", () => {
     );
     expect(html.match(/kitchen-item-complete/g)).toHaveLength(2);
     expect(html).toContain("Needs review:");
+  });
+
+  it("renders the exact employee and Eastern timestamp for each checked Prepped item", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const rows = checklist.sections.flatMap((section) => section.rows);
+    const beef = rows.find((row) => row.key === "taco-beef")!;
+    const chicken = rows.find((row) => row.key === "taco-chicken")!;
+    const beefKey = quantityAwareReadinessKey({
+      itemKey: beef.key,
+      quantity: beef.quantity,
+      numberOfPans: beef.numberOfPans,
+      panSize: beef.panSize,
+      unit: beef.unit,
+      ruleVersion: checklist.ruleVersion,
+    });
+    const chickenKey = quantityAwareReadinessKey({
+      itemKey: chicken.key,
+      quantity: chicken.quantity,
+      numberOfPans: chicken.numberOfPans,
+      panSize: chicken.panSize,
+      unit: chicken.unit,
+      ruleVersion: checklist.ruleVersion,
+    });
+    const wings = {
+      itemKey: "addon:wings",
+      foodName: "Wings",
+      description: "Traditional wings served with ranch.",
+      quantity: 64,
+      unit: "each",
+      numberOfPans: 3,
+      panSize: "1/3" as const,
+      sourceUpdatedAt: "2026-08-14T15:55:00.000Z",
+    };
+    const wingsKey = quantityAwareReadinessKey({
+      ...wings,
+      ruleVersion: checklist.ruleVersion,
+    });
+    checklist.preppedItemKeys = [beefKey, chickenKey, wingsKey];
+    checklist.preppedItemDetails = {
+      [beefKey]: {
+        employeeName: "Diana",
+        preppedAt: "2026-08-14T16:05:00.000Z",
+      },
+      [chickenKey]: {
+        employeeName: null,
+        preppedAt: "2026-08-14T15:45:00.000Z",
+      },
+      [wingsKey]: {
+        employeeName: "Ryan",
+        preppedAt: "2026-08-14T16:10:00.000Z",
+      },
+    };
+    checklist.liveFoodAddOns = [wings];
+
+    const html = renderToStaticMarkup(
+      createElement(KitchenChecklistSheet, {
+        bwaSaveState: "idle",
+        checklist,
+        inline: true,
+        onPreppedChange: noop,
+      }),
+    );
+
+    expect(html).toContain("Diana");
+    expect(html).toContain("Ryan");
+    expect(html).toContain("Aug 14, 12:05 PM");
+    expect(html).toContain("Aug 14, 12:10 PM");
+    expect(html).toContain("Aug 14, 11:45 AM");
+    expect(html).toContain(
+      '<time dateTime="2026-08-14T16:05:00.000Z">',
+    );
+    expect(html).toContain("Employee not recorded");
   });
 
   it("does not apply Ready row styling to a final-completed-only item", () => {

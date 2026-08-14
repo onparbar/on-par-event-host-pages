@@ -583,7 +583,8 @@ export async function updateKitchenItemPrepped(
   eventId: string,
   itemKey: string,
   prepped: boolean,
-  options: Pick<KitchenSyncDependencies, "storage"> = {},
+  employeeName: string | null = null,
+  options: Pick<KitchenSyncDependencies, "storage" | "now"> = {},
 ) {
   const normalizedEventId = normalizeKitchenEventId(eventId);
   const normalizedItemKey = itemKey.trim();
@@ -593,11 +594,32 @@ export async function updateKitchenItemPrepped(
   if (typeof prepped !== "boolean") {
     throw new Error("Kitchen item preparation state must be a boolean.");
   }
+  const normalizedEmployeeName = employeeName?.trim().replace(/\s+/g, " ") ?? "";
+  if (prepped && !normalizedEmployeeName) {
+    throw new Error("Select the employee who prepped this item.");
+  }
+  if (
+    normalizedEmployeeName &&
+    !KITCHEN_STAFF_ROSTER.includes(
+      normalizedEmployeeName as (typeof KITCHEN_STAFF_ROSTER)[number],
+    )
+  ) {
+    throw new Error("Prepped by contains an employee outside the approved roster.");
+  }
+  const preppedUpdatedAt = (options.now ?? new Date()).toISOString();
 
   await (options.storage ?? getKitchenStorage()).saveItemPrepped(
     normalizedEventId,
     normalizedItemKey,
     prepped,
+    prepped ? normalizedEmployeeName : null,
+    preppedUpdatedAt,
   );
-  return { eventId: normalizedEventId, itemKey: normalizedItemKey, prepped };
+  return {
+    eventId: normalizedEventId,
+    itemKey: normalizedItemKey,
+    prepped,
+    employeeName: prepped ? normalizedEmployeeName : null,
+    preppedAt: prepped ? preppedUpdatedAt : null,
+  };
 }
