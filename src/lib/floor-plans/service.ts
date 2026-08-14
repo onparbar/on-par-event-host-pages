@@ -28,6 +28,13 @@ import {
   vipPrepExternalId,
   numericVipEventId,
 } from "@/lib/vip-prep/client";
+import {
+  confirmedContractDatesInWindow,
+  confirmedContractEventPlans,
+  confirmedContractEventPlanSourcesForDate,
+  eventMatchesConfirmedContract,
+  sourceIsAtLeastAsNew,
+} from "@/lib/confirmed-contract-events";
 import { resolveAreaAlias } from "./configuration/aliases";
 import { selectEntertainmentResources } from "./configuration/adjacency";
 import {
@@ -161,17 +168,26 @@ async function sourceEventsForDate(date: string) {
   const vipPrepClient = new VipPrepClient();
   let stored: Awaited<ReturnType<typeof eventPlanStorage.plansForWindow>> = [];
   let sourceWindowWasSynchronized = false;
+  let lastSuccessfulSyncAt: string | null = null;
+  let synchronizedWindow: { startDate: string; endDate: string } | null = null;
   try {
     const [rows, syncState] = await Promise.all([
       eventPlanStorage.plansForWindow({ startDate: date, endDate: date }),
       eventPlanStorage.getSyncState(),
     ]);
     stored = rows;
+    lastSuccessfulSyncAt = syncState?.lastSuccessfulSyncAt ?? null;
     sourceWindowWasSynchronized = Boolean(
       syncState?.status === "success" &&
       syncState.windowStart <= date &&
       syncState.windowEnd >= date,
     );
+    synchronizedWindow = syncState
+      ? {
+          startDate: syncState.windowStart,
+          endDate: syncState.windowEnd,
+        }
+      : null;
   } catch {
     // Exact-date redacted Event Host plans remain available before migration.
   }
@@ -200,13 +216,44 @@ async function sourceEventsForDate(date: string) {
     } satisfies UnknownRecord,
     sourceEventId: vipPrepExternalId(reservation),
   }));
-  const rows = [...tripleseatRows, ...vipRows];
+  const liveRows = [...tripleseatRows, ...vipRows];
+  const confirmedRows = confirmedContractEventPlanSourcesForDate(
+    date,
+    lastSuccessfulSyncAt,
+    synchronizedWindow,
+  )
+    .filter(
+      (row) =>
+        !liveRows.some((candidate) =>
+          eventMatchesConfirmedContract(
+            candidate.plan.date,
+            candidate.plan.name,
+            row.plan.date,
+            row.plan.name,
+          ) &&
+          sourceIsAtLeastAsNew(
+            candidate.plan.source_updated_at,
+            row.plan.source_updated_at,
+          ),
+        ),
+    )
+    .map((row) => ({
+      plan: row.plan,
+      source: asRecord(row.source),
+      sourceEventId: row.sourceEventId,
+    }));
+  const rows = [...liveRows, ...confirmedRows];
   return {
     rows: rows.filter(
-      (row) => sourceValue(row.source, "status")?.toUpperCase() === "DEFINITE",
+      (row) =>
+        sourceValue(row.source, "status")?.toUpperCase() === "DEFINITE" ||
+        sourceValue(row.source, "sourceSystem") === "contract-evidence",
     ),
     sourceRowCount:
-      stored.length + vipRows.length > 0 || sourceWindowWasSynchronized ? 1 : 0,
+      stored.length + vipRows.length + confirmedRows.length > 0 ||
+      sourceWindowWasSynchronized
+        ? 1
+        : 0,
   };
 }
 
@@ -510,6 +557,77 @@ export async function maintainTwoWeekFloorPlanHorizon(
     }
   }
 
+  return { startDate, endDate, results };
+}
+
+export async function ensureConfirmedContractFloorPlanWindow(
+  startDate: string,
+  storage: FloorPlanStorage = getFloorPlanStorage(),
+) {
+  const endDate = addCalendarDays(startDate, 14);
+  const dates = confirmedContractDatesInWindow(startDate, endDate);
+  const results: Array<{
+    date: string;
+    status: "generated" | "skipped" | "error";
+    eventCount: number;
+    planStatus?: FloorPlanStatus;
+    message?: string;
+  }> = [];
+  for (const date of dates) {
+    try {
+      const [saved, current] = await Promise.all([
+        storage.get(date),
+        reconciledPlan(date, storage),
+      ]);
+      const hasConfirmedEvent = (plan: FloorPlanDocument | null) =>
+        Boolean(
+          plan?.events.some((event) =>
+            confirmedContractEventPlans.some((confirmed) =>
+              eventMatchesConfirmedContract(
+                date,
+                event.name,
+                confirmed.date,
+                confirmed.name,
+              ),
+            ),
+          ),
+        );
+      if (
+        hasConfirmedEvent(current) &&
+        hasConfirmedEvent(saved) &&
+        (saved?.reservations.length ?? 0) > 0
+      ) {
+        results.push({
+          date,
+          status: "skipped",
+          eventCount: current.events.length,
+          planStatus: current.status,
+        });
+        continue;
+      }
+      const generated = await generateFloorPlanFromStoredSources(
+        date,
+        "fill-missing",
+        storage,
+      );
+      results.push({
+        date,
+        status: "generated",
+        eventCount: generated.plan.events.length,
+        planStatus: generated.plan.status,
+      });
+    } catch (error) {
+      results.push({
+        date,
+        status: "error",
+        eventCount: 0,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Confirmed contract floor-plan generation failed.",
+      });
+    }
+  }
   return { startDate, endDate, results };
 }
 

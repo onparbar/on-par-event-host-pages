@@ -315,17 +315,33 @@ export function buildEntertainmentSchedule({
       left.eventName.localeCompare(right.eventName)
     );
   })) {
+    const isContractEvidence = source.sourceSystem === "contract-evidence";
     const match = matchLocalEvent(source, localEvents);
     const localEvent = match?.event ?? null;
     const eventIssues: EntertainmentReviewIssue[] = [];
-    if (!localEvent && source.sourceSystem !== "vip-prep") {
+    if (isContractEvidence) {
+      eventIssues.push({
+        code: "SOURCE_DETAILS_UNAVAILABLE",
+        message:
+          "Only page 1 of the 2-page contract was supplied; review the contract Special Instructions on page 2.",
+      });
+    }
+    if (
+      !localEvent &&
+      source.sourceSystem !== "vip-prep" &&
+      !isContractEvidence
+    ) {
       eventIssues.push({
         code: "UNMATCHED_EVENT",
         message: "Tripleseat event could not be matched to an Event Host event.",
       });
     }
     const color = colorForEvent(source, localEvent);
-    if (color.source === "deterministic-fallback" && source.sourceSystem !== "vip-prep") {
+    if (
+      color.source === "deterministic-fallback" &&
+      source.sourceSystem !== "vip-prep" &&
+      !isContractEvidence
+    ) {
       eventIssues.push({
         code: "FLOOR_PLAN_COLOR_MISSING",
         message:
@@ -534,7 +550,7 @@ export function buildEntertainmentSchedule({
           colorSource: color.source,
           source: source.sourceSystem === "vip-prep"
             ? "vip-prep"
-            : usingLocalFallback
+            : usingLocalFallback || isContractEvidence
               ? "event-host-fallback"
               : "tripleseat",
           sourceReference: item.sourceId,
@@ -546,11 +562,19 @@ export function buildEntertainmentSchedule({
             !exactFromSource.includes(resourceId),
           notes: "",
           sourceUpdatedAt: source.sourceUpdatedAt,
-          lastTripleseatSyncAt: source.sourceSystem === "vip-prep" ? null : now,
+          lastTripleseatSyncAt:
+            source.sourceSystem === "vip-prep" || isContractEvidence
+              ? null
+              : now,
           active: true,
           createdAt: now,
           updatedAt: now,
-          updatedBy: source.sourceSystem === "vip-prep" ? "vip-prep-sync" : "tripleseat-sync",
+          updatedBy:
+            source.sourceSystem === "vip-prep"
+              ? "vip-prep-sync"
+              : isContractEvidence
+                ? "event-host-contract"
+                : "tripleseat-sync",
         };
         eventReservations.push(reservation);
         occupied.push(reservation);

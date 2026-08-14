@@ -44,6 +44,10 @@ export interface EntertainmentStorage {
   getAudit(reservationId: string): Promise<EntertainmentAuditEntry[]>;
   startSync(date: string): Promise<void>;
   saveSync(input: SaveSyncInput): Promise<void>;
+  saveContractEvidence(input: {
+    events: EntertainmentEventSnapshot[];
+    reservations: EntertainmentReservation[];
+  }): Promise<void>;
   failSync(date: string, message: string): Promise<void>;
   saveEventSnapshot(event: EntertainmentEventSnapshot): Promise<void>;
   saveManualReservation(
@@ -612,6 +616,34 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
     );
   }
 
+  async saveContractEvidence(input: {
+    events: EntertainmentEventSnapshot[];
+    reservations: EntertainmentReservation[];
+  }) {
+    if (input.events.length > 0) {
+      await this.emptyRequest(
+        "entertainment_event_snapshots",
+        new URLSearchParams({ on_conflict: "event_id" }),
+        {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(input.events.map(eventToRow)),
+        },
+      );
+    }
+    if (input.reservations.length > 0) {
+      await this.emptyRequest(
+        "entertainment_reservations",
+        new URLSearchParams({ on_conflict: "id" }),
+        {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(input.reservations.map(reservationToRow)),
+        },
+      );
+    }
+  }
+
   async failSync(date: string, message: string) {
     const now = new Date().toISOString();
     await this.emptyRequest(
@@ -761,6 +793,28 @@ export class MemoryEntertainmentStorage implements EntertainmentStorage {
       completedAt: now,
       lastSuccessfulSyncAt: now,
     });
+  }
+
+  async saveContractEvidence(input: {
+    events: EntertainmentEventSnapshot[];
+    reservations: EntertainmentReservation[];
+  }) {
+    for (const event of input.events) {
+      await this.saveEventSnapshot(event);
+    }
+    for (const reservation of input.reservations) {
+      for (const [date, reservations] of this.reservations) {
+        const remaining = reservations.filter(
+          (candidate) => candidate.id !== reservation.id,
+        );
+        if (remaining.length !== reservations.length) {
+          this.reservations.set(date, remaining);
+        }
+      }
+      const values = this.reservations.get(reservation.operatingDate) ?? [];
+      values.push(structuredClone(reservation));
+      this.reservations.set(reservation.operatingDate, values);
+    }
   }
 
   async failSync(date: string, message: string) {

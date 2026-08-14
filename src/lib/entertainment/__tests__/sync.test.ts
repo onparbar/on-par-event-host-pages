@@ -77,6 +77,80 @@ const localEvents = [
 ];
 
 describe("persistent entertainment synchronization", () => {
+  it("shows the confirmed August 21 bowling and darts schedule", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const day = await getEntertainmentDay("2026-08-21", {
+      storage,
+      adapter: adapter([]),
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+    });
+
+    const managerReservations = day.reservations.filter(
+      (reservation) => reservation.eventName === "Manager Outing",
+    );
+    expect(
+      managerReservations.filter(
+        (reservation) => reservation.resourceCategory === "bowling",
+      ),
+    ).toHaveLength(5);
+    expect(
+      managerReservations.filter(
+        (reservation) => reservation.resourceCategory === "darts",
+      ),
+    ).toHaveLength(4);
+    expect(
+      managerReservations.filter(
+        (reservation) => reservation.resourceId === "private-room-vip-1",
+      ),
+    ).toHaveLength(1);
+    expect(
+      managerReservations.filter((reservation) =>
+        ["bowling", "darts"].includes(reservation.resourceCategory),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startAt: "2026-08-21T20:30:00.000Z",
+          endAt: "2026-08-21T22:30:00.000Z",
+          source: "event-host-fallback",
+        }),
+      ]),
+    );
+    const bowling = managerReservations.find(
+      (reservation) => reservation.resourceCategory === "bowling",
+    );
+    expect(bowling).toBeDefined();
+    await expect(storage.getReservation(bowling!.id)).resolves.toMatchObject({
+      eventName: "Manager Outing",
+    });
+    await updateEntertainmentReservation(
+      bowling!.id,
+      {
+        operatingDate: "2026-08-21",
+        eventId: bowling!.tripleseatEventId,
+        eventName: bowling!.eventName,
+        resourceId: bowling!.resourceId,
+        startAt: bowling!.startAt,
+        endAt: bowling!.endAt,
+        eventColor: "#7C3AED",
+        notes: "Staff verified the assigned lane.",
+        reason: "Contract evidence verification",
+        needsReview: false,
+        forceConflict: false,
+      },
+      { storage },
+    );
+    await expect(storage.getReservation(bowling!.id)).resolves.toMatchObject({
+      eventColor: "#7C3AED",
+      notes: "Staff verified the assigned lane.",
+    });
+  });
+
   it("reads the VIP schedule directly without Supabase persistence", async () => {
     const day = await getEntertainmentDay("2026-08-15", {
       storage: new MemoryEntertainmentStorage(),

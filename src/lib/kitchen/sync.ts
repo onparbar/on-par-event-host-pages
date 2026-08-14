@@ -26,6 +26,11 @@ import {
   VipPrepClient,
   vipPrepKitchenEvents,
 } from "../vip-prep/client";
+import {
+  confirmedContractKitchenSourcesForDate,
+  eventMatchesConfirmedContract,
+  sourceIsAtLeastAsNew,
+} from "../confirmed-contract-events";
 
 export type KitchenDayPayload = {
   date: string;
@@ -131,7 +136,7 @@ export async function getKitchenDay(
   assertKitchenDate(date);
   const { adapter, storage } = dependencies(options);
   const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
-  const [stored, diagnostics, liveVipResult] = await Promise.all([
+  const [initialStored, diagnostics, liveVipResult] = await Promise.all([
     storage.getDay(date),
     Promise.resolve(adapter.getDiagnostics()),
     vipPrepClient.configured
@@ -141,6 +146,41 @@ export async function getKitchenDay(
         )
       : Promise.resolve({ events: [], error: null, refreshed: false }),
   ]);
+  let stored = initialStored;
+  let contractPersistenceWarning: string | null = null;
+  const contractSources = confirmedContractKitchenSourcesForDate(
+    date,
+    stored.sync?.lastSuccessfulSyncAt,
+  ).filter(
+    (source) =>
+      !stored.events.some(
+        (checklist) =>
+          eventMatchesConfirmedContract(
+            checklist.event.localDate,
+            checklist.event.name,
+            source.localDate,
+            source.eventName,
+          ) &&
+          sourceIsAtLeastAsNew(
+            checklist.event.sourceUpdatedAt,
+            source.sourceUpdatedAt,
+          ),
+      ),
+  );
+  if (contractSources.length > 0) {
+    try {
+      for (const sourceEvent of contractSources) {
+        await storage.saveEvent({
+          sourceEvent,
+          checklist: generateKitchenChecklist(sourceEvent),
+        });
+      }
+      stored = await storage.getDay(date);
+    } catch {
+      contractPersistenceWarning =
+        "Confirmed contract food is visible, but its kitchen checklist could not be saved for staff edits.";
+    }
+  }
   const databaseMissing =
     storage.persistence === "database" && options.storage == null
       ? getMissingSupabaseEnvironmentVariables()
@@ -162,13 +202,30 @@ export async function getKitchenDay(
             "Live Tripleseat configuration is unavailable; this stored checklist may be stale.",
           )
       : stored.events;
-  const eventsWithSourceStatus = [
+  const storedAndVipEvents = [
     ...storedEventsWithSourceStatus.filter(
       (event) =>
         !liveVipResult.refreshed ||
         !String(event.event.eventId).startsWith("vip-"),
     ),
     ...liveVipResult.events.map((event) => generateKitchenChecklist(event)),
+  ];
+  const confirmedContractEvents = contractSources
+    .filter(
+      (source) =>
+        !storedAndVipEvents.some((checklist) =>
+          eventMatchesConfirmedContract(
+            checklist.event.localDate,
+            checklist.event.name,
+            source.localDate,
+            source.eventName,
+          ),
+        ),
+    )
+    .map((source) => generateKitchenChecklist(source));
+  const eventsWithSourceStatus = [
+    ...storedAndVipEvents,
+    ...confirmedContractEvents,
   ];
   const events = activeKitchenChecklists(
     eventsWithSourceStatus,
@@ -197,6 +254,7 @@ export async function getKitchenDay(
     warnings: unique([
       ...diagnostics.warnings,
       ...(liveVipResult.error ? [liveVipResult.error] : []),
+      ...(contractPersistenceWarning ? [contractPersistenceWarning] : []),
     ]),
     missingEnvironmentVariables: unique([
       ...diagnostics.missingEnvironmentVariables,
@@ -230,9 +288,39 @@ export async function syncKitchenDay(
       adapter.fetchEventsForDate(date),
       vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
     ]);
-    const sourceEvents = [
+    const upstreamEvents = [
       ...tripleseatEvents,
       ...vipPrepKitchenEvents(vipPayload?.reservations ?? []),
+    ];
+    const confirmedEvents = confirmedContractKitchenSourcesForDate(date).filter(
+      (source) =>
+        !upstreamEvents.some(
+          (candidate) =>
+            eventMatchesConfirmedContract(
+              candidate.localDate,
+              candidate.eventName,
+              source.localDate,
+              source.eventName,
+            ) &&
+            sourceIsAtLeastAsNew(
+              candidate.sourceUpdatedAt,
+              source.sourceUpdatedAt,
+            ),
+        ),
+    );
+    const sourceEvents = [
+      ...upstreamEvents.filter(
+        (candidate) =>
+          !confirmedEvents.some((source) =>
+            eventMatchesConfirmedContract(
+              candidate.localDate,
+              candidate.eventName,
+              source.localDate,
+              source.eventName,
+            ),
+          ),
+      ),
+      ...confirmedEvents,
     ];
     const storedEvents = sourceEvents.map((sourceEvent) => ({
       sourceEvent,

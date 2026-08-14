@@ -1,4 +1,9 @@
 import { events as legacyEventPlans } from "@/lib/events";
+import {
+  confirmedContractEventPlanById,
+  isConfirmedContractEventPlanId,
+  mergeConfirmedContractEventPlans,
+} from "@/lib/confirmed-contract-events";
 import { getTripleseatAdapter, type TripleseatAdapter } from "@/lib/kitchen/tripleseat";
 
 import { buildEventPlan } from "./domain";
@@ -91,6 +96,25 @@ function legacyPlansForWindow(
     );
 }
 
+function plansWithConfirmedContractEvidence(
+  plans: readonly EventPlan[],
+  window: EventPlanWindow,
+  includeConfirmedContractEvidence: boolean,
+  lastSuccessfulSyncAt?: string | null,
+  syncCoverage?: EventPlanWindow | null,
+) {
+  if (!includeConfirmedContractEvidence) {
+    return plans.map((plan) => structuredClone(plan));
+  }
+  return mergeConfirmedContractEventPlans(
+    plans,
+    window.startDate,
+    window.endDate,
+    lastSuccessfulSyncAt,
+    syncCoverage,
+  );
+}
+
 function syncStateFromStorage(
   state: Awaited<ReturnType<EventPlanStorage["getSyncState"]>>,
 ): EventPlanSyncState | null {
@@ -180,6 +204,9 @@ export async function loadEventPlanWindow(
   const window = storageWindow(now);
   const storage = options.storage ?? getEventPlanStorage();
   const legacyPlans = options.legacyPlans ?? legacyEventPlans;
+  const includeConfirmedContractEvidence =
+    options.legacyPlans == null ||
+    legacyPlans.some((plan) => isConfirmedContractEventPlanId(plan.id));
 
   try {
     const [rows, syncState] = await Promise.all([
@@ -188,9 +215,20 @@ export async function loadEventPlanWindow(
     ]);
     if (rows.length > 0 || syncState?.status === "success") {
       return {
-        plans: rows
-          .filter(storedPlanIsOperational)
-          .map((row) => storedPlan(row.plan)),
+        plans: plansWithConfirmedContractEvidence(
+          rows
+            .filter(storedPlanIsOperational)
+            .map((row) => storedPlan(row.plan)),
+          window,
+          includeConfirmedContractEvidence,
+          syncState?.lastSuccessfulSyncAt,
+          syncState
+            ? {
+                startDate: syncState.windowStart,
+                endDate: syncState.windowEnd,
+              }
+            : null,
+        ),
         sync: syncStateFromStorage(syncState),
       };
     }
@@ -200,7 +238,11 @@ export async function loadEventPlanWindow(
   }
 
   return {
-    plans: legacyPlansForWindow(window, legacyPlans),
+    plans: plansWithConfirmedContractEvidence(
+      legacyPlansForWindow(window, legacyPlans),
+      window,
+      includeConfirmedContractEvidence,
+    ),
     sync: null,
   };
 }
@@ -223,6 +265,39 @@ export async function findEventPlanById(
   } catch {
     // Fall through to an exact-ID redacted legacy plan.
   }
-  const legacy = legacyPlans.find((plan) => plan.id === eventId);
-  return legacy ? structuredClone(legacy) : null;
+  const legacy =
+    legacyPlans.find((plan) => plan.id === eventId) ??
+    (options.legacyPlans == null
+      ? confirmedContractEventPlanById(eventId)
+      : null);
+  if (!legacy) return null;
+  try {
+    const [syncState, matchingRows] = await Promise.all([
+      storage.getSyncState(),
+      storage.plansForWindow({
+        startDate: legacy.date,
+        endDate: legacy.date,
+      }),
+    ]);
+    const visible = plansWithConfirmedContractEvidence(
+      matchingRows
+        .filter(storedPlanIsOperational)
+        .map((row) => storedPlan(row.plan)),
+      { startDate: legacy.date, endDate: legacy.date },
+      true,
+      syncState?.lastSuccessfulSyncAt,
+      syncState
+        ? {
+            startDate: syncState.windowStart,
+            endDate: syncState.windowEnd,
+          }
+        : null,
+    ).some((plan) => plan.id === legacy.id);
+    if (isConfirmedContractEventPlanId(legacy.id) && !visible) {
+      return null;
+    }
+  } catch {
+    // The exact contract-evidence fallback remains available before migration.
+  }
+  return structuredClone(legacy);
 }

@@ -4,7 +4,11 @@ import { NextResponse } from "next/server";
 
 import { hasAdminSession } from "@/lib/admin-auth";
 import { syncRollingEventPlans } from "@/lib/event-plans/sync";
-import { maintainTwoWeekFloorPlanHorizon } from "@/lib/floor-plans/service";
+import {
+  ensureConfirmedContractFloorPlanWindow,
+  maintainTwoWeekFloorPlanHorizon,
+} from "@/lib/floor-plans/service";
+import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,8 +38,46 @@ function unauthorized() {
 }
 
 async function runSync() {
+  let result: Awaited<ReturnType<typeof syncRollingEventPlans>> | null = null;
+  let syncError: string | null = null;
   try {
-    const result = await syncRollingEventPlans();
+    result = await syncRollingEventPlans();
+  } catch (error) {
+    syncError =
+      error instanceof Error
+        ? error.message
+        : "Event-plan synchronization failed.";
+  }
+
+  try {
+    if (!result) {
+      const floorPlans = await ensureConfirmedContractFloorPlanWindow(
+        todayInEntertainmentTimeZone(),
+      );
+      const confirmedResult = floorPlans.results.find(
+        (entry) =>
+          entry.date === "2026-08-21" &&
+          entry.status !== "error" &&
+          entry.eventCount > 0,
+      );
+      if (!confirmedResult) {
+        return NextResponse.json(
+          {
+            error: syncError ?? "Event-plan synchronization failed.",
+            floorPlans,
+          },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json({
+        sourceMode: "contract-evidence",
+        eventCount: confirmedResult.eventCount,
+        sync: null,
+        floorPlans,
+        warning:
+          "Tripleseat could not refresh. Confirmed contract evidence was applied, and the last saved Tripleseat data remains unchanged.",
+      });
+    }
     const floorPlans = await maintainTwoWeekFloorPlanHorizon();
     return NextResponse.json({
       sourceMode: result.sourceMode,
@@ -47,7 +89,7 @@ async function runSync() {
     const message =
       error instanceof Error
         ? error.message
-        : "Event-plan synchronization failed.";
+        : syncError ?? "Event-plan synchronization failed.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

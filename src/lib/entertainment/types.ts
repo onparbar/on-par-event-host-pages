@@ -62,7 +62,7 @@ export type EntertainmentSourceEvent = {
   categoryNames: string[];
   sourceUpdatedAt: string | null;
   noteCount: number;
-  sourceSystem?: "tripleseat" | "vip-prep";
+  sourceSystem?: "tripleseat" | "vip-prep" | "contract-evidence";
 };
 
 export type EntertainmentColorSource =

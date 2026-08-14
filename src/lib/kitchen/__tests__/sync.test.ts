@@ -52,6 +52,86 @@ function viewingTime(date: string) {
 }
 
 describe("kitchen synchronization", () => {
+  it("shows the confirmed August 21 Wing Bar and five dessert platters", async () => {
+    const storage = createMemoryKitchenStorage();
+    const day = await getKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+      now: viewingTime("2026-08-21"),
+    });
+
+    const checklist = day.events.find(
+      (event) => event.event.name === "Manager Outing",
+    );
+    expect(checklist).toBeDefined();
+    expect(checklist?.event).toMatchObject({
+      localDate: "2026-08-21",
+      guestCount: 50,
+      room: "VIP 1",
+    });
+    expect(checklist?.timing).toMatchObject({
+      startTime: "2026-08-21T16:00",
+      foodReadyBy: "2026-08-21T15:45",
+      earliestPrepTime: "2026-08-21T14:45",
+    });
+    expect(
+      checklist?.sections.flatMap((section) => section.rows),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          foodName: "Wings",
+          quantity: 400,
+          numberOfPans: 16,
+          panSize: "1/3",
+        }),
+        expect.objectContaining({
+          foodName: "Fries",
+          quantity: 10,
+          numberOfPans: 2,
+          panSize: "1/2",
+        }),
+        expect.objectContaining({
+          foodName: "Assorted Desserts",
+          quantity: 5,
+          numberOfPans: 5,
+          unit: "pretzel plates",
+          panSize: null,
+        }),
+      ]),
+    );
+    expect(checklist?.chafingDishes.total).toBe(1);
+    await expect(storage.getEventDate("2026082101")).resolves.toBe(
+      "2026-08-21",
+    );
+    await updateKitchenManualAssignments(
+      "2026082101",
+      ["Ryan"],
+      ["Diana"],
+      { storage },
+    );
+    const reloaded = await getKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+      now: viewingTime("2026-08-21"),
+    });
+    expect(reloaded.events[0]).toMatchObject({
+      foodRunners: ["Ryan"],
+      pocs: ["Diana"],
+    });
+  });
+
   it("reads VIP Kitchen prep directly without Supabase persistence", async () => {
     const day = await getKitchenDay("2026-08-15", {
       adapter: testAdapter(() => []),

@@ -14,6 +14,7 @@ import {
 } from "@/lib/kitchen/tripleseat";
 
 import {
+  ensureConfirmedContractFloorPlanWindow,
   generateFloorPlan,
   getFloorPlanDay,
   refreshFloorPlanSources,
@@ -94,6 +95,59 @@ afterEach(() => {
 });
 
 describe("Floor Plan Tripleseat source enforcement", () => {
+  it("creates the confirmed August 21 floor plan with VIP 1 and entertainment", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests({
+      ...adapter(async () => []),
+      sourceMode: "mock",
+      getDiagnostics: () => ({
+        sourceMode: "mock",
+        missingEnvironmentVariables: [],
+        warnings: [],
+        locationId: "26059",
+      }),
+    });
+
+    await ensureConfirmedContractFloorPlanWindow(
+      "2026-08-14",
+      floorPlanStorage,
+    );
+    const payload = await getFloorPlanDay(
+      "2026-08-21",
+      floorPlanStorage,
+    );
+
+    expect(payload.plan.events).toEqual([
+      expect.objectContaining({
+        name: "Manager Outing",
+        guestCount: 50,
+        contractedAreaIds: ["vip-1"],
+      }),
+    ]);
+    expect(payload.plan.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ areaId: "vip-1", reservationType: "room" }),
+        expect.objectContaining({ reservationType: "food-table" }),
+      ]),
+    );
+    expect(
+      payload.entertainmentReservations.filter(
+        (reservation) =>
+          reservation.eventName === "Manager Outing" &&
+          reservation.resourceCategory === "bowling",
+      ),
+    ).toHaveLength(5);
+    expect(
+      payload.entertainmentReservations.filter(
+        (reservation) =>
+          reservation.eventName === "Manager Outing" &&
+          reservation.resourceCategory === "darts",
+      ),
+    ).toHaveLength(4);
+  });
+
   it("rebuilds the floor-plan event from the safe Tripleseat snapshot instead of legacy plan fields", async () => {
     const eventPlanStorage = createMemoryEventPlanStorage();
     const directSource = source();

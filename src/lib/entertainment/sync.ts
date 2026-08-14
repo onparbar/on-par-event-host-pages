@@ -43,6 +43,11 @@ import {
   VipPrepClient,
   vipPrepEntertainmentEvents,
 } from "../vip-prep/client";
+import {
+  confirmedContractEntertainmentSourcesForDate,
+  eventMatchesConfirmedContract,
+  sourceIsAtLeastAsNew,
+} from "../confirmed-contract-events";
 
 export type EntertainmentDependencies = {
   adapter?: TripleseatAdapter;
@@ -306,24 +311,73 @@ export async function getEntertainmentDay(
     localEvents: floorPlanContext(options).localEvents,
     existingReservations: storedReservations,
   });
+  const confirmedSources = confirmedContractEntertainmentSourcesForDate(
+    date,
+    stored.sync?.lastSuccessfulSyncAt,
+  ).filter(
+    (source) =>
+      !stored.events.some(
+        (event) =>
+          eventMatchesConfirmedContract(
+            event.operatingDate,
+            event.eventName,
+            source.localDate,
+            source.eventName,
+          ) &&
+          sourceIsAtLeastAsNew(
+            event.sourceUpdatedAt,
+            source.sourceUpdatedAt,
+          ),
+      ),
+  );
+  const confirmedSchedule = buildEntertainmentSchedule({
+    sourceEvents: confirmedSources,
+    localEvents: floorPlanContext(options).localEvents,
+    existingReservations: [
+      ...storedReservations,
+      ...liveVip.reservations,
+    ],
+  });
+  let contractPersistenceWarning: string | null = null;
+  if (
+    confirmedSchedule.events.length > 0 ||
+    confirmedSchedule.reservations.length > 0
+  ) {
+    try {
+      await storage.saveContractEvidence({
+        events: confirmedSchedule.events,
+        reservations: confirmedSchedule.reservations,
+      });
+    } catch {
+      contractPersistenceWarning =
+        "Confirmed contract entertainment is visible, but its reservations could not be saved for editing.";
+    }
+  }
   const reservations = [
     ...storedReservations.filter(
       (reservation) =>
         !vipResult.refreshed || reservation.source !== "vip-prep",
     ),
     ...liveVip.reservations,
+    ...confirmedSchedule.reservations,
   ];
   const events = [
     ...stored.events.filter(
       (event) => event.sourceSnapshot.sourceSystem !== "vip-prep",
     ),
     ...liveVip.events,
-    ...manualEventSnapshots(date, reservations, stored.events),
+    ...confirmedSchedule.events,
+    ...manualEventSnapshots(date, reservations, [
+      ...stored.events,
+      ...liveVip.events,
+      ...confirmedSchedule.events,
+    ]),
   ].sort((left, right) =>
     (left.eventStartAt ?? "").localeCompare(right.eventStartAt ?? ""),
   );
   const warnings = [...diagnostics.warnings];
   if (vipResult.error) warnings.push(vipResult.error);
+  if (contractPersistenceWarning) warnings.push(contractPersistenceWarning);
   if (stored.sync?.status === "error" && stored.sync.errorSummary) {
     warnings.push(
       "The latest Tripleseat sync failed. The last saved schedule remains visible.",
@@ -429,6 +483,38 @@ export async function syncEntertainmentDay(
     ) {
       sourceEvents = mockSourceEvents(date, context.localEvents);
     }
+    const confirmedSources = confirmedContractEntertainmentSourcesForDate(
+      date,
+    ).filter(
+      (source) =>
+        !sourceEvents.some(
+          (candidate) =>
+            eventMatchesConfirmedContract(
+              candidate.localDate,
+              candidate.eventName,
+              source.localDate,
+              source.eventName,
+            ) &&
+            sourceIsAtLeastAsNew(
+              candidate.sourceUpdatedAt,
+              source.sourceUpdatedAt,
+            ),
+        ),
+    );
+    sourceEvents = [
+      ...sourceEvents.filter(
+        (candidate) =>
+          !confirmedSources.some((source) =>
+            eventMatchesConfirmedContract(
+              candidate.localDate,
+              candidate.eventName,
+              source.localDate,
+              source.eventName,
+            ),
+          ),
+      ),
+      ...confirmedSources,
+    ];
     const now = new Date().toISOString();
     const built = preserveManualEventColors(
       buildEntertainmentSchedule({

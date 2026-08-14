@@ -44,6 +44,7 @@ type FloorPlanWindowSyncResult = {
       eventCount: number;
     }>;
   };
+  warning?: string;
   error?: string;
 };
 
@@ -582,7 +583,9 @@ export default function FloorPlansClient({
       ).length;
       setWindowSyncState({
         status: "success",
-        message: `${result.eventCount} event${result.eventCount === 1 ? "" : "s"} synced · ${generatedPlanCount} floor plan${generatedPlanCount === 1 ? "" : "s"} ready`,
+        message:
+          result.warning ??
+          `${result.eventCount} event${result.eventCount === 1 ? "" : "s"} synced · ${generatedPlanCount} floor plan${generatedPlanCount === 1 ? "" : "s"} ready`,
       });
       router.refresh();
     } catch (error) {

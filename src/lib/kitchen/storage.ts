@@ -107,6 +107,7 @@ export interface KitchenStorage {
   readonly persistence: "database" | "memory";
   getDay(date: string): Promise<StoredKitchenDay>;
   getEventDate(eventId: string): Promise<string | null>;
+  saveEvent(event: StoredKitchenEvent): Promise<void>;
   replaceDay(date: string, events: readonly StoredKitchenEvent[]): Promise<void>;
   saveManualAssignments(
     eventId: string,
@@ -689,6 +690,48 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     return rows[0]?.event_date ?? null;
   }
 
+  async saveEvent({ sourceEvent, checklist }: StoredKitchenEvent) {
+    const now = new Date().toISOString();
+    const eventId = String(sourceEvent.eventId);
+    await this.emptyRequest(
+      "kitchen_event_snapshots",
+      new URLSearchParams({ on_conflict: "event_id" }),
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          event_id: eventId,
+          booking_id:
+            sourceEvent.bookingId == null
+              ? null
+              : String(sourceEvent.bookingId),
+          event_name: sourceEvent.eventName,
+          event_date: sourceEvent.localDate,
+          status: sourceEvent.status,
+          source_snapshot: sourceEvent,
+          source_updated_at: sourceEvent.sourceUpdatedAt ?? null,
+          synced_at: now,
+        } satisfies SnapshotRow),
+      },
+    );
+    await this.emptyRequest(
+      "kitchen_checklists",
+      new URLSearchParams({ on_conflict: "event_id" }),
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          event_id: eventId,
+          event_date: sourceEvent.localDate,
+          checklist,
+          rule_version: checklist.ruleVersion,
+          source_updated_at: sourceEvent.sourceUpdatedAt ?? null,
+          generated_at: now,
+        } satisfies ChecklistRow),
+      },
+    );
+  }
+
   async replaceDay(date: string, events: readonly StoredKitchenEvent[]) {
     const now = new Date().toISOString();
     const snapshotRows: SnapshotRow[] = events.map(({ sourceEvent }) => ({
@@ -1248,6 +1291,21 @@ export class MemoryKitchenStorage implements KitchenStorage {
       }
     }
     return null;
+  }
+
+  async saveEvent(event: StoredKitchenEvent) {
+    const eventId = String(event.sourceEvent.eventId);
+    for (const [storedDate, storedEvents] of this.days) {
+      const remaining = storedEvents.filter(
+        ({ sourceEvent }) => String(sourceEvent.eventId) !== eventId,
+      );
+      if (remaining.length !== storedEvents.length) {
+        this.days.set(storedDate, remaining);
+      }
+    }
+    const values = this.days.get(event.sourceEvent.localDate) ?? [];
+    values.push(clone(event));
+    this.days.set(event.sourceEvent.localDate, values);
   }
 
   async replaceDay(date: string, events: readonly StoredKitchenEvent[]) {

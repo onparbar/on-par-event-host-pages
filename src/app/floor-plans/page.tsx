@@ -4,7 +4,10 @@ import { hasAdminSession } from "@/lib/admin-auth";
 import { loadAdminState } from "@/lib/admin-state";
 import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { floorPlans, floorPlanSpecialPages } from "@/lib/events";
-import { getFloorPlanDay } from "@/lib/floor-plans/service";
+import {
+  ensureConfirmedContractFloorPlanWindow,
+  getFloorPlanDay,
+} from "@/lib/floor-plans/service";
 import { getFloorPlanStorage } from "@/lib/floor-plans/storage";
 import { loadFloorPlanPublicationWindow } from "@/lib/floor-plans/publication";
 import FloorPlansClient, {
@@ -21,6 +24,7 @@ export default async function FloorPlansPage() {
   if (!hasAdminSession(await cookies())) return <AdminAccessGate />;
   const today = todayInEntertainmentTimeZone();
   const storage = getFloorPlanStorage();
+  await ensureConfirmedContractFloorPlanWindow(today, storage);
   const [adminState, publicationPlans] = await Promise.all([
     loadAdminState(),
     loadFloorPlanPublicationWindow(today, storage),

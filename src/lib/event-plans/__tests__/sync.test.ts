@@ -9,6 +9,7 @@ import {
   syncRollingEventPlans,
 } from "../sync";
 import type { EventPlan, TripleseatEventPlanSource } from "../types";
+import { confirmedContractEventPlans } from "../../confirmed-contract-events";
 
 function source(
   overrides: Partial<TripleseatEventPlanSource> = {},
@@ -98,6 +99,57 @@ const legacyPlan: EventPlan = {
 };
 
 describe("rolling Event Host plan synchronization", () => {
+  it("keeps contract evidence through an empty live sync until matching data replaces it", async () => {
+    let storageNow = new Date("2026-08-14T21:00:00.000Z");
+    const storage = createMemoryEventPlanStorage({
+      now: () => storageNow,
+    });
+    const window = {
+      startDate: "2026-08-14",
+      endDate: "2026-09-14",
+    };
+
+    await storage.start(window);
+    await storage.replaceWindow(window, []);
+    await storage.finish(0);
+    const beforeNewerSync = await loadEventPlanWindow({
+      now: new Date("2026-08-14T16:00:00.000Z"),
+      storage,
+      legacyPlans: confirmedContractEventPlans,
+    });
+    expect(beforeNewerSync.plans).toEqual([
+      expect.objectContaining({
+        id: 2026082101,
+        name: "Manager Outing",
+      }),
+    ]);
+
+    storageNow = new Date("2026-08-14T21:30:00.000Z");
+    await storage.start(window);
+    await storage.replaceWindow(window, []);
+    await storage.finish(0);
+    const afterNewerSync = await loadEventPlanWindow({
+      now: new Date("2026-08-14T16:00:00.000Z"),
+      storage,
+      legacyPlans: confirmedContractEventPlans,
+    });
+    expect(afterNewerSync.plans).toEqual([
+      expect.objectContaining({
+        id: 2026082101,
+        name: "Manager Outing",
+      }),
+    ]);
+    await expect(
+      findEventPlanById(2026082101, {
+        storage,
+        legacyPlans: confirmedContractEventPlans,
+      }),
+    ).resolves.toMatchObject({
+      id: 2026082101,
+      name: "Manager Outing",
+    });
+  });
+
   it("excludes LOST and PROSPECT events from synchronized operational views", async () => {
     const storage = createMemoryEventPlanStorage();
     const result = await syncEventPlanWindow(

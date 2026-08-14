@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const syncRollingEventPlans = vi.fn();
 const maintainTwoWeekFloorPlanHorizon = vi.fn();
+const ensureConfirmedContractFloorPlanWindow = vi.fn();
 const hasAdminSession = vi.fn();
 const cookies = vi.fn();
 
@@ -9,6 +10,7 @@ vi.mock("@/lib/event-plans/sync", () => ({
   syncRollingEventPlans,
 }));
 vi.mock("@/lib/floor-plans/service", () => ({
+  ensureConfirmedContractFloorPlanWindow,
   maintainTwoWeekFloorPlanHorizon,
 }));
 vi.mock("@/lib/admin-auth", () => ({
@@ -40,6 +42,18 @@ describe("event-plan sync route", () => {
       results: [
         {
           date: "2026-08-05",
+          status: "generated",
+          eventCount: 1,
+          planStatus: "Needs Review",
+        },
+      ],
+    });
+    ensureConfirmedContractFloorPlanWindow.mockResolvedValue({
+      startDate: "2026-08-14",
+      endDate: "2026-08-28",
+      results: [
+        {
+          date: "2026-08-21",
           status: "generated",
           eventCount: 1,
           planStatus: "Needs Review",
@@ -92,6 +106,48 @@ describe("event-plan sync route", () => {
     expect(response.status).toBe(200);
     expect(syncRollingEventPlans).toHaveBeenCalledOnce();
     expect(maintainTwoWeekFloorPlanHorizon).toHaveBeenCalledOnce();
+  });
+
+  it("still prepares confirmed floor plans when Tripleseat refresh fails", async () => {
+    hasAdminSession.mockReturnValue(true);
+    syncRollingEventPlans.mockRejectedValueOnce(
+      new Error("Tripleseat OAuth refresh was rejected (400)."),
+    );
+    const { POST } = await import("../route");
+
+    const response = await POST();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      sourceMode: "contract-evidence",
+      eventCount: 1,
+      warning: expect.stringContaining("Tripleseat could not refresh"),
+    });
+    expect(ensureConfirmedContractFloorPlanWindow).toHaveBeenCalledOnce();
+    expect(maintainTwoWeekFloorPlanHorizon).not.toHaveBeenCalled();
+  });
+
+  it("does not report success when only an unrelated fallback floor plan exists", async () => {
+    hasAdminSession.mockReturnValue(true);
+    syncRollingEventPlans.mockRejectedValueOnce(
+      new Error("Tripleseat OAuth refresh was rejected (400)."),
+    );
+    ensureConfirmedContractFloorPlanWindow.mockResolvedValueOnce({
+      startDate: "2026-08-14",
+      endDate: "2026-08-28",
+      results: [
+        {
+          date: "2026-08-20",
+          status: "generated",
+          eventCount: 1,
+        },
+      ],
+    });
+    const { POST } = await import("../route");
+
+    const response = await POST();
+
+    expect(response.status).toBe(502);
   });
 
   it("rejects an unauthenticated manual refresh", async () => {
