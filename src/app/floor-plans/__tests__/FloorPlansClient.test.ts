@@ -12,6 +12,7 @@ import {
   PublishedFloorPlanCard,
   organizeFloorPlanAssets,
   syncFloorPlanFromTripleseat,
+  syncFloorPlanWindowFromTripleseat,
 } from "../FloorPlansClient";
 import PublishedFloorPlanMap from "../PublishedFloorPlanMap";
 import type {
@@ -291,6 +292,56 @@ describe("floor-plan dashboard organization", () => {
     expect(result.plan.lastTripleseatSyncAt).toBe(
       "2026-08-04T16:00:00.000Z",
     );
+  });
+
+  it("discovers new floor-plan dates through the rolling Tripleseat sync", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          eventCount: 3,
+          floorPlans: {
+            startDate: "2026-08-14",
+            endDate: "2026-08-28",
+            results: [
+              {
+                status: "generated",
+                eventCount: 1,
+                date: "2026-08-21",
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    const result = await syncFloorPlanWindowFromTripleseat(
+      fetchImpl as typeof fetch,
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/event-plans/sync", {
+      method: "POST",
+    });
+    expect(result.floorPlans.results).toContainEqual(
+      expect.objectContaining({
+        date: "2026-08-21",
+        status: "generated",
+        eventCount: 1,
+      }),
+    );
+  });
+
+  it("surfaces a rolling Tripleseat sync error", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ error: "Tripleseat connection needs attention." }),
+        { status: 502, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    await expect(
+      syncFloorPlanWindowFromTripleseat(fetchImpl as typeof fetch),
+    ).rejects.toThrow("Tripleseat connection needs attention.");
   });
 
   it("shows live Tripleseat sync on saved and approved floor plans", () => {

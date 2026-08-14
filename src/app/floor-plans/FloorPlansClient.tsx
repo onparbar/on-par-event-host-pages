@@ -34,6 +34,19 @@ type FloorPlanLiveState = {
   message: string;
 };
 
+type FloorPlanWindowSyncResult = {
+  eventCount: number;
+  floorPlans: {
+    startDate: string;
+    endDate: string;
+    results: Array<{
+      status: "generated" | "skipped" | "error";
+      eventCount: number;
+    }>;
+  };
+  error?: string;
+};
+
 export type FloorPlanPublication = {
   plan: FloorPlanDocument;
   payload: FloorPlanDayPayload | null;
@@ -93,6 +106,23 @@ export async function syncFloorPlanFromTripleseat(
     | null;
   if (!response.ok || !result?.plan) {
     throw new Error(result?.error || "Unable to sync this floor plan from Tripleseat.");
+  }
+  return result;
+}
+
+export async function syncFloorPlanWindowFromTripleseat(
+  fetchImpl: typeof fetch = fetch,
+) {
+  const response = await fetchImpl("/api/event-plans/sync", {
+    method: "POST",
+  });
+  const result = (await response.json().catch(() => null)) as
+    | FloorPlanWindowSyncResult
+    | null;
+  if (!response.ok || !result) {
+    throw new Error(
+      result?.error || "Unable to sync upcoming floor plans from Tripleseat.",
+    );
   }
   return result;
 }
@@ -494,6 +524,10 @@ export default function FloorPlansClient({
     upcoming[0]?.key ?? organized.archived[0]?.image ?? null,
   );
   const [liveByDate, setLiveByDate] = useState<Record<string, FloorPlanLiveState>>({});
+  const [windowSyncState, setWindowSyncState] = useState<{
+    status: "idle" | "syncing" | "success" | "error";
+    message: string;
+  }>({ status: "idle", message: "" });
   const [planZoom, setPlanZoom] = useState(100);
 
   useEffect(() => {
@@ -536,6 +570,28 @@ export default function FloorPlansClient({
           message: error instanceof Error ? error.message : "Unable to sync this floor plan from Tripleseat.",
         },
       }));
+    }
+  }
+
+  async function handleWindowSync() {
+    setWindowSyncState({ status: "syncing", message: "" });
+    try {
+      const result = await syncFloorPlanWindowFromTripleseat();
+      const generatedPlanCount = result.floorPlans.results.filter(
+        (entry) => entry.status === "generated" && entry.eventCount > 0,
+      ).length;
+      setWindowSyncState({
+        status: "success",
+        message: `${result.eventCount} event${result.eventCount === 1 ? "" : "s"} synced · ${generatedPlanCount} floor plan${generatedPlanCount === 1 ? "" : "s"} ready`,
+      });
+      router.refresh();
+    } catch (error) {
+      setWindowSyncState({
+        status: "error",
+        message: error instanceof Error
+          ? error.message
+          : "Unable to sync upcoming floor plans from Tripleseat.",
+      });
     }
   }
 
@@ -598,6 +654,23 @@ export default function FloorPlansClient({
       <PortalPageHeader
         aside={
           <div className="portal-status-row">
+            <button
+              className="floor-plan-live-sync-button"
+              disabled={windowSyncState.status === "syncing"}
+              onClick={() => void handleWindowSync()}
+              type="button"
+            >
+              {windowSyncState.status === "syncing"
+                ? "Syncing…"
+                : "Sync with Tripleseat"}
+            </button>
+            {windowSyncState.message ? (
+              <PortalStatusBadge
+                tone={windowSyncState.status === "success" ? "success" : "warning"}
+              >
+                {windowSyncState.message}
+              </PortalStatusBadge>
+            ) : null}
             <PortalStatusBadge tone="success">
               {upcoming.length} upcoming
             </PortalStatusBadge>
