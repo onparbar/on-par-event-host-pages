@@ -90,7 +90,7 @@ describe("confirmed contract event evidence", () => {
     expect(merged[0].id).toBe(12345678);
   });
 
-  it("keeps evidence until a matching newer source replaces it", () => {
+  it("retires evidence after a newer successful sync covers its date", () => {
     expect(
       mergeConfirmedContractEventPlans(
         [],
@@ -102,19 +102,19 @@ describe("confirmed contract event evidence", () => {
           endDate: "2026-08-21",
         },
       ),
-    ).toHaveLength(1);
+    ).toEqual([]);
     expect(
       confirmedContractKitchenSourcesForDate(
         "2026-08-21",
         "2026-08-14T21:30:00.000Z",
       ),
-    ).toHaveLength(1);
+    ).toEqual([]);
     expect(
       confirmedContractEntertainmentSourcesForDate(
         "2026-08-21",
         "2026-08-14T21:30:00.000Z",
       ),
-    ).toHaveLength(1);
+    ).toEqual([]);
   });
 
   it("does not expire evidence when a newer sync did not cover its date", () => {

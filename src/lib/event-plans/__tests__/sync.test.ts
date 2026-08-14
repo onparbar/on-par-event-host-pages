@@ -99,7 +99,7 @@ const legacyPlan: EventPlan = {
 };
 
 describe("rolling Event Host plan synchronization", () => {
-  it("keeps contract evidence through an empty live sync until matching data replaces it", async () => {
+  it("uses contract evidence until a newer successful live sync covers its date", async () => {
     let storageNow = new Date("2026-08-14T21:00:00.000Z");
     const storage = createMemoryEventPlanStorage({
       now: () => storageNow,
@@ -133,21 +133,13 @@ describe("rolling Event Host plan synchronization", () => {
       storage,
       legacyPlans: confirmedContractEventPlans,
     });
-    expect(afterNewerSync.plans).toEqual([
-      expect.objectContaining({
-        id: 2026082101,
-        name: "Manager Outing",
-      }),
-    ]);
+    expect(afterNewerSync.plans).toEqual([]);
     await expect(
       findEventPlanById(2026082101, {
         storage,
         legacyPlans: confirmedContractEventPlans,
       }),
-    ).resolves.toMatchObject({
-      id: 2026082101,
-      name: "Manager Outing",
-    });
+    ).resolves.toBeNull();
   });
 
   it("excludes LOST and PROSPECT events from synchronized operational views", async () => {

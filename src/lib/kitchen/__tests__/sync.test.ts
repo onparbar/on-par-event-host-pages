@@ -4,6 +4,8 @@ import {
   SupabaseKitchenStorage,
 } from "../storage";
 import { quantityAwareReadinessKey } from "../readiness";
+import { generateKitchenChecklist } from "../rules";
+import { confirmedContractKitchenSourcesForDate } from "../../confirmed-contract-events";
 import {
   getKitchenEventFoodAddOns,
   getKitchenDay,
@@ -147,6 +149,32 @@ describe("kitchen synchronization", () => {
 
     expect(day.missingEnvironmentVariables).not.toContain("SUPABASE_SECRET_KEY");
     expect(day.events[0].event.eventId).toBe("vip-reservation-uuid");
+  });
+
+  it("replaces an older same-name kitchen snapshot with contract evidence", async () => {
+    const storage = createMemoryKitchenStorage();
+    const stale = confirmedContractKitchenSourcesForDate("2026-08-21")[0];
+    stale.eventId = "older-manager-outing";
+    stale.sourceUpdatedAt = "2026-08-14T20:00:00.000Z";
+    stale.selections = [];
+    await storage.replaceDay("2026-08-21", [
+      { sourceEvent: stale, checklist: generateKitchenChecklist(stale) },
+    ]);
+
+    const day = await getKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: { configured: false, fetchRange: async () => vipPrepPayload },
+      now: viewingTime("2026-08-21"),
+    });
+
+    expect(
+      day.events.filter((event) => event.event.name === "Manager Outing"),
+    ).toEqual([
+      expect.objectContaining({
+        event: expect.objectContaining({ eventId: "2026082101" }),
+      }),
+    ]);
   });
 
   it("imports paid VIP food quantities into the Kitchen checklist", async () => {

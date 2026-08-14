@@ -8,7 +8,10 @@ import {
   syncEntertainmentDay,
   updateEntertainmentReservation,
 } from "../sync";
-import { MemoryEntertainmentStorage } from "../storage";
+import {
+  MemoryEntertainmentStorage,
+  SupabaseEntertainmentStorage,
+} from "../storage";
 import type { EntertainmentSourceEvent } from "../types";
 import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
 
@@ -169,6 +172,35 @@ describe("persistent entertainment synchronization", () => {
       resourceId: "private-room-vip-2",
       source: "vip-prep",
     });
+  });
+
+  it("writes contract reservations before the event snapshot", async () => {
+    const day = await getEntertainmentDay("2026-08-21", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([]),
+      vipPrepClient: { configured: false, fetchRange: async () => vipPrepPayload },
+    });
+    const requestedTables: string[] = [];
+    const storage = new SupabaseEntertainmentStorage({
+      env: {
+        NODE_ENV: "test",
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SECRET_KEY: "sb_secret_test-value",
+      },
+      fetchImpl: async (input) => {
+        requestedTables.push(String(input));
+        return new Response(null, { status: 500 });
+      },
+    });
+
+    await expect(
+      storage.saveContractEvidence({
+        events: day.events,
+        reservations: day.reservations,
+      }),
+    ).rejects.toThrow("Entertainment database request failed (500).");
+    expect(requestedTables).toHaveLength(1);
+    expect(requestedTables[0]).toContain("entertainment_reservations");
   });
 
   it("imports a paid VIP reservation onto the exact VIP room", async () => {

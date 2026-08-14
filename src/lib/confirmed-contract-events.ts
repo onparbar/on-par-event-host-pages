@@ -227,13 +227,42 @@ function matchingIdentity(
 function activeConfirmedEvents(
   startDate: string,
   endDate: string,
-  _lastSuccessfulSyncAt?: string | null,
-  _coverage?: ConfirmedContractSyncCoverage | null,
+  lastSuccessfulSyncAt?: string | null,
+  coverage?: ConfirmedContractSyncCoverage | null,
 ) {
+  const effectiveCoverage =
+    coverage ??
+    (startDate === endDate ? { startDate, endDate } : null);
   return CONFIRMED_CONTRACT_EVENTS.filter(
     (event) =>
       event.plan.date >= startDate &&
-      event.plan.date <= endDate,
+      event.plan.date <= endDate &&
+      !successfulSyncReplacedEvidence(
+        lastSuccessfulSyncAt,
+        event.confirmedAt,
+        event.plan.date,
+        effectiveCoverage,
+      ),
+  );
+}
+
+function successfulSyncReplacedEvidence(
+  lastSuccessfulSyncAt: string | null | undefined,
+  confirmedAt: string,
+  eventDate: string,
+  coverage?: ConfirmedContractSyncCoverage | null,
+) {
+  const syncedAt = Date.parse(lastSuccessfulSyncAt ?? "");
+  const evidenceAt = Date.parse(confirmedAt);
+  return (
+    Number.isFinite(syncedAt) &&
+    Number.isFinite(evidenceAt) &&
+    Boolean(
+      coverage &&
+        coverage.startDate <= eventDate &&
+        coverage.endDate >= eventDate,
+    ) &&
+    syncedAt >= evidenceAt
   );
 }
 

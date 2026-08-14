@@ -620,17 +620,6 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
     events: EntertainmentEventSnapshot[];
     reservations: EntertainmentReservation[];
   }) {
-    if (input.events.length > 0) {
-      await this.emptyRequest(
-        "entertainment_event_snapshots",
-        new URLSearchParams({ on_conflict: "event_id" }),
-        {
-          method: "POST",
-          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-          body: JSON.stringify(input.events.map(eventToRow)),
-        },
-      );
-    }
     if (input.reservations.length > 0) {
       await this.emptyRequest(
         "entertainment_reservations",
@@ -639,6 +628,17 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
           method: "POST",
           headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
           body: JSON.stringify(input.reservations.map(reservationToRow)),
+        },
+      );
+    }
+    if (input.events.length > 0) {
+      await this.emptyRequest(
+        "entertainment_event_snapshots",
+        new URLSearchParams({ on_conflict: "event_id" }),
+        {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(input.events.map(eventToRow)),
         },
       );
     }

@@ -284,6 +284,44 @@ function preserveManualEventColors(
   };
 }
 
+function dedupeConfirmedContractEntertainmentEvents(
+  events: EntertainmentEventSnapshot[],
+) {
+  const contractEvent = events.find(
+    (event) => event.sourceSnapshot.sourceSystem === "contract-evidence",
+  );
+  if (!contractEvent) return events;
+  const matching = events.filter((event) =>
+    eventMatchesConfirmedContract(
+      event.operatingDate,
+      event.eventName,
+      contractEvent.operatingDate,
+      contractEvent.eventName,
+    ),
+  );
+  if (matching.length < 2) return events;
+  const winner = [...matching].sort((left, right) => {
+    const timeDifference =
+      Date.parse(right.sourceUpdatedAt ?? "") -
+      Date.parse(left.sourceUpdatedAt ?? "");
+    if (Number.isFinite(timeDifference) && timeDifference !== 0) {
+      return timeDifference;
+    }
+    return Number(left.sourceSnapshot.sourceSystem === "contract-evidence") -
+      Number(right.sourceSnapshot.sourceSystem === "contract-evidence");
+  })[0];
+  return events.filter(
+    (event) =>
+      event === winner ||
+      !eventMatchesConfirmedContract(
+        event.operatingDate,
+        event.eventName,
+        contractEvent.operatingDate,
+        contractEvent.eventName,
+      ),
+  );
+}
+
 export async function getEntertainmentDay(
   date: string,
   options: EntertainmentDependencies = {},
@@ -353,7 +391,7 @@ export async function getEntertainmentDay(
         "Confirmed contract entertainment is visible, but its reservations could not be saved for editing.";
     }
   }
-  const reservations = [
+  const combinedReservations = [
     ...storedReservations.filter(
       (reservation) =>
         !vipResult.refreshed || reservation.source !== "vip-prep",
@@ -361,19 +399,47 @@ export async function getEntertainmentDay(
     ...liveVip.reservations,
     ...confirmedSchedule.reservations,
   ];
-  const events = [
+  const combinedEvents = [
     ...stored.events.filter(
       (event) => event.sourceSnapshot.sourceSystem !== "vip-prep",
     ),
     ...liveVip.events,
     ...confirmedSchedule.events,
-    ...manualEventSnapshots(date, reservations, [
+    ...manualEventSnapshots(date, combinedReservations, [
       ...stored.events,
       ...liveVip.events,
       ...confirmedSchedule.events,
     ]),
-  ].sort((left, right) =>
+  ];
+  const events = dedupeConfirmedContractEntertainmentEvents(
+    combinedEvents,
+  ).sort((left, right) =>
     (left.eventStartAt ?? "").localeCompare(right.eventStartAt ?? ""),
+  );
+  const visibleEventIds = new Set(
+    events.flatMap((event) => [
+      event.eventId,
+      event.tripleseatEventId,
+      ...(event.localEventId ? [event.localEventId] : []),
+    ]),
+  );
+  const contractIdentity = combinedEvents.find(
+    (event) =>
+      "sourceSystem" in event.sourceSnapshot &&
+      event.sourceSnapshot.sourceSystem === "contract-evidence",
+  );
+  const reservations = combinedReservations.filter(
+    (reservation) =>
+      !contractIdentity ||
+      !eventMatchesConfirmedContract(
+        reservation.operatingDate,
+        reservation.eventName,
+        contractIdentity.operatingDate,
+        contractIdentity.eventName,
+      ) ||
+      [reservation.tripleseatEventId, reservation.localEventId]
+        .filter((value): value is string => Boolean(value))
+        .some((value) => visibleEventIds.has(value)),
   );
   const warnings = [...diagnostics.warnings];
   if (vipResult.error) warnings.push(vipResult.error);

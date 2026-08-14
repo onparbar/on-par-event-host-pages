@@ -29,6 +29,7 @@ import {
 import {
   confirmedContractKitchenSourcesForDate,
   eventMatchesConfirmedContract,
+  isConfirmedContractEventPlanId,
   sourceIsAtLeastAsNew,
 } from "../confirmed-contract-events";
 
@@ -64,6 +65,45 @@ export class KitchenSyncError extends Error {
 
 function unique(values: readonly string[]) {
   return [...new Set(values)];
+}
+
+function dedupeConfirmedContractKitchenEvents(events: KitchenChecklist[]) {
+  const contractEvent = events.find((event) =>
+    isConfirmedContractEventPlanId(Number(event.event.eventId)),
+  );
+  if (!contractEvent) return events;
+  const matching = events.filter((event) =>
+    eventMatchesConfirmedContract(
+      event.event.localDate,
+      event.event.name,
+      contractEvent.event.localDate,
+      contractEvent.event.name,
+    ),
+  );
+  if (matching.length < 2) return events;
+  const winner = [...matching].sort((left, right) => {
+    const timeDifference =
+      Date.parse(right.event.sourceUpdatedAt ?? "") -
+      Date.parse(left.event.sourceUpdatedAt ?? "");
+    if (Number.isFinite(timeDifference) && timeDifference !== 0) {
+      return timeDifference;
+    }
+    return Number(
+      isConfirmedContractEventPlanId(Number(left.event.eventId)),
+    ) - Number(
+      isConfirmedContractEventPlanId(Number(right.event.eventId)),
+    );
+  })[0];
+  return events.filter(
+    (event) =>
+      event === winner ||
+      !eventMatchesConfirmedContract(
+        event.event.localDate,
+        event.event.name,
+        contractEvent.event.localDate,
+        contractEvent.event.name,
+      ),
+  );
 }
 
 function markSourceWarning(
@@ -191,17 +231,17 @@ export async function getKitchenDay(
   const storedEventsWithSourceStatus =
     stored.sync?.status === "error"
       ? markSourceWarning(
-          stored.events,
+          dedupeConfirmedContractKitchenEvents(stored.events),
           "SOURCE_SYNC_FAILED",
           "The latest Tripleseat sync failed; this stored checklist may be stale.",
         )
       : liveSourceUnavailable
         ? markSourceWarning(
-            stored.events,
+            dedupeConfirmedContractKitchenEvents(stored.events),
             "SOURCE_STALE",
             "Live Tripleseat configuration is unavailable; this stored checklist may be stale.",
           )
-      : stored.events;
+        : dedupeConfirmedContractKitchenEvents(stored.events);
   const storedAndVipEvents = [
     ...storedEventsWithSourceStatus.filter(
       (event) =>

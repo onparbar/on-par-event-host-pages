@@ -146,6 +146,29 @@ describe("Floor Plan Tripleseat source enforcement", () => {
           reservation.resourceCategory === "darts",
       ),
     ).toHaveLength(4);
+
+    await floorPlanStorage.save(
+      {
+        ...payload.plan,
+        reservations: payload.plan.reservations.filter(
+          (reservation) => reservation.reservationType !== "food-table",
+        ),
+      },
+      "Test incomplete saved plan",
+    );
+    const repaired = await ensureConfirmedContractFloorPlanWindow(
+      "2026-08-14",
+      floorPlanStorage,
+    );
+    expect(repaired.results).toEqual([
+      expect.objectContaining({ date: "2026-08-21", status: "generated" }),
+    ]);
+    const repairedPlan = await floorPlanStorage.get("2026-08-21");
+    expect(
+      repairedPlan?.reservations.some(
+        (reservation) => reservation.reservationType === "food-table",
+      ),
+    ).toBe(true);
   });
 
   it("rebuilds the floor-plan event from the safe Tripleseat snapshot instead of legacy plan fields", async () => {

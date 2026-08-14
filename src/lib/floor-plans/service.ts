@@ -242,7 +242,20 @@ async function sourceEventsForDate(date: string) {
       source: asRecord(row.source),
       sourceEventId: row.sourceEventId,
     }));
-  const rows = [...liveRows, ...confirmedRows];
+  const rows = [
+    ...liveRows.filter(
+      (candidate) =>
+        !confirmedRows.some((confirmed) =>
+          eventMatchesConfirmedContract(
+            candidate.plan.date,
+            candidate.plan.name,
+            confirmed.plan.date,
+            confirmed.plan.name,
+          ),
+        ),
+    ),
+    ...confirmedRows,
+  ];
   return {
     rows: rows.filter(
       (row) =>
@@ -592,10 +605,47 @@ export async function ensureConfirmedContractFloorPlanWindow(
             ),
           ),
         );
+      const sourceIsCurrent = Boolean(
+        saved &&
+          saved.events.length === current.events.length &&
+          current.events.every((event) => {
+            const previous = saved.events.find(
+              (candidate) => candidate.id === event.id,
+            );
+            return previous && !sourceChanged(previous, event);
+          }),
+      );
+      const reservationSignature = (
+        reservations: readonly FloorPlanReservation[],
+      ) =>
+        JSON.stringify(
+          [...reservations]
+            .sort((left, right) => left.id.localeCompare(right.id))
+            .map((reservation) => ({
+              id: reservation.id,
+              floorPlanEventId: reservation.floorPlanEventId,
+              areaId: reservation.areaId,
+              reservationType: reservation.reservationType,
+              startAt: reservation.startAt,
+              endAt: reservation.endAt,
+              label: reservation.label,
+              source: reservation.source,
+              lockedByUser: reservation.lockedByUser,
+              customGeometry: reservation.customGeometry ?? null,
+            })),
+        );
+      const expectedReservations = generateFloorPlanReservations(
+        current,
+        "fill-missing",
+      );
+      const reservationsAreComplete =
+        reservationSignature(current.reservations) ===
+        reservationSignature(expectedReservations);
       if (
         hasConfirmedEvent(current) &&
         hasConfirmedEvent(saved) &&
-        (saved?.reservations.length ?? 0) > 0
+        sourceIsCurrent &&
+        reservationsAreComplete
       ) {
         results.push({
           date,
