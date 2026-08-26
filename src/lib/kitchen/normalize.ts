@@ -87,10 +87,16 @@ const EXACT_SELECTION_ALIASES: Readonly<
   "marinara sauce": ["sauce:marinara"],
 };
 
-const MOZZARELLA_PLATTER_SELECTION_NAMES = new Set([
-  "mozzarella sticks",
-  "mozzarella sticksgolden fried mozzarella sticks with a crispy seasoned coating and warm melted cheese inside, served with marinara for dipping",
-]);
+const PLAIN_PLATTER_SELECTION_KINDS: Readonly<
+  Record<string, NormalizedSelectionKind>
+> = {
+  "mozzarella sticks": "platter:mozzarella-sticks",
+  "mozzarella sticksgolden fried mozzarella sticks with a crispy seasoned coating and warm melted cheese inside, served with marinara for dipping":
+    "platter:mozzarella-sticks",
+  wings: "platter:wings",
+  "chicken tenders": "platter:chicken-tenders",
+  fries: "platter:fries",
+};
 
 const NON_FOOD_SOURCE_CATEGORIES = new Set([
   "beverage",
@@ -239,11 +245,13 @@ export function normalizeKitchenSelection(
     : "";
   const exact = EXACT_SELECTION_ALIASES[normalizedName] ?? [];
   const categoryAware: NormalizedSelectionKind[] = [];
+  const plainPlatterKind = PLAIN_PLATTER_SELECTION_KINDS[normalizedName];
   if (
-    MOZZARELLA_PLATTER_SELECTION_NAMES.has(normalizedName) &&
-    normalizedCategory === "food platters"
+    plainPlatterKind &&
+    (normalizedCategory === "food platters" ||
+      (normalizedCategory === "" && selection.isFood === true))
   ) {
-    categoryAware.push("platter:mozzarella-sticks");
+    categoryAware.push(plainPlatterKind);
   }
   if (
     normalizedCategory === "food platters" &&

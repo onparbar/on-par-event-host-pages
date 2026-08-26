@@ -1794,6 +1794,32 @@ describe("classification, aliases, and review behavior", () => {
     ).toEqual([]);
   });
 
+  it.each([
+    ["Mozzarella Sticks", "platter:mozzarella-sticks"],
+    ["Wings", "platter:wings"],
+    ["Chicken Tenders", "platter:chicken-tenders"],
+    ["Fries", "platter:fries"],
+  ] as const)(
+    "maps the verified categoryless Tripleseat product %s",
+    (name, expectedKind) => {
+      expect(
+        normalizeKitchenSelection({
+          name,
+          quantity: 1,
+          sourceId: "structured-selection",
+          isFood: true,
+        }).kinds,
+      ).toEqual([expectedKind]);
+      expect(
+        normalizeKitchenSelection({
+          name,
+          quantity: 1,
+          sourceId: "modifier-selection",
+        }).kinds,
+      ).toEqual([]);
+    },
+  );
+
   it("maps the live Tripleseat Mozzarella Sticks document label", () => {
     const liveName =
       "Mozzarella SticksGolden fried mozzarella sticks with a crispy seasoned coating and warm melted cheese inside, served with marinara for dipping";

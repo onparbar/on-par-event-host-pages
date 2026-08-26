@@ -438,6 +438,151 @@ describe("Tripleseat adapter security and normalization", () => {
     ]);
   });
 
+  it("imports exact categoryless top-level platter products without importing their modifiers", async () => {
+    const storage = createMemoryKitchenStorage();
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/events/search?")) {
+        return json({ results: [{ id: 60558000 }], total_pages: 1 });
+      }
+      if (url.includes("/events/60558000?")) {
+        return json({
+          event: {
+            id: 60558000,
+            booking_id: 57128424,
+            name: "Redacted Birthday Party",
+            event_date_iso8601: "2026-09-05",
+            event_start_iso8601: "2026-09-05T14:00:00-04:00",
+            event_end_iso8601: "2026-09-05T17:00:00-04:00",
+            guest_count: 25,
+            status: "DEFINITE",
+            location_id: 26059,
+          },
+        });
+      }
+      if (url.includes("/menu_item_selections")) {
+        return json({
+          menu_item_selections: [
+            {
+              id: 3066969,
+              display_name: "Mozzarella Sticks",
+              quantity: 3,
+            },
+            {
+              id: 3066970,
+              display_name: "Wings",
+              quantity: 2,
+              menu_modifier_selections: [
+                {
+                  id: 4114171,
+                  display_name:
+                    "Jumbo Bone-In Wings — Big, bold, and built for sharing with the whole group.",
+                },
+              ],
+            },
+            {
+              id: 3066971,
+              display_name: "Chicken Tenders",
+              quantity: 2,
+              menu_modifier_selections: [
+                {
+                  id: 4114172,
+                  display_name:
+                    "Crispy Chicken Tenders — A crowd-favorite choice, designed for everyone.",
+                },
+              ],
+            },
+            {
+              id: 3066972,
+              display_name: "Fries",
+              quantity: 4,
+              menu_modifier_selections: [
+                {
+                  id: 4114173,
+                  display_name:
+                    "Crispy Seasoned Fries — A classic shareable favorite.",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (url.includes("/bookings/57128424?show_financial=true")) {
+        return json({ error: "forbidden" }, 403);
+      }
+      throw new Error(`Unexpected test request: ${url}`);
+    };
+    const adapter = new LiveTripleseatAdapter({
+      env: {
+        NODE_ENV: "test",
+        TRIPLESEAT_CLIENT_ID: "test-client",
+        TRIPLESEAT_CLIENT_SECRET: "test-client-secret",
+        TRIPLESEAT_ACCESS_TOKEN: "test-access-token",
+        TRIPLESEAT_REFRESH_TOKEN: "test-refresh-token",
+        TRIPLESEAT_LOCATION_ID: "26059",
+      },
+      fetchImpl,
+      storage,
+    });
+
+    const [event] = await adapter.fetchEventsForDate("2026-09-05");
+    const checklist = generateKitchenChecklist(event);
+    const rows = new Map(
+      checklist.sections
+        .flatMap((section) => section.rows)
+        .map((item) => [item.key, item]),
+    );
+
+    expect(
+      event.selections.filter((selection) => selection.isFood === true),
+    ).toEqual([
+      expect.objectContaining({ name: "Mozzarella Sticks", quantity: 3 }),
+      expect.objectContaining({ name: "Wings", quantity: 2 }),
+      expect.objectContaining({ name: "Chicken Tenders", quantity: 2 }),
+      expect.objectContaining({ name: "Fries", quantity: 4 }),
+    ]);
+    expect(rows.get("platter-mozzarella-sticks")).toMatchObject({
+      quantity: 12,
+      unit: "pounds",
+      numberOfPans: 3,
+      panSize: "1/2",
+    });
+    expect(rows.get("platter-wings")).toMatchObject({
+      quantity: 128,
+      unit: "each",
+      numberOfPans: 2,
+      panSize: "1/2",
+    });
+    expect(rows.get("platter-chicken-tenders")).toMatchObject({
+      quantity: 128,
+      unit: "each",
+      numberOfPans: 2,
+      panSize: "1/2",
+    });
+    expect(rows.get("platter-fries")).toMatchObject({
+      quantity: 4,
+      unit: "bags",
+      numberOfPans: 4,
+      panSize: "1/2",
+    });
+    expect(rows.get("sauce-marinara")).toMatchObject({
+      quantity: 3,
+      unit: "bowls",
+    });
+    expect(rows.get("sauce-ranch")).toMatchObject({
+      quantity: 4,
+      unit: "bowls",
+    });
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 6,
+      total: 6,
+    });
+    expect(event.specialNotes).toEqual([
+      "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.",
+    ]);
+  });
+
   it("uses booking contract selections and Special Instructions while excluding booking notes", async () => {
     const storage = createMemoryKitchenStorage();
     let bookingRequested = false;

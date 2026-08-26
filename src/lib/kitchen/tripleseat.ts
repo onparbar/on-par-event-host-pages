@@ -35,6 +35,12 @@ const UNASSIGNABLE_BOOKING_DOCUMENTS_NOTE =
   "Needs Review: Tripleseat booking documents were not imported because they could not be assigned to exactly one matching event. Review the source event.";
 const UNVERIFIED_BOOKING_CONTRACT_NOTE =
   "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.";
+const CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS = new Set([
+  "mozzarella sticks",
+  "wings",
+  "chicken tenders",
+  "fries",
+]);
 
 type UnknownRecord = Record<string, unknown>;
 type FetchImplementation = typeof fetch;
@@ -390,6 +396,19 @@ function normalizeMenuSelection(value: unknown): KitchenSourceSelection[] {
   }
 
   const selection = normalizeMenuSelectionRecord(record);
+  if (
+    selection &&
+    selection.sourceId != null &&
+    selection.sourceCategory == null &&
+    selection.quantity != null &&
+    Number.isInteger(selection.quantity) &&
+    selection.quantity > 0 &&
+    CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS.has(
+      normalizedSelectionName(selection.name),
+    )
+  ) {
+    selection.isFood = true;
+  }
   const modifiers = extractArray(record.menu_modifier_selections, [
     "menu_modifier_selections",
   ]).flatMap((modifier) => {
