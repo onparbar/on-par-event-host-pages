@@ -666,6 +666,34 @@ describe("Appetizer Bar", () => {
 });
 
 describe("dessert and platter quantities", () => {
+  it("uses the explicit Desert Platter contract quantity", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "Desert Platter",
+            quantity: 1,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+        ],
+        { guestCount: 75 },
+      ),
+    );
+
+    expect(row(checklist, "dessert-platter")).toMatchObject({
+      foodName: "Assorted Desserts",
+      quantity: 1,
+      unit: "pretzel plates",
+      numberOfPans: 1,
+      panSize: null,
+    });
+    expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
+    expect(
+      checklist.referenceConflicts.map((conflict) => conflict.code),
+    ).not.toContain("DESSERT_30_VS_35");
+  });
+
   it("uses the explicit Assorted Deserts contract quantity as pretzel plates", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent(

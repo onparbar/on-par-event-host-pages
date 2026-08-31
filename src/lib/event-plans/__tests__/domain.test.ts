@@ -83,6 +83,26 @@ function legacyPlan(
 }
 
 describe("Tripleseat EventPlan mapping", () => {
+  it("shows the Tripleseat Desert Platter spelling on the itinerary", () => {
+    const plan = buildEventPlan(
+      source({
+        selections: [
+          {
+            name: "Desert Platter",
+            quantity: 1,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.food).toContain("Desert Platter");
+    expect(plan.review_reasons).not.toContain(
+      'Structured selection "Desert Platter" is not mapped to food, drink, or entertainment.',
+    );
+  });
+
   it("maps current structured fields using New York date and time formatting", () => {
     const plan = buildEventPlan(source());
 

@@ -39,6 +39,7 @@ const EXACT_SELECTION_ALIASES: Readonly<
   "appetizer bar": ["bar:appetizer"],
   "lettuce wraps": ["option:taco-lettuce-wraps"],
   "dessert platter": ["dessert"],
+  "desert platter": ["dessert"],
   "dessert tray": ["dessert"],
   "tater keg platter": ["platter:tater-kegs"],
   "tater kegs platter": ["platter:tater-kegs"],
