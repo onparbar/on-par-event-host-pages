@@ -43,6 +43,7 @@ const allowlist = [
   "src/lib/checklist-events.ts",
   "src/lib/checklist-model.ts",
   "src/lib/checklist-storage.ts",
+  "src/lib/confirmed-contract-events.ts",
   "src/lib/entertainment",
   "src/lib/event-format.ts",
   "src/lib/event-lifecycle.ts",
