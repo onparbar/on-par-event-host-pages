@@ -202,6 +202,10 @@ function isAssortedDessertPlatter(normalizedName: string) {
   );
 }
 
+function isDesertPlatter(normalizedName: string) {
+  return normalizedName.startsWith("desert platter");
+}
+
 function isCookieDessert(normalizedName: string) {
   return (
     normalizedName === "cookies" ||
@@ -257,6 +261,14 @@ export function normalizeKitchenSelection(
   if (
     normalizedCategory === "food platters" &&
     isAssortedDessertPlatter(normalizedName)
+  ) {
+    categoryAware.push("dessert");
+  }
+  if (
+    (selection.isFood === true ||
+      normalizedCategory === "food platters" ||
+      normalizedCategory === "party platters") &&
+    isDesertPlatter(normalizedName)
   ) {
     categoryAware.push("dessert");
   }

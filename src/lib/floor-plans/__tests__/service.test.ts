@@ -215,7 +215,7 @@ describe("Floor Plan Tripleseat source enforcement", () => {
       contractedAreaIds: ["vip-1"],
       source: {
         rooms: ["VIP 1"],
-        food: ["Tater Keg Platter"],
+        food: ["1 × Tater Keg Platter"],
         operationalNotes: [
           expect.objectContaining({
             sourceId: "note-1",

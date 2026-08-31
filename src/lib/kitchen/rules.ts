@@ -1016,8 +1016,8 @@ export function generateKitchenChecklist(
     .filter(
       (selection) =>
         selection.quantityProvided &&
-        (selection.normalizedName === "dessert platter" ||
-          selection.normalizedName === "desert platter" ||
+        (selection.normalizedName.startsWith("dessert platter") ||
+          selection.normalizedName.startsWith("desert platter") ||
           selection.normalizedName === "dessert tray" ||
           selection.normalizedName.startsWith("assorted desserts") ||
           selection.normalizedName.startsWith("assorted deserts")),

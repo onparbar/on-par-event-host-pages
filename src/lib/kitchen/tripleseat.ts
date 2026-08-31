@@ -438,10 +438,10 @@ function foodDocumentSelections(event: UnknownRecord) {
         continue;
       }
       const name =
-        asString(line.description) ||
         asString(line.display_name) ||
         asString(line.internal_name) ||
-        asString(line.name);
+        asString(line.name) ||
+        asString(line.description);
       if (!name) {
         continue;
       }

@@ -671,7 +671,7 @@ describe("dessert and platter quantities", () => {
       sourceEvent(
         [
           {
-            name: "Desert Platter",
+            name: "Desert PlatterAssorted sweets for the event.",
             quantity: 1,
             sourceCategory: "Food Platters",
             isFood: true,

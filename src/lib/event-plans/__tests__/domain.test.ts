@@ -83,7 +83,7 @@ function legacyPlan(
 }
 
 describe("Tripleseat EventPlan mapping", () => {
-  it("shows the Tripleseat Desert Platter spelling on the itinerary", () => {
+  it("shows the Tripleseat Desert Platter quantity and spelling on the itinerary", () => {
     const plan = buildEventPlan(
       source({
         selections: [
@@ -97,9 +97,67 @@ describe("Tripleseat EventPlan mapping", () => {
       }),
     );
 
-    expect(plan.food).toContain("Desert Platter");
+    expect(plan.food).toContain("1 × Desert Platter");
     expect(plan.review_reasons).not.toContain(
       'Structured selection "Desert Platter" is not mapped to food, drink, or entertainment.',
+    );
+  });
+
+  it("lists concise Tripleseat food names with their explicit quantities", () => {
+    const plan = buildEventPlan(
+      source({
+        selections: [
+          {
+            name: "Tater Keg PlatterSuper sized crispy on the outside mashed potato on the inside tots with cheese, bacon and chives",
+            quantity: 2,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+          {
+            name: "Wing PlatterDeep fried traditional wings served with celery and served with ranch",
+            quantity: 2,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+          {
+            name: "Chicken Tender PlatterFried chicken tenders with ranch dipping sauce",
+            quantity: 1,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+          {
+            name: "Veggie TrayAssorted fresh vegetables served with ranch dressing",
+            quantity: 2,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+          {
+            name: "Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack.",
+            quantity: 2,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+          {
+            name: "Desert PlatterAssorted sweets for the event.",
+            quantity: 1,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+        ],
+        documentItems: [],
+      }),
+    );
+
+    expect(plan.food).toEqual([
+      "2 × Tater Keg Platter",
+      "2 × Wing Platter",
+      "1 × Chicken Tender Platter",
+      "2 × Veggie Tray",
+      "2 × Fry Platter",
+      "1 × Desert Platter",
+    ]);
+    expect(plan.food.join(" ")).not.toMatch(
+      /crispy|deep fried|ranch dipping|fresh vegetables|group snack|assorted sweets/i,
     );
   });
 
@@ -115,7 +173,7 @@ describe("Tripleseat EventPlan mapping", () => {
       guest_count: 48,
       rooms: ["Main Dining Room", "VIP 1"],
       color: deterministicEventColor("62000001"),
-      food: ["The Full Course | TACO BAR - Food + Beverage"],
+      food: ["The Full Course + Taco Bar"],
       drink_options: [
         "Food + Beverage package",
         "Complimentary Champagne",

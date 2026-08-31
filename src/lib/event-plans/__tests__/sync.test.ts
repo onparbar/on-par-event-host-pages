@@ -191,7 +191,11 @@ describe("rolling Event Host plan synchronization", () => {
       expect.objectContaining({
         id: 62238275,
         name: "Amazon 08/21/2026",
-        food: expect.arrayContaining(["Jumbo Wing Bar", "5 Dessert Platters"]),
+        food: expect.arrayContaining([
+          "50 × The Full Course",
+          "50 × Jumbo Wing Bar",
+          "5 Dessert Platters",
+        ]),
       }),
     ]);
   });
