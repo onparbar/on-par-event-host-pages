@@ -1,12 +1,14 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
 import {
   getKitchenEventChecklist,
   getKitchenEventFoodAddOns,
   updateKitchenEventFoodAddOns,
 } from "@/lib/kitchen/sync";
 import { KitchenFoodAddOnConflictError } from "@/lib/kitchen/storage";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,13 +17,6 @@ type FoodAddOnRequest = {
   food?: unknown;
   expectedRevision?: unknown;
 };
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
 
 function errorResponse(error: unknown) {
   const message =
@@ -35,11 +30,6 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ eventId: string }> },
 ) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
-  }
-
   try {
     const { eventId } = await context.params;
     return NextResponse.json(await getKitchenEventFoodAddOns(eventId));
@@ -52,9 +42,8 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ eventId: string }> },
 ) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: FoodAddOnRequest;

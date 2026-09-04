@@ -1,7 +1,7 @@
 # On Par Event Host Pages
 
-Next.js app for On Par event operations on Vercel, including the protected
-Event Kitchen Prep Dashboard.
+Next.js app for On Par event operations on Vercel, including the Event Kitchen
+Prep Dashboard and protected Admin area.
 
 ## Knowledge Base
 
@@ -10,11 +10,13 @@ Event Kitchen Prep Dashboard.
 ## Routes
 
 - `/` - index
-- `/floor-plans` - protected, persistent Event Host floor-plan editor
-- `/entertainment-schedules` - protected, persistent Entertainment Schedule resource grid
-- `/itineraries` - protected rolling Event Host plans and itinerary cards
-- `/kitchen` - protected daily Event Kitchen Prep Dashboard and print checklist
-- `/event-host-addons` - protected live food add-on entry for kitchen events
+- `/floor-plans` - persistent Event Host floor-plan viewer and live sync
+- `/entertainment-schedules` - persistent Entertainment Schedule resource grid
+- `/itineraries` - rolling Event Host plans and itinerary cards
+- `/checklists` - Event Host checklists
+- `/kitchen` - daily Event Kitchen Prep Dashboard and print checklist
+- `/event-host-addons` - live food add-on entry for kitchen events
+- `/admin` - access-code-protected Admin area
 
 ## Local Development
 
@@ -23,9 +25,11 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000/kitchen`. In non-production development, the
-existing admin gate retains its local fallback PIN. Set `EVENT_HOST_ADMIN_PIN`
-in an untracked `.env.local` to use a different four-digit value. Production
+Open `http://localhost:3000/kitchen`. Operational pages do not prompt for an
+Event Host access code; use Vercel Deployment Protection or another approved
+outer access boundary in production. The Admin pages retain the existing gate
+and local fallback PIN in non-production. Set `EVENT_HOST_ADMIN_PIN` in an
+untracked `.env.local` to use a different four-digit value. Production Admin
 does not have a fallback and remains locked until this variable is configured.
 Set `EVENT_HOST_SESSION_SECRET` to an independent random value of at least 32
 characters so the signed HTTP-only session cookie cannot be derived from the
@@ -131,9 +135,9 @@ clamping. A server-only synchronization:
 - deactivates plans that disappear from the refreshed window without changing
   any Tripleseat record.
 
-Vercel calls `GET /api/event-plans/sync` daily using `CRON_SECRET`. An
-authenticated Event Host user can also refresh immediately from `/itineraries`,
-which calls the protected `POST` form of the same route.
+Vercel calls `GET /api/event-plans/sync` daily using `CRON_SECRET`. Event Host
+staff can also refresh immediately from `/itineraries`; the browser calls the
+same-origin-only `POST` form of the same route.
 
 Tripleseat’s current public scope names are `read` and `write`; no
 resource-specific scope catalog is published. The application performs only
@@ -226,7 +230,8 @@ The Entertainment Schedule migration is
 `supabase/migrations/20260729152402_entertainment_schedule.sql`. It seeds the
 33 canonical physical resources and creates event snapshots, reservations,
 audit history, and per-operating-day sync state. Its tables are also denied to
-browser roles and accessed only from protected server routes. See
+browser roles and accessed only from server routes; operational mutations are
+limited to same-origin browser requests. See
 `docs/entertainment-schedule.md` for matching rules, floor-plan setup, API
 behavior, and rollout validation.
 

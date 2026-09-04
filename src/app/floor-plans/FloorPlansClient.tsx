@@ -538,11 +538,6 @@ export default function FloorPlansClient({
     return () => channel.close();
   }, [router]);
 
-  async function handleLogout() {
-    await fetch("/api/admin-session", { method: "DELETE" });
-    window.location.reload();
-  }
-
   async function handleLiveSync(date: string) {
     setLiveByDate((current) => ({
       ...current,
@@ -650,7 +645,6 @@ export default function FloorPlansClient({
       }
       allowFullscreen
       mainClassName="floor-plan-page"
-      onLock={() => void handleLogout()}
       sectionSubtitle="Event Host"
       sectionTitle="Floor Plans"
     >

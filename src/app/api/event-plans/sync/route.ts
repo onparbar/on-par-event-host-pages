@@ -1,14 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { hasAdminSession } from "@/lib/admin-auth";
 import { syncRollingEventPlans } from "@/lib/event-plans/sync";
 import {
   ensureConfirmedContractFloorPlanWindow,
   maintainTwoWeekFloorPlanHorizon,
 } from "@/lib/floor-plans/service";
 import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -101,9 +103,9 @@ export async function GET(request: Request) {
   return runSync();
 }
 
-export async function POST() {
-  if (!hasAdminSession(await cookies())) {
-    return unauthorized();
+export async function POST(request: Request) {
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
   return runSync();
 }

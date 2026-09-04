@@ -1,6 +1,3 @@
-import { cookies } from "next/headers";
-import AdminAccessGate from "@/app/admin/AdminAccessGate";
-import { hasAdminSession } from "@/lib/admin-auth";
 import { loadAdminState } from "@/lib/admin-state";
 import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { floorPlans, floorPlanSpecialPages } from "@/lib/events";
@@ -16,12 +13,15 @@ import FloorPlansClient, {
 
 export const metadata = {
   title: "Floor Plans | On Par Event Host",
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function FloorPlansPage() {
-  if (!hasAdminSession(await cookies())) return <AdminAccessGate />;
   const today = todayInEntertainmentTimeZone();
   const storage = getFloorPlanStorage();
   await ensureConfirmedContractFloorPlanWindow(today, storage);

@@ -1,11 +1,13 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
 import {
   updateKitchenItemCompletion,
   updateKitchenItemPrepped,
   updateKitchenItemReadiness,
 } from "@/lib/kitchen/sync";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,22 +19,14 @@ type ItemStateRequest = {
   completed?: unknown;
 };
 
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
-
 export async function PATCH(
   request: Request,
   context: {
     params: Promise<{ eventId: string; itemKey: string }>;
   },
 ) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: ItemStateRequest;

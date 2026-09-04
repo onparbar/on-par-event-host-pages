@@ -3,18 +3,11 @@ import {
   assertEntertainmentDate,
   getEntertainmentDay,
 } from "@/lib/entertainment/sync";
-import {
-  entertainmentUnauthorized,
-  requireEntertainmentSession,
-} from "../_auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  if (!(await requireEntertainmentSession())) {
-    return entertainmentUnauthorized();
-  }
   const date = new URL(request.url).searchParams.get("date") ?? "";
   try {
     assertEntertainmentDate(date);

@@ -1146,11 +1146,6 @@ export default function KitchenDashboard() {
     }
   }
 
-  async function lockDashboard() {
-    await fetch("/api/admin-session", { method: "DELETE" });
-    window.location.reload();
-  }
-
   function changeDashboardZoom(direction: -1 | 1) {
     setDashboardZoom((current) => {
       const next = nextKitchenZoom(current, direction);
@@ -1227,7 +1222,6 @@ export default function KitchenDashboard() {
         }
         allowFullscreen
         blocked={hasBlockingOverlay}
-        onLock={() => void lockDashboard()}
         sectionSubtitle="Prep dashboard"
         sectionTitle="Event Kitchen"
       />
@@ -1373,11 +1367,8 @@ export default function KitchenDashboard() {
           <section className="kitchen-reconnect-panel" aria-label="Tripleseat reconnection required">
             <div>
               <strong>Tripleseat authorization expired</strong>
-              <span>Reconnect once, then use Sync now again for the selected date.</span>
+              <span>Ask an administrator to reconnect Tripleseat, then use Sync now again for the selected date.</span>
             </div>
-            <a className="kitchen-primary-button kitchen-reconnect-link" href="/api/kitchen/oauth/start">
-              Reconnect Tripleseat
-            </a>
           </section>
         ) : null}
 

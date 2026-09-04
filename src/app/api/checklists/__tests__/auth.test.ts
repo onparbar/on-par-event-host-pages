@@ -1,19 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cookies } from "next/headers";
-import { createAdminSessionValue } from "@/lib/admin-auth";
 import { checklistEvents } from "@/lib/checklist-events";
 import {
   defaultChecklistState,
   type ChecklistRecord,
 } from "@/lib/checklist-model";
-import { saveChecklist } from "@/lib/checklist-storage";
+import {
+  listChecklistRecords,
+  saveChecklist,
+} from "@/lib/checklist-storage";
 import { synchronizeChecklistFoodAddOns } from "@/lib/gotab/sync-checklist-addons";
 import { GET, PUT } from "../route";
 import { POST } from "../submit/route";
-
-vi.mock("next/headers", () => ({
-  cookies: vi.fn(),
-}));
 
 vi.mock("@/lib/checklist-storage", () => ({
   listChecklistRecords: vi.fn(),
@@ -29,43 +26,6 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function configureForgedProductionSession() {
-  vi.stubEnv("NODE_ENV", "production");
-  vi.stubEnv("EVENT_HOST_ADMIN_PIN", "1234");
-  vi.stubEnv(
-    "EVENT_HOST_SESSION_SECRET",
-    "checklist-test-session-secret-123456789",
-  );
-  vi.mocked(cookies).mockResolvedValue({
-    get() {
-      return {
-        name: "event-host-admin-session",
-        value: "forged-checklist-cookie",
-      };
-    },
-  } as never);
-}
-
-function configureValidProductionSession() {
-  vi.stubEnv("NODE_ENV", "production");
-  vi.stubEnv("EVENT_HOST_ADMIN_PIN", "1234");
-  vi.stubEnv(
-    "EVENT_HOST_SESSION_SECRET",
-    "checklist-test-session-secret-123456789",
-  );
-  const sessionValue = createAdminSessionValue();
-  vi.mocked(cookies).mockResolvedValue({
-    get() {
-      return sessionValue
-        ? {
-            name: "event-host-admin-session",
-            value: sessionValue,
-          }
-        : undefined;
-    },
-  } as never);
-}
-
 function checklistFixture() {
   const event = checklistEvents[0];
   const checklist = defaultChecklistState(event.date);
@@ -80,47 +40,56 @@ function checklistFixture() {
   return { checklist, event, record };
 }
 
-describe("Event Host checklist API authorization", () => {
-  it("rejects unauthenticated reads", async () => {
-    configureForgedProductionSession();
+describe("Event Host checklist operational access", () => {
+  it("allows anonymous operational reads", async () => {
+    const { record } = checklistFixture();
+    vi.mocked(listChecklistRecords).mockResolvedValue([record]);
 
     const response = await GET();
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ records: [record] });
   });
 
-  it("rejects unauthenticated draft saves", async () => {
-    configureForgedProductionSession();
+  it("rejects cross-origin draft saves in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
 
     const response = await PUT(
       new Request("https://example.test/api/checklists", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          origin: "https://malicious.example",
+        },
         body: JSON.stringify({ eventId: 1, checklist: {} }),
       }),
     );
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
+    expect(saveChecklist).not.toHaveBeenCalled();
   });
 
-  it("rejects unauthenticated submissions", async () => {
-    configureForgedProductionSession();
+  it("rejects cross-origin submissions in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
 
     const response = await POST(
       new Request("https://example.test/api/checklists/submit", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          origin: "https://malicious.example",
+        },
         body: JSON.stringify({ eventId: 1, checklist: {} }),
       }),
     );
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
+    expect(saveChecklist).not.toHaveBeenCalled();
   });
 });
 
 describe("Event Host checklist add-on routing", () => {
   it("mirrors Food to Kitchen only when the live-sync flag is set", async () => {
-    configureValidProductionSession();
     const { checklist, event, record } = checklistFixture();
     vi.mocked(saveChecklist).mockResolvedValue(record);
     vi.mocked(synchronizeChecklistFoodAddOns).mockResolvedValue({
@@ -138,7 +107,10 @@ describe("Event Host checklist add-on routing", () => {
     const response = await PUT(
       new Request("https://example.test/api/checklists", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          origin: "https://example.test",
+        },
         body: JSON.stringify({
           eventId: event.id,
           checklist,
@@ -158,14 +130,16 @@ describe("Event Host checklist add-on routing", () => {
   });
 
   it("keeps Entertainment-only draft saves out of Kitchen", async () => {
-    configureValidProductionSession();
     const { checklist, event, record } = checklistFixture();
     vi.mocked(saveChecklist).mockResolvedValue(record);
 
     const response = await PUT(
       new Request("https://example.test/api/checklists", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          origin: "https://example.test",
+        },
         body: JSON.stringify({
           eventId: event.id,
           checklist,
@@ -179,7 +153,6 @@ describe("Event Host checklist add-on routing", () => {
   });
 
   it("preserves the final Admin submission if Kitchen is unavailable", async () => {
-    configureValidProductionSession();
     const { checklist, event, record } = checklistFixture();
     const submittedRecord = {
       ...record,
@@ -194,7 +167,10 @@ describe("Event Host checklist add-on routing", () => {
     const response = await POST(
       new Request("https://example.test/api/checklists/submit", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          origin: "https://example.test",
+        },
         body: JSON.stringify({
           eventId: event.id,
           checklist,

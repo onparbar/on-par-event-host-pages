@@ -1,6 +1,3 @@
-import { cookies } from "next/headers";
-import AdminAccessGate from "@/app/admin/AdminAccessGate";
-import { hasAdminSession } from "@/lib/admin-auth";
 import ItinerariesClient from "./ItinerariesClient";
 import { loadAdminState } from "@/lib/admin-state";
 import { activeEvents } from "@/lib/event-lifecycle";
@@ -12,15 +9,15 @@ import type { ItineraryAsset } from "@/lib/event-plans/types";
 
 export const metadata = {
   title: "Itineraries | On Par Event Host",
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function ItinerariesPage() {
-  if (!hasAdminSession(await cookies())) {
-    return <AdminAccessGate />;
-  }
-
   const [adminState, eventPlanWindow] = await Promise.all([
     loadAdminState(),
     loadEventPlanWindow(),

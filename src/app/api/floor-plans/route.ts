@@ -2,6 +2,10 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { hasAdminSession } from "@/lib/admin-auth";
 import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
+import {
   approveFloorPlan,
   generateFloorPlan,
   getFloorPlanDay,
@@ -39,7 +43,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!hasAdminSession(await cookies())) return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
+  }
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;
@@ -51,6 +57,9 @@ export async function POST(request: Request) {
   }
   const date = typeof body.date === "string" ? body.date : "";
   const action = typeof body.action === "string" ? body.action : "";
+  if (action !== "refresh" && !hasAdminSession(await cookies())) {
+    return unauthorized();
+  }
   try {
     if (action === "refresh") return NextResponse.json(await refreshFloorPlanSources(date));
     if (action === "generate") {

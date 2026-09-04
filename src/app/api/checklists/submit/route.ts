@@ -1,6 +1,4 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "../../../../lib/admin-auth";
 import { checklistEventsForPlans } from "../../../../lib/checklist-events";
 import type { EventChecklistState } from "../../../../lib/checklist-model";
 import { saveChecklist } from "../../../../lib/checklist-storage";
@@ -12,6 +10,10 @@ import {
   vipPrepExternalId,
 } from "../../../../lib/vip-prep/client";
 import { synchronizeChecklistFoodAddOns } from "../../../../lib/gotab/sync-checklist-addons";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "../../../../lib/operational-access";
 
 export const dynamic = "force-dynamic";
 
@@ -24,20 +26,9 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
-async function authorized() {
-  return hasAdminSession(await cookies());
-}
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
-
 export async function POST(request: Request) {
-  if (!(await authorized())) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: SubmitChecklistRequest;

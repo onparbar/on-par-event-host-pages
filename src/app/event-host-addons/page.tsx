@@ -1,7 +1,4 @@
-import { cookies } from "next/headers";
-import AdminAccessGate from "@/app/admin/AdminAccessGate";
 import ChecklistsClient from "@/app/checklists/ChecklistsClient";
-import { hasAdminSession } from "@/lib/admin-auth";
 import { loadAdminState } from "@/lib/admin-state";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
 import { loadEventPlanWindow } from "@/lib/event-plans/sync";
@@ -20,12 +17,6 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function EventHostAddOnsPage() {
-  const cookieStore = await cookies();
-
-  if (!hasAdminSession(cookieStore)) {
-    return <AdminAccessGate />;
-  }
-
   const [adminState, eventPlanWindow] = await Promise.all([
     loadAdminState(),
     loadEventPlanWindow(),

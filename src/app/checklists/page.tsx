@@ -1,7 +1,4 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import AdminAccessGate from "@/app/admin/AdminAccessGate";
-import { hasAdminSession } from "@/lib/admin-auth";
 import { loadAdminState } from "@/lib/admin-state";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
 import { availableChecklistEvents } from "@/lib/event-lifecycle";
@@ -26,12 +23,6 @@ export default async function ChecklistsPage({
   const { tab } = await searchParams;
   if (tab === "addons") {
     redirect("/event-host-addons");
-  }
-
-  const cookieStore = await cookies();
-
-  if (!hasAdminSession(cookieStore)) {
-    return <AdminAccessGate />;
   }
 
   const [adminState, eventPlanWindow] = await Promise.all([

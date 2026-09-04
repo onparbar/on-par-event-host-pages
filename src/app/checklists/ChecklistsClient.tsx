@@ -172,11 +172,6 @@ export default function ChecklistsClient({
     ? "Manage Food and Entertainment add-ons in their own shared event workspace."
     : "Complete event tasks with drafts saved automatically to the shared event record.";
 
-  async function lockPortal() {
-    await fetch("/api/admin-session", { method: "DELETE" });
-    window.location.reload();
-  }
-
   useEffect(() => {
     let isCancelled = false;
 
@@ -446,7 +441,6 @@ export default function ChecklistsClient({
     return (
       <PortalShell
         mainClassName="page checklist-page"
-        onLock={() => void lockPortal()}
         sectionSubtitle={isAddOnWorkspace ? "Food & entertainment" : "Tablet workflow"}
         sectionTitle={sectionTitle}
       >
@@ -519,7 +513,6 @@ export default function ChecklistsClient({
   return (
     <PortalShell
       mainClassName="page checklist-page"
-      onLock={() => void lockPortal()}
       sectionSubtitle={isAddOnWorkspace ? "Food & entertainment" : "Tablet workflow"}
       sectionTitle={sectionTitle}
     >

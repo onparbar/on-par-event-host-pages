@@ -961,11 +961,6 @@ export default function EntertainmentScheduleDashboard({
     }
   }, [payload, selectedDate]);
 
-  async function lockDashboard() {
-    await fetch("/api/admin-session", { method: "DELETE" });
-    window.location.reload();
-  }
-
   function finishEditing() {
     if (state === "saving") {
       return;
@@ -1728,7 +1723,6 @@ export default function EntertainmentScheduleDashboard({
         }
         allowFullscreen
         blocked={Boolean(modal)}
-        onLock={() => void lockDashboard()}
         sectionSubtitle="Resource operations"
         sectionTitle="Entertainment Schedule"
       />
