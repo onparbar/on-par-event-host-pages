@@ -161,8 +161,8 @@ function entertainmentReservation(
 }
 
 describe("floor-plan capacities and generation", () => {
-  it("counts rectangle tables as 10 seats", () => {
-    expect(getFloorPlanArea("main-rect-left-1")?.capacity).toBe(10);
+  it("counts venue rectangle tables as 8 seats", () => {
+    expect(getFloorPlanArea("main-rect-left-1")?.capacity).toBe(8);
   });
 
   it("counts square tables as 4 seats", () => {
@@ -176,6 +176,18 @@ describe("floor-plan capacities and generation", () => {
     );
     expect(seatingCapacity(selected)).toBe(24);
     expect(selected.map((item) => item.id)).toEqual(["r1", "r2", "s1"]);
+  });
+
+  it("highlights every available table when the mapped inventory is short", () => {
+    const selected = selectSmallestTableCombination(
+      [
+        { ...table("r1", "rectangle-table", 0), capacity: 8 },
+        { ...table("r2", "rectangle-table", 30), capacity: 8 },
+      ],
+      20,
+    );
+
+    expect(selected.map((item) => item.id)).toEqual(["r1", "r2"]);
   });
 
   it("generates seating that meets or exceeds the guest count", () => {
@@ -197,6 +209,123 @@ describe("floor-plan capacities and generation", () => {
     ).toBe(true);
   });
 
+  it("highlights every contracted room and combines their seating inventory", () => {
+    const source = plan([
+      floorPlanEvent({
+        contractedAreaIds: ["vip-1", "vip-2"],
+        guestCount: 40,
+        source: {
+          rooms: ["VIP 1", "VIP 2"],
+          food: [],
+          entertainment: [],
+          operationalNotes: [],
+          reviewReasons: [],
+        },
+      }),
+    ]);
+    const generated = generateFloorPlanReservations(source, "fill-missing");
+    const rooms = generated
+      .filter((item) => item.reservationType === "room")
+      .map((item) => item.areaId);
+    const tables = generated
+      .filter((item) => item.reservationType === "seating")
+      .map((item) => getFloorPlanArea(item.areaId)!)
+      .filter(Boolean);
+
+    expect(rooms).toEqual(["vip-1", "vip-2"]);
+    expect(seatingCapacity(tables)).toBeGreaterThanOrEqual(40);
+    expect(
+      tables.every((item) => ["vip-1", "vip-2"].includes(item.parentAreaId ?? "")),
+    ).toBe(true);
+  });
+
+  it("reserves only the booked room for paid VIP reservations", () => {
+    const generated = generateFloorPlanReservations(
+      plan([
+        floorPlanEvent({
+          tripleseatEventId: "vip-reservation-uuid",
+          contractedAreaIds: ["vip-2"],
+          guestCount: 16,
+          source: {
+            rooms: ["VIP 2"],
+            food: [],
+            entertainment: [],
+            operationalNotes: [],
+            reviewReasons: [],
+          },
+        }),
+      ]),
+      "fill-missing",
+    );
+
+    expect(generated).toEqual([
+      expect.objectContaining({ areaId: "vip-2", reservationType: "room" }),
+    ]);
+  });
+
+  it("removes surrounding VIP 1 tables and custom highlights from paid VIP bookings", () => {
+    const vipEvent = floorPlanEvent({
+      tripleseatEventId: "vip-reservation-uuid",
+      contractedAreaIds: ["vip-1"],
+      guestCount: 16,
+      source: {
+        rooms: ["VIP 1"],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    });
+    const document = plan([vipEvent]);
+    document.reservations = [
+      {
+        id: "legacy-vip-room",
+        floorPlanEventId: vipEvent.id,
+        areaId: "vip-1",
+        reservationType: "room",
+        startAt: "2026-08-15T13:00:00-04:00",
+        endAt: "2026-08-15T15:00:00-04:00",
+        label: "VIP 1",
+        source: "generated",
+        lockedByUser: false,
+      },
+      {
+        id: "legacy-vip-table",
+        floorPlanEventId: vipEvent.id,
+        areaId: "vip1-extra-front-1",
+        reservationType: "seating",
+        startAt: vipEvent.startAt,
+        endAt: vipEvent.endAt,
+        label: "VIP table",
+        source: "manual",
+        lockedByUser: true,
+      },
+      {
+        id: "legacy-vip-custom",
+        floorPlanEventId: vipEvent.id,
+        areaId: "vip-1",
+        reservationType: "custom",
+        startAt: vipEvent.startAt,
+        endAt: vipEvent.endAt,
+        label: "Surrounding tables",
+        source: "manual",
+        lockedByUser: true,
+        customGeometry: { x: 1000, y: 390, width: 200, height: 120 },
+      },
+    ];
+
+    const generated = generateFloorPlanReservations(document, "fill-missing");
+
+    expect(generated).toEqual([
+      expect.objectContaining({
+        areaId: "vip-1",
+        reservationType: "room",
+        startAt: vipEvent.startAt,
+        endAt: vipEvent.endAt,
+      }),
+    ]);
+  });
+
   it("assigns exactly one designated ADA food table per event", () => {
     const generated = generateFloorPlanReservations(plan(), "fill-missing");
     const food = generated.filter((item) => item.reservationType === "food-table");
@@ -204,12 +333,116 @@ describe("floor-plan capacities and generation", () => {
     expect(getFloorPlanArea(food[0].areaId)).toMatchObject({ isAda: true, canBeFoodTable: true });
   });
 
-  it("does not add a second food table for more than 100 guests", () => {
-    const source = plan([floorPlanEvent({ guestCount: 140 })]);
+  it("fills the missing August 6 VIP 1 table and fixed conversation highlights", () => {
+    const event = floorPlanEvent({
+      guestCount: 30,
+      contractedAreaIds: ["vip-1"],
+      source: {
+        rooms: ["VIP 1"],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    });
+    const existing = [
+      reservation(event, "vip1-extra-front-1"),
+      reservation(event, "vip1-extra-front-2"),
+      reservation(event, "vip1-extra-front-3"),
+    ];
+
+    const generated = generateFloorPlanReservations(
+      plan([event], existing),
+      "fill-missing",
+    );
+    const seatingIds = generated
+      .filter((item) => item.reservationType === "seating")
+      .map((item) => item.areaId);
+
+    expect(seatingIds).toEqual(expect.arrayContaining([
+      "vip1-extra-front-4",
+      "vip1-conversation-wall",
+      "vip1-extra-convo",
+    ]));
+  });
+
+  it("highlights the VIP 2 extra table even when it cannot seat every guest", () => {
+    const event = floorPlanEvent({
+      guestCount: 11,
+      contractedAreaIds: ["vip-2"],
+      source: {
+        rooms: ["VIP 2"],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    });
+
+    const generated = generateFloorPlanReservations(plan([event]), "fill-missing");
+
+    expect(generated).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        areaId: "vip2-extra-bowling-table",
+        reservationType: "seating",
+      }),
+    ]));
+  });
+
+  it("fills the fourth Main Dining table for a 30-guest event", () => {
+    const event = floorPlanEvent({ guestCount: 30 });
+    const existing = [
+      reservation(event, "main-rect-left-1"),
+      reservation(event, "main-rect-left-2"),
+      reservation(event, "main-rect-left-3"),
+    ];
+
+    const generated = generateFloorPlanReservations(
+      plan([event], existing),
+      "fill-missing",
+    );
+
+    expect(generated).toEqual(expect.arrayContaining([
+      expect.objectContaining({ areaId: "main-rect-left-4" }),
+    ]));
+  });
+
+  it.each([
+    [100, 1],
+    [101, 2],
+    [150, 2],
+  ])("assigns %i guests the required food-table count", (guestCount, expected) => {
+    const source = plan([floorPlanEvent({ guestCount })]);
     const food = generateFloorPlanReservations(source, "fill-missing").filter(
       (item) => item.reservationType === "food-table",
     );
-    expect(food).toHaveLength(1);
+    expect(food).toHaveLength(expected);
+  });
+
+  it("adds the missing mirrored food table without replacing a saved table", () => {
+    const event = floorPlanEvent({ guestCount: 150 });
+    const savedFoodTable: FloorPlanReservation = {
+      ...reservation(event, "main-food-1"),
+      id: "saved-food-table",
+      reservationType: "food-table",
+      label: "F",
+      source: "manual",
+      lockedByUser: true,
+    };
+
+    const generated = generateFloorPlanReservations(
+      plan([event], [savedFoodTable]),
+      "fill-missing",
+    );
+    const food = generated.filter(
+      (item) => item.reservationType === "food-table",
+    );
+
+    expect(food).toHaveLength(2);
+    expect(food).toContainEqual(savedFoodTable);
+    expect(food).toEqual(expect.arrayContaining([
+      expect.objectContaining({ areaId: "main-food-2" }),
+    ]));
   });
 
   it("preserves manual locked assignments during partial regeneration", () => {
@@ -304,7 +537,42 @@ describe("time and buyout conflicts", () => {
 });
 
 describe("validation, lifecycle, and shared records", () => {
-  it("does not require a timed mini-golf label", () => {
+  it("blocks approval when an event over 100 guests has only one food table", () => {
+    const event = floorPlanEvent({ guestCount: 150 });
+    const food = (areaId: string): FloorPlanReservation => ({
+      ...reservation(event, areaId),
+      reservationType: "food-table",
+      label: "F",
+    });
+
+    const oneTableValidation = validateFloorPlan(
+      plan([event], [food("main-food-1")]),
+      [],
+      [],
+      [],
+    );
+    const twoTableValidation = validateFloorPlan(
+      plan([event], [food("main-food-1"), food("main-food-2")]),
+      [],
+      [],
+      [],
+    );
+
+    expect(
+      oneTableValidation.find((item) => item.code === "FOOD_TABLE")?.status,
+    ).toBe("Failed");
+    expect(
+      oneTableValidation.find((item) => item.code === "FOOD_TABLE_ADA")?.status,
+    ).toBe("Failed");
+    expect(
+      twoTableValidation.find((item) => item.code === "FOOD_TABLE")?.status,
+    ).toBe("Passed");
+    expect(
+      twoTableValidation.find((item) => item.code === "FOOD_TABLE_ADA")?.status,
+    ).toBe("Passed");
+  });
+
+  it("does not require an Entertainment Schedule reservation for mini golf", () => {
     const event = floorPlanEvent({
       source: {
         rooms: ["Main Dining Room"],
@@ -316,10 +584,11 @@ describe("validation, lifecycle, and shared records", () => {
     });
     const validation = validateFloorPlan(
       plan([event]),
-      [entertainmentReservation()],
+      [],
       [],
       [],
     );
+    expect(validation.find((item) => item.code === "ENTERTAINMENT_QUANTITY")?.status).toBe("Passed");
     expect(validation.find((item) => item.code === "ENTERTAINMENT_TIME")?.status).toBe("Passed");
   });
 

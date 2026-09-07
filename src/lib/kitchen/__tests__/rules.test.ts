@@ -196,6 +196,11 @@ describe("time calculations", () => {
       "bar-selection-quantity",
     );
     expect(row(checklist, "taco-beef").quantity).toBe(5);
+    expect(row(checklist, "taco-black-beans")).toMatchObject({
+      quantity: 1,
+      numberOfPans: 2,
+      panSize: "1/3",
+    });
     expect(row(checklist, "taco-tortillas").quantity).toBe(2);
     expect(checklist.chafingDishes.bars).toBe(1);
     expect(warningCodes(checklist)).not.toContain(
@@ -451,7 +456,52 @@ describe("Wing Bar", () => {
     ).toBe(2);
   });
 
-  it("counts one chafing dish per selected bar per buffet table", () => {
+  it("doubles the complete chafing setup only above 200 guests", () => {
+    const event = (guestCount: number) =>
+      packageEvent("Wing Bar", guestCount, [
+        {
+          name: "Wing Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]);
+
+    expect(generateKitchenChecklist(event(200)).chafingDishes).toEqual({
+      bars: 2,
+      hotPlatters: 1,
+      total: 3,
+    });
+    expect(generateKitchenChecklist(event(201)).chafingDishes).toEqual({
+      bars: 4,
+      hotPlatters: 2,
+      total: 6,
+    });
+  });
+
+  it("doubles platter-only chafing above 200 guests", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "Wing Platter",
+            quantity: 2,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+        ],
+        { guestCount: 201 },
+      ),
+    );
+
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 2,
+      total: 2,
+    });
+  });
+
+  it("counts buffet-table chafing separately from Appetizer Bar hot items", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent(
         [
@@ -462,7 +512,11 @@ describe("Wing Bar", () => {
         { guestCount: 80 },
       ),
     );
-    expect(checklist.chafingDishes.bars).toBe(4);
+    expect(checklist.chafingDishes).toEqual({
+      bars: 2,
+      hotPlatters: 1,
+      total: 3,
+    });
   });
 
   it("stops at the approved maximum of 250", () => {
@@ -472,7 +526,11 @@ describe("Wing Bar", () => {
     expect(warningCodes(checklist)).toContain(
       "GUEST_COUNT_OUT_OF_RANGE",
     );
-    expect(checklist.chafingDishes.bars).toBeNull();
+    expect(checklist.chafingDishes).toEqual({
+      bars: null,
+      hotPlatters: 0,
+      total: null,
+    });
   });
 });
 
@@ -506,21 +564,21 @@ describe("Appetizer Bar", () => {
       );
       expect(row(checklist, "appetizer-tater-kegs")).toMatchObject({
         quantity: groups * 42,
-        numberOfPans: Math.ceil((groups * 42) / 25),
+        numberOfPans: 1,
         panSize: "1/3",
       });
       expect(
         row(checklist, "appetizer-chicken-tenders"),
       ).toMatchObject({
         quantity: groups * 60,
-        numberOfPans: Math.ceil((groups * 60) / 25),
+        numberOfPans: 1,
         panSize: "1/3",
       });
       expect(
         row(checklist, "appetizer-mozzarella-sticks"),
       ).toMatchObject({
         quantity: groups * 6,
-        numberOfPans: Math.ceil((groups * 6) / 3),
+        numberOfPans: 1,
         panSize: "1/3",
       });
       expect(row(checklist, "sauce-marinara")).toMatchObject({
@@ -569,21 +627,21 @@ describe("Appetizer Bar", () => {
 
     expect(row(checklist, "appetizer-tater-kegs")).toMatchObject({
       quantity: 84,
-      numberOfPans: 4,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(
       row(checklist, "appetizer-mozzarella-sticks"),
     ).toMatchObject({
       quantity: 12,
-      numberOfPans: 4,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(
       row(checklist, "appetizer-chicken-tenders"),
     ).toMatchObject({
       quantity: 120,
-      numberOfPans: 5,
+      numberOfPans: 1,
       panSize: "1/3",
     });
   });
@@ -608,6 +666,34 @@ describe("Appetizer Bar", () => {
 });
 
 describe("dessert and platter quantities", () => {
+  it("uses the explicit Desert Platter contract quantity", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "Desert PlatterAssorted sweets for the event.",
+            quantity: 1,
+            sourceCategory: "Food Platters",
+            isFood: true,
+          },
+        ],
+        { guestCount: 75 },
+      ),
+    );
+
+    expect(row(checklist, "dessert-platter")).toMatchObject({
+      foodName: "Assorted Desserts",
+      quantity: 1,
+      unit: "pretzel plates",
+      numberOfPans: 1,
+      panSize: null,
+    });
+    expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
+    expect(
+      checklist.referenceConflicts.map((conflict) => conflict.code),
+    ).not.toContain("DESSERT_30_VS_35");
+  });
+
   it("uses the explicit Assorted Deserts contract quantity as pretzel plates", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent(
@@ -627,7 +713,7 @@ describe("dessert and platter quantities", () => {
       foodName: "Assorted Desserts",
       quantity: 4,
       unit: "pretzel plates",
-      numberOfPans: null,
+      numberOfPans: 4,
       panSize: null,
     });
     expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
@@ -652,7 +738,7 @@ describe("dessert and platter quantities", () => {
       );
       expect(row(checklist, "dessert-platter")).toMatchObject({
         quantity: platters,
-        numberOfPans: null,
+        numberOfPans: platters,
         panSize: null,
       });
       expect(
@@ -668,33 +754,37 @@ describe("dessert and platter quantities", () => {
       64,
       "Food Platters",
       25,
+      "1/3",
     ],
     [
       "Chicken Tender Platter",
       "platter-chicken-tenders",
-      50,
+      64,
       "Food Platters",
       25,
+      "1/3",
     ],
     [
       "Mozzarella Sticks",
       "platter-mozzarella-sticks",
       4,
       "Food Platters",
-      3,
+      2,
+      "1/2",
     ],
-    ["Wing Platter", "platter-wings", 64, "Food Platters", 25],
-    ["Veggie Tray", "platter-veggie-tray", 1, "Food Platters", null],
-    ["Fry Platter", "platter-fries", 1, "Food Platters", null],
+    ["Wing Platter", "platter-wings", 64, "Food Platters", 25, "1/3"],
+    [
+      "Veggie Tray",
+      "platter-veggie-tray",
+      1,
+      "Food Platters",
+      null,
+      null,
+    ],
+    ["Fry Platter", "platter-fries", 1, "Food Platters", null, null],
   ] as const;
 
-  for (const [
-    name,
-    key,
-    multiplier,
-    sourceCategory,
-    panCapacity,
-  ] of platterCases) {
+  for (const [name, key, multiplier, sourceCategory] of platterCases) {
     it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])(
       `multiplies ${name} quantity and packs %i platter(s)`,
       (platterCount: number) => {
@@ -711,13 +801,18 @@ describe("dessert and platter quantities", () => {
         const generatedRow = row(checklist, key);
         const expectedQuantity = platterCount * multiplier;
         expect(generatedRow.quantity).toBe(expectedQuantity);
+        const isHotPlatter = key !== "platter-veggie-tray";
         expect(generatedRow.numberOfPans).toBe(
-          panCapacity == null
-            ? null
-            : Math.ceil(expectedQuantity / panCapacity),
+          isHotPlatter
+            ? platterCount === 1
+              ? 3
+              : platterCount
+            : null,
         );
         expect(generatedRow.panSize).toBe(
-          panCapacity == null ? null : "1/3",
+          isHotPlatter
+            ? "1/3"
+            : null,
         );
       },
     );
@@ -740,7 +835,7 @@ describe("dessert and platter quantities", () => {
       "Chicken Tender PlatterFried chicken tenders with ranch dipping sauce.",
       "platter-chicken-tenders",
       4,
-      200,
+      256,
     ],
     [
       "Veggie TrayAssorted fresh vegetables served with ranch dressing.",
@@ -764,13 +859,25 @@ describe("dessert and platter quantities", () => {
       "Chicken Tender PlatterFried chicken tenders with ranch dipping sauce",
       "platter-chicken-tenders",
       1,
-      50,
+      64,
     ],
     [
       "Veggie TrayAssorted fresh vegetables served with ranch dressing",
       "platter-veggie-tray",
       1,
       1,
+    ],
+    [
+      "Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack.",
+      "platter-fries",
+      1,
+      1,
+    ],
+    [
+      "Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack",
+      "platter-fries",
+      2,
+      2,
     ],
   ] as const)(
     "recognizes a Tripleseat platter name with its appended description",
@@ -968,7 +1075,7 @@ describe("live Event Host add-on calculations", () => {
     );
   });
 
-  it("keeps unresolved live mozzarella and veggie requirements under review", () => {
+  it("resolves live mozzarella marinara while keeping veggie ranch under review", () => {
     const liveFoodAddOns = translateEventHostFoodAddOns(
       {
         "mozzarella-sticks": { quantity: 1 },
@@ -982,15 +1089,20 @@ describe("live Event Host add-on calculations", () => {
       liveFoodAddOns,
     );
 
-    expect(row(checklist, "sauce-marinara").quantity).toBeNull();
+    expect(row(checklist, "sauce-marinara")).toMatchObject({
+      quantity: 1,
+      unit: "bowl",
+    });
     expect(row(checklist, "sauce-ranch").quantity).toBeNull();
     expect(warningCodes(checklist)).toEqual(
       expect.arrayContaining([
         "UNRESOLVED_PREP_LEAD",
         "UNCONFIGURED_KITCHEN_MORNING",
         "UNRESOLVED_SAUCE_QUANTITY",
-        "UNAPPROVED_PLATTER_PACKING",
       ]),
+    );
+    expect(warningCodes(checklist)).not.toContain(
+      "UNAPPROVED_PLATTER_PACKING",
     );
     expect(checklist.timing.earliestPrepTime).toBeNull();
     expect(checklist.needsReview).toBe(true);
@@ -1189,15 +1301,78 @@ describe("platter ranch bowls", () => {
 });
 
 describe("platter packing and chafing dishes", () => {
+  it("packs one mozzarella platter into three third pans and one chafing dish", () => {
+    const checklist = generateKitchenChecklist(
+      packageEvent("Taco Bar", 11, [
+        {
+          name: "Mozzarella Sticks",
+          quantity: 1,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    expect(row(checklist, "platter-mozzarella-sticks")).toMatchObject({
+      quantity: 4,
+      unit: "pounds",
+      numberOfPans: 3,
+      panSize: "1/3",
+    });
+    expect(row(checklist, "sauce-marinara")).toMatchObject({
+      quantity: 1,
+      unit: "bowl",
+    });
+    expect(checklist.chafingDishes).toEqual({
+      bars: 1,
+      hotPlatters: 1,
+      total: 2,
+    });
+    expect(warningCodes(checklist)).not.toContain(
+      "UNAPPROVED_PLATTER_PACKING",
+    );
+    expect(warningCodes(checklist)).not.toContain(
+      "UNRESOLVED_SAUCE_QUANTITY",
+    );
+  });
+
+  it("adds one marinara bowl for every mozzarella platter", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent([
+        {
+          name: "Mozzarella Sticks",
+          quantity: 3,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    expect(row(checklist, "sauce-marinara")).toMatchObject({
+      quantity: 3,
+      unit: "bowls",
+    });
+    expect(warningCodes(checklist)).not.toContain(
+      "UNRESOLVED_SAUCE_QUANTITY",
+    );
+  });
+
   it.each([
-    [2, "1/2", 1],
-    [3, "1/3", 1],
-    [4, "1/2", 2],
-    [6, "1/3", 2],
+    [1, 3, "1/3", 1],
+    [2, 2, "1/3", 1],
+    [3, 3, "1/3", 1],
+    [4, 4, "1/3", 2],
+    [5, 5, "1/3", 2],
+    [6, 6, "1/3", 2],
+    [7, 7, "1/3", 3],
+    [8, 8, "1/3", 3],
+    [9, 9, "1/3", 3],
+    [10, 10, "1/3", 4],
   ] as const)(
     "approves %i same-food hot platters",
     (
       platterCount: number,
+      panCount: number,
       panSize: "1/2" | "1/3",
       chafingDishes: number,
     ) => {
@@ -1208,24 +1383,9 @@ describe("platter packing and chafing dishes", () => {
       ).toEqual({
         status: "approved",
         totalHotPlatters: platterCount,
-        panCount: platterCount,
+        panCount,
         panSize,
         chafingDishes,
-      });
-    },
-  );
-
-  it.each([1, 5, 7, 8, 9, 10])(
-    "flags the unapproved total %i",
-    (platterCount: number) => {
-      expect(
-        packHotPlatters([
-          { key: "platter-wings", platterCount },
-        ]),
-      ).toMatchObject({
-        status: "needs-review",
-        reason: "unapproved-total",
-        chafingDishes: null,
       });
     },
   );
@@ -1242,6 +1402,78 @@ describe("platter packing and chafing dishes", () => {
       panCount: 2,
       panSize: "1/2",
       chafingDishes: 1,
+    });
+  });
+
+  it("packs the AGDC appetizer items and fry platter into four half pans and two chafing dishes", () => {
+    const checklist = generateKitchenChecklist(
+      packageEvent("Appetizer Bar", 24, [
+        {
+          name: "Fry Platter",
+          quantity: 1,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    for (const key of [
+      "appetizer-tater-kegs",
+      "appetizer-mozzarella-sticks",
+      "appetizer-chicken-tenders",
+      "platter-fries",
+    ] as const) {
+      expect(row(checklist, key)).toMatchObject({
+        numberOfPans: 1,
+        panSize: "1/2",
+      });
+    }
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 2,
+      total: 2,
+    });
+  });
+
+  it("packs WPAFB's four distinct hot platter items into half pans", () => {
+    const platter = (name: string, quantity: number): KitchenSourceSelection => ({
+      name,
+      quantity,
+      sourceCategory: "Food Platters",
+      isFood: true,
+    });
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          platter("Tater Keg Platter", 2),
+          platter("Chicken Tender Platter", 1),
+          platter("Wing Platter", 2),
+          platter("Veggie Tray", 2),
+          platter("Fry Platter", 2),
+        ],
+        { eventName: "WPAFB 9/04/2026", guestCount: 150 },
+      ),
+    );
+
+    for (const [key, pans] of [
+      ["platter-tater-kegs", 2],
+      ["platter-chicken-tenders", 1],
+      ["platter-wings", 2],
+      ["platter-fries", 2],
+    ] as const) {
+      expect(row(checklist, key)).toMatchObject({
+        numberOfPans: pans,
+        panSize: "1/2",
+      });
+    }
+    expect(row(checklist, "platter-veggie-tray")).toMatchObject({
+      numberOfPans: null,
+      panSize: null,
+    });
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 4,
+      total: 4,
     });
   });
 
@@ -1278,19 +1510,19 @@ describe("platter packing and chafing dishes", () => {
     expect(row(checklist, "platter-tater-kegs")).toMatchObject({
       quantity: 64,
       unit: "each",
-      numberOfPans: 3,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(row(checklist, "platter-wings")).toMatchObject({
       quantity: 64,
       unit: "each",
-      numberOfPans: 3,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(row(checklist, "platter-chicken-tenders")).toMatchObject({
-      quantity: 50,
+      quantity: 64,
       unit: "each",
-      numberOfPans: 2,
+      numberOfPans: 1,
       panSize: "1/3",
     });
     expect(row(checklist, "platter-veggie-tray")).toMatchObject({
@@ -1337,7 +1569,7 @@ describe("platter packing and chafing dishes", () => {
       panSize: null,
     });
     expect(row(checklist, "dessert-platter")).toMatchObject({
-      numberOfPans: null,
+      numberOfPans: 1,
       panSize: null,
     });
     expect(checklist.chafingDishes).toEqual({
@@ -1385,6 +1617,37 @@ describe("platter packing and chafing dishes", () => {
     expect(checklist.chafingDishes).toEqual({
       bars: 2,
       hotPlatters: 1,
+      total: 3,
+    });
+  });
+
+  it("packs the redacted Veterans setup by its three distinct hot platter items", () => {
+    const checklist = generateKitchenChecklist(
+      packageEvent("Taco Bar", 50, [
+        {
+          name: "Tater Keg Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+        {
+          name: "Wing Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+        {
+          name: "Chicken Tender Platter",
+          quantity: 2,
+          sourceCategory: "Food Platters",
+          isFood: true,
+        },
+      ]),
+    );
+
+    expect(checklist.chafingDishes).toEqual({
+      bars: 1,
+      hotPlatters: 2,
       total: 3,
     });
   });
@@ -1559,6 +1822,32 @@ describe("classification, aliases, and review behavior", () => {
     ).toEqual([]);
   });
 
+  it.each([
+    ["Mozzarella Sticks", "platter:mozzarella-sticks"],
+    ["Wings", "platter:wings"],
+    ["Chicken Tenders", "platter:chicken-tenders"],
+    ["Fries", "platter:fries"],
+  ] as const)(
+    "maps the verified categoryless Tripleseat product %s",
+    (name, expectedKind) => {
+      expect(
+        normalizeKitchenSelection({
+          name,
+          quantity: 1,
+          sourceId: "structured-selection",
+          isFood: true,
+        }).kinds,
+      ).toEqual([expectedKind]);
+      expect(
+        normalizeKitchenSelection({
+          name,
+          quantity: 1,
+          sourceId: "modifier-selection",
+        }).kinds,
+      ).toEqual([]);
+    },
+  );
+
   it("maps the live Tripleseat Mozzarella Sticks document label", () => {
     const liveName =
       "Mozzarella SticksGolden fried mozzarella sticks with a crispy seasoned coating and warm melted cheese inside, served with marinara for dipping";
@@ -1600,14 +1889,13 @@ describe("classification, aliases, and review behavior", () => {
     expect(warningCodes(checklist)).toEqual(
       expect.arrayContaining([
         "UNKNOWN_FOOD_ITEM",
-        "NO_FOOD_SELECTIONS",
         "SPECIAL_NOTE_REQUIRES_REVIEW",
       ]),
     );
     expect(checklist.needsReview).toBe(true);
   });
 
-  it("ignores non-food line items but reports a definite event with no food", () => {
+  it("keeps a definite event with no food blank without creating a review warning", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent([
         {
@@ -1623,7 +1911,10 @@ describe("classification, aliases, and review behavior", () => {
       ]),
     );
     expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
-    expect(warningCodes(checklist)).toContain("NO_FOOD_SELECTIONS");
+    expect(
+      checklist.sections.every((section) => section.rows.length === 0),
+    ).toBe(true);
+    expect(warningCodes(checklist)).not.toContain("NO_FOOD_SELECTIONS");
   });
 
   it("requires an identified bar when a package marker exists", () => {
@@ -1768,7 +2059,7 @@ describe("redacted mock fixtures", () => {
       checklists.some((checklist) =>
         warningCodes(checklist).includes("NO_FOOD_SELECTIONS"),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("defaults manual BWA to blank without deriving it from source data", () => {

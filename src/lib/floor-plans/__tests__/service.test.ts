@@ -14,13 +14,18 @@ import {
 } from "@/lib/kitchen/tripleseat";
 
 import {
+  ensureConfirmedContractFloorPlanWindow,
   generateFloorPlan,
   getFloorPlanDay,
   refreshFloorPlanSources,
 } from "../service";
+import { floorPlanEventColorsAreDistinct } from "../configuration/colors";
 import { MemoryFloorPlanStorage } from "../storage";
+import { FLOOR_PLAN_RULE_VERSION } from "../types";
 
-function source(): TripleseatEventPlanSource {
+function source(
+  overrides: Partial<TripleseatEventPlanSource> = {},
+): TripleseatEventPlanSource {
   return {
     eventId: "62001001",
     bookingId: "71001001",
@@ -61,6 +66,7 @@ function source(): TripleseatEventPlanSource {
       },
     ],
     sourceUpdatedAt: "2026-08-03T15:00:00Z",
+    ...overrides,
   };
 }
 
@@ -89,6 +95,82 @@ afterEach(() => {
 });
 
 describe("Floor Plan Tripleseat source enforcement", () => {
+  it("creates the confirmed August 21 floor plan with VIP 1 and entertainment", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests({
+      ...adapter(async () => []),
+      sourceMode: "mock",
+      getDiagnostics: () => ({
+        sourceMode: "mock",
+        missingEnvironmentVariables: [],
+        warnings: [],
+        locationId: "26059",
+      }),
+    });
+
+    await ensureConfirmedContractFloorPlanWindow(
+      "2026-08-14",
+      floorPlanStorage,
+    );
+    const payload = await getFloorPlanDay(
+      "2026-08-21",
+      floorPlanStorage,
+    );
+
+    expect(payload.plan.events).toEqual([
+      expect.objectContaining({
+        name: "Amazon 08/21/2026",
+        guestCount: 50,
+        contractedAreaIds: ["vip-1"],
+      }),
+    ]);
+    expect(payload.plan.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ areaId: "vip-1", reservationType: "room" }),
+        expect.objectContaining({ reservationType: "food-table" }),
+      ]),
+    );
+    expect(
+      payload.entertainmentReservations.filter(
+        (reservation) =>
+          reservation.eventName === "Amazon 08/21/2026" &&
+          reservation.resourceCategory === "bowling",
+      ),
+    ).toHaveLength(5);
+    expect(
+      payload.entertainmentReservations.filter(
+        (reservation) =>
+          reservation.eventName === "Amazon 08/21/2026" &&
+          reservation.resourceCategory === "darts",
+      ),
+    ).toHaveLength(4);
+
+    await floorPlanStorage.save(
+      {
+        ...payload.plan,
+        reservations: payload.plan.reservations.filter(
+          (reservation) => reservation.reservationType !== "food-table",
+        ),
+      },
+      "Test incomplete saved plan",
+    );
+    const repaired = await ensureConfirmedContractFloorPlanWindow(
+      "2026-08-14",
+      floorPlanStorage,
+    );
+    expect(repaired.results).toEqual([
+      expect.objectContaining({ date: "2026-08-21", status: "generated" }),
+    ]);
+    const repairedPlan = await floorPlanStorage.get("2026-08-21");
+    expect(
+      repairedPlan?.reservations.some(
+        (reservation) => reservation.reservationType === "food-table",
+      ),
+    ).toBe(true);
+  });
+
   it("rebuilds the floor-plan event from the safe Tripleseat snapshot instead of legacy plan fields", async () => {
     const eventPlanStorage = createMemoryEventPlanStorage();
     const directSource = source();
@@ -133,7 +215,7 @@ describe("Floor Plan Tripleseat source enforcement", () => {
       contractedAreaIds: ["vip-1"],
       source: {
         rooms: ["VIP 1"],
-        food: ["Tater Keg Platter"],
+        food: ["1 × Tater Keg Platter"],
         operationalNotes: [
           expect.objectContaining({
             sourceId: "note-1",
@@ -195,5 +277,97 @@ describe("Floor Plan Tripleseat source enforcement", () => {
       eventDate: "2026-08-06",
       lastTripleseatSyncAt: payload.plan.lastTripleseatSyncAt,
     });
+  });
+
+  it("excludes PROSPECT and LOST events from operational floor plans", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(
+      adapter(async () => [
+        source(),
+        source({
+          eventId: "62001002",
+          eventName: "Redacted Prospect Event",
+          status: "PROSPECT",
+        }),
+        source({
+          eventId: "62001003",
+          eventName: "Redacted Lost Event",
+          status: "LOST",
+        }),
+      ]),
+    );
+
+    const payload = await refreshFloorPlanSources(
+      "2026-08-06",
+      floorPlanStorage,
+    );
+
+    expect(payload.plan.events.map((event) => event.name)).toEqual([
+      "Redacted Direct Tripleseat Event",
+    ]);
+  });
+
+  it("removes saved holds when the Tripleseat event is no longer DEFINITE", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source()]));
+    await generateFloorPlan("2026-08-06", "fill-missing", floorPlanStorage);
+
+    setTripleseatAdapterForTests(
+      adapter(async () => [source({ status: "LOST" })]),
+    );
+
+    await expect(
+      refreshFloorPlanSources("2026-08-06", floorPlanStorage),
+    ).rejects.toThrow("No Tripleseat event plan is available for this date.");
+    expect(await floorPlanStorage.get("2026-08-06")).toMatchObject({
+      events: [],
+      reservations: [],
+    });
+  });
+
+  it("repairs visually similar saved event colors during live sync", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    const sources = [
+      source(),
+      source({
+        eventId: "62001002",
+        bookingId: "71001002",
+        eventName: "Second Redacted Tripleseat Event",
+        eventStartAt: "2026-08-06T20:00:00-04:00",
+        eventEndAt: "2026-08-06T22:00:00-04:00",
+      }),
+    ];
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => sources));
+
+    const initial = await refreshFloorPlanSources(
+      "2026-08-06",
+      floorPlanStorage,
+    );
+    await floorPlanStorage.save(
+      {
+        ...initial.plan,
+        events: initial.plan.events.map((event, index) => ({
+          ...event,
+          color: index === 0 ? "#0F766E" : "#047857",
+        })),
+      },
+      "Test fixture with visually similar event colors.",
+    );
+
+    const refreshed = await refreshFloorPlanSources(
+      "2026-08-06",
+      floorPlanStorage,
+    );
+    const colors = refreshed.plan.events.map((event) => event.color);
+
+    expect(colors).toHaveLength(2);
+    expect(floorPlanEventColorsAreDistinct(colors[0], colors[1])).toBe(true);
+    expect(refreshed.plan.ruleVersion).toBe(FLOOR_PLAN_RULE_VERSION);
   });
 });

@@ -96,6 +96,13 @@ function completedTaskCount(record: ChecklistRecord) {
   return { completed, total };
 }
 
+export function completedChecklistEventName(
+  record: Pick<ChecklistRecord, "eventId" | "eventName">,
+  fallbackName?: string,
+) {
+  return record.eventName.trim() || fallbackName?.trim() || `Event ${record.eventId}`;
+}
+
 export default function AdminClient({
   checklistEventSummaries,
   entertainmentSchedules,
@@ -300,6 +307,11 @@ export default function AdminClient({
             <strong>Event Add-Ons</strong>
             <span>Enter Food and Entertainment additions; only Food is mirrored live to Kitchen.</span>
           </Link>
+          <Link className="portal-operation-card" href="/admin/integrations/gotab">
+            <span className="portal-module-kicker">Dry-run integration</span>
+            <strong>GoTab Kitchen Dispatch</strong>
+            <span>Verify server configuration, location access, product reads, and dispatch safety.</span>
+          </Link>
         </section>
 
         <section className="sheet-tab-strip" aria-label="Admin sections">
@@ -408,11 +420,14 @@ export default function AdminClient({
                 );
                 const addOnLines = submittedAddOnLines(record);
                 const progress = completedTaskCount(record);
+                const eventName = completedChecklistEventName(record, event?.name);
+                const eventDate = record.eventDate || event?.date;
+                const poc = record.poc.trim() || event?.poc;
                 return (
                   <article className="asset-section completed-card" key={record.eventId}>
-                    <h3>{event?.name ?? `Event ${record.eventId}`}</h3>
+                    <h3>{eventName}</h3>
                     <p className="meta">
-                      {event ? formatEventDate(event.date) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{event?.poc ? ` | ${event.poc}` : ""}
+                      {eventDate ? formatEventDate(eventDate) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{poc ? ` | ${poc}` : ""}
                     </p>
                     <div className="completed-meta-grid">
                       <div className="checklist-meta-card">

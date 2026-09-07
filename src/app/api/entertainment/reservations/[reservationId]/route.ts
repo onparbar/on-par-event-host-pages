@@ -6,9 +6,9 @@ import {
   updateEntertainmentReservation,
 } from "@/lib/entertainment/sync";
 import {
-  entertainmentUnauthorized,
-  requireEntertainmentSession,
-} from "../../_auth";
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,8 +33,8 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ reservationId: string }> },
 ) {
-  if (!(await requireEntertainmentSession())) {
-    return entertainmentUnauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
   let body: ReservationMutationInput;
   try {
@@ -70,8 +70,8 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ reservationId: string }> },
 ) {
-  if (!(await requireEntertainmentSession())) {
-    return entertainmentUnauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
   let body: { reason?: unknown } = {};
   try {

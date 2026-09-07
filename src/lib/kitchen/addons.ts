@@ -17,7 +17,9 @@ export type KitchenEventAddOnSection =
   | "party-platters"
   | "sauces"
   | "dessert"
-  | "taco-bar";
+  | "taco-bar"
+  | "appetizer-bar-refills"
+  | "wing-bar-refills";
 
 export type KitchenAddOnCalculation =
   | {
@@ -139,7 +141,7 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     section: "party-platters",
     sourceUnitLabel: "platters",
     description: "Fried chicken tenders served with ranch dipping sauce.",
-    amountPerSourceUnit: 50,
+    amountPerSourceUnit: 64,
     maxSourceQuantity: 10,
     unit: "each",
     panCapacityKey: "chickenTenders",
@@ -231,6 +233,41 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     unit: "requested units" as const,
     calculation: { kind: "unresolved-taco-addon" as const },
   })),
+  ...[
+    ["appetizer-refill-tater-kegs", "Tater Kegs"],
+    ["appetizer-refill-mozzarella-sticks", "Mozzarella Sticks"],
+    ["appetizer-refill-chicken-tenders", "Chicken Tenders"],
+    ["appetizer-refill-marinara", "Marinara"],
+    ["appetizer-refill-ranch", "Ranch"],
+  ].map(([sourceKey, foodName]) => ({
+    sourceKey,
+    foodName,
+    section: "appetizer-bar-refills" as const,
+    sourceUnitLabel: "requested units" as const,
+    description: `${foodName} refill requested for the Appetizer Bar.`,
+    amountPerSourceUnit: 1,
+    maxSourceQuantity: 9999,
+    unit: "requested units" as const,
+    calculation: { kind: "display-only" as const },
+  })),
+  ...[
+    ["wing-refill-wings", "Wings"],
+    ["wing-refill-fries", "Fries"],
+    ["wing-refill-ranch", "Ranch"],
+    ["wing-refill-bbq", "BBQ"],
+    ["wing-refill-garlic-parm", "Garlic Parm"],
+    ["wing-refill-buffalo", "Buffalo Sauce"],
+  ].map(([sourceKey, foodName]) => ({
+    sourceKey,
+    foodName,
+    section: "wing-bar-refills" as const,
+    sourceUnitLabel: "requested units" as const,
+    description: `${foodName} refill requested for the Wing Bar.`,
+    amountPerSourceUnit: 1,
+    maxSourceQuantity: 9999,
+    unit: "requested units" as const,
+    calculation: { kind: "display-only" as const },
+  })),
 ] as const satisfies readonly AddOnRule[];
 
 export const KITCHEN_EVENT_ADD_ON_SECTIONS = [
@@ -238,6 +275,8 @@ export const KITCHEN_EVENT_ADD_ON_SECTIONS = [
   { key: "sauces", label: "Sauces" },
   { key: "dessert", label: "Dessert" },
   { key: "taco-bar", label: "Taco Bar" },
+  { key: "appetizer-bar-refills", label: "Appetizer Bar Refills" },
+  { key: "wing-bar-refills", label: "Wing Bar Refills" },
 ] as const satisfies readonly {
   key: KitchenEventAddOnSection;
   label: string;
@@ -247,7 +286,7 @@ export type EventHostFoodAddOnKey =
   (typeof KITCHEN_EVENT_ADD_ON_FIELDS)[number]["sourceKey"];
 
 export type KitchenEventAddOnFood = Partial<
-  Record<EventHostFoodAddOnKey, { quantity: number }>
+  Record<EventHostFoodAddOnKey, { quantity: number; panSize?: "1/3" | "1/2" }>
 >;
 
 export type KitchenAddOnItemKey = `addon:${EventHostFoodAddOnKey}`;
@@ -259,7 +298,8 @@ export type KitchenAddOnItem = {
   quantity: number;
   unit: AddOnUnit;
   numberOfPans: number | null;
-  panSize: "1/3" | null;
+  panSize: "1/3" | "1/2" | null;
+  selectedPanSize?: "1/3" | "1/2" | null;
   sourceUpdatedAt: string | null;
 };
 
@@ -291,6 +331,15 @@ function sourceQuantity(value: unknown) {
     return null;
   }
   return positiveWholeQuantity(value.quantity);
+}
+
+function sourcePanSize(value: unknown) {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return value.panSize === "1/3" || value.panSize === "1/2"
+    ? value.panSize
+    : null;
 }
 
 export function resolveKitchenLiveFoodAddOns(
@@ -344,6 +393,16 @@ export function translateEventHostFoodAddOns(
         ? KITCHEN_RULE_CONFIG.panCapacities[rule.panCapacityKey]
             .amountPerPan
         : undefined;
+    const selectedPanSize = sourcePanSize(food[rule.sourceKey]);
+    const automaticPanCount =
+      panCapacity === undefined ? null : Math.ceil(quantity / panCapacity);
+    const selectedPanCount = selectedPanSize
+      ? automaticPanCount === null
+        ? platterOrBowlCount
+        : selectedPanSize === "1/2"
+          ? Math.ceil((automaticPanCount * 2) / 3)
+          : automaticPanCount
+      : automaticPanCount;
 
     return [
       {
@@ -352,11 +411,9 @@ export function translateEventHostFoodAddOns(
         description: rule.description,
         quantity,
         unit: rule.unit,
-        numberOfPans:
-          panCapacity === undefined
-            ? null
-            : Math.ceil(quantity / panCapacity),
-        panSize: panCapacity === undefined ? null : "1/3",
+        numberOfPans: selectedPanCount,
+        panSize: selectedPanSize ?? (panCapacity === undefined ? null : "1/3"),
+        ...(selectedPanSize ? { selectedPanSize } : {}),
         sourceUpdatedAt,
       },
     ];

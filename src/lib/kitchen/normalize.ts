@@ -39,6 +39,7 @@ const EXACT_SELECTION_ALIASES: Readonly<
   "appetizer bar": ["bar:appetizer"],
   "lettuce wraps": ["option:taco-lettuce-wraps"],
   "dessert platter": ["dessert"],
+  "desert platter": ["dessert"],
   "dessert tray": ["dessert"],
   "tater keg platter": ["platter:tater-kegs"],
   "tater kegs platter": ["platter:tater-kegs"],
@@ -75,16 +76,28 @@ const EXACT_SELECTION_ALIASES: Readonly<
   "veggie trayassorted fresh vegetables served with ranch dressing": [
     "platter:veggie-tray",
   ],
+  "fry plattera shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack.": [
+    "platter:fries",
+  ],
+  "fry plattera shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack": [
+    "platter:fries",
+  ],
   ranch: ["sauce:ranch"],
   "ranch sauce": ["sauce:ranch"],
   marinara: ["sauce:marinara"],
   "marinara sauce": ["sauce:marinara"],
 };
 
-const MOZZARELLA_PLATTER_SELECTION_NAMES = new Set([
-  "mozzarella sticks",
-  "mozzarella sticksgolden fried mozzarella sticks with a crispy seasoned coating and warm melted cheese inside, served with marinara for dipping",
-]);
+const PLAIN_PLATTER_SELECTION_KINDS: Readonly<
+  Record<string, NormalizedSelectionKind>
+> = {
+  "mozzarella sticks": "platter:mozzarella-sticks",
+  "mozzarella sticksgolden fried mozzarella sticks with a crispy seasoned coating and warm melted cheese inside, served with marinara for dipping":
+    "platter:mozzarella-sticks",
+  wings: "platter:wings",
+  "chicken tenders": "platter:chicken-tenders",
+  fries: "platter:fries",
+};
 
 const NON_FOOD_SOURCE_CATEGORIES = new Set([
   "beverage",
@@ -189,6 +202,10 @@ function isAssortedDessertPlatter(normalizedName: string) {
   );
 }
 
+function isDesertPlatter(normalizedName: string) {
+  return normalizedName.startsWith("desert platter");
+}
+
 function isCookieDessert(normalizedName: string) {
   return (
     normalizedName === "cookies" ||
@@ -233,15 +250,25 @@ export function normalizeKitchenSelection(
     : "";
   const exact = EXACT_SELECTION_ALIASES[normalizedName] ?? [];
   const categoryAware: NormalizedSelectionKind[] = [];
+  const plainPlatterKind = PLAIN_PLATTER_SELECTION_KINDS[normalizedName];
   if (
-    MOZZARELLA_PLATTER_SELECTION_NAMES.has(normalizedName) &&
-    normalizedCategory === "food platters"
+    plainPlatterKind &&
+    (normalizedCategory === "food platters" ||
+      (normalizedCategory === "" && selection.isFood === true))
   ) {
-    categoryAware.push("platter:mozzarella-sticks");
+    categoryAware.push(plainPlatterKind);
   }
   if (
     normalizedCategory === "food platters" &&
     isAssortedDessertPlatter(normalizedName)
+  ) {
+    categoryAware.push("dessert");
+  }
+  if (
+    (selection.isFood === true ||
+      normalizedCategory === "food platters" ||
+      normalizedCategory === "party platters") &&
+    isDesertPlatter(normalizedName)
   ) {
     categoryAware.push("dessert");
   }

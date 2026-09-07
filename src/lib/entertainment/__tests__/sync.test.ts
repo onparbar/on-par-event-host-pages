@@ -8,8 +8,15 @@ import {
   syncEntertainmentDay,
   updateEntertainmentReservation,
 } from "../sync";
-import { MemoryEntertainmentStorage } from "../storage";
+import {
+  MemoryEntertainmentStorage,
+  SupabaseEntertainmentStorage,
+} from "../storage";
 import type { EntertainmentSourceEvent } from "../types";
+import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
+import {
+  confirmedContractEntertainmentSourcesForDate,
+} from "../../confirmed-contract-events";
 
 const DATE = "2026-07-28";
 
@@ -76,6 +83,204 @@ const localEvents = [
 ];
 
 describe("persistent entertainment synchronization", () => {
+  it("shows the confirmed August 21 bowling and darts schedule", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const day = await getEntertainmentDay("2026-08-21", {
+      storage,
+      adapter: adapter([]),
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+    });
+
+    const managerReservations = day.reservations.filter(
+      (reservation) => reservation.eventName === "Amazon 08/21/2026",
+    );
+    expect(
+      managerReservations.filter(
+        (reservation) => reservation.resourceCategory === "bowling",
+      ),
+    ).toHaveLength(5);
+    expect(
+      managerReservations.filter(
+        (reservation) => reservation.resourceCategory === "darts",
+      ),
+    ).toHaveLength(4);
+    expect(
+      managerReservations.filter(
+        (reservation) => reservation.resourceId === "private-room-vip-1",
+      ),
+    ).toHaveLength(1);
+    expect(
+      managerReservations.filter((reservation) =>
+        ["bowling", "darts"].includes(reservation.resourceCategory),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startAt: "2026-08-21T20:30:00.000Z",
+          endAt: "2026-08-21T22:30:00.000Z",
+          source: "event-host-fallback",
+        }),
+      ]),
+    );
+    const bowling = managerReservations.find(
+      (reservation) => reservation.resourceCategory === "bowling",
+    );
+    expect(bowling).toBeDefined();
+    await expect(storage.getReservation(bowling!.id)).resolves.toMatchObject({
+      eventName: "Amazon 08/21/2026",
+    });
+    await updateEntertainmentReservation(
+      bowling!.id,
+      {
+        operatingDate: "2026-08-21",
+        eventId: bowling!.tripleseatEventId,
+        eventName: bowling!.eventName,
+        resourceId: bowling!.resourceId,
+        startAt: bowling!.startAt,
+        endAt: bowling!.endAt,
+        eventColor: "#7C3AED",
+        notes: "Staff verified the assigned lane.",
+        reason: "Contract evidence verification",
+        needsReview: false,
+        forceConflict: false,
+      },
+      { storage },
+    );
+    await expect(storage.getReservation(bowling!.id)).resolves.toMatchObject({
+      eventColor: "#7C3AED",
+      notes: "Staff verified the assigned lane.",
+    });
+  });
+
+  it("replaces an older incomplete live Amazon entertainment source during sync", async () => {
+    const incomplete =
+      confirmedContractEntertainmentSourcesForDate("2026-08-21")[0];
+    incomplete.items = [];
+    incomplete.sourceUpdatedAt = "2026-08-14T20:00:00.000Z";
+
+    const day = await syncEntertainmentDay("2026-08-21", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([incomplete]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
+    });
+
+    const amazon = day.reservations.filter(
+      (reservation) => reservation.tripleseatEventId === "62238275",
+    );
+    expect(
+      amazon.filter(
+        (reservation) => reservation.resourceCategory === "bowling",
+      ),
+    ).toHaveLength(5);
+    expect(
+      amazon.filter(
+        (reservation) => reservation.resourceCategory === "darts",
+      ),
+    ).toHaveLength(4);
+  });
+
+  it("does not restore the confirmed Amazon schedule after Tripleseat marks it PROSPECT", async () => {
+    const prospect =
+      confirmedContractEntertainmentSourcesForDate("2026-08-21")[0];
+    prospect.status = "PROSPECT";
+
+    const day = await syncEntertainmentDay("2026-08-21", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([prospect]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
+    });
+
+    expect(day.events).toEqual([]);
+    expect(day.reservations).toEqual([]);
+  });
+
+  it("reads the VIP schedule directly without Supabase persistence", async () => {
+    const day = await getEntertainmentDay("2026-08-15", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+    });
+
+    expect(day.missingEnvironmentVariables).not.toContain("SUPABASE_SECRET_KEY");
+    expect(day.reservations[0]).toMatchObject({
+      resourceId: "private-room-vip-2",
+      source: "vip-prep",
+    });
+  });
+
+  it("writes contract reservations before the event snapshot", async () => {
+    const day = await getEntertainmentDay("2026-08-21", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([]),
+      vipPrepClient: { configured: false, fetchRange: async () => vipPrepPayload },
+    });
+    const requestedTables: string[] = [];
+    const storage = new SupabaseEntertainmentStorage({
+      env: {
+        NODE_ENV: "test",
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SECRET_KEY: "sb_secret_test-value",
+      },
+      fetchImpl: async (input) => {
+        requestedTables.push(String(input));
+        return new Response(null, { status: 500 });
+      },
+    });
+
+    await expect(
+      storage.saveContractEvidence({
+        events: day.events,
+        reservations: day.reservations,
+      }),
+    ).rejects.toThrow("Entertainment database request failed (500).");
+    expect(requestedTables).toHaveLength(1);
+    expect(requestedTables[0]).toContain("entertainment_reservations");
+  });
+
+  it("imports a paid VIP reservation onto the exact VIP room", async () => {
+    const synced = await syncEntertainmentDay("2026-08-15", {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+    });
+
+    expect(synced.reservations).toHaveLength(1);
+    expect(synced.reservations[0]).toMatchObject({
+      tripleseatEventId: "vip-reservation-uuid",
+      resourceId: "private-room-vip-2",
+      resourceName: "VIP 2",
+      source: "vip-prep",
+      startAt: "2026-08-15T22:00:00.000Z",
+      endAt: "2026-08-16T00:00:00.000Z",
+      needsReview: false,
+    });
+  });
+
   it("uses the known event window when mock entertainment timing needs review", async () => {
     const storage = new MemoryEntertainmentStorage();
     const mockAdapter: TripleseatAdapter = {
@@ -178,6 +383,72 @@ describe("persistent entertainment synchronization", () => {
         expect.objectContaining({ action: "sync-create" }),
       ]),
     );
+  });
+
+  it("applies a linked event color to every reservation and keeps it after sync", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const source = sourceEvent();
+    source.items = [
+      {
+        ...source.items[0],
+        name: "Bowling Lanes 1-2",
+        description: "Bowling Lanes 1-2",
+        quantity: 2,
+      },
+    ];
+    const dependencies = {
+      storage,
+      adapter: adapter([source]),
+      localEvents,
+    };
+    const synced = await syncEntertainmentDay(DATE, dependencies);
+    expect(synced.reservations).toHaveLength(2);
+
+    const original = synced.reservations[0];
+    await updateEntertainmentReservation(
+      original.id,
+      {
+        operatingDate: DATE,
+        eventId: original.tripleseatEventId,
+        eventName: original.eventName,
+        resourceId: original.resourceId,
+        startAt: original.startAt,
+        endAt: original.endAt,
+        eventColor: "#7C3AED",
+        reason: "Changed the event highlight color.",
+      },
+      { storage },
+    );
+
+    const updated = await getEntertainmentDay(DATE, dependencies);
+    expect(updated.events[0]).toMatchObject({
+      eventColor: "#7C3AED",
+      colorSource: "manual",
+    });
+    expect(
+      new Set(updated.reservations.map((reservation) => reservation.eventColor)),
+    ).toEqual(new Set(["#7C3AED"]));
+
+    const resynced = await syncEntertainmentDay(DATE, dependencies);
+    expect(
+      new Set(resynced.reservations.map((reservation) => reservation.eventColor)),
+    ).toEqual(new Set(["#7C3AED"]));
+  });
+
+  it("rejects manual Mini Golf reservations because it is open play", async () => {
+    await expect(
+      createManualEntertainmentReservation(
+        {
+          operatingDate: DATE,
+          eventName: "Open Play Event",
+          resourceId: "mini-golf-level-up",
+          startAt: "2026-07-28T21:00:00.000Z",
+          endAt: "2026-07-28T22:00:00.000Z",
+          eventColor: "#1D4ED8",
+        },
+        { storage: new MemoryEntertainmentStorage() },
+      ),
+    ).rejects.toThrow("does not require an Entertainment Schedule reservation");
   });
 
   it("moves a manual reservation between date buckets without a stale copy", async () => {

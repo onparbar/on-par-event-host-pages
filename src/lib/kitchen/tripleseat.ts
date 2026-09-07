@@ -35,6 +35,12 @@ const UNASSIGNABLE_BOOKING_DOCUMENTS_NOTE =
   "Needs Review: Tripleseat booking documents were not imported because they could not be assigned to exactly one matching event. Review the source event.";
 const UNVERIFIED_BOOKING_CONTRACT_NOTE =
   "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.";
+const CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS = new Set([
+  "mozzarella sticks",
+  "wings",
+  "chicken tenders",
+  "fries",
+]);
 
 type UnknownRecord = Record<string, unknown>;
 type FetchImplementation = typeof fetch;
@@ -390,6 +396,19 @@ function normalizeMenuSelection(value: unknown): KitchenSourceSelection[] {
   }
 
   const selection = normalizeMenuSelectionRecord(record);
+  if (
+    selection &&
+    selection.sourceId != null &&
+    selection.sourceCategory == null &&
+    selection.quantity != null &&
+    Number.isInteger(selection.quantity) &&
+    selection.quantity > 0 &&
+    CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS.has(
+      normalizedSelectionName(selection.name),
+    )
+  ) {
+    selection.isFood = true;
+  }
   const modifiers = extractArray(record.menu_modifier_selections, [
     "menu_modifier_selections",
   ]).flatMap((modifier) => {
@@ -419,10 +438,10 @@ function foodDocumentSelections(event: UnknownRecord) {
         continue;
       }
       const name =
-        asString(line.description) ||
         asString(line.display_name) ||
         asString(line.internal_name) ||
-        asString(line.name);
+        asString(line.name) ||
+        asString(line.description);
       if (!name) {
         continue;
       }
@@ -458,13 +477,15 @@ function documentFoodNotes(
           const category = documentLineItemCategory(line.category);
           const categoryKey = normalizedSelectionName(
             category.displayName ?? "",
-          );
+          ).replace(/[_-]+/g, " ");
+          if (!/^special instructions?$/.test(categoryKey)) {
+            return [];
+          }
           const candidates = [];
           const longDescription = asString(line.long_description);
           if (longDescription) {
             candidates.push({
               body: longDescription,
-              foodContext: category.isFood,
               source,
               sourceId:
                 asString(line.id) ??
@@ -474,26 +495,21 @@ function documentFoodNotes(
                 asString(documentRecord.updated_at),
             });
           }
-          if (
-            categoryKey === "notes" ||
-            categoryKey === "special notes"
-          ) {
-            const description =
-              asString(line.description) ||
-              asString(line.display_name) ||
-              asString(line.name);
-            if (description) {
-              candidates.push({
-                body: description,
-                source,
-                sourceId:
-                  asString(line.id) ??
-                  (documentId ? `document:${documentId}` : null),
-                sourceUpdatedAt:
-                  asString(line.updated_at) ??
-                  asString(documentRecord.updated_at),
-              });
-            }
+          const description =
+            asString(line.description) ||
+            asString(line.display_name) ||
+            asString(line.name);
+          if (description) {
+            candidates.push({
+              body: description,
+              source,
+              sourceId:
+                asString(line.id) ??
+                (documentId ? `document:${documentId}` : null),
+              sourceUpdatedAt:
+                asString(line.updated_at) ??
+                asString(documentRecord.updated_at),
+            });
           }
           return candidates;
         },
@@ -1006,18 +1022,10 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       };
     }
 
-    const bookingNotes = await this.parentFoodNotes(
-      "bookings",
-      bookingId,
-      "booking-note",
-    );
     return {
       selections: foodDocumentSelections(booking),
       metadata: documentMetadata(booking),
-      foodNotes: mergeKitchenFoodNotes(
-        documentFoodNotes(booking, "booking-document"),
-        bookingNotes,
-      ),
+      foodNotes: documentFoodNotes(booking, "booking-document"),
       notes: [] as string[],
     };
   }
@@ -1089,31 +1097,6 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
 
   private async noteCount(eventId: string) {
     return (await this.noteRecords("events", eventId)).length;
-  }
-
-  private async parentFoodNotes(
-    parent: "events" | "bookings",
-    parentId: string,
-    source: "event-note" | "booking-note",
-  ) {
-    const notes = await this.noteRecords(parent, parentId);
-    return extractKitchenFoodNotes(
-      notes.flatMap((note) => {
-        const body = asString(note.body);
-        return body
-          ? [
-              {
-                body,
-                source,
-                sourceId: asString(note.id),
-                sourceUpdatedAt:
-                  asString(note.updated_at) ??
-                  asString(note.created_at),
-              },
-            ]
-          : [];
-      }),
-    );
   }
 
   private async bookingEntertainmentItems(
@@ -1270,12 +1253,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     }
 
     const eventDocumentSelections = foodDocumentSelections(detail);
-    const [structuredSelections, eventNotes] = await Promise.all([
-      this.menuSelections(eventId),
-      this.parentFoodNotes("events", eventId, "event-note"),
-    ]);
+    const structuredSelections = await this.menuSelections(eventId);
     const bookingDocuments =
-      bookingId && eventDocumentSelections.length === 0
+      bookingId
         ? await this.bookingDocuments(bookingId, eventId)
         : {
             selections: [] as KitchenSourceSelection[],
@@ -1287,19 +1267,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       structuredSelections,
       [...eventDocumentSelections, ...bookingDocuments.selections],
     );
-    const description = asString(detail.description);
     const foodNotes = mergeKitchenFoodNotes(
-      description
-        ? extractKitchenFoodNotes([
-            {
-              body: description,
-              source: "event-description",
-              sourceId: eventId,
-              sourceUpdatedAt: asString(detail.updated_at),
-            },
-          ])
-        : [],
-      eventNotes,
       documentFoodNotes(detail, "event-document"),
       bookingDocuments.foodNotes,
     );

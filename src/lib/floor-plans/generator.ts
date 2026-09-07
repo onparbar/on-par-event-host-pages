@@ -1,4 +1,10 @@
-import { foodTablesNearArea, getFloorPlanArea, seatingTablesForArea } from "./configuration/areas";
+import {
+  fixedSeatingHighlightsForArea,
+  foodTablesNearArea,
+  getFloorPlanArea,
+  requiredFoodTableCount,
+  seatingTablesForArea,
+} from "./configuration/areas";
 import { timeRangesOverlap } from "./conflicts";
 import type {
   FloorPlanArea,
@@ -76,7 +82,7 @@ export function selectSmallestTableCombination(
       bestScore = score;
     }
   }
-  return best ?? [];
+  return best ?? candidates;
 }
 
 function reservationId(event: FloorPlanEvent, areaId: string, type: string) {
@@ -128,31 +134,82 @@ function eventBaseReservations(
   existing: readonly FloorPlanReservation[],
 ) {
   const unavailable = unavailableAreaIds(plan, event, existing);
-  const contractedArea = event.contractedAreaIds.find(
+  const contractedAreas = event.contractedAreaIds.filter(
+    (areaId) => areaId !== "facility" && getFloorPlanArea(areaId),
+  );
+  const primaryContractedArea = contractedAreas.find(
     (areaId) => seatingTablesForArea(areaId).length > 0,
-  ) ?? event.contractedAreaIds[0] ?? null;
+  ) ?? contractedAreas[0] ?? null;
   const generated: FloorPlanReservation[] = [];
 
   if (event.fullBuyout) {
     generated.push(reservation(event, "facility", "room", "FULL BUYOUT"));
   }
-  if (contractedArea && contractedArea !== "facility") {
+  for (const contractedArea of contractedAreas) {
     const contracted = getFloorPlanArea(contractedArea);
     if (contracted?.type === "room") {
       generated.push(reservation(event, contracted.id, "room", contracted.shortLabel));
     }
-    const availableTables = seatingTablesForArea(contractedArea).filter(
-      (table) => !unavailable.has(table.id),
-    );
-    for (const table of selectSmallestTableCombination(availableTables, event.guestCount)) {
-      generated.push(reservation(event, table.id, "seating", table.shortLabel));
+    if (event.tripleseatEventId.startsWith("vip-")) {
+      continue;
+    }
+    for (const fixture of fixedSeatingHighlightsForArea(contractedArea)) {
+      if (!unavailable.has(fixture.id)) {
+        generated.push(
+          reservation(event, fixture.id, "seating", fixture.shortLabel),
+        );
+      }
     }
   }
+  if (event.tripleseatEventId.startsWith("vip-")) {
+    return generated;
+  }
+  const existingSeatingAreaIds = new Set(
+    existing.flatMap((item) =>
+      item.floorPlanEventId === event.id && item.reservationType === "seating"
+        ? [item.areaId]
+        : [],
+    ),
+  );
+  const existingSeatingCapacity = seatingCapacity(
+    [...existingSeatingAreaIds].flatMap((areaId) => {
+      const item = getFloorPlanArea(areaId);
+      return item ? [item] : [];
+    }),
+  );
+  const availableTables = contractedAreas.flatMap((areaId) =>
+    seatingTablesForArea(areaId).filter(
+      (table) =>
+        !unavailable.has(table.id) && !existingSeatingAreaIds.has(table.id),
+    ),
+  );
+  const remainingGuests = Math.max(0, event.guestCount - existingSeatingCapacity);
+  for (const table of selectSmallestTableCombination(availableTables, remainingGuests)) {
+    generated.push(reservation(event, table.id, "seating", table.shortLabel));
+  }
 
-  const foodCandidate = (contractedArea ? foodTablesNearArea(contractedArea) : foodTablesNearArea("main-dining"))
-    .find((table) => !unavailable.has(table.id));
-  if (foodCandidate) {
+  const foodTableCount = requiredFoodTableCount(event.guestCount);
+  const existingFoodAreaIds = new Set(
+    existing.flatMap((item) =>
+      item.floorPlanEventId === event.id &&
+      item.reservationType === "food-table"
+        ? [item.areaId]
+        : [],
+    ),
+  );
+  const foodCandidates = primaryContractedArea
+    ? foodTablesNearArea(primaryContractedArea)
+    : foodTablesNearArea("main-dining");
+  for (const foodCandidate of foodCandidates) {
+    if (existingFoodAreaIds.size >= foodTableCount) break;
+    if (
+      unavailable.has(foodCandidate.id) ||
+      existingFoodAreaIds.has(foodCandidate.id)
+    ) {
+      continue;
+    }
     generated.push(reservation(event, foodCandidate.id, "food-table", "F"));
+    existingFoodAreaIds.add(foodCandidate.id);
   }
   return generated;
 }
@@ -161,22 +218,37 @@ export function generateFloorPlanReservations(
   plan: FloorPlanDocument,
   mode: FloorPlanGenerationMode,
 ) {
-  const preserved = plan.reservations.filter((item) => {
-    if (mode === "fill-missing") return true;
-    if (mode === "replace-generated") return item.source === "manual" || item.lockedByUser;
-    return false;
+  const preserved = plan.reservations.flatMap((item) => {
+    const event = plan.events.find(
+      (candidate) => candidate.id === item.floorPlanEventId,
+    );
+    if (event) {
+      const current = reservationForCurrentFloorPlanEvent(event, item);
+      if (!current) return [];
+      if (mode === "fill-missing") return [current];
+      if (mode === "replace-generated") {
+        return item.source === "manual" || item.lockedByUser ? [current] : [];
+      }
+      return [];
+    }
+    if (mode === "fill-missing") return [item];
+    if (mode === "replace-generated") {
+      return item.source === "manual" || item.lockedByUser ? [item] : [];
+    }
+    return [];
   });
   const next = [...preserved];
   for (const event of plan.events) {
-    const existingForEvent = next.filter((item) => item.floorPlanEventId === event.id);
-    const hasSeating = existingForEvent.some((item) => item.reservationType === "seating");
-    const hasFood = existingForEvent.some((item) => item.reservationType === "food-table");
     const generated = eventBaseReservations(plan, event, next);
     for (const item of generated) {
       if (
-        next.some((existing) => existing.id === item.id) ||
-        (mode === "fill-missing" && item.reservationType === "seating" && hasSeating) ||
-        (mode === "fill-missing" && item.reservationType === "food-table" && hasFood)
+        next.some(
+          (existing) =>
+            existing.id === item.id ||
+            (existing.floorPlanEventId === item.floorPlanEventId &&
+              existing.areaId === item.areaId &&
+              existing.reservationType === item.reservationType),
+        )
       ) {
         continue;
       }
@@ -184,4 +256,28 @@ export function generateFloorPlanReservations(
     }
   }
   return next;
+}
+
+export function reservationAllowedForFloorPlanEvent(
+  event: FloorPlanEvent,
+  reservation: FloorPlanReservation,
+) {
+  if (!event.tripleseatEventId.startsWith("vip-")) return true;
+  return (
+    reservation.reservationType === "room" &&
+    event.contractedAreaIds.includes(reservation.areaId)
+  );
+}
+
+export function reservationForCurrentFloorPlanEvent(
+  event: FloorPlanEvent,
+  reservation: FloorPlanReservation,
+) {
+  if (!reservationAllowedForFloorPlanEvent(event, reservation)) return null;
+  if (!event.tripleseatEventId.startsWith("vip-")) return reservation;
+  return {
+    ...reservation,
+    startAt: event.startAt,
+    endAt: event.endAt,
+  };
 }

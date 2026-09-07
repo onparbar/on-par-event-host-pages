@@ -6,7 +6,12 @@ import type {
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
 import { preferredInventory } from "./configuration/adjacency";
-import { getAreaForEntertainmentResource, getFloorPlanArea } from "./configuration/areas";
+import {
+  getAreaForEntertainmentResource,
+  getFloorPlanArea,
+  requiredFoodTableCount,
+} from "./configuration/areas";
+import { floorPlanEventColorsAreDistinct } from "./configuration/colors";
 import type {
   FloorPlanConflict,
   FloorPlanDocument,
@@ -35,8 +40,7 @@ function reservationMatchesEvent(
   );
 }
 
-function requestedQuantity(value: string, miniGolf: boolean) {
-  if (miniGolf) return 1;
+function requestedQuantity(value: string) {
   const match = value.match(/\b(\d+)\b/);
   return match ? Number(match[1]) : null;
 }
@@ -48,16 +52,15 @@ export function validateFloorPlan(
   entertainmentConflicts: readonly EntertainmentConflict[],
 ) {
   const result: FloorPlanValidationItem[] = [];
-  const duplicateColors = new Set(
-    plan.events
-      .filter(
-        (event, index) =>
-          plan.events.findIndex(
-            (candidate) => candidate.color.toUpperCase() === event.color.toUpperCase(),
-          ) !== index,
-      )
-      .map((event) => event.color.toUpperCase()),
-  );
+  const nonDistinctEventIds = new Set<string>();
+  for (const [index, event] of plan.events.entries()) {
+    for (const candidate of plan.events.slice(0, index)) {
+      if (!floorPlanEventColorsAreDistinct(event.color, candidate.color)) {
+        nonDistinctEventIds.add(event.id);
+        nonDistinctEventIds.add(candidate.id);
+      }
+    }
+  }
 
   for (const event of plan.events) {
     const reservations = plan.reservations.filter(
@@ -73,6 +76,11 @@ export function validateFloorPlan(
     );
     const food = reservations.filter(
       (reservation) => reservation.reservationType === "food-table",
+    );
+    const foodTableCount = requiredFoodTableCount(event.guestCount);
+    const foodTableCountPasses = food.length >= foodTableCount;
+    const foodTableLabelsPass = food.every(
+      (reservation) => reservation.label === "F",
     );
     const eventEntertainment = entertainmentReservations.filter(
       (reservation) => reservation.active && reservationMatchesEvent(reservation, event),
@@ -154,18 +162,18 @@ export function validateFloorPlan(
         "FOOD_TABLE",
         event.id,
         "Food table assigned",
-        food.length >= 1 && food.every((reservation) => reservation.label === "F")
+        foodTableCountPasses && foodTableLabelsPass
           ? "Passed"
           : "Failed",
-        food.length >= 1
-          ? food.every((reservation) => reservation.label === "F")
+        foodTableCountPasses
+          ? foodTableLabelsPass
             ? `${food.length} authorized food table${food.length === 1 ? " is" : "s are"} assigned and labeled F.`
             : "Every food table must be labeled F."
-          : "No food table is assigned.",
+          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${food.length} assigned.`,
       ),
     );
     const foodIsAda =
-      food.length > 0 &&
+      foodTableCountPasses &&
       food.every((reservation) => {
         const area = getFloorPlanArea(reservation.areaId);
         return area?.isAda && area.canBeFoodTable;
@@ -196,8 +204,10 @@ export function validateFloorPlan(
           quantityFailures.push(`${requirement.name} is not mapped.`);
           continue;
         }
-        const miniGolf = category === "mini-golf";
-        const required = requestedQuantity(requirement.quantity, miniGolf);
+        if (category === "mini-golf") {
+          continue;
+        }
+        const required = requestedQuantity(requirement.quantity);
         const assigned = eventEntertainment.filter(
           (reservation) => reservation.resourceCategory === category,
         ).length;
@@ -206,7 +216,7 @@ export function validateFloorPlan(
             `${requirement.name}: ${assigned} assigned; ${required ?? "an explicit quantity"} required.`,
           );
         }
-        if (!miniGolf && /not listed|needs review/i.test(requirement.time)) {
+        if (/not listed|needs review/i.test(requirement.time)) {
           timeWarnings.push(`${requirement.name} is missing a verified time.`);
         }
       }
@@ -216,14 +226,14 @@ export function validateFloorPlan(
           event.id,
           "Entertainment quantity",
           quantityFailures.length ? "Failed" : "Passed",
-          quantityFailures.join(" ") || "Shared schedule reservations meet the BEO quantities.",
+          quantityFailures.join(" ") || "Shared schedule reservations meet the reservable BEO quantities. Mini golf is open play and does not require a reservation.",
         ),
         item(
           "ENTERTAINMENT_TIME",
           event.id,
           "Entertainment time",
           timeWarnings.length ? "Warning" : "Passed",
-          timeWarnings.join(" ") || "Required entertainment times are present; mini golf is allowed to be untimed.",
+          timeWarnings.join(" ") || "Required reservation times are present. Mini golf is open play and is excluded from the schedule.",
           false,
         ),
       );
@@ -275,10 +285,10 @@ export function validateFloorPlan(
         "DISTINCT_COLOR",
         event.id,
         "Distinct event color",
-        duplicateColors.has(event.color.toUpperCase()) ? "Failed" : "Passed",
-        duplicateColors.has(event.color.toUpperCase())
-          ? "Another event on this date uses the same color."
-          : "The event has a distinct color and labeled overlays.",
+        nonDistinctEventIds.has(event.id) ? "Failed" : "Passed",
+        nonDistinctEventIds.has(event.id)
+          ? "Another event on this date uses the same or a visually similar color."
+          : "The event has a visually distinct color and labeled overlays.",
       ),
     );
   }

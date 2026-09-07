@@ -349,6 +349,43 @@ export function isKitchenEventOver(
   );
 }
 
+function kitchenChecklistArchiveEpoch(event: KitchenLifecycleEvent) {
+  const eventDate = parseDate(event.localDate);
+  if (!eventDate) {
+    return null;
+  }
+
+  const nextDay = addLocalDay(eventDate);
+  const nextDayMidnight = unambiguousEasternEpoch({
+    ...nextDay,
+    hour: 0,
+    minute: 0,
+    second: 0,
+    millisecond: 0,
+  });
+  if (nextDayMidnight === null) {
+    return null;
+  }
+
+  const endEpoch = eventEndEpoch(event);
+  return endEpoch === null
+    ? nextDayMidnight
+    : Math.max(nextDayMidnight, endEpoch);
+}
+
+export function isKitchenChecklistArchived(
+  event: KitchenLifecycleEvent,
+  now = new Date(),
+) {
+  const archiveEpoch = kitchenChecklistArchiveEpoch(event);
+  const currentEpoch = now.getTime();
+  return (
+    archiveEpoch !== null &&
+    Number.isFinite(currentEpoch) &&
+    currentEpoch >= archiveEpoch
+  );
+}
+
 export function activeKitchenChecklists<
   T extends { event: KitchenLifecycleEvent },
 >(
@@ -356,6 +393,6 @@ export function activeKitchenChecklists<
   now = new Date(),
 ) {
   return events.filter(
-    (checklist) => !isKitchenEventOver(checklist.event, now),
+    (checklist) => !isKitchenChecklistArchived(checklist.event, now),
   );
 }

@@ -1,11 +1,19 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "../../../../lib/admin-auth";
 import { checklistEventsForPlans } from "../../../../lib/checklist-events";
 import type { EventChecklistState } from "../../../../lib/checklist-model";
 import { saveChecklist } from "../../../../lib/checklist-storage";
 import { findEventPlanById } from "../../../../lib/event-plans/sync";
-import { updateKitchenEventFoodAddOns } from "../../../../lib/kitchen/sync";
+import { rollingEventPlanHorizon } from "../../../../lib/event-plans/horizon";
+import {
+  findVipPrepReservationByEventId,
+  vipPrepEventPlan,
+  vipPrepExternalId,
+} from "../../../../lib/vip-prep/client";
+import { synchronizeChecklistFoodAddOns } from "../../../../lib/gotab/sync-checklist-addons";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "../../../../lib/operational-access";
 
 export const dynamic = "force-dynamic";
 
@@ -18,20 +26,9 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
-async function authorized() {
-  return hasAdminSession(await cookies());
-}
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
-
 export async function POST(request: Request) {
-  if (!(await authorized())) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: SubmitChecklistRequest;
@@ -46,7 +43,20 @@ export async function POST(request: Request) {
     return badRequest("Missing eventId or checklist.");
   }
 
-  const plan = await findEventPlanById(body.eventId);
+  let plan = await findEventPlanById(body.eventId);
+  let kitchenEventId = String(body.eventId);
+  if (!plan) {
+    const horizon = rollingEventPlanHorizon();
+    const reservation = await findVipPrepReservationByEventId(
+      body.eventId,
+      horizon.startDate,
+      horizon.endDate,
+    );
+    if (reservation) {
+      plan = vipPrepEventPlan(reservation);
+      kitchenEventId = vipPrepExternalId(reservation);
+    }
+  }
   if (!plan) {
     return badRequest("Unknown event.");
   }
@@ -63,15 +73,18 @@ export async function POST(request: Request) {
     });
 
     try {
-      const kitchenAddOns = await updateKitchenEventFoodAddOns(
-        String(event.id),
+      const kitchenSync = await synchronizeChecklistFoodAddOns(
+        kitchenEventId,
         body.checklist.food,
       );
       return NextResponse.json({
         record,
         kitchenSync: {
           status: "live",
-          updatedAt: kitchenAddOns.updatedAt,
+          updatedAt: kitchenSync.saved.updatedAt,
+          queued: kitchenSync.queued,
+          exceptions: kitchenSync.exceptions,
+          sent: kitchenSync.sent,
         },
       });
     } catch {

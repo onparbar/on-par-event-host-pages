@@ -17,9 +17,23 @@ import {
   getAreaForEntertainmentResource,
   getFloorPlanArea,
 } from "@/lib/floor-plans/configuration/areas";
-import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
+import {
+  floorPlanEventColorsAreDistinct,
+  readableOverlayText,
+} from "@/lib/floor-plans/configuration/colors";
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
+import {
+  displayEventForFloorPlanArea,
+  entertainmentMultipleReservationOutlines,
+  entertainmentTimingLabel,
+  eventForFloorPlanEntertainment,
+  floorPlanCustomGeometry,
+  floorPlanOverlayLabel,
+  isEntertainmentTimeAnchor,
+  localHighlightIdsForDeletion,
+  visibleEntertainmentReservations,
+} from "@/lib/floor-plans/presentation";
 import type {
   FloorPlanArea,
   FloorPlanDayPayload,
@@ -63,21 +77,6 @@ function eventTime(event: Pick<FloorPlanEvent, "startAt" | "endAt">) {
   return event.startAt && event.endAt
     ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}`
     : "Time needs review";
-}
-
-function eventForEntertainment(
-  plan: FloorPlanDocument,
-  reservation: EntertainmentReservation | null,
-) {
-  if (!reservation) return null;
-  return (
-    plan.events.find(
-      (event) =>
-        event.tripleseatEventId === reservation.tripleseatEventId ||
-        event.tripleseatEventId === reservation.localEventId ||
-        event.id === reservation.localEventId,
-    ) ?? null
-  );
 }
 
 function reservationForAreaAndEvent(
@@ -154,101 +153,6 @@ async function floorPlanRequest(date: string, body?: Record<string, unknown>) {
   return result;
 }
 
-function floorPlanOverlayLabel(
-  area: FloorPlanArea,
-  local: FloorPlanReservation | null,
-  shared: EntertainmentReservation | null,
-) {
-  if (shared) return area.shortLabel;
-  if (!local) return "";
-  if (local.reservationType === "food-table") return "F";
-  if (area.type === "room" || area.type === "seating-section") {
-    return area.shortLabel || local.label;
-  }
-  return "";
-}
-
-function sameEntertainmentGroup(
-  left: EntertainmentReservation,
-  right: EntertainmentReservation,
-) {
-  return (
-    left.tripleseatEventId === right.tripleseatEventId &&
-    left.localEventId === right.localEventId &&
-    left.resourceCategory === right.resourceCategory &&
-    left.startAt === right.startAt &&
-    left.endAt === right.endAt
-  );
-}
-
-function isEntertainmentTimeAnchor(
-  reservations: readonly EntertainmentReservation[],
-  area: FloorPlanArea,
-  reservation: EntertainmentReservation,
-) {
-  return AREAS.find(
-    (candidate) =>
-      candidate.entertainmentResourceId &&
-      reservations.some(
-        (item) =>
-          item.active &&
-          item.resourceId === candidate.entertainmentResourceId &&
-          sameEntertainmentGroup(item, reservation),
-      ),
-  )?.id === area.id;
-}
-
-function sourceDurationForArea(event: FloorPlanEvent, area: FloorPlanArea) {
-  const pattern =
-    area.type === "bowling"
-      ? /bowling/i
-      : area.type === "darts"
-        ? /dart/i
-        : area.type === "pool"
-          ? /pool/i
-          : area.type === "shuffleboard"
-            ? /shuffle/i
-            : area.type === "mini-golf"
-              ? /mini\s*golf/i
-              : null;
-  if (!pattern) return "";
-  const duration = event.source.entertainment.find((item) =>
-    pattern.test(item.name),
-  )?.duration.trim();
-  if (!duration || /not listed|unknown|tbd/i.test(duration)) return "";
-  return duration
-    .toUpperCase()
-    .replace(/\bHOURS\b/g, "HRS")
-    .replace(/\bHOUR\b/g, "HR");
-}
-
-function entertainmentTimingLabel(
-  reservation: EntertainmentReservation,
-  event: FloorPlanEvent,
-  area: FloorPlanArea,
-) {
-  const needsTimeReview = reservation.reviewIssues.some(
-    (issue) => issue.code === "TIME_NEEDS_REVIEW",
-  );
-  const time = needsTimeReview
-    ? "TIME TBD"
-    : `${formatClock(reservation.startAt)} – ${formatClock(reservation.endAt)}`;
-  const duration = sourceDurationForArea(event, area);
-  return duration ? `${duration} · ${time}` : time;
-}
-
-function customGeometry(
-  reservation: FloorPlanReservation,
-  area: FloorPlanArea,
-) {
-  return reservation.customGeometry ?? {
-    x: area.x,
-    y: area.y,
-    width: Math.max(area.width, 120),
-    height: Math.max(area.height, 44),
-  };
-}
-
 export default function FloorPlanDashboard({ initialDate }: { initialDate: string }) {
   const [date, setDate] = useState(initialDate);
   const [payload, setPayload] = useState<FloorPlanDayPayload | null>(null);
@@ -303,6 +207,28 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }, [date, loadDate]);
 
   const plan = payload?.plan ?? null;
+  const visibleEntertainment = useMemo(
+    () =>
+      plan && payload
+        ? visibleEntertainmentReservations(
+            plan,
+            payload.entertainmentReservations,
+            activeEventId,
+          )
+        : [],
+    [activeEventId, payload, plan],
+  );
+  const multipleReservationOutlines = useMemo(
+    () =>
+      plan && payload
+        ? entertainmentMultipleReservationOutlines(
+            plan,
+            payload.entertainmentReservations,
+            activeEventId,
+          )
+        : [],
+    [activeEventId, payload, plan],
+  );
   const activeEvent =
     plan?.events.find((event) => event.id === activeEventId) ?? null;
   const selectedArea =
@@ -329,7 +255,13 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   useEffect(() => {
     setFoodTableMode(Boolean(selectedArea?.canBeFoodTable));
-    setEntertainmentMode(Boolean(selectedArea?.entertainmentResourceId && selectedArea.type !== "room"));
+    setEntertainmentMode(
+      Boolean(
+        selectedArea?.entertainmentResourceId &&
+          selectedArea.type !== "room" &&
+          selectedArea.type !== "mini-golf",
+      ),
+    );
   }, [selectedArea]);
 
   useEffect(() => {
@@ -436,9 +368,19 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       setRedoStack([]);
       setDirty(false);
       setRequestState("idle");
+      if (
+        (action === "save" || action === "approve") &&
+        typeof BroadcastChannel !== "undefined"
+      ) {
+        const channel = new BroadcastChannel("event-host-floor-plans");
+        channel.postMessage({ action, date, version: next.plan.version });
+        channel.close();
+      }
       setMessage(
         action === "approve"
-          ? "Floor plan approved and saved."
+          ? "Floor plan approved and published to the main Floor Plans page."
+          : action === "save"
+            ? `Floor plan saved as version ${next.plan.version} and published to the main Floor Plans page.`
           : action === "refresh"
             ? "Live Tripleseat sync complete and saved. Review highlighted changes before approval."
             : `Floor plan ${action === "generate" ? "generated" : `${action}d`} and saved as version ${next.plan.version}.`,
@@ -511,6 +453,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         if (!area || !area.isReservable) continue;
         if (
           area.entertainmentResourceId &&
+          area.type !== "mini-golf" &&
           (area.type !== "room" || entertainmentMode)
         ) {
           await saveEntertainmentAssignment(area, activeEvent);
@@ -551,25 +494,32 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (!payload || !plan || !activeEvent || selectedAreaIds.length === 0) return;
     setRequestState("saving");
     try {
-      const removeIds = new Set<string>();
-      for (const areaId of selectedAreaIds) {
-        const area = getFloorPlanArea(areaId);
-        if (!area) continue;
-        const local = reservationForAreaAndEvent(plan, area.id, activeEvent.id);
-        if (local) removeIds.add(local.id);
-        const shared = entertainmentForAreaAndEvent(payload, area, activeEvent);
-        if (shared) {
-          const response = await fetch(
-            `/api/entertainment/reservations/${encodeURIComponent(shared.id)}`,
-            {
-              method: "DELETE",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ reason: "Removed from Event Host Floor Plans" }),
-            },
-          );
-          if (!response.ok) {
-            const result = (await response.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(result?.error || "Unable to remove the shared entertainment reservation.");
+      const removeIds = new Set(
+        localHighlightIdsForDeletion(
+          plan,
+          activeEvent.id,
+          selectedAreaIds,
+          selectedReservationId,
+        ),
+      );
+      if (!selectedReservationId) {
+        for (const areaId of selectedAreaIds) {
+          const area = getFloorPlanArea(areaId);
+          if (!area) continue;
+          const shared = entertainmentForAreaAndEvent(payload, area, activeEvent);
+          if (shared) {
+            const response = await fetch(
+              `/api/entertainment/reservations/${encodeURIComponent(shared.id)}`,
+              {
+                method: "DELETE",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ reason: "Removed from Event Host Floor Plans" }),
+              },
+            );
+            if (!response.ok) {
+              const result = (await response.json().catch(() => null)) as { error?: string } | null;
+              throw new Error(result?.error || "Unable to remove the shared entertainment reservation.");
+            }
           }
         }
       }
@@ -582,7 +532,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       if (removeIds.size) commitPlan(nextPlan);
       await refreshEntertainment(nextPlan);
       setRequestState("idle");
-      setMessage(removeIds.size ? "Assignments removed; save the plan to persist seating changes." : "Shared entertainment assignments removed.");
+      setSelectedReservationId("");
+      setMessage(removeIds.size ? "Highlights deleted; save the plan to persist the change." : "Shared entertainment highlights deleted.");
     } catch (error) {
       setRequestState("error");
       setMessage(error instanceof Error ? error.message : "Unable to remove the selected assignments.");
@@ -591,6 +542,18 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   function updateActiveEventColor(color: string) {
     if (!plan || !activeEvent) return;
+    const conflict = plan.events.find(
+      (event) =>
+        event.id !== activeEvent.id &&
+        !floorPlanEventColorsAreDistinct(color, event.color),
+    );
+    if (conflict) {
+      setRequestState("error");
+      setMessage(`Choose a different color. ${conflict.name} already uses a similar color.`);
+      return;
+    }
+    setRequestState("idle");
+    setMessage(`Updated ${activeEvent.name}'s event name and highlights. Save to publish the color.`);
     commitPlan({
       ...plan,
       events: plan.events.map((event) =>
@@ -611,7 +574,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     });
   }
 
-  function addCustomNote() {
+  function addCustomHighlight() {
     if (!plan || !activeEvent || !selectedArea) return;
     const note: FloorPlanReservation = {
       id: `manual:${activeEvent.id}:custom:${crypto.randomUUID()}`,
@@ -620,7 +583,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       reservationType: "custom",
       startAt: activeEvent.startAt,
       endAt: activeEvent.endAt,
-      label: "New note",
+      label: "New highlight",
       source: "manual",
       lockedByUser: true,
       customGeometry: {
@@ -636,6 +599,15 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   async function exportPng() {
     if (!plan || !payload || !mapImageRef.current || plan.status !== "Approved") return;
+    const exportedVisibleEntertainment = visibleEntertainmentReservations(
+      plan,
+      payload.entertainmentReservations,
+    );
+    const exportedMultipleReservationOutlines =
+      entertainmentMultipleReservationOutlines(
+        plan,
+        payload.entertainmentReservations,
+      );
     const canvas = document.createElement("canvas");
     canvas.width = 1920;
     canvas.height = 1080;
@@ -673,7 +645,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
       if (!area || !event) continue;
       if (reservation.reservationType === "custom") {
-        const geometry = customGeometry(reservation, area);
+        const geometry = floorPlanCustomGeometry(reservation)!;
         drawOverlay({ ...area, ...geometry }, event, reservation.label);
       } else {
         drawOverlay(
@@ -684,7 +656,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       }
     }
     const exportedEntertainmentGroups = new Set<string>();
-    const exportedEntertainment = [...payload.entertainmentReservations].sort(
+    const exportedEntertainment = [...exportedVisibleEntertainment].sort(
       (left, right) =>
         AREAS.findIndex(
           (area) => area.entertainmentResourceId === left.resourceId,
@@ -696,7 +668,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     for (const reservation of exportedEntertainment) {
       if (!reservation.active) continue;
       const area = getAreaForEntertainmentResource(reservation.resourceId);
-      const event = eventForEntertainment(plan, reservation);
+      const event = eventForFloorPlanEntertainment(plan, reservation);
       if (!area || !event) continue;
       drawOverlay(area, event, area.shortLabel);
       const groupKey = [
@@ -729,6 +701,25 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       context.strokeRect(x, y, width, 28);
       context.fillStyle = "#000000";
       context.fillText(label, x + 11, y + 19);
+    }
+    for (const outline of exportedMultipleReservationOutlines) {
+      context.strokeStyle = outline.color;
+      context.lineWidth = 7;
+      context.strokeRect(outline.x, outline.y, outline.width, outline.height);
+      if (outline.timeLabel) {
+        context.font = "700 15px Arial";
+        const width = Math.ceil(context.measureText(outline.timeLabel).width) + 22;
+        const x = outline.x + outline.width + 8;
+        const y = outline.y + outline.height / 2 + 16;
+        context.globalAlpha = 0.38;
+        context.fillStyle = outline.color;
+        context.fillRect(x, y, width, 28);
+        context.globalAlpha = 1;
+        context.strokeStyle = outline.color;
+        context.strokeRect(x, y, width, 28);
+        context.fillStyle = "#000000";
+        context.fillText(outline.timeLabel, x + 11, y + 19);
+      }
     }
     const link = document.createElement("a");
     link.download = `${date}-event-host-floor-plan.png`;
@@ -778,6 +769,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           <button disabled={!dirty || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
+          {plan?.events.length && !dirty ? <a className="button-link" href="/floor-plans">View saved plan</a> : null}
           {plan?.status === "Approved" ? <><button onClick={() => void exportPng()} type="button">Export PNG</button><button onClick={() => window.print()} type="button">Print / PDF</button></> : null}
         </div>
         <div className={`floor-plan-save-state is-${requestState}`} role="status">
@@ -809,7 +801,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                     style={{ "--event-color": event.color } as React.CSSProperties}
                     type="button"
                   >
-                    <span className="floor-plan-event-card-title"><strong>{event.name}</strong><span className={`floor-plan-source-status ${eventStatusClass(event)}`}>{event.fullBuyout ? "Full buyout" : event.status}</span></span>
+                    <span className="floor-plan-event-card-title"><strong style={{ color: event.color }}>{event.name}</strong><span className={`floor-plan-source-status ${eventStatusClass(event)}`}>{event.fullBuyout ? "Full buyout" : event.status}</span></span>
                     <span>{event.guestCount} guests · {eventTime(event)}</span>
                     <span>{event.source.rooms.join(", ") || "Contracted section missing"}</span>
                     <span>{event.source.entertainment.map((item) => `${item.name} ${item.quantity}`).join(" · ") || "No entertainment listed"}</span>
@@ -832,21 +824,40 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 <img alt="On Par Entertainment floor map" draggable={false} ref={mapImageRef} src="/floor-plans/blank-floor-map.png" />
                 <div className="floor-plan-map-date" aria-hidden="true"><strong>{formatFullDate(date)}</strong>{plan.events.map((event) => <span key={event.id} style={{ color: event.color }}><b>{event.name} ({event.guestCount})</b><small>{eventTime(event)}</small></span>)}</div>
                 <div className="floor-plan-area-layer">
+                  {multipleReservationOutlines.map((outline) => (
+                    <span
+                      aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}${outline.timeLabel ? `, ${outline.timeLabel}` : ""}`}
+                      className="floor-plan-entertainment-multiple-outline"
+                      key={outline.id}
+                      role="img"
+                      style={{
+                        left: `${(outline.x / 1920) * 100}%`,
+                        top: `${(outline.y / 1080) * 100}%`,
+                        width: `${(outline.width / 1920) * 100}%`,
+                        height: `${(outline.height / 1080) * 100}%`,
+                        "--event-color": outline.color,
+                      } as React.CSSProperties}
+                    >
+                      {outline.timeLabel ? <small className="floor-plan-entertainment-outline-time">{outline.timeLabel}</small> : null}
+                    </span>
+                  ))}
                   {AREAS.filter((area) => area.id !== "facility" || plan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
                     const local = plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom" && (reservation.floorPlanEventId === activeEventId || !activeEventId)) ?? plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom") ?? null;
                     const shared = area.entertainmentResourceId
-                      ? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId && (eventForEntertainment(plan, reservation)?.id === activeEventId || !activeEventId)) ?? payload.entertainmentReservations.find((reservation) => reservation.active && reservation.resourceId === area.entertainmentResourceId) ?? null
+                      ? visibleEntertainment.find((reservation) => reservation.resourceId === area.entertainmentResourceId) ?? null
                       : null;
-                    const assignedEvent = local
-                      ? plan.events.find((event) => event.id === local.floorPlanEventId) ?? null
-                      : eventForEntertainment(plan, shared);
+                    const assignedEvent = displayEventForFloorPlanArea(
+                      plan,
+                      local,
+                      shared,
+                    );
                     const label = floorPlanOverlayLabel(area, local, shared);
                     const showTimeLabel = Boolean(
                       shared &&
                       assignedEvent &&
                       area.type !== "mini-golf" &&
                       isEntertainmentTimeAnchor(
-                        payload.entertainmentReservations,
+                        visibleEntertainment,
                         area,
                         shared,
                       ),
@@ -885,25 +896,41 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                     const area = getFloorPlanArea(reservation.areaId);
                     const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
                     if (!area || !event) return null;
-                    const geometry = customGeometry(reservation, area);
+                    const geometry = floorPlanCustomGeometry(reservation)!;
                     return <button aria-label={`Custom note: ${reservation.label}`} className={`floor-plan-custom-note${selectedReservationId === reservation.id ? " is-selected" : ""}`} key={reservation.id} onClick={() => { setActiveEventId(event.id); setSelectedAreaIds([area.id]); setSelectedReservationId(reservation.id); }} style={{ left: `${(geometry.x / 1920) * 100}%`, top: `${(geometry.y / 1080) * 100}%`, width: `${(geometry.width / 1920) * 100}%`, height: `${(geometry.height / 1080) * 100}%`, backgroundColor: `${event.color}80`, borderColor: event.color, color: readableOverlayText(event.color) }} type="button">{reservation.label}</button>;
                   })}
                 </div>
               </div>
             </div>
-            <p className="floor-plan-map-help">Tap an object to inspect it. Shift-click for multi-select. Permanent map geometry stays fixed; custom notes can be resized in the inspector.</p>
+            <p className="floor-plan-map-help">Select one or more map objects, then use Add highlight or Delete highlight in the inspector. Custom highlights can be renamed and resized directly there.</p>
           </section>
 
           <aside className="floor-plan-inspector" aria-label="Floor plan inspector">
             <div className="floor-plan-panel-heading"><span className="portal-module-kicker">Inspector</span><h2>{selectedArea ? selectedArea.name : activeEvent?.name ?? "Select an event"}</h2></div>
+            {activeEvent ? (
+              <label className="floor-plan-event-color-editor">
+                <span>Event name &amp; highlight color</span>
+                <span className="floor-plan-event-color-control">
+                  <input
+                    aria-label={`Event name and highlight color for ${activeEvent.name}`}
+                    onChange={(event) => updateActiveEventColor(event.target.value)}
+                    type="color"
+                    value={activeEvent.color}
+                  />
+                  <output>{activeEvent.color}</output>
+                </span>
+                <small>Updates this party&apos;s event name and every highlight. Each party must use a different color.</small>
+              </label>
+            ) : null}
             {selectedArea && activeEvent ? (
               <div className="floor-plan-inspector-body">
                 <dl className="floor-plan-detail-list"><div><dt>Type</dt><dd>{selectedArea.type}</dd></div><div><dt>Capacity</dt><dd>{selectedArea.capacity || "Not counted"}</dd></div><div><dt>Parent</dt><dd>{selectedArea.parentAreaId ? getFloorPlanArea(selectedArea.parentAreaId)?.name ?? selectedArea.parentAreaId : "—"}</dd></div><div><dt>Assigned event</dt><dd>{activePlanReservation || activeEntertainmentReservation ? activeEvent.name : "Unassigned for selected event"}</dd></div></dl>
-                {selectedArea.entertainmentResourceId ? <><label className="floor-plan-toggle-field"><input checked={entertainmentMode} disabled={selectedArea.type !== "room"} onChange={(event) => setEntertainmentMode(event.target.checked)} type="checkbox" />{selectedArea.type === "room" ? "Also reserve on Entertainment Schedule" : "Shared Entertainment Schedule reservation"}</label><div className="floor-plan-field-group"><label>Reservation start<input onChange={(event) => setEntStart(event.target.value)} type="datetime-local" value={entStart} /></label><label>Reservation end<input onChange={(event) => setEntEnd(event.target.value)} type="datetime-local" value={entEnd} /></label></div></> : null}
+                {selectedArea.entertainmentResourceId && selectedArea.type !== "mini-golf" ? <><label className="floor-plan-toggle-field"><input checked={entertainmentMode} disabled={selectedArea.type !== "room"} onChange={(event) => setEntertainmentMode(event.target.checked)} type="checkbox" />{selectedArea.type === "room" ? "Also reserve on Entertainment Schedule" : "Shared Entertainment Schedule reservation"}</label><div className="floor-plan-field-group"><label>Reservation start<input onChange={(event) => setEntStart(event.target.value)} type="datetime-local" value={entStart} /></label><label>Reservation end<input onChange={(event) => setEntEnd(event.target.value)} type="datetime-local" value={entEnd} /></label></div></> : null}
+                {selectedArea.type === "mini-golf" ? <p className="floor-plan-warning-copy">Mini golf is open play and is not reserved on the Entertainment Schedule.</p> : null}
                 {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />Mark as food table and label F</label> : null}
-                {activePlanReservation ? <div className="floor-plan-field-group"><label>Label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label><label>Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label></div> : <label className="floor-plan-color-field">Event color<input onChange={(event) => updateActiveEventColor(event.target.value)} type="color" value={activeEvent.color} /></label>}
+                {activePlanReservation ? <div className="floor-plan-field-group"><label>Highlight label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label></div> : null}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}
-                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">Assign selected to {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Remove assignment</button><button onClick={addCustomNote} type="button">Add custom note here</button></div>
+                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">Add highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
                 {activePlanReservation?.reservationType === "custom" && activePlanReservation.customGeometry ? <div className="floor-plan-geometry-grid">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key}<input min={0} onChange={(event) => updateReservation({ customGeometry: { ...activePlanReservation.customGeometry!, [key]: Number(event.target.value) } })} type="number" value={activePlanReservation.customGeometry![key]} /></label>)}</div> : null}
                 <div className={`floor-plan-conflict-state${payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? " is-conflict" : ""}`}>{payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? "Blocking overlap: resolve this assignment before approval." : "No floor-plan overlap detected for this object."}</div>
               </div>
