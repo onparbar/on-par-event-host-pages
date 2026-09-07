@@ -54,6 +54,9 @@ export type ChecklistRecordStatus = "draft" | "submitted";
 
 export type ChecklistRecord = EventChecklistState & {
   eventId: number;
+  eventName: string;
+  eventDate: string;
+  poc: string;
   status: ChecklistRecordStatus;
   updatedAt: string | null;
   submittedAt: string | null;

@@ -33,6 +33,9 @@ function checklistFixture() {
   const record: ChecklistRecord = {
     ...checklist,
     eventId: event.id,
+    eventName: event.name,
+    eventDate: event.date,
+    poc: event.poc,
     status: "draft",
     updatedAt: "2026-07-30T15:00:00.000Z",
     submittedAt: null,
