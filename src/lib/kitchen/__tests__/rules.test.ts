@@ -1795,6 +1795,7 @@ describe("classification, aliases, and review behavior", () => {
   it.each([
     ["Premium Taco Bar — Contract description", "bar:taco"],
     ["Wing Bar — Contract description", "bar:wing"],
+    ["Jumbo Wing Bar — Contract description", "bar:wing"],
     ["Appetizer Bar — Contract description", "bar:appetizer"],
   ] as const)(
     "maps the full-contract bar label %s",
@@ -1804,6 +1805,45 @@ describe("classification, aliases, and review behavior", () => {
       ).toContain(expectedKind);
     },
   );
+
+  it("recognizes the September 16 Client Appreciation Jumbo Wing Bar for 15 guests", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "The Full Course - Food + $20 Drink Cards",
+            quantity: 15,
+          },
+          {
+            name: "Jumbo Wing Bar — Premium wings, expertly prepared and designed for effortless group dining. Served with our signature fries.",
+          },
+          {
+            name: "Desert Platter",
+            quantity: 2,
+          },
+        ],
+        {
+          eventName: "Client Appreciation (R+L Carriers)",
+          guestCount: 15,
+        },
+      ),
+    );
+
+    expect(checklist.selectedBars).toEqual(["wing"]);
+    expect(row(checklist, "wing-wings")).toMatchObject({
+      quantity: 120,
+      numberOfPans: 5,
+      panSize: "1/3",
+    });
+    expect(row(checklist, "wing-celery").quantity).toBe(15);
+    expect(row(checklist, "wing-fries")).toMatchObject({
+      quantity: 5,
+      numberOfPans: 1,
+      panSize: "1/2",
+    });
+    expect(row(checklist, "dessert-platter").quantity).toBe(2);
+    expect(warningCodes(checklist)).not.toContain("PACKAGE_BAR_MISSING");
+  });
 
   it("maps plain Mozzarella Sticks only in the Food Platters category", () => {
     expect(

@@ -516,7 +516,7 @@
   min-width: max-content;
   padding: 5px 10px;
   border: 1.5px solid var(--event-color);
-  background: color-mix(in srgb, var(--event-color) 38%, white);
+  background: color-mix(in srgb, var(--event-fill-color, var(--event-color)) 38%, white);
   color: #000000;
   font-size: clamp(5px, 0.58vw, 11px);
   font-weight: 950;
@@ -589,7 +589,7 @@
   min-width: max-content;
   padding: 5px 10px;
   border: 1.5px solid var(--event-color);
-  background: color-mix(in srgb, var(--event-color) 38%, white);
+  background: color-mix(in srgb, var(--event-fill-color, var(--event-color)) 38%, white);
   color: #000000;
   font-size: clamp(5px, 0.58vw, 11px);
   line-height: 1;

@@ -28,6 +28,7 @@ import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
+  floorPlanEventFillColor,
   eventForFloorPlanEntertainment,
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
@@ -607,6 +608,16 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         plan,
         payload.entertainmentReservations,
       );
+    const exportedEventFillColors = new Map(
+      plan.events.map((event) => [
+        event.id,
+        floorPlanEventFillColor(
+          plan,
+          payload.entertainmentReservations,
+          event,
+        ),
+      ]),
+    );
     const canvas = document.createElement("canvas");
     canvas.width = 1920;
     canvas.height = 1080;
@@ -626,15 +637,16 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       context.fillText(`${event.name} (${event.guestCount}) | ${eventTime(event)}`, 34, 96 + index * 34);
     });
     const drawOverlay = (area: FloorPlanArea, event: FloorPlanEvent, label: string) => {
+      const fillColor = exportedEventFillColors.get(event.id) ?? event.color;
       context.globalAlpha = 0.5;
-      context.fillStyle = event.color;
+      context.fillStyle = fillColor;
       context.fillRect(area.x, area.y, area.width, area.height);
       context.globalAlpha = 1;
       context.strokeStyle = event.color;
       context.lineWidth = 3;
       context.strokeRect(area.x, area.y, area.width, area.height);
       if (label) {
-        context.fillStyle = readableOverlayText(event.color);
+        context.fillStyle = readableOverlayText(fillColor);
         context.font = "700 15px Arial";
         context.fillText(label, area.x + 4, area.y + Math.min(area.height - 4, 18));
       }
@@ -693,7 +705,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         ? area.y + area.height + 8
         : area.y + area.height / 2 - 14;
       context.globalAlpha = 0.38;
-      context.fillStyle = event.color;
+      context.fillStyle = exportedEventFillColors.get(event.id) ?? event.color;
       context.fillRect(x, y, width, 28);
       context.globalAlpha = 1;
       context.strokeStyle = event.color;
@@ -711,7 +723,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         const x = outline.x + outline.width + 8;
         const y = outline.y + outline.height / 2 + 16;
         context.globalAlpha = 0.38;
-        context.fillStyle = outline.color;
+        context.fillStyle = outline.fillColor;
         context.fillRect(x, y, width, 28);
         context.globalAlpha = 1;
         context.strokeStyle = outline.color;

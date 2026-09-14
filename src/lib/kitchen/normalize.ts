@@ -183,6 +183,7 @@ function compositeKinds(
     ["premium taco bar - ", "bar:taco"],
     ["wing bar - ", "bar:wing"],
     ["premium wing bar - ", "bar:wing"],
+    ["jumbo wing bar - ", "bar:wing"],
     ["appetizer bar - ", "bar:appetizer"],
     ["premium appetizer bar - ", "bar:appetizer"],
   ] as const;

@@ -4,6 +4,7 @@ import { detectFloorPlanConflicts } from "../conflicts";
 import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
+  floorPlanEventFillColor,
   eventForFloorPlanEntertainment,
   localHighlightIdsForDeletion,
   visibleEntertainmentReservations,
@@ -164,6 +165,7 @@ describe("multiple entertainment reservation outlines", () => {
       expect.objectContaining({
         eventName: "Second Party",
         color: "#C026D3",
+        fillColor: "#D97706",
         resourceNames: ["Bowling Lane 5", "Bowling Lane 6"],
         x: 1462,
         y: 571,
@@ -171,6 +173,9 @@ describe("multiple entertainment reservation outlines", () => {
         height: 71,
       }),
     ]);
+    expect(
+      floorPlanEventFillColor(floorPlan, reservations, secondEvent),
+    ).toBe(firstEvent.color);
   });
 
   it("does not add a border when parties reserve different resources", () => {

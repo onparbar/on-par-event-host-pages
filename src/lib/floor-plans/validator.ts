@@ -322,7 +322,7 @@ export function validateFloorPlan(
       null,
       "Readable 50% overlays",
       "Passed",
-      "Screen and export overlays use 50% event-color fills, full-color borders, and text labels.",
+      "Screen and export overlays use 50% fills, full event-color borders, and text labels.",
       false,
     ),
     item(

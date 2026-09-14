@@ -7,6 +7,7 @@ import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
+  floorPlanEventFillColor,
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
@@ -36,6 +37,16 @@ export default function PublishedFloorPlanMap({
   const multipleReservationOutlines = entertainmentMultipleReservationOutlines(
     plan,
     payload.entertainmentReservations,
+  );
+  const eventFillColors = new Map(
+    plan.events.map((event) => [
+      event.id,
+      floorPlanEventFillColor(
+        plan,
+        payload.entertainmentReservations,
+        event,
+      ),
+    ]),
   );
 
   return (
@@ -75,6 +86,7 @@ export default function PublishedFloorPlanMap({
                 width: `${(outline.width / 1920) * 100}%`,
                 height: `${(outline.height / 1080) * 100}%`,
                 "--event-color": outline.color,
+                "--event-fill-color": outline.fillColor,
               } as React.CSSProperties}
             >
               {outline.timeLabel ? (
@@ -98,6 +110,7 @@ export default function PublishedFloorPlanMap({
               : null;
             const event = displayEventForFloorPlanArea(plan, local, shared);
             if (!event) return null;
+            const fillColor = eventFillColors.get(event.id) ?? event.color;
             const showTime = Boolean(
               shared &&
                 area.type !== "mini-golf" &&
@@ -119,9 +132,10 @@ export default function PublishedFloorPlanMap({
                   width: `${(area.width / 1920) * 100}%`,
                   height: `${(area.height / 1080) * 100}%`,
                   "--event-color": event.color,
-                  backgroundColor: `${event.color}80`,
+                  "--event-fill-color": fillColor,
+                  backgroundColor: `${fillColor}80`,
                   borderColor: event.color,
-                  color: readableOverlayText(event.color),
+                  color: readableOverlayText(fillColor),
                 } as React.CSSProperties}
               >
                 {label ? <span>{label}</span> : null}
@@ -143,6 +157,7 @@ export default function PublishedFloorPlanMap({
               if (!event || !geometry || !getFloorPlanArea(reservation.areaId)) {
                 return null;
               }
+              const fillColor = eventFillColors.get(event.id) ?? event.color;
               return (
                 <span
                   aria-label={`Custom highlight: ${reservation.label}`}
@@ -153,9 +168,9 @@ export default function PublishedFloorPlanMap({
                     top: `${(geometry.y / 1080) * 100}%`,
                     width: `${(geometry.width / 1920) * 100}%`,
                     height: `${(geometry.height / 1080) * 100}%`,
-                    backgroundColor: `${event.color}80`,
+                    backgroundColor: `${fillColor}80`,
                     borderColor: event.color,
-                    color: readableOverlayText(event.color),
+                    color: readableOverlayText(fillColor),
                   }}
                 >
                   {reservation.label}
