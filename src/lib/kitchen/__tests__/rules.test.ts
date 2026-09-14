@@ -1845,6 +1845,66 @@ describe("classification, aliases, and review behavior", () => {
     expect(warningCodes(checklist)).not.toContain("PACKAGE_BAR_MISSING");
   });
 
+  it("recognizes Emma's September 19 Food Only Package Appetizer Bar for 15 guests", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          {
+            name: "Food Only Package",
+            quantity: 15,
+          },
+          {
+            name: "Appetizer Bar — A curated selection of elevated bites, designed for effortless group enjoyment.",
+          },
+          {
+            name: "Desert Platter",
+            quantity: 1,
+          },
+          {
+            name: "Veggie Tray",
+            quantity: 1,
+          },
+        ],
+        {
+          eventName: "Emma's 18th Birthday!",
+          guestCount: 15,
+          localDate: "2026-09-19",
+        },
+      ),
+    );
+
+    expect(checklist.classification).toBe("bar-package");
+    expect(checklist.packageMarkers).toEqual(["food-only-package"]);
+    expect(checklist.selectedBars).toEqual(["appetizer"]);
+    expect(row(checklist, "appetizer-tater-kegs")).toMatchObject({
+      quantity: 42,
+      numberOfPans: 1,
+      panSize: "1/3",
+    });
+    expect(row(checklist, "appetizer-chicken-tenders")).toMatchObject({
+      quantity: 60,
+      numberOfPans: 1,
+      panSize: "1/3",
+    });
+    expect(row(checklist, "appetizer-mozzarella-sticks")).toMatchObject({
+      quantity: 6,
+      numberOfPans: 1,
+      panSize: "1/3",
+    });
+    expect(row(checklist, "sauce-marinara").quantity).toBe(1);
+    expect(row(checklist, "sauce-ranch").quantity).toBe(1);
+    expect(row(checklist, "dessert-platter").quantity).toBe(1);
+    expect(row(checklist, "platter-veggie-tray").quantity).toBe(1);
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 1,
+      total: 1,
+    });
+    expect(warningCodes(checklist)).not.toContain(
+      "BAR_WITHOUT_PACKAGE_MARKER",
+    );
+  });
+
   it("maps plain Mozzarella Sticks only in the Food Platters category", () => {
     expect(
       normalizeKitchenSelection({

@@ -41,7 +41,10 @@ export type KitchenSourceEvent = {
   sourceState?: "fresh" | "stale" | "sync-failed";
 };
 
-export type PackageMarker = "the-full-course" | "the-front-nine";
+export type PackageMarker =
+  | "the-full-course"
+  | "the-front-nine"
+  | "food-only-package";
 export type BarType = "taco" | "wing" | "appetizer";
 export type KitchenClassification = "bar-package" | "platter-only";
 

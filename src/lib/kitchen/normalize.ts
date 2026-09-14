@@ -18,6 +18,7 @@ const EXACT_SELECTION_ALIASES: Readonly<
 > = {
   "the full course": ["package:the-full-course"],
   "the front nine": ["package:the-front-nine"],
+  "food only package": ["package:food-only-package"],
   "the full course with dessert": [
     "package:the-full-course",
     "dessert",

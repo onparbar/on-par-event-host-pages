@@ -143,6 +143,7 @@ const ITINERARY_FOOD_LABELS: Partial<
 > = {
   "package:the-full-course": "The Full Course",
   "package:the-front-nine": "The Front Nine",
+  "package:food-only-package": "Food Only Package",
   "bar:taco": "Taco Bar",
   "bar:wing": "Wing Bar",
   "bar:appetizer": "Appetizer Bar",

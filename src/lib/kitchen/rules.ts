@@ -46,6 +46,7 @@ const BAR_ORDER: readonly BarType[] = ["taco", "wing", "appetizer"];
 const PACKAGE_ORDER: readonly PackageMarker[] = [
   "the-full-course",
   "the-front-nine",
+  "food-only-package",
 ];
 
 const LEGACY_REFERENCE_FOODS = new Set([
@@ -602,7 +603,7 @@ export function generateKitchenChecklist(
     addWarning(warnings, warningKeys, {
       code: "PACKAGE_BAR_MISSING",
       message:
-        "A Full Course or Front Nine package marker is present, but no structured bar selection identifies Taco, Wing, or Appetizer Bar.",
+        "An approved food package marker is present, but no structured bar selection identifies Taco, Wing, or Appetizer Bar.",
       requiresReview: true,
       scope: "event",
     });
@@ -612,7 +613,7 @@ export function generateKitchenChecklist(
     addWarning(warnings, warningKeys, {
       code: "BAR_WITHOUT_PACKAGE_MARKER",
       message:
-        "A bar selection is present without The Full Course or The Front Nine; the written rule classifies this event as platter-only.",
+        "A bar selection is present without an approved food package marker; the written rule classifies this event as platter-only.",
       requiresReview: true,
       scope: "event",
     });
