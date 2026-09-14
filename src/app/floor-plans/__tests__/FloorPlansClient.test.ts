@@ -533,4 +533,84 @@ describe("floor-plan dashboard organization", () => {
     );
     expect(html).toContain(">9:00 PM – 11:00 PM</small>");
   });
+
+  it("renders one title and one color for a Tripleseat event joined to both OnPar VIP rooms", () => {
+    const event = {
+      ...interactivePlan.events[0],
+      id: "event-no-host-social",
+      tripleseatEventId: "vip-primary",
+      name: "No Host Social VIP",
+      guestCount: 60,
+      startAt: "2026-09-14T18:00:00-04:00",
+      endAt: "2026-09-14T22:00:00-04:00",
+      contractedAreaIds: ["main-dining", "vip-1", "vip-2"],
+      color: "#7C3AED",
+      source: {
+        ...interactivePlan.events[0].source,
+        rooms: ["Main Dining Room", "VIP 1", "VIP 2"],
+        sourceEventIds: ["60526047", "vip-primary", "vip-secondary"],
+        onParBookingAreaIds: ["vip-1", "vip-2"],
+      },
+    };
+    const plan: FloorPlanDocument = {
+      ...interactivePlan,
+      id: "floor-plan-2026-09-14",
+      eventDate: "2026-09-14",
+      events: [event],
+      reservations: [
+        {
+          ...interactivePlan.reservations[0],
+          id: "main-table",
+          floorPlanEventId: event.id,
+          areaId: "main-rect-left-1",
+          reservationType: "seating",
+        },
+        {
+          ...interactivePlan.reservations[0],
+          id: "vip-1",
+          floorPlanEventId: event.id,
+          areaId: "vip-1",
+        },
+        {
+          ...interactivePlan.reservations[0],
+          id: "vip-2",
+          floorPlanEventId: event.id,
+          areaId: "vip-2",
+        },
+      ],
+    };
+    const vip1 = {
+      ...sharedVipReservation("shared-vip-1", event),
+      localEventId: null,
+      tripleseatEventId: "vip-primary",
+      eventColor: "#BE123C",
+    };
+    const vip2 = {
+      ...vip1,
+      id: "shared-vip-2",
+      tripleseatEventId: "vip-secondary",
+      resourceId: "private-room-vip-2",
+      resourceName: "VIP 2",
+      eventColor: "#1D4ED8",
+    };
+    const payload: FloorPlanDayPayload = {
+      ...interactivePayload,
+      date: plan.eventDate,
+      plan,
+      entertainmentReservations: [vip1, vip2],
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(PublishedFloorPlanMap, { payload }),
+    );
+
+    expect(html.match(/<b>No Host Social VIP \(60\)<\/b>/g)).toHaveLength(1);
+    expect(html).toMatch(
+      /aria-label="VIP 1 assigned to No Host Social VIP"[^>]+--event-color:#7C3AED/,
+    );
+    expect(html).toMatch(
+      /aria-label="VIP 2 assigned to No Host Social VIP"[^>]+--event-color:#7C3AED/,
+    );
+    expect(html).not.toContain("also reserved by No Host Social VIP");
+  });
 });

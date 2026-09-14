@@ -4,6 +4,7 @@ import { detectFloorPlanConflicts } from "../conflicts";
 import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
+  eventForFloorPlanEntertainment,
   localHighlightIdsForDeletion,
   visibleEntertainmentReservations,
 } from "../presentation";
@@ -301,5 +302,53 @@ describe("multiple entertainment reservation outlines", () => {
       }),
     ]);
     expect(detectFloorPlanConflicts(vipPlan)).toEqual([]);
+  });
+});
+
+describe("merged floor-plan event identities", () => {
+  it("maps both original OnPar reservation IDs to one floor-plan event and color", () => {
+    const event = floorPlanEvent(
+      "event-no-host-social",
+      "vip-primary",
+      "No Host Social VIP",
+      "#7C3AED",
+    );
+    event.source.sourceEventIds = [
+      "60526047",
+      "vip-primary",
+      "vip-secondary",
+    ];
+    const mergedPlan = { ...plan, events: [event] };
+    const vip1 = {
+      ...entertainmentReservation(
+        "vip-1-reservation",
+        event,
+        "private-room-vip-1",
+        "2026-09-14T18:00:00-04:00",
+        "2026-09-14T22:00:00-04:00",
+      ),
+      localEventId: null,
+      tripleseatEventId: "vip-primary",
+      resourceCategory: "private-rooms" as const,
+      resourceName: "VIP 1",
+    };
+    const vip2 = {
+      ...vip1,
+      id: "vip-2-reservation",
+      tripleseatEventId: "vip-secondary",
+      resourceId: "private-room-vip-2",
+      resourceName: "VIP 2",
+    };
+
+    expect(eventForFloorPlanEntertainment(mergedPlan, vip1)).toBe(event);
+    expect(eventForFloorPlanEntertainment(mergedPlan, vip2)).toBe(event);
+    expect(
+      visibleEntertainmentReservations(mergedPlan, [vip1, vip2]).map(
+        (reservation) => reservation.resourceId,
+      ),
+    ).toEqual(["private-room-vip-1", "private-room-vip-2"]);
+    expect(
+      entertainmentMultipleReservationOutlines(mergedPlan, [vip1, vip2]),
+    ).toEqual([]);
   });
 });

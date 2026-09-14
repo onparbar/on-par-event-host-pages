@@ -137,9 +137,18 @@ function eventBaseReservations(
   const contractedAreas = event.contractedAreaIds.filter(
     (areaId) => areaId !== "facility" && getFloorPlanArea(areaId),
   );
-  const primaryContractedArea = contractedAreas.find(
+  const onParBookingAreaIds = new Set(
+    event.source.onParBookingAreaIds ?? [],
+  );
+  const vipOnly = isVipOnlyFloorPlanEvent(event);
+  const seatingContractedAreas = vipOnly
+    ? []
+    : onParBookingAreaIds.size
+      ? contractedAreas.filter((areaId) => !onParBookingAreaIds.has(areaId))
+      : contractedAreas;
+  const primaryContractedArea = seatingContractedAreas.find(
     (areaId) => seatingTablesForArea(areaId).length > 0,
-  ) ?? contractedAreas[0] ?? null;
+  ) ?? seatingContractedAreas[0] ?? null;
   const generated: FloorPlanReservation[] = [];
 
   if (event.fullBuyout) {
@@ -150,9 +159,8 @@ function eventBaseReservations(
     if (contracted?.type === "room") {
       generated.push(reservation(event, contracted.id, "room", contracted.shortLabel));
     }
-    if (event.tripleseatEventId.startsWith("vip-")) {
-      continue;
-    }
+  }
+  for (const contractedArea of seatingContractedAreas) {
     for (const fixture of fixedSeatingHighlightsForArea(contractedArea)) {
       if (!unavailable.has(fixture.id)) {
         generated.push(
@@ -161,7 +169,7 @@ function eventBaseReservations(
       }
     }
   }
-  if (event.tripleseatEventId.startsWith("vip-")) {
+  if (vipOnly) {
     return generated;
   }
   const existingSeatingAreaIds = new Set(
@@ -177,7 +185,7 @@ function eventBaseReservations(
       return item ? [item] : [];
     }),
   );
-  const availableTables = contractedAreas.flatMap((areaId) =>
+  const availableTables = seatingContractedAreas.flatMap((areaId) =>
     seatingTablesForArea(areaId).filter(
       (table) =>
         !unavailable.has(table.id) && !existingSeatingAreaIds.has(table.id),
@@ -262,7 +270,7 @@ export function reservationAllowedForFloorPlanEvent(
   event: FloorPlanEvent,
   reservation: FloorPlanReservation,
 ) {
-  if (!event.tripleseatEventId.startsWith("vip-")) return true;
+  if (!isVipOnlyFloorPlanEvent(event)) return true;
   return (
     reservation.reservationType === "room" &&
     event.contractedAreaIds.includes(reservation.areaId)
@@ -274,10 +282,21 @@ export function reservationForCurrentFloorPlanEvent(
   reservation: FloorPlanReservation,
 ) {
   if (!reservationAllowedForFloorPlanEvent(event, reservation)) return null;
-  if (!event.tripleseatEventId.startsWith("vip-")) return reservation;
+  if (reservation.source === "manual" || reservation.lockedByUser) {
+    return reservation;
+  }
   return {
     ...reservation,
     startAt: event.startAt,
     endAt: event.endAt,
   };
+}
+
+export function isVipOnlyFloorPlanEvent(event: FloorPlanEvent) {
+  const onParBookingAreaIds = event.source.onParBookingAreaIds ?? [];
+  return event.tripleseatEventId.startsWith("vip-") &&
+    (onParBookingAreaIds.length === 0 ||
+      event.contractedAreaIds.every((areaId) =>
+        onParBookingAreaIds.includes(areaId),
+      ));
 }

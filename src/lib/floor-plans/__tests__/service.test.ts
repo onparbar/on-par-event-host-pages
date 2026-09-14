@@ -15,13 +15,20 @@ import {
 
 import {
   ensureConfirmedContractFloorPlanWindow,
+  floorPlanEventsWithSavedIdentity,
   generateFloorPlan,
   getFloorPlanDay,
   refreshFloorPlanSources,
+  reservationsForReconciledFloorPlanEvents,
 } from "../service";
 import { floorPlanEventColorsAreDistinct } from "../configuration/colors";
 import { MemoryFloorPlanStorage } from "../storage";
 import { FLOOR_PLAN_RULE_VERSION } from "../types";
+import type {
+  FloorPlanDocument,
+  FloorPlanEvent,
+  FloorPlanReservation,
+} from "../types";
 
 function source(
   overrides: Partial<TripleseatEventPlanSource> = {},
@@ -95,6 +102,325 @@ afterEach(() => {
 });
 
 describe("Floor Plan Tripleseat source enforcement", () => {
+  it("migrates three saved source highlights onto one merged floor-plan event", () => {
+    const event = (
+      id: string,
+      sourceEventId: string,
+      contractedAreaIds: string[],
+    ): FloorPlanEvent => ({
+      id,
+      floorPlanId: "floor-plan-2026-09-14",
+      tripleseatEventId: sourceEventId,
+      name: "No Host Social VIP",
+      status: "DEFINITE",
+      guestCount: 60,
+      startAt: "2026-09-14T18:00:00-04:00",
+      endAt: "2026-09-14T22:00:00-04:00",
+      contractedAreaIds,
+      unresolvedAreaNames: [],
+      color: "#7C3AED",
+      beoLastModifiedAt: "2026-09-14T14:40:10Z",
+      fullBuyout: false,
+      source: {
+        rooms: [],
+        food: [],
+        entertainment: [],
+        operationalNotes: [],
+        reviewReasons: [],
+      },
+    });
+    const tripleseat = event("event-tripleseat", "60526047", ["main-dining"]);
+    const vip1 = event("event-vip-1", "vip-60cd18c0", ["vip-1"]);
+    const vip2 = event("event-vip-2", "vip-af28fe8f", ["vip-2"]);
+    const reservation = (
+      floorPlanEventId: string,
+      areaId: string,
+      reservationType: FloorPlanReservation["reservationType"],
+    ): FloorPlanReservation => ({
+      id: `${floorPlanEventId}:${areaId}`,
+      floorPlanEventId,
+      areaId,
+      reservationType,
+      startAt: tripleseat.startAt,
+      endAt: tripleseat.endAt,
+      label: reservationType === "room" ? areaId.toUpperCase() : "",
+      source: "generated",
+      lockedByUser: false,
+    });
+    const saved: FloorPlanDocument = {
+      id: "floor-plan-2026-09-14",
+      eventDate: "2026-09-14",
+      status: "Needs Review",
+      version: 33,
+      ruleVersion: "floor-plan-v1.3.2",
+      lastTripleseatSyncAt: "2026-09-14T14:45:00Z",
+      createdAt: "2026-09-14T14:00:00Z",
+      updatedAt: "2026-09-14T14:45:00Z",
+      approvedAt: null,
+      approvedBy: null,
+      events: [tripleseat, vip1, vip2],
+      reservations: [
+        reservation(tripleseat.id, "main-rect-left-1", "seating"),
+        reservation(vip1.id, "vip-1", "room"),
+        reservation(vip2.id, "vip-2", "room"),
+      ],
+    };
+    const merged = event(vip1.id, vip1.tripleseatEventId, [
+      "main-dining",
+      "vip-1",
+      "vip-2",
+    ]);
+    merged.source.sourceEventIds = [
+      tripleseat.tripleseatEventId,
+      vip1.tripleseatEventId,
+      vip2.tripleseatEventId,
+    ];
+    merged.source.onParBookingAreaIds = ["vip-1", "vip-2"];
+
+    const reconciled = reservationsForReconciledFloorPlanEvents(saved, [merged]);
+
+    expect(
+      reconciled.every(
+        (item) => item.floorPlanEventId === merged.id,
+      ),
+    ).toBe(true);
+    expect(reconciled).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ areaId: "vip-1", reservationType: "room" }),
+        expect.objectContaining({ areaId: "vip-2", reservationType: "room" }),
+        expect.objectContaining({
+          areaId: "main-rect-left-1",
+          reservationType: "seating",
+        }),
+      ]),
+    );
+    expect(
+      reconciled.some(
+        (item) =>
+          item.reservationType === "seating" &&
+          item.areaId.startsWith("vip1-extra"),
+      ),
+    ).toBe(false);
+
+    const oldPrimary = event(
+      "event-old-primary",
+      "vip-old-primary",
+      ["vip-1"],
+    );
+    oldPrimary.source.sourceEventIds = [
+      "vip-old-primary",
+      "vip-still-current",
+      "60526047",
+    ];
+    const savedWithChangedPrimary: FloorPlanDocument = {
+      ...saved,
+      events: [oldPrimary],
+      reservations: [
+        {
+          id: "manual-vip-1",
+          floorPlanEventId: oldPrimary.id,
+          areaId: "vip-1",
+          reservationType: "room",
+          startAt: oldPrimary.startAt,
+          endAt: oldPrimary.endAt,
+          label: "VIP 1",
+          source: "manual",
+          lockedByUser: true,
+        },
+      ],
+    };
+    const newPrimary = event(
+      "event-new-primary",
+      "vip-still-current",
+      ["vip-1", "vip-2"],
+    );
+    newPrimary.source.sourceEventIds = ["vip-still-current", "60526047"];
+
+    expect(
+      reservationsForReconciledFloorPlanEvents(savedWithChangedPrimary, [
+        newPrimary,
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        id: "manual-vip-1",
+        floorPlanEventId: newPrimary.id,
+        areaId: "vip-1",
+        lockedByUser: true,
+      }),
+    ]);
+
+    const legacyVip = event("legacy-vip", "vip-legacy", ["vip-1"]);
+    const mergedAfterLegacy = event("merged-after-legacy", "vip-legacy", [
+      "main-dining",
+      "vip-1",
+    ]);
+    mergedAfterLegacy.source.sourceEventIds = ["60526047", "vip-legacy"];
+    mergedAfterLegacy.source.onParBookingAreaIds = ["vip-1"];
+    const legacyVipSaved: FloorPlanDocument = {
+      ...saved,
+      events: [legacyVip],
+      reservations: [
+        reservation(legacyVip.id, "vip-1", "room"),
+        reservation(legacyVip.id, "vip1-extra-table-1", "seating"),
+      ],
+    };
+    expect(
+      reservationsForReconciledFloorPlanEvents(legacyVipSaved, [
+        mergedAfterLegacy,
+      ]).map((item) => item.areaId),
+    ).toEqual(["vip-1"]);
+
+    const customEvent = event("custom-event", "custom-source", [
+      "main-dining",
+    ]);
+    const customSaved: FloorPlanDocument = {
+      ...saved,
+      events: [customEvent],
+      reservations: [
+        {
+          ...reservation(customEvent.id, "main-dining", "custom"),
+          id: "custom-note-1",
+          source: "manual",
+        },
+        {
+          ...reservation(customEvent.id, "main-dining", "custom"),
+          id: "custom-note-2",
+          source: "manual",
+        },
+      ],
+    };
+    expect(
+      reservationsForReconciledFloorPlanEvents(customSaved, [customEvent]).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["custom-note-1", "custom-note-2"]);
+
+    const savedMerged = event("saved-merged", "vip-split-1", [
+      "vip-1",
+      "vip-2",
+    ]);
+    savedMerged.source.sourceEventIds = ["vip-split-1", "vip-split-2"];
+    const currentVip2 = event("current-vip-2", "vip-split-2", ["vip-2"]);
+    const currentVip1 = event("current-vip-1", "vip-split-1", ["vip-1"]);
+    const split = floorPlanEventsWithSavedIdentity(
+      [currentVip2, currentVip1],
+      [savedMerged],
+    );
+    expect(split.map((item) => item.id)).toEqual([
+      "current-vip-2",
+      "saved-merged",
+    ]);
+    expect(new Set(split.map((item) => item.id)).size).toBe(2);
+    const savedSplitPlan: FloorPlanDocument = {
+      ...saved,
+      events: [savedMerged],
+      reservations: [
+        reservation(savedMerged.id, "vip-1", "room"),
+        reservation(savedMerged.id, "vip-2", "room"),
+      ],
+    };
+    expect(
+      reservationsForReconciledFloorPlanEvents(savedSplitPlan, split).map(
+        (item) => [item.areaId, item.floorPlanEventId],
+      ),
+    ).toEqual([
+      ["vip-1", "saved-merged"],
+      ["vip-2", "current-vip-2"],
+    ]);
+
+    const savedMixed = event("saved-mixed", "60526047", [
+      "main-dining",
+      "vip-1",
+      "vip-2",
+    ]);
+    savedMixed.source.sourceEventIds = [
+      "60526047",
+      "vip-mixed-1",
+      "vip-mixed-2",
+    ];
+    const splitMixed = floorPlanEventsWithSavedIdentity(
+      [
+        event("current-tripleseat", "60526047", ["main-dining"]),
+        event("current-vip-1", "vip-mixed-1", ["vip-1"]),
+        event("current-vip-2", "vip-mixed-2", ["vip-2"]),
+      ],
+      [savedMixed],
+    );
+    const mixedReservations = reservationsForReconciledFloorPlanEvents(
+      {
+        ...saved,
+        events: [savedMixed],
+        reservations: [
+          reservation(savedMixed.id, "main-rect-left-1", "seating"),
+          reservation(savedMixed.id, "vip-1", "room"),
+          reservation(savedMixed.id, "vip-2", "room"),
+        ],
+      },
+      splitMixed,
+    );
+    expect(
+      mixedReservations.map((item) => [item.areaId, item.floorPlanEventId]),
+    ).toEqual([
+      ["main-rect-left-1", "saved-mixed"],
+      ["vip-1", "current-vip-1"],
+      ["vip-2", "current-vip-2"],
+    ]);
+
+    const staleTimeEvent = event("stale-time-event", "60526047", [
+      "main-dining",
+    ]);
+    staleTimeEvent.startAt = "2026-09-14T17:00:00-04:00";
+    staleTimeEvent.endAt = "2026-09-14T21:00:00-04:00";
+    const authoritativeEvent = event(
+      staleTimeEvent.id,
+      "vip-authoritative",
+      ["main-dining", "vip-1"],
+    );
+    authoritativeEvent.source.sourceEventIds = [
+      "60526047",
+      "vip-authoritative",
+    ];
+    authoritativeEvent.source.onParBookingAreaIds = ["vip-1"];
+    const generatedStale = {
+      ...reservation(
+        staleTimeEvent.id,
+        "main-rect-left-1",
+        "seating",
+      ),
+      startAt: staleTimeEvent.startAt,
+      endAt: staleTimeEvent.endAt,
+    };
+    const manualStale = {
+      ...generatedStale,
+      id: "manual-stale-time",
+      areaId: "main-rect-left-2",
+      source: "manual" as const,
+      lockedByUser: true,
+    };
+    const reconciledTimes = reservationsForReconciledFloorPlanEvents(
+      {
+        ...saved,
+        events: [staleTimeEvent],
+        reservations: [generatedStale, manualStale],
+      },
+      [authoritativeEvent],
+    );
+    expect(reconciledTimes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: generatedStale.id,
+          startAt: authoritativeEvent.startAt,
+          endAt: authoritativeEvent.endAt,
+        }),
+        expect.objectContaining({
+          id: manualStale.id,
+          startAt: staleTimeEvent.startAt,
+          endAt: staleTimeEvent.endAt,
+        }),
+      ]),
+    );
+  });
+
   it("creates the confirmed August 21 floor plan with VIP 1 and entertainment", async () => {
     const floorPlanStorage = new MemoryFloorPlanStorage();
     setEventPlanStorageForTests(createMemoryEventPlanStorage());

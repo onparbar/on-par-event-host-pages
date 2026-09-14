@@ -45,7 +45,16 @@ import {
 import { getFloorPlanArea } from "./configuration/areas";
 import { detectFloorPlanConflicts, timeRangesOverlap } from "./conflicts";
 import {
+  entertainmentReservationMatchesFloorPlanEvent,
+  floorPlanEventSourceIds,
+} from "./identity";
+import {
+  resolveFloorPlanSourceRows,
+  type FloorPlanSourceRow,
+} from "./source-resolution";
+import {
   generateFloorPlanReservations,
+  reservationAllowedForFloorPlanEvent,
   reservationForCurrentFloorPlanEvent,
 } from "./generator";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
@@ -80,6 +89,12 @@ function sourceRooms(row: UnknownRecord | null, fallback: readonly string[]) {
     : [...fallback];
 }
 
+function sourceStrings(row: UnknownRecord | null, key: string) {
+  return Array.isArray(row?.[key])
+    ? row![key].filter((value): value is string => typeof value === "string")
+    : [];
+}
+
 function timeRange(plan: EventPlan, source: UnknownRecord | null) {
   const startAt = sourceValue(source, "eventStartAt");
   const endAt = sourceValue(source, "eventEndAt");
@@ -104,6 +119,16 @@ function normalizedFloorPlanEvent(
   const status = sourceValue(sourceSnapshot, "status") ?? "Definite";
   const fullBuyout =
     contractedAreaIds.includes("facility") || /full\s+(?:building|facility)?\s*buyout/i.test(status);
+  const sourceEventIds = [
+    ...new Set([
+      sourceEventId,
+      ...sourceStrings(sourceSnapshot, "sourceEventIds"),
+    ]),
+  ];
+  const onParBookingAreaIds = sourceStrings(
+    sourceSnapshot,
+    "onParBookingRooms",
+  ).flatMap((room) => resolveAreaAlias(room) ?? []);
   return {
     id: `floor-plan-event-${plan.id}`,
     floorPlanId,
@@ -127,6 +152,8 @@ function normalizedFloorPlanEvent(
     fullBuyout,
     source: {
       rooms,
+      ...(sourceEventIds.length > 1 ? { sourceEventIds } : {}),
+      ...(onParBookingAreaIds.length > 0 ? { onParBookingAreaIds } : {}),
       food: [...plan.food],
       entertainment: plan.entertainment.map((item) => ({ ...item })),
       operationalNotes: (plan.operational_notes ?? []).map((note) => ({
@@ -191,7 +218,7 @@ async function sourceEventsForDate(date: string) {
   } catch {
     // Exact-date redacted Event Host plans remain available before migration.
   }
-  const tripleseatRows = stored.length
+  const tripleseatRows: FloorPlanSourceRow[] = stored.length
     ? stored.map((row) => ({
         plan: buildEventPlan(
           structuredClone(row.sourceSnapshot) as unknown as TripleseatEventPlanSource,
@@ -204,7 +231,9 @@ async function sourceEventsForDate(date: string) {
   const vipPayload = vipPrepClient.configured
     ? await vipPrepClient.fetchRange(date, date)
     : null;
-  const vipRows = (vipPayload?.reservations ?? []).map((reservation) => ({
+  const vipRows: FloorPlanSourceRow[] = (
+    vipPayload?.reservations ?? []
+  ).map((reservation) => ({
     plan: vipEventPlan(reservation),
     source: {
       status: "DEFINITE",
@@ -242,7 +271,7 @@ async function sourceEventsForDate(date: string) {
       source: asRecord(row.source),
       sourceEventId: row.sourceEventId,
     }));
-  const rows = [
+  const rows = resolveFloorPlanSourceRows([
     ...liveRows.filter(
       (candidate) =>
         !confirmedRows.some((confirmed) =>
@@ -255,7 +284,7 @@ async function sourceEventsForDate(date: string) {
         ),
     ),
     ...confirmedRows,
-  ];
+  ]);
   return {
     rows: rows.filter(
       (row) =>
@@ -313,6 +342,120 @@ function sourceChanged(previous: FloorPlanEvent, current: FloorPlanEvent) {
   });
 }
 
+export function reservationsForReconciledFloorPlanEvents(
+  saved: FloorPlanDocument,
+  currentEvents: readonly FloorPlanEvent[],
+) {
+  const savedEventsById = new Map(
+    saved.events.map((event) => [event.id, event]),
+  );
+  const retainedByAssignment = new Map<string, FloorPlanReservation>();
+  for (const reservation of saved.reservations) {
+    const savedEvent = savedEventsById.get(reservation.floorPlanEventId);
+    if (
+      savedEvent &&
+      !reservationAllowedForFloorPlanEvent(savedEvent, reservation)
+    ) {
+      continue;
+    }
+    const compatible = (candidate: FloorPlanEvent) =>
+      reservationAllowedForFloorPlanEvent(candidate, {
+        ...reservation,
+        floorPlanEventId: candidate.id,
+      });
+    const containsReservationArea = (candidate: FloorPlanEvent) => {
+      const area = getFloorPlanArea(reservation.areaId);
+      return candidate.contractedAreaIds.includes(reservation.areaId) ||
+        Boolean(
+          area?.parentAreaId &&
+            candidate.contractedAreaIds.includes(area.parentAreaId),
+        );
+    };
+    const exactEvents = currentEvents.filter(
+      (candidate) =>
+        candidate.id === reservation.floorPlanEventId && compatible(candidate),
+    );
+    const aliasEvents = savedEvent
+      ? currentEvents.filter(
+          (candidate) =>
+            floorPlanEventsShareSource(candidate, savedEvent) &&
+            compatible(candidate),
+        )
+      : [];
+    const event =
+      exactEvents.find(containsReservationArea) ??
+      aliasEvents.find(containsReservationArea) ??
+      exactEvents[0] ??
+      aliasEvents[0];
+    if (!event) continue;
+    const current = reservationForCurrentFloorPlanEvent(event, {
+      ...reservation,
+      floorPlanEventId: event.id,
+    });
+    if (!current) continue;
+    const key = current.reservationType === "custom"
+      ? `${event.id}:custom:${current.id}`
+      : `${event.id}:${current.areaId}:${current.reservationType}`;
+    const existing = retainedByAssignment.get(key);
+    if (!existing || (!existing.lockedByUser && current.lockedByUser)) {
+      retainedByAssignment.set(key, current);
+    }
+  }
+  return [...retainedByAssignment.values()];
+}
+
+function floorPlanEventsShareSource(
+  left: FloorPlanEvent,
+  right: FloorPlanEvent,
+) {
+  const leftIds = floorPlanEventSourceIds(left);
+  return [...floorPlanEventSourceIds(right)].some((id) => leftIds.has(id));
+}
+
+export function floorPlanEventsWithSavedIdentity(
+  currentEvents: readonly FloorPlanEvent[],
+  savedEvents: readonly FloorPlanEvent[],
+) {
+  const matchedSavedIndexes = new Set<number>();
+  const previousByCurrentIndex = new Map<number, FloorPlanEvent>();
+
+  for (const [currentIndex, current] of currentEvents.entries()) {
+    const savedIndex = savedEvents.findIndex(
+      (event, index) =>
+        !matchedSavedIndexes.has(index) &&
+        event.tripleseatEventId === current.tripleseatEventId,
+    );
+    if (savedIndex < 0) continue;
+    matchedSavedIndexes.add(savedIndex);
+    previousByCurrentIndex.set(currentIndex, savedEvents[savedIndex]);
+  }
+  for (const [currentIndex, current] of currentEvents.entries()) {
+    if (previousByCurrentIndex.has(currentIndex)) continue;
+    const savedIndex = savedEvents.findIndex(
+      (event, index) =>
+        !matchedSavedIndexes.has(index) &&
+        floorPlanEventsShareSource(current, event),
+    );
+    if (savedIndex < 0) continue;
+    matchedSavedIndexes.add(savedIndex);
+    previousByCurrentIndex.set(currentIndex, savedEvents[savedIndex]);
+  }
+
+  const reconciled: FloorPlanEvent[] = [];
+  for (const [index, current] of currentEvents.entries()) {
+    const previous = previousByCurrentIndex.get(index);
+    const color = distinctFloorPlanEventColor(
+      previous && isHexColor(previous.color) ? previous.color : current.color,
+      index,
+      reconciled.map((event) => event.color),
+    );
+    reconciled.push(
+      previous ? { ...current, id: previous.id, color } : { ...current, color },
+    );
+  }
+  return reconciled;
+}
+
 async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   const [saved, sourceResult] = await Promise.all([
     storage.get(date),
@@ -320,35 +463,23 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   ]);
   const sourceRows = sourceResult.rows;
   const planId = saved?.id ?? `floor-plan-${date}`;
-  const currentEvents: FloorPlanEvent[] = [];
+  const normalizedEvents: FloorPlanEvent[] = [];
   for (const [index, row] of sourceRows.entries()) {
-    const usedColors = currentEvents.map((event) => event.color);
-    const current = normalizedFloorPlanEvent(
-      planId,
-      row.plan,
-      row.source,
-      index,
-      usedColors,
-      row.sourceEventId,
-    );
-    const previous = saved?.events.find(
-      (event) => event.tripleseatEventId === current.tripleseatEventId,
-    );
-    const color = distinctFloorPlanEventColor(
-      previous && isHexColor(previous.color) ? previous.color : current.color,
-      index,
-      usedColors,
-    );
-    currentEvents.push(
-      previous
-        ? {
-            ...current,
-            id: previous.id,
-            color,
-          }
-        : { ...current, color },
+    normalizedEvents.push(
+      normalizedFloorPlanEvent(
+        planId,
+        row.plan,
+        row.source,
+        index,
+        normalizedEvents.map((event) => event.color),
+        row.sourceEventId,
+      ),
     );
   }
+  const currentEvents = floorPlanEventsWithSavedIdentity(
+    normalizedEvents,
+    saved?.events ?? [],
+  );
   if (!saved) return createPlan(date, currentEvents);
   if (currentEvents.length === 0) {
     return sourceResult.sourceRowCount > 0
@@ -365,14 +496,10 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   }
 
   const currentIds = new Set(currentEvents.map((event) => event.id));
-  const retainedReservations = saved.reservations.flatMap((reservation) => {
-    const event = currentEvents.find(
-      (candidate) => candidate.id === reservation.floorPlanEventId,
-    );
-    if (!event || !currentIds.has(reservation.floorPlanEventId)) return [];
-    const current = reservationForCurrentFloorPlanEvent(event, reservation);
-    return current ? [current] : [];
-  });
+  const retainedReservations = reservationsForReconciledFloorPlanEvents(
+    saved,
+    currentEvents,
+  );
   const changed = currentEvents.some((current) => {
     const previous = saved.events.find((event) => event.id === current.id);
     return !previous || sourceChanged(previous, current);
@@ -685,11 +812,7 @@ function sharedReservationMatchesEvent(
   reservation: EntertainmentReservation,
   event: FloorPlanEvent,
 ) {
-  return (
-    reservation.tripleseatEventId === event.tripleseatEventId ||
-    reservation.localEventId === event.tripleseatEventId ||
-    reservation.localEventId === event.id
-  );
+  return entertainmentReservationMatchesFloorPlanEvent(reservation, event);
 }
 
 function supportsProximity(category: EntertainmentReservation["resourceCategory"]): category is "bowling" | "darts" | "pool" | "shuffleboard" {
@@ -881,9 +1004,10 @@ export async function saveFloorPlanEdits(
       if (!reservation.active) continue;
       const event = events.find(
         (candidate) =>
-          candidate.tripleseatEventId === reservation.tripleseatEventId ||
-          candidate.tripleseatEventId === reservation.localEventId ||
-          candidate.id === reservation.localEventId,
+          entertainmentReservationMatchesFloorPlanEvent(
+            reservation,
+            candidate,
+          ),
       );
       if (!event || event.color === reservation.eventColor) continue;
       await updateEntertainmentReservation(reservation.id, {

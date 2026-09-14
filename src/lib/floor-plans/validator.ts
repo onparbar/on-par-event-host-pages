@@ -12,6 +12,7 @@ import {
   requiredFoodTableCount,
 } from "./configuration/areas";
 import { floorPlanEventColorsAreDistinct } from "./configuration/colors";
+import { entertainmentReservationMatchesFloorPlanEvent } from "./identity";
 import type {
   FloorPlanConflict,
   FloorPlanDocument,
@@ -33,11 +34,7 @@ function reservationMatchesEvent(
   reservation: EntertainmentReservation,
   event: FloorPlanDocument["events"][number],
 ) {
-  return (
-    reservation.tripleseatEventId === event.tripleseatEventId ||
-    reservation.localEventId === event.tripleseatEventId ||
-    reservation.localEventId === event.id
-  );
+  return entertainmentReservationMatchesFloorPlanEvent(reservation, event);
 }
 
 function requestedQuantity(value: string) {

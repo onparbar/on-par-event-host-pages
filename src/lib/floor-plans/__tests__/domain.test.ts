@@ -263,6 +263,49 @@ describe("floor-plan capacities and generation", () => {
     ]);
   });
 
+  it("uses OnPar for VIP rooms while keeping a matching Tripleseat event's seating", () => {
+    const generated = generateFloorPlanReservations(
+      plan([
+        floorPlanEvent({
+          tripleseatEventId: "vip-primary-reservation",
+          contractedAreaIds: ["main-dining", "vip-1", "vip-2"],
+          guestCount: 60,
+          source: {
+            rooms: ["Main Dining Room", "VIP 1", "VIP 2"],
+            sourceEventIds: [
+              "tripleseat-event",
+              "vip-primary-reservation",
+              "vip-secondary-reservation",
+            ],
+            onParBookingAreaIds: ["vip-1", "vip-2"],
+            food: [],
+            entertainment: [],
+            operationalNotes: [],
+            reviewReasons: [],
+          },
+        }),
+      ]),
+      "fill-missing",
+    );
+
+    expect(
+      generated
+        .filter((item) => item.reservationType === "room")
+        .map((item) => item.areaId),
+    ).toEqual(["vip-1", "vip-2"]);
+    expect(
+      generated
+        .filter((item) => item.reservationType === "seating")
+        .every(
+          (item) =>
+            getFloorPlanArea(item.areaId)?.parentAreaId === "main-dining",
+        ),
+    ).toBe(true);
+    expect(
+      generated.some((item) => item.areaId.startsWith("vip1-extra")),
+    ).toBe(false);
+  });
+
   it("removes surrounding VIP 1 tables and custom highlights from paid VIP bookings", () => {
     const vipEvent = floorPlanEvent({
       tripleseatEventId: "vip-reservation-uuid",

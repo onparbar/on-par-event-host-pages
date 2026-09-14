@@ -3,7 +3,7 @@ import type {
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
 
-export const FLOOR_PLAN_RULE_VERSION = "floor-plan-v1.3.2" as const;
+export const FLOOR_PLAN_RULE_VERSION = "floor-plan-v1.3.3" as const;
 export const FLOOR_PLAN_BASE_WIDTH = 1920;
 export const FLOOR_PLAN_BASE_HEIGHT = 1080;
 
@@ -49,6 +49,8 @@ export type FloorPlanArea = {
 
 export type FloorPlanEventSource = {
   rooms: string[];
+  sourceEventIds?: string[];
+  onParBookingAreaIds?: string[];
   food: string[];
   entertainment: Array<{
     name: string;

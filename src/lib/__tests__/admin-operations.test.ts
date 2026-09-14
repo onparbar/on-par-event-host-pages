@@ -252,6 +252,30 @@ describe("event completeness", () => {
     expect(result.issueCount).toBe(2);
   });
 
+  it("matches a Tripleseat event through a merged OnPar floor-plan source alias", () => {
+    const eventPlan = plan();
+    const mergedFloorPlan = floorPlan([eventPlan]);
+    mergedFloorPlan.events[0] = {
+      ...mergedFloorPlan.events[0],
+      tripleseatEventId: "vip-primary",
+      source: {
+        ...mergedFloorPlan.events[0].source,
+        sourceEventIds: [String(eventPlan.id), "vip-primary", "vip-secondary"],
+      },
+    };
+
+    const result = evaluateEventCompleteness({
+      plan: eventPlan,
+      source: source(eventPlan),
+      kitchen: kitchen(eventPlan),
+      floorPlan: mergedFloorPlan,
+    });
+
+    expect(
+      result.checks.find((item) => item.key === "floor-plan")?.status,
+    ).toBe("complete");
+  });
+
   it("flags every unavailable critical source without guessing", () => {
     const eventPlan = plan({
       guest_count: 0,

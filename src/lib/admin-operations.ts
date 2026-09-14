@@ -257,7 +257,9 @@ export function evaluateEventCompleteness({
       : check("food-quantities", "Food quantities", "complete", `${kitchenRows.length} operational food line${kitchenRows.length === 1 ? "" : "s"} have quantities.`);
 
   const floorPlanEvent = floorPlan?.events.find(
-    (event) => event.tripleseatEventId === String(plan.id),
+    (event) =>
+      event.tripleseatEventId === String(plan.id) ||
+      event.source.sourceEventIds?.includes(String(plan.id)),
   );
   const floorPlanAssignments = floorPlanEvent
     ? floorPlan!.reservations.filter(

@@ -14,6 +14,7 @@ import type {
   FloorPlanEvent,
   FloorPlanReservation,
 } from "./types";
+import { entertainmentReservationMatchesFloorPlanEvent } from "./identity";
 
 export function eventForFloorPlanEntertainment(
   plan: FloorPlanDocument,
@@ -23,9 +24,7 @@ export function eventForFloorPlanEntertainment(
   return (
     plan.events.find(
       (event) =>
-        event.tripleseatEventId === reservation.tripleseatEventId ||
-        event.tripleseatEventId === reservation.localEventId ||
-        event.id === reservation.localEventId,
+        entertainmentReservationMatchesFloorPlanEvent(reservation, event),
     ) ?? null
   );
 }

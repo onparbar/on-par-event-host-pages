@@ -23,6 +23,7 @@ import {
 } from "@/lib/floor-plans/configuration/colors";
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
+import { entertainmentReservationMatchesFloorPlanEvent } from "@/lib/floor-plans/identity";
 import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
@@ -101,9 +102,7 @@ function entertainmentForAreaAndEvent(
     (reservation) =>
       reservation.active &&
       reservation.resourceId === area.entertainmentResourceId &&
-      (reservation.tripleseatEventId === event.tripleseatEventId ||
-        reservation.localEventId === event.tripleseatEventId ||
-        reservation.localEventId === event.id),
+      entertainmentReservationMatchesFloorPlanEvent(reservation, event),
   ) ?? null;
 }
 
