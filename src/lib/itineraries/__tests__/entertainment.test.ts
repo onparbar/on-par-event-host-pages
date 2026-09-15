@@ -154,4 +154,72 @@ describe("itinerary entertainment projection", () => {
   it("preserves the event plan when no schedule event matches", () => {
     expect(applyEntertainmentDayToItinerary(plan, { ...day([]), events: [] })).toBe(plan);
   });
+
+  it("reconnects today's overlapping OEM Sales reservations saved under an older VIP ID", () => {
+    const oemPlan: EventPlan = {
+      ...plan,
+      id: 62223662,
+      name: "OEM Sales",
+      date: "2026-09-15",
+      day: "Tuesday",
+      time: "6:00 PM - 8:00 PM",
+    };
+    const staleVipReservation = reservation({
+      id: "stale-vip-bowling-1",
+      tripleseatEventId: null,
+      localEventId: "vip-older-local-id",
+      eventName: "OEM Sales VIP",
+      operatingDate: "2026-09-15",
+      startAt: "2026-09-15T22:30:00.000Z",
+      endAt: "2026-09-16T00:30:00.000Z",
+    });
+
+    expect(
+      applyEntertainmentDayToItinerary(
+        oemPlan,
+        {
+          ...day([staleVipReservation]),
+          date: "2026-09-15",
+          events: [],
+        },
+      ).entertainment,
+    ).toEqual([
+      {
+        name: "Duckpin Bowling",
+        quantity: "1 lane · Bowling Lane 1",
+        time: "6:30 PM – 8:30 PM",
+        duration: "2 hours",
+      },
+    ]);
+  });
+
+  it("does not attach a same-name stale reservation outside the itinerary time", () => {
+    const oemPlan: EventPlan = {
+      ...plan,
+      id: 62223662,
+      name: "OEM Sales",
+      date: "2026-09-15",
+      day: "Tuesday",
+      time: "6:00 PM - 8:00 PM",
+    };
+    const laterReservation = reservation({
+      tripleseatEventId: null,
+      localEventId: "vip-older-local-id",
+      eventName: "OEM Sales VIP",
+      operatingDate: "2026-09-15",
+      startAt: "2026-09-16T00:30:00.000Z",
+      endAt: "2026-09-16T01:30:00.000Z",
+    });
+
+    expect(
+      applyEntertainmentDayToItinerary(
+        oemPlan,
+        {
+          ...day([laterReservation]),
+          date: "2026-09-15",
+          events: [],
+        },
+      ),
+    ).toBe(oemPlan);
+  });
 });

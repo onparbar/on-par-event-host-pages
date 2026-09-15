@@ -1,4 +1,5 @@
-import { formatClock } from "@/lib/entertainment/time";
+import { formatClock, parseTimeRange } from "@/lib/entertainment/time";
+import { floorPlanSourceNamesMatch } from "@/lib/floor-plans/source-resolution";
 import type {
   EntertainmentDayPayload,
   EntertainmentEventSnapshot,
@@ -18,6 +19,26 @@ function normalizedEventName(value: string) {
   return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+function sourceWindowMatchesPlan(
+  operatingDate: string,
+  startAt: string | null,
+  endAt: string | null,
+  plan: EventPlan,
+) {
+  if (operatingDate !== plan.date || !startAt || !endAt) return false;
+  const planWindow = parseTimeRange(plan.time, plan.date);
+  if (!planWindow) return false;
+  const sourceStart = Date.parse(startAt);
+  const sourceEnd = Date.parse(endAt);
+  const planStart = Date.parse(planWindow.startAt);
+  const planEnd = Date.parse(planWindow.endAt);
+  return (
+    [sourceStart, sourceEnd, planStart, planEnd].every(Number.isFinite) &&
+    sourceStart < planEnd &&
+    sourceEnd > planStart
+  );
+}
+
 function eventSnapshotMatchesPlan(
   event: EntertainmentEventSnapshot,
   plan: EventPlan,
@@ -26,9 +47,22 @@ function eventSnapshotMatchesPlan(
   const identities = [event.tripleseatEventId, event.localEventId].filter(
     (value): value is string => Boolean(value),
   );
-  return identities.includes(planId) ||
-    (identities.length === 0 &&
-      normalizedEventName(event.eventName) === normalizedEventName(plan.name));
+  if (identities.includes(planId)) return true;
+  if (
+    identities.length === 0 &&
+    normalizedEventName(event.eventName) === normalizedEventName(plan.name)
+  ) {
+    return true;
+  }
+  return (
+    floorPlanSourceNamesMatch(event.eventName, plan.name) &&
+    sourceWindowMatchesPlan(
+      event.operatingDate,
+      event.eventStartAt,
+      event.eventEndAt,
+      plan,
+    )
+  );
 }
 
 function reservationMatchesPlan(
@@ -40,10 +74,23 @@ function reservationMatchesPlan(
     reservation.tripleseatEventId,
     reservation.localEventId,
   ].filter((value): value is string => Boolean(value));
-  return identities.includes(planId) ||
-    (identities.length === 0 &&
-      normalizedEventName(reservation.eventName) ===
-        normalizedEventName(plan.name));
+  if (identities.includes(planId)) return true;
+  if (
+    identities.length === 0 &&
+    normalizedEventName(reservation.eventName) ===
+      normalizedEventName(plan.name)
+  ) {
+    return true;
+  }
+  return (
+    floorPlanSourceNamesMatch(reservation.eventName, plan.name) &&
+    sourceWindowMatchesPlan(
+      reservation.operatingDate,
+      reservation.startAt,
+      reservation.endAt,
+      plan,
+    )
+  );
 }
 
 function durationLabel(startAt: string, endAt: string) {

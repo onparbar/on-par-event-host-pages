@@ -356,4 +356,59 @@ describe("merged floor-plan event identities", () => {
       entertainmentMultipleReservationOutlines(mergedPlan, [vip1, vip2]),
     ).toEqual([]);
   });
+
+  it("reconnects an overlapping same-party reservation saved under an older local ID", () => {
+    const event = floorPlanEvent(
+      "floor-plan-event-oem-sales",
+      "vip-current",
+      "OEM Sales VIP",
+      "#9F1239",
+    );
+    event.startAt = "2026-09-15T22:00:00.000Z";
+    event.endAt = "2026-09-16T00:00:00.000Z";
+    event.source.sourceEventIds = ["62223662", "vip-current"];
+    const mergedPlan = { ...plan, events: [event] };
+    const staleManualReservation = {
+      ...entertainmentReservation(
+        "stale-manual-bowling",
+        event,
+        "bowling-1",
+        "2026-09-15T22:30:00.000Z",
+        "2026-09-16T00:30:00.000Z",
+      ),
+      tripleseatEventId: null,
+      localEventId: "vip-older-local-id",
+    };
+
+    expect(
+      eventForFloorPlanEntertainment(mergedPlan, staleManualReservation),
+    ).toBe(event);
+  });
+
+  it("does not reconnect a same-name stale reservation outside the event window", () => {
+    const event = floorPlanEvent(
+      "floor-plan-event-oem-sales",
+      "vip-current",
+      "OEM Sales VIP",
+      "#9F1239",
+    );
+    event.startAt = "2026-09-15T22:00:00.000Z";
+    event.endAt = "2026-09-16T00:00:00.000Z";
+    const mergedPlan = { ...plan, events: [event] };
+    const unrelatedReservation = {
+      ...entertainmentReservation(
+        "unrelated-later-bowling",
+        event,
+        "bowling-1",
+        "2026-09-16T00:30:00.000Z",
+        "2026-09-16T01:30:00.000Z",
+      ),
+      tripleseatEventId: null,
+      localEventId: "vip-older-local-id",
+    };
+
+    expect(
+      eventForFloorPlanEntertainment(mergedPlan, unrelatedReservation),
+    ).toBeNull();
+  });
 });
