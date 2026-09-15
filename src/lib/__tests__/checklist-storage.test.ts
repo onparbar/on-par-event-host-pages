@@ -43,6 +43,37 @@ describe("local legacy checklist preview", () => {
     await expect(getChecklistRecordUpdatedAt(1001)).resolves.toBe(saved.updatedAt);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("preserves the saved event identity used by completed checklists", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("SUPABASE_SECRET_KEY", "");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+    vi.stubEnv("SUPABASE_SECRET_KEYS", "");
+
+    const saved = await saveChecklist({
+      action: "submit",
+      eventId: 4321,
+      eventName: "80th Birthday Party",
+      eventDate: "2026-09-05",
+      poc: "Diana",
+      checklist: {
+        bwa: "",
+        extrasAdded: "",
+        remainingDrinkCardBalance: "",
+        tasks: {},
+        entertainment: {},
+        food: {},
+      },
+    });
+
+    expect(saved).toMatchObject({
+      eventId: 4321,
+      eventName: "80th Birthday Party",
+      eventDate: "2026-09-05",
+      poc: "Diana",
+      status: "submitted",
+    });
+  });
 });
 
 function databaseResponse() {
@@ -53,6 +84,41 @@ function databaseResponse() {
 }
 
 describe("legacy Event Host checklist database authentication", () => {
+  it("loads the saved event identity used by completed checklists", async () => {
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test_value");
+    const fetchMock = vi.fn(async () =>
+      Response.json([
+        {
+          event_id: 7002,
+          event_name: "Correct Event Name",
+          event_date: "2026-09-12",
+          poc: "Taylor",
+          status: "submitted",
+          submitted_at: "2026-09-12T22:00:00.000Z",
+        },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listChecklistRecords()).resolves.toEqual([
+      expect.objectContaining({
+        eventId: 7002,
+        eventName: "Correct Event Name",
+        eventDate: "2026-09-12",
+        poc: "Taylor",
+        status: "submitted",
+      }),
+    ]);
+
+    const selectedColumns = new URL(
+      String(fetchMock.mock.calls[0]?.[0]),
+    ).searchParams.get("select")?.split(",");
+    expect(selectedColumns).toEqual(
+      expect.arrayContaining(["event_name", "event_date", "poc"]),
+    );
+  });
+
   it("uses an opaque Supabase secret as apikey without an invalid Bearer header", async () => {
     vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
     vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test_value");

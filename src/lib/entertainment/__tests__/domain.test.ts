@@ -10,10 +10,12 @@ import {
 } from "../domain";
 import {
   ENTERTAINMENT_RESOURCES,
+  ENTERTAINMENT_SCHEDULE_CATEGORIES,
   canonicalCategoryForText,
   deterministicEventColor,
   exactResourceIdsForText,
   quantityForText,
+  resourcesForCategory,
   textColorForBackground,
 } from "../resources";
 import {
@@ -133,6 +135,25 @@ describe("canonical entertainment resources", () => {
     expect(ENTERTAINMENT_RESOURCES.at(-1)?.canonicalName).toBe("The Big Show");
   });
 
+  it("keeps mini golf out of the reservable schedule categories", () => {
+    expect(ENTERTAINMENT_SCHEDULE_CATEGORIES).not.toContain("mini-golf");
+  });
+
+  it("keeps every schedule resource in its intended layout category", () => {
+    expect(ENTERTAINMENT_SCHEDULE_CATEGORIES).toEqual([
+      "bowling",
+      "darts",
+      "pool",
+      "shuffleboard",
+      "private-rooms",
+    ]);
+    expect(resourcesForCategory("bowling")).toHaveLength(12);
+    expect(resourcesForCategory("darts")).toHaveLength(5);
+    expect(resourcesForCategory("pool")).toHaveLength(3);
+    expect(resourcesForCategory("shuffleboard")).toHaveLength(2);
+    expect(resourcesForCategory("private-rooms")).toHaveLength(8);
+  });
+
   it.each([
     ["duckpin bowling", "bowling"],
     ["Dart Boards", "darts"],
@@ -156,9 +177,21 @@ describe("canonical entertainment resources", () => {
     ]);
   });
 
-  it("uses a structured quantity before a textual quantity", () => {
-    expect(quantityForText("2 bowling lanes", "bowling", 4)).toBe(4);
+  it("uses an explicit resource count before billable unit-hours", () => {
+    expect(quantityForText("2 bowling lanes", "bowling", 4)).toBe(2);
+    expect(quantityForText("3 lanes for 4 hours", "bowling", 12)).toBe(3);
+    expect(quantityForText("1 lane for 4 hours", "darts", 4)).toBe(1);
+    expect(quantityForText("1 pool table for 2 hours", "pool", 2)).toBe(1);
+    expect(quantityForText("1 shuffleboard table for 2 hours", "shuffleboard", 2)).toBe(1);
     expect(quantityForText("3 dart boards", "darts", null)).toBe(3);
+    expect(
+      quantityForText(
+        "1 Hour Bowling Lane Rental - Friday-Saturday",
+        "bowling",
+        1,
+      ),
+    ).toBe(1);
+    expect(quantityForText("Duckpin Bowling per hour", "bowling", 12)).toBeNull();
   });
 
   it("produces stable accessible fallback colors and contrast text", () => {
@@ -255,6 +288,99 @@ describe("deterministic schedule construction", () => {
     expect(
       new Set(result.reservations.map((item) => item.eventColor)),
     ).toEqual(new Set(["#297025"]));
+  });
+
+  it("uses reserved-entertainment wording instead of billable quantities", () => {
+    const result = buildEntertainmentSchedule({
+      sourceEvents: [
+        sourceEvent({
+          items: [
+            sourceItem({
+              sourceId: "bowling-line",
+              name: "Duckpin Bowling",
+              description: "3 lanes for 4 hours",
+              categoryName: "Bowling",
+              quantity: 12,
+              startAt: null,
+              endAt: null,
+            }),
+            sourceItem({
+              sourceId: "darts-line",
+              name: "Darts per hour, per lane Sunday-Thursday",
+              description: "1 lane for 4 hours",
+              categoryName: "Darts",
+              quantity: 4,
+              startAt: null,
+              endAt: null,
+            }),
+            sourceItem({
+              sourceId: "pool-line",
+              name: "Pool Table Sunday-Thursday",
+              description: "1 table for 4 hours",
+              categoryName: "Pool",
+              quantity: 4,
+              startAt: null,
+              endAt: null,
+            }),
+          ],
+        }),
+      ],
+      localEvents: [localEvent()],
+      now: NOW,
+    });
+
+    expect(result.reservations).toHaveLength(5);
+    expect(
+      result.reservations.filter((item) => item.resourceCategory === "bowling"),
+    ).toHaveLength(3);
+    expect(
+      result.reservations.filter((item) => item.resourceCategory === "darts"),
+    ).toHaveLength(1);
+    expect(
+      result.reservations.filter((item) => item.resourceCategory === "pool"),
+    ).toHaveLength(1);
+    expect(result.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startAt: START,
+          endAt: "2026-07-29T01:00:00.000Z",
+        }),
+      ]),
+    );
+    expect(result.events[0].reviewIssues).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "TIME_NEEDS_REVIEW" }),
+      ]),
+    );
+  });
+
+  it("does not create reservations or timing warnings for open-play mini golf", () => {
+    const result = buildEntertainmentSchedule({
+      sourceEvents: [
+        sourceEvent({
+          items: [
+            sourceItem({
+              name: "Mini Golf",
+              description: "Mini Golf for event guests",
+              categoryName: "Mini Golf",
+              quantity: 50,
+              startAt: null,
+              endAt: null,
+            }),
+          ],
+          categoryNames: ["Mini Golf"],
+        }),
+      ],
+      localEvents: [localEvent()],
+      now: NOW,
+    });
+
+    expect(result.reservations).toHaveLength(0);
+    expect(result.events[0].reviewIssues).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "TIME_NEEDS_REVIEW" }),
+      ]),
+    );
   });
 
   it("auto-assigns the first contiguous available resources", () => {
@@ -417,6 +543,46 @@ describe("deterministic schedule construction", () => {
       manualOverride: true,
       hasSourceUpdate: false,
     });
+  });
+
+  it("counts same-event manual lanes toward an ambiguous contract quantity", () => {
+    const existingManualReservations = [1, 2, 3, 4].map((lane) =>
+      reservation({
+        id: `manual-bowling-${lane}`,
+        syncKey: null,
+        localEventId: "ts-100",
+        tripleseatEventId: null,
+        resourceId: `bowling-${lane}`,
+        resourceName: `Bowling Lane ${lane}`,
+        source: "manual",
+        manualOverride: true,
+      }),
+    );
+    const built = buildEntertainmentSchedule({
+      sourceEvents: [
+        sourceEvent({
+          items: [
+            sourceItem({
+              name: "Duckpin Bowling",
+              description: "5 Duckpin Bowling lanes for 2 hours",
+              quantity: 5,
+            }),
+          ],
+        }),
+      ],
+      localEvents: [localEvent()],
+      existingReservations: existingManualReservations,
+      now: NOW,
+    });
+    const merged = mergeReservationsForSync(
+      existingManualReservations,
+      built.reservations,
+      NOW,
+    );
+
+    expect(built.reservations).toHaveLength(1);
+    expect(built.reservations[0].resourceId).toBe("bowling-5");
+    expect(merged.filter((item) => item.active)).toHaveLength(5);
   });
 
   it("deactivates a removed Tripleseat reservation without deleting it", () => {

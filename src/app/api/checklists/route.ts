@@ -1,14 +1,22 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "../../../lib/admin-auth";
 import { checklistEventsForPlans } from "../../../lib/checklist-events";
 import type { EventChecklistState } from "../../../lib/checklist-model";
 import { findEventPlanById } from "../../../lib/event-plans/sync";
+import { rollingEventPlanHorizon } from "../../../lib/event-plans/horizon";
+import {
+  findVipPrepReservationByEventId,
+  vipPrepEventPlan,
+  vipPrepExternalId,
+} from "../../../lib/vip-prep/client";
 import {
   listChecklistRecords,
   saveChecklist,
 } from "../../../lib/checklist-storage";
-import { updateKitchenEventFoodAddOns } from "../../../lib/kitchen/sync";
+import { synchronizeChecklistFoodAddOns } from "../../../lib/gotab/sync-checklist-addons";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "../../../lib/operational-access";
 
 export const dynamic = "force-dynamic";
 
@@ -16,28 +24,14 @@ type SaveChecklistRequest = {
   eventId?: number;
   checklist?: EventChecklistState;
   syncFoodAddOns?: boolean;
+  syncFoodAddOnKeys?: string[];
 };
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
-async function authorized() {
-  return hasAdminSession(await cookies());
-}
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
-
 export async function GET() {
-  if (!(await authorized())) {
-    return unauthorized();
-  }
-
   try {
     const records = await listChecklistRecords();
     return NextResponse.json({ records });
@@ -48,8 +42,8 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  if (!(await authorized())) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: SaveChecklistRequest;
@@ -64,7 +58,20 @@ export async function PUT(request: Request) {
     return badRequest("Missing eventId or checklist.");
   }
 
-  const plan = await findEventPlanById(body.eventId);
+  let plan = await findEventPlanById(body.eventId);
+  let kitchenEventId = String(body.eventId);
+  if (!plan) {
+    const horizon = rollingEventPlanHorizon();
+    const reservation = await findVipPrepReservationByEventId(
+      body.eventId,
+      horizon.startDate,
+      horizon.endDate,
+    );
+    if (reservation) {
+      plan = vipPrepEventPlan(reservation);
+      kitchenEventId = vipPrepExternalId(reservation);
+    }
+  }
   if (!plan) {
     return badRequest("Unknown event.");
   }
@@ -85,15 +92,35 @@ export async function PUT(request: Request) {
     }
 
     try {
-      const kitchenAddOns = await updateKitchenEventFoodAddOns(
-        String(event.id),
-        body.checklist.food,
-      );
+      const kitchenSync = body.syncFoodAddOnKeys
+        ? await synchronizeChecklistFoodAddOns(
+            kitchenEventId,
+            body.checklist.food,
+            body.syncFoodAddOnKeys,
+          )
+        : await synchronizeChecklistFoodAddOns(
+            kitchenEventId,
+            body.checklist.food,
+          );
+      const dispatchedToKds =
+        kitchenSync.queued > 0 &&
+        kitchenSync.exceptions === 0 &&
+        kitchenSync.sent === kitchenSync.queued;
       return NextResponse.json({
         record,
         kitchenSync: {
-          status: "live",
-          updatedAt: kitchenAddOns.updatedAt,
+          status: dispatchedToKds ? "live" : "error",
+          updatedAt: kitchenSync.saved.updatedAt,
+          queued: kitchenSync.queued,
+          exceptions: kitchenSync.exceptions,
+          sent: kitchenSync.sent,
+          error: dispatchedToKds
+            ? undefined
+            : kitchenSync.error ?? (kitchenSync.exceptions > 0
+              ? "This food item is not fully mapped to a verified GoTab Event Food product."
+              : kitchenSync.queued === 0
+                ? "No new food quantity change was available to send to the KDS."
+                : "GoTab did not confirm that the complete order reached the KDS."),
         },
       });
     } catch {

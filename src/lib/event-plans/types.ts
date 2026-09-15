@@ -64,6 +64,7 @@ export type TripleseatEventPlanSource = {
   omittedOperationalNoteFragmentCount?: number;
   shortenedOperationalNoteFragmentCount?: number;
   sourceUpdatedAt: string | null;
+  sourceSystem?: "tripleseat" | "contract-evidence";
 };
 
 export type EventPlanSyncState = {

@@ -7,6 +7,7 @@ import { generateKitchenChecklist } from "./rules";
 import {
   getKitchenStorage,
   getMissingSupabaseEnvironmentVariables,
+  KITCHEN_STAFF_ROSTER,
   type KitchenStorage,
   type KitchenSyncState,
 } from "./storage";
@@ -20,10 +21,22 @@ import type {
   KitchenAddOnCompletion,
   KitchenChecklist,
 } from "./types";
+import {
+  getMissingVipPrepEnvironmentVariables,
+  VipPrepClient,
+  vipPrepKitchenEvents,
+} from "../vip-prep/client";
+import {
+  confirmedContractKitchenSourcesForDate,
+  eventMatchesConfirmedContract,
+  isConfirmedContractEventPlanId,
+  sourceIsAtLeastAsNew,
+} from "../confirmed-contract-events";
 
 export type KitchenDayPayload = {
   date: string;
   events: KitchenChecklist[];
+  bwaOptions: string[];
   archivedEventCount: number;
   addOnActivity: KitchenAddOnActivity[];
   addOnCompletions: KitchenAddOnCompletion[];
@@ -40,6 +53,7 @@ export type KitchenSyncDependencies = {
   adapter?: TripleseatAdapter;
   storage?: KitchenStorage;
   now?: Date;
+  vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
 };
 
 export class KitchenSyncError extends Error {
@@ -51,6 +65,51 @@ export class KitchenSyncError extends Error {
 
 function unique(values: readonly string[]) {
   return [...new Set(values)];
+}
+
+function isOperationalKitchenStatus(status: string | null) {
+  return !["LOST", "PROSPECT"].includes(
+    status?.trim().toLocaleUpperCase("en-US") ?? "",
+  );
+}
+
+function dedupeConfirmedContractKitchenEvents(events: KitchenChecklist[]) {
+  const contractEvent = events.find((event) =>
+    isConfirmedContractEventPlanId(Number(event.event.eventId)),
+  );
+  if (!contractEvent) return events;
+  const matching = events.filter((event) =>
+    eventMatchesConfirmedContract(
+      event.event.localDate,
+      event.event.name,
+      contractEvent.event.localDate,
+      contractEvent.event.name,
+    ),
+  );
+  if (matching.length < 2) return events;
+  const winner = [...matching].sort((left, right) => {
+    const timeDifference =
+      Date.parse(right.event.sourceUpdatedAt ?? "") -
+      Date.parse(left.event.sourceUpdatedAt ?? "");
+    if (Number.isFinite(timeDifference) && timeDifference !== 0) {
+      return timeDifference;
+    }
+    return Number(
+      isConfirmedContractEventPlanId(Number(left.event.eventId)),
+    ) - Number(
+      isConfirmedContractEventPlanId(Number(right.event.eventId)),
+    );
+  })[0];
+  return events.filter(
+    (event) =>
+      event === winner ||
+      !eventMatchesConfirmedContract(
+        event.event.localDate,
+        event.event.name,
+        contractEvent.event.localDate,
+        contractEvent.event.name,
+      ),
+  );
 }
 
 function markSourceWarning(
@@ -99,6 +158,8 @@ function safeSyncError(error: unknown) {
     "Tripleseat API request failed (",
     "Tripleseat OAuth response did not include an access token.",
     "Tripleseat event detail response was invalid.",
+    "VIP Prep API request failed (",
+    "VIP Prep API returned an invalid",
     "Kitchen database request failed (",
     "Missing SUPABASE_SECRET_KEY",
     "TRIPLESEAT_TOKEN_ENCRYPTION_KEY must contain exactly 32 bytes",
@@ -120,31 +181,98 @@ export async function getKitchenDay(
 ): Promise<KitchenDayPayload> {
   assertKitchenDate(date);
   const { adapter, storage } = dependencies(options);
-  const [stored, diagnostics] = await Promise.all([
+  const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+  const [initialStored, diagnostics, liveVipResult] = await Promise.all([
     storage.getDay(date),
     Promise.resolve(adapter.getDiagnostics()),
+    vipPrepClient.configured
+      ? vipPrepClient.fetchRange(date, date).then(
+          (payload) => ({ events: vipPrepKitchenEvents(payload.reservations), error: null, refreshed: true }),
+          () => ({ events: [], error: "VIP Prep could not be refreshed; the last saved VIP checklist remains visible.", refreshed: false }),
+        )
+      : Promise.resolve({ events: [], error: null, refreshed: false }),
   ]);
+  let stored = initialStored;
+  let contractPersistenceWarning: string | null = null;
+  const contractSources = confirmedContractKitchenSourcesForDate(
+    date,
+    stored.sync?.lastSuccessfulSyncAt,
+  ).filter(
+    (source) =>
+      !stored.events.some(
+        (checklist) =>
+          eventMatchesConfirmedContract(
+            checklist.event.localDate,
+            checklist.event.name,
+            source.localDate,
+            source.eventName,
+          ) &&
+          sourceIsAtLeastAsNew(
+            checklist.event.sourceUpdatedAt,
+            source.sourceUpdatedAt,
+          ),
+      ),
+  );
+  if (contractSources.length > 0) {
+    try {
+      for (const sourceEvent of contractSources) {
+        await storage.saveEvent({
+          sourceEvent,
+          checklist: generateKitchenChecklist(sourceEvent),
+        });
+      }
+      stored = await storage.getDay(date);
+    } catch {
+      contractPersistenceWarning =
+        "Confirmed contract food is visible, but its kitchen checklist could not be saved for staff edits.";
+    }
+  }
   const databaseMissing =
-    options.storage == null
+    storage.persistence === "database" && options.storage == null
       ? getMissingSupabaseEnvironmentVariables()
       : [];
   const liveSourceUnavailable =
     adapter.sourceMode === "mock" &&
     storage.persistence === "database";
-  const eventsWithSourceStatus =
+  const storedEventsWithSourceStatus =
     stored.sync?.status === "error"
       ? markSourceWarning(
-          stored.events,
+          dedupeConfirmedContractKitchenEvents(stored.events),
           "SOURCE_SYNC_FAILED",
           "The latest Tripleseat sync failed; this stored checklist may be stale.",
         )
       : liveSourceUnavailable
         ? markSourceWarning(
-            stored.events,
+            dedupeConfirmedContractKitchenEvents(stored.events),
             "SOURCE_STALE",
             "Live Tripleseat configuration is unavailable; this stored checklist may be stale.",
           )
-      : stored.events;
+        : dedupeConfirmedContractKitchenEvents(stored.events);
+  const storedAndVipEvents = [
+    ...storedEventsWithSourceStatus.filter(
+      (event) =>
+        !liveVipResult.refreshed ||
+        !String(event.event.eventId).startsWith("vip-"),
+    ),
+    ...liveVipResult.events.map((event) => generateKitchenChecklist(event)),
+  ];
+  const confirmedContractEvents = contractSources
+    .filter(
+      (source) =>
+        !storedAndVipEvents.some((checklist) =>
+          eventMatchesConfirmedContract(
+            checklist.event.localDate,
+            checklist.event.name,
+            source.localDate,
+            source.eventName,
+          ),
+        ),
+    )
+    .map((source) => generateKitchenChecklist(source));
+  const eventsWithSourceStatus = [
+    ...storedAndVipEvents,
+    ...confirmedContractEvents,
+  ];
   const events = activeKitchenChecklists(
     eventsWithSourceStatus,
     options.now ?? new Date(),
@@ -156,6 +284,7 @@ export async function getKitchenDay(
   return {
     date,
     events,
+    bwaOptions: stored.bwaOptions,
     archivedEventCount: eventsWithSourceStatus.length - events.length,
     addOnActivity: (stored.addOnActivity ?? []).filter((activity) =>
       activeEventIds.has(activity.eventId),
@@ -168,10 +297,17 @@ export async function getKitchenDay(
     source: diagnostics.sourceMode,
     syncStatus: stored.sync?.status ?? "never",
     syncError: stored.sync?.errorMessage ?? null,
-    warnings: diagnostics.warnings,
+    warnings: unique([
+      ...diagnostics.warnings,
+      ...(liveVipResult.error ? [liveVipResult.error] : []),
+      ...(contractPersistenceWarning ? [contractPersistenceWarning] : []),
+    ]),
     missingEnvironmentVariables: unique([
       ...diagnostics.missingEnvironmentVariables,
       ...databaseMissing,
+      ...(options.vipPrepClient == null
+        ? getMissingVipPrepEnvironmentVariables()
+        : []),
     ]),
   };
 }
@@ -193,7 +329,55 @@ export async function syncKitchenDay(
   await storage.startSync(date);
 
   try {
-    const sourceEvents = await adapter.fetchEventsForDate(date);
+    const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+    const [tripleseatEvents, vipPayload] = await Promise.all([
+      adapter.fetchEventsForDate(date),
+      vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
+    ]);
+    const allUpstreamEvents = [
+      ...tripleseatEvents,
+      ...vipPrepKitchenEvents(vipPayload?.reservations ?? []),
+    ];
+    const upstreamEvents = allUpstreamEvents.filter((event) =>
+      isOperationalKitchenStatus(event.status),
+    );
+    const confirmedEvents = confirmedContractKitchenSourcesForDate(date).filter(
+      (source) => {
+        const matchingSource = allUpstreamEvents.find(
+          (candidate) =>
+            candidate.eventId === source.eventId ||
+            eventMatchesConfirmedContract(
+              candidate.localDate,
+              candidate.eventName,
+              source.localDate,
+              source.eventName,
+            ),
+        );
+        return !(
+          matchingSource &&
+          (!isOperationalKitchenStatus(matchingSource.status) ||
+            sourceIsAtLeastAsNew(
+              matchingSource.sourceUpdatedAt,
+              source.sourceUpdatedAt,
+            ))
+        );
+      },
+    );
+    const sourceEvents = [
+      ...upstreamEvents.filter(
+        (candidate) =>
+          !confirmedEvents.some((source) =>
+            candidate.eventId === source.eventId ||
+            eventMatchesConfirmedContract(
+              candidate.localDate,
+              candidate.eventName,
+              source.localDate,
+              source.eventName,
+            ),
+          ),
+      ),
+      ...confirmedEvents,
+    ];
     const storedEvents = sourceEvents.map((sourceEvent) => ({
       sourceEvent,
       checklist: generateKitchenChecklist(sourceEvent),
@@ -216,25 +400,86 @@ export async function syncKitchenDay(
   }
 }
 
-export async function updateKitchenManualBwa(
+export async function updateKitchenManualAssignments(
   eventId: string,
-  bwa: string,
+  foodRunners: readonly string[],
+  pocs: readonly string[],
   options: Pick<KitchenSyncDependencies, "storage"> = {},
+  preppedBy = "",
+  verifiedBy = "",
 ) {
   const normalizedEventId = eventId.trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalizedEventId)) {
     throw new Error("Invalid kitchen event ID.");
   }
-  const normalizedBwa = bwa.trim().replace(/\s+/g, " ");
-  if (normalizedBwa.length > 120) {
-    throw new Error("Food Runner or BWA must be 120 characters or fewer.");
-  }
+  const normalizeNames = (values: readonly string[], label: string) => {
+    if (values.length > 24) {
+      throw new Error(`${label} can include at most 24 employees.`);
+    }
+    const normalized = unique(
+      values.map((value) => value.trim().replace(/\s+/g, " ")).filter(Boolean),
+    );
+    if (normalized.some((value) => value.length > 80)) {
+      throw new Error(`${label} names must be 80 characters or fewer.`);
+    }
+    if (
+      normalized.some(
+        (value) =>
+          !KITCHEN_STAFF_ROSTER.includes(
+            value as (typeof KITCHEN_STAFF_ROSTER)[number],
+          ),
+      )
+    ) {
+      throw new Error(`${label} contains an employee outside the approved roster.`);
+    }
+    return normalized;
+  };
+  const normalizedFoodRunners = normalizeNames(foodRunners, "Food Runner");
+  const normalizedPocs = normalizeNames(pocs, "POC");
+  const normalizeSingleName = (value: string, label: string) => {
+    const normalized = value.trim().replace(/\s+/g, " ");
+    if (
+      normalized &&
+      !KITCHEN_STAFF_ROSTER.includes(
+        normalized as (typeof KITCHEN_STAFF_ROSTER)[number],
+      )
+    ) {
+      throw new Error(`${label} contains an employee outside the approved roster.`);
+    }
+    return normalized;
+  };
+  const normalizedPreppedBy = normalizeSingleName(preppedBy, "Prepped by");
+  const normalizedVerifiedBy = normalizeSingleName(verifiedBy, "Verified by");
 
-  await (options.storage ?? getKitchenStorage()).saveManualBwa(
+  await (options.storage ?? getKitchenStorage()).saveManualAssignments(
     normalizedEventId,
-    normalizedBwa,
+    normalizedFoodRunners,
+    normalizedPocs,
+    normalizedPreppedBy,
+    normalizedVerifiedBy,
   );
-  return { eventId: normalizedEventId, bwa: normalizedBwa };
+  return {
+    eventId: normalizedEventId,
+    foodRunners: normalizedFoodRunners,
+    pocs: normalizedPocs,
+    preppedBy: normalizedPreppedBy,
+    verifiedBy: normalizedVerifiedBy,
+  };
+}
+
+/** Backward-compatible adapter for older callers during the assignment migration. */
+export async function updateKitchenManualBwa(
+  eventId: string,
+  bwa: string,
+  options: Pick<KitchenSyncDependencies, "storage"> = {},
+) {
+  const normalizedBwa = bwa.trim().replace(/\s+/g, " ");
+  return updateKitchenManualAssignments(
+    eventId,
+    normalizedBwa ? [normalizedBwa] : [],
+    [],
+    options,
+  );
 }
 
 function normalizeKitchenEventId(eventId: string) {
@@ -320,7 +565,16 @@ export function normalizeKitchenEventAddOnFood(
       field.sourceUnitLabel,
     );
     if (quantity !== null) {
-      normalized[field.sourceKey] = { quantity };
+      const rawValue = value[field.sourceKey];
+      const panSize =
+        isRecord(rawValue) &&
+        (rawValue.panSize === "1/3" || rawValue.panSize === "1/2")
+          ? rawValue.panSize
+          : undefined;
+      normalized[field.sourceKey] = {
+        quantity,
+        ...(panSize ? { panSize } : {}),
+      };
     }
   }
   return normalized;
@@ -345,6 +599,26 @@ export async function getKitchenEventFoodAddOns(
     updatedAt: stored?.updatedAt ?? null,
     revision: stored?.revision ?? null,
   };
+}
+
+export async function getKitchenEventChecklist(
+  eventId: string,
+  options: Pick<KitchenSyncDependencies, "storage"> = {},
+) {
+  const normalizedEventId = normalizeKitchenEventId(eventId);
+  const storage = options.storage ?? getKitchenStorage();
+  const date = await storage.getEventDate(normalizedEventId);
+  if (date === null) {
+    throw new Error("Kitchen event was not found.");
+  }
+  const day = await storage.getDay(date);
+  const checklist = day.events.find(
+    (event) => String(event.event.eventId) === normalizedEventId,
+  );
+  if (!checklist) {
+    throw new Error("Kitchen event was not found.");
+  }
+  return checklist;
 }
 
 export async function updateKitchenEventFoodAddOns(
@@ -446,5 +720,50 @@ export async function updateKitchenItemCompletion(
     eventId: normalizedEventId,
     itemKey: normalizedItemKey,
     completed,
+  };
+}
+
+export async function updateKitchenItemPrepped(
+  eventId: string,
+  itemKey: string,
+  prepped: boolean,
+  employeeName: string | null = null,
+  options: Pick<KitchenSyncDependencies, "storage" | "now"> = {},
+) {
+  const normalizedEventId = normalizeKitchenEventId(eventId);
+  const normalizedItemKey = itemKey.trim();
+  if (!/^[A-Za-z0-9:_-]{1,160}$/.test(normalizedItemKey)) {
+    throw new Error("Invalid kitchen item key.");
+  }
+  if (typeof prepped !== "boolean") {
+    throw new Error("Kitchen item preparation state must be a boolean.");
+  }
+  const normalizedEmployeeName = employeeName?.trim().replace(/\s+/g, " ") ?? "";
+  if (prepped && !normalizedEmployeeName) {
+    throw new Error("Select the employee who prepped this item.");
+  }
+  if (
+    normalizedEmployeeName &&
+    !KITCHEN_STAFF_ROSTER.includes(
+      normalizedEmployeeName as (typeof KITCHEN_STAFF_ROSTER)[number],
+    )
+  ) {
+    throw new Error("Prepped by contains an employee outside the approved roster.");
+  }
+  const preppedUpdatedAt = (options.now ?? new Date()).toISOString();
+
+  await (options.storage ?? getKitchenStorage()).saveItemPrepped(
+    normalizedEventId,
+    normalizedItemKey,
+    prepped,
+    prepped ? normalizedEmployeeName : null,
+    preppedUpdatedAt,
+  );
+  return {
+    eventId: normalizedEventId,
+    itemKey: normalizedItemKey,
+    prepped,
+    employeeName: prepped ? normalizedEmployeeName : null,
+    preppedAt: prepped ? preppedUpdatedAt : null,
   };
 }

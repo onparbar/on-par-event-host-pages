@@ -9,6 +9,7 @@ import {
   syncRollingEventPlans,
 } from "../sync";
 import type { EventPlan, TripleseatEventPlanSource } from "../types";
+import { confirmedContractEventPlans } from "../../confirmed-contract-events";
 
 function source(
   overrides: Partial<TripleseatEventPlanSource> = {},
@@ -98,6 +99,153 @@ const legacyPlan: EventPlan = {
 };
 
 describe("rolling Event Host plan synchronization", () => {
+  it("uses contract evidence until a newer successful live sync covers its date", async () => {
+    let storageNow = new Date("2026-08-14T21:00:00.000Z");
+    const storage = createMemoryEventPlanStorage({
+      now: () => storageNow,
+    });
+    const window = {
+      startDate: "2026-08-14",
+      endDate: "2026-09-14",
+    };
+
+    await storage.start(window);
+    await storage.replaceWindow(window, []);
+    await storage.finish(0);
+    const beforeNewerSync = await loadEventPlanWindow({
+      now: new Date("2026-08-14T16:00:00.000Z"),
+      storage,
+      legacyPlans: confirmedContractEventPlans,
+    });
+    expect(beforeNewerSync.plans).toEqual([
+      expect.objectContaining({
+        id: 62238275,
+        name: "Amazon 08/21/2026",
+      }),
+    ]);
+
+    storageNow = new Date("2026-08-14T21:30:00.000Z");
+    await storage.start(window);
+    await storage.replaceWindow(window, []);
+    await storage.finish(0);
+    const afterNewerSync = await loadEventPlanWindow({
+      now: new Date("2026-08-14T16:00:00.000Z"),
+      storage,
+      legacyPlans: confirmedContractEventPlans,
+    });
+    expect(afterNewerSync.plans).toEqual([]);
+    await expect(
+      findEventPlanById(62238275, {
+        storage,
+        legacyPlans: confirmedContractEventPlans,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("excludes LOST and PROSPECT events from synchronized operational views", async () => {
+    const storage = createMemoryEventPlanStorage();
+    const result = await syncEventPlanWindow(
+      { startDate: "2026-08-15", endDate: "2026-08-15" },
+      {
+        storage,
+        legacyPlans: [],
+        adapter: liveAdapter(async () => [
+          source(),
+          source({ eventId: "62000003", status: " lost " }),
+          source({ eventId: "62000004", status: "Prospect" }),
+        ]),
+      },
+    );
+
+    expect(result.plans.map((plan) => plan.id)).toEqual([62000001]);
+    expect(result.sync?.eventCount).toBe(1);
+  });
+
+  it("replaces an older incomplete Amazon source with the confirmed contract", async () => {
+    const storage = createMemoryEventPlanStorage();
+    const result = await syncEventPlanWindow(
+      { startDate: "2026-08-21", endDate: "2026-08-21" },
+      {
+        now: new Date("2026-08-14T22:00:00.000Z"),
+        storage,
+        legacyPlans: [],
+        adapter: liveAdapter(async () => [
+          source({
+            eventId: "62238275",
+            bookingId: "58621092",
+            eventName: "Amazon 08/21/2026",
+            localDate: "2026-08-21",
+            eventStartAt: "2026-08-21T20:00:00.000Z",
+            eventEndAt: "2026-08-21T23:00:00.000Z",
+            guestCount: 50,
+            rooms: ["VIP 1"],
+            selections: [],
+            documentItems: [],
+            sourceUpdatedAt: "2026-08-14T20:00:00.000Z",
+          }),
+        ]),
+      },
+    );
+
+    expect(result.plans).toEqual([
+      expect.objectContaining({
+        id: 62238275,
+        name: "Amazon 08/21/2026",
+        food: expect.arrayContaining([
+          "50 × The Full Course",
+          "50 × Jumbo Wing Bar",
+          "5 Dessert Platters",
+        ]),
+      }),
+    ]);
+  });
+
+  it("does not restore the confirmed Amazon event after Tripleseat marks it LOST", async () => {
+    const result = await syncEventPlanWindow(
+      { startDate: "2026-08-21", endDate: "2026-08-21" },
+      {
+        now: new Date("2026-08-14T22:00:00.000Z"),
+        storage: createMemoryEventPlanStorage(),
+        legacyPlans: [],
+        adapter: liveAdapter(async () => [
+          source({
+            eventId: "62238275",
+            bookingId: "58621092",
+            eventName: "Amazon 08/21/2026",
+            localDate: "2026-08-21",
+            status: "LOST",
+            sourceUpdatedAt: "2026-08-14T20:00:00.000Z",
+          }),
+        ]),
+      },
+    );
+
+    expect(result.plans).toEqual([]);
+  });
+
+  it("hides a previously stored event after its source status becomes LOST", async () => {
+    const storage = createMemoryEventPlanStorage();
+    await storage.replaceWindow(
+      { startDate: "2026-08-11", endDate: "2026-09-11" },
+      [{
+        eventId: "62000003",
+        eventDate: "2026-08-15",
+        plan: structuredClone(legacyPlan) as unknown as Record<string, unknown>,
+        sourceSnapshot: source({ eventId: "62000003", status: "LOST" }) as unknown as Record<string, unknown>,
+        sourceUpdatedAt: "2026-08-11T12:00:00.000Z",
+      }],
+    );
+
+    const loaded = await loadEventPlanWindow({
+      now: new Date("2026-08-11T16:00:00.000Z"),
+      storage,
+      legacyPlans: [],
+    });
+
+    expect(loaded.plans).toEqual([]);
+    expect(await findEventPlanById(62000003, { storage, legacyPlans: [] })).toBeNull();
+  });
+
   it("refreshes an exact requested date for Floor Plans", async () => {
     const storage = createMemoryEventPlanStorage();
     const requestedRanges: string[][] = [];

@@ -1,11 +1,13 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
 import {
   assertKitchenDate,
   KitchenSyncError,
   syncKitchenDay,
 } from "@/lib/kitchen/sync";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,17 +16,9 @@ type SyncRequest = {
   date?: unknown;
 };
 
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
-
 export async function POST(request: Request) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: SyncRequest;
@@ -48,7 +42,28 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(await syncKitchenDay(date));
+    const payload = await syncKitchenDay(date);
+    if (process.env.EVENT_KDS_DRY_RUN?.trim()) {
+      try {
+        const [{ getGoTabConfigurationStatus }, integration] = await Promise.all([
+          import("@/lib/gotab/config"),
+          import("@/lib/gotab/sync-event-food"),
+        ]);
+        if (getGoTabConfigurationStatus().configured) {
+          for (const checklist of payload.events) {
+            await integration.synchronizeKitchenChecklistToEventFood(checklist, {
+              sourceVersion: integration.eventFoodSourceVersion(checklist),
+              actor: "TRIPLESEAT_SYNC",
+            });
+          }
+        }
+      } catch {
+        payload.warnings.push(
+          "Event Food dry-run projection could not be saved. Kitchen synchronization still completed.",
+        );
+      }
+    }
+    return NextResponse.json(payload);
   } catch (error) {
     const message =
       error instanceof KitchenSyncError

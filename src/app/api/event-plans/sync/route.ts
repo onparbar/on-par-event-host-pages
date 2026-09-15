@@ -1,9 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { hasAdminSession } from "@/lib/admin-auth";
 import { syncRollingEventPlans } from "@/lib/event-plans/sync";
+import {
+  ensureConfirmedContractFloorPlanWindow,
+  maintainTwoWeekFloorPlanHorizon,
+} from "@/lib/floor-plans/service";
+import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,18 +40,58 @@ function unauthorized() {
 }
 
 async function runSync() {
+  let result: Awaited<ReturnType<typeof syncRollingEventPlans>> | null = null;
+  let syncError: string | null = null;
   try {
-    const result = await syncRollingEventPlans();
+    result = await syncRollingEventPlans();
+  } catch (error) {
+    syncError =
+      error instanceof Error
+        ? error.message
+        : "Event-plan synchronization failed.";
+  }
+
+  try {
+    if (!result) {
+      const floorPlans = await ensureConfirmedContractFloorPlanWindow(
+        todayInEntertainmentTimeZone(),
+      );
+      const confirmedResult = floorPlans.results.find(
+        (entry) =>
+          entry.date === "2026-08-21" &&
+          entry.status !== "error" &&
+          entry.eventCount > 0,
+      );
+      if (!confirmedResult) {
+        return NextResponse.json(
+          {
+            error: syncError ?? "Event-plan synchronization failed.",
+            floorPlans,
+          },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json({
+        sourceMode: "contract-evidence",
+        eventCount: confirmedResult.eventCount,
+        sync: null,
+        floorPlans,
+        warning:
+          "Tripleseat could not refresh. Confirmed contract evidence was applied, and the last saved Tripleseat data remains unchanged.",
+      });
+    }
+    const floorPlans = await maintainTwoWeekFloorPlanHorizon();
     return NextResponse.json({
       sourceMode: result.sourceMode,
       eventCount: result.plans.length,
       sync: result.sync,
+      floorPlans,
     });
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
-        : "Event-plan synchronization failed.";
+        : syncError ?? "Event-plan synchronization failed.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
@@ -56,9 +103,9 @@ export async function GET(request: Request) {
   return runSync();
 }
 
-export async function POST() {
-  if (!hasAdminSession(await cookies())) {
-    return unauthorized();
+export async function POST(request: Request) {
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
   return runSync();
 }

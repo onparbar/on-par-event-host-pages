@@ -181,6 +181,56 @@ export function PortalFrame({
   );
 }
 
+export function PortalZoomControls({
+  label,
+  maximum,
+  minimum,
+  onChange,
+  resetValue,
+  step,
+  value,
+}: {
+  label: string;
+  maximum: number;
+  minimum: number;
+  onChange: (value: number) => void;
+  resetValue: number;
+  step: number;
+  value: number;
+}) {
+  return (
+    <div aria-label={label} className="portal-zoom-controls" role="group">
+      <button
+        aria-label={`${label}: zoom out`}
+        className="portal-header-button"
+        disabled={value <= minimum}
+        onClick={() => onChange(Math.max(minimum, value - step))}
+        type="button"
+      >
+        −
+      </button>
+      <button
+        aria-label={`Reset ${label.toLowerCase()} from ${value}% to ${resetValue}%`}
+        className="portal-header-button portal-zoom-value"
+        disabled={value === resetValue}
+        onClick={() => onChange(resetValue)}
+        type="button"
+      >
+        {value}%
+      </button>
+      <button
+        aria-label={`${label}: zoom in`}
+        className="portal-header-button"
+        disabled={value >= maximum}
+        onClick={() => onChange(Math.min(maximum, value + step))}
+        type="button"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 export function PortalShell({
   actions,
   allowFullscreen,
