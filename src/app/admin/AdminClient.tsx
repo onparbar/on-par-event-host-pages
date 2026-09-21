@@ -487,7 +487,19 @@ export default function AdminClient({
                             <strong>{item.name}</strong>
                             <span className="meta">{formatEventDate(item.date)} · {item.guest_count} guests</span>
                           </div>
-                          {item.pdf ? <a href={item.pdf} target="_blank" rel="noreferrer">Open itinerary</a> : <span className="meta">No PDF saved</span>}
+                          {item.pdf ? (
+                            <a href={item.pdf} target="_blank" rel="noreferrer">
+                              Open itinerary
+                            </a>
+                          ) : (
+                            <a
+                              href={`/itineraries?eventId=${item.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open itinerary view
+                            </a>
+                          )}
                         </div>
                       ))}
                     </div>

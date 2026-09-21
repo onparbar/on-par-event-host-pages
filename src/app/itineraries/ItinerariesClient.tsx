@@ -239,11 +239,15 @@ function ItineraryDashboard({ event }: { event: ItineraryAsset }) {
 
 export default function ItinerariesClient({
   items,
+  initialEventId,
 }: {
   items: ItineraryAsset[];
+  initialEventId?: number;
 }) {
   const router = useRouter();
-  const [activeEventId, setActiveEventId] = useState<number>(items[0]?.id ?? 0);
+  const [activeEventId, setActiveEventId] = useState<number>(
+    initialEventId ?? items[0]?.id ?? 0,
+  );
   const [refreshState, setRefreshState] = useState<
     "idle" | "refreshing" | "error"
   >("idle");

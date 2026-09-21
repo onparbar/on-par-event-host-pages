@@ -1703,7 +1703,7 @@ function StaffMultiSelect({
 }) {
   const selectedSet = new Set(selected);
   return (
-    <details className={className}>
+    <details className={className} name="kitchen-staff-assignment">
       <summary>
         <span>{label}</span>
         <strong>{selected.length ? selected.join(", ") : "Select employees"}</strong>
