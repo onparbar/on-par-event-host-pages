@@ -92,6 +92,72 @@ describe("Tripleseat adapter security and normalization", () => {
     ]);
   });
 
+  it("falls back to explicit statuses when an unfiltered date search is empty", async () => {
+    const storage = createMemoryKitchenStorage();
+    const requestedStatuses: Array<string | null> = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/events/search?")) {
+        const status = new URL(url).searchParams.get("status");
+        requestedStatuses.push(status);
+        return status === "PROSPECT"
+          ? json({ results: [{ id: 48 }], total_pages: 1 })
+          : json({ results: [], total_pages: 1 });
+      }
+      if (url.includes("/events/48?")) {
+        return json({
+          event: {
+            id: 48,
+            name: "Redacted 9/24 Buyout",
+            event_date_iso8601: "2026-09-24",
+            event_start_iso8601: "2026-09-24T18:00:00-04:00",
+            event_end_iso8601: "2026-09-25T01:00:00-04:00",
+            guest_count: 200,
+            status: "PROSPECT",
+            calendar_color: "red",
+            location_id: 26059,
+            rooms: [{ id: 1, name: "Full Building Buyout" }],
+            updated_at: "2026-09-21T17:00:00Z",
+          },
+        });
+      }
+      if (url.includes("/menu_item_selections")) {
+        return json({ menu_item_selections: [] });
+      }
+      if (url.includes("/notes?")) {
+        return json({ notes: [] });
+      }
+      throw new Error(`Unexpected test request: ${url}`);
+    };
+    const adapter = new LiveTripleseatAdapter({
+      env: {
+        NODE_ENV: "test",
+        TRIPLESEAT_CLIENT_ID: "test-client",
+        TRIPLESEAT_CLIENT_SECRET: "test-client-secret",
+        TRIPLESEAT_ACCESS_TOKEN: "test-access-token",
+        TRIPLESEAT_REFRESH_TOKEN: "test-refresh-token",
+        TRIPLESEAT_LOCATION_ID: "26059",
+      },
+      fetchImpl,
+      storage,
+    });
+
+    const [event] = await adapter.fetchEventsForDate("2026-09-24");
+
+    expect(requestedStatuses).toEqual([
+      null,
+      "DEFINITE",
+      "PROSPECT",
+      "LOST",
+      "CLOSED",
+    ]);
+    expect(event).toMatchObject({
+      eventId: "48",
+      eventName: "Redacted 9/24 Buyout",
+      fullBuyout: true,
+    });
+  });
+
   it("keeps a red full-buyout booking across kitchen, plan, and entertainment reads", async () => {
     const storage = createMemoryKitchenStorage();
     const fetchImpl: typeof fetch = async (input) => {

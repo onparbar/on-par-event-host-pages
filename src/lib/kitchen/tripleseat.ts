@@ -1017,40 +1017,53 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const events: UnknownRecord[] = [];
     const seen = new Set<string>();
 
-    for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
-      const query = new URLSearchParams({
-        event_start_date: apiDate(startDate),
-        event_end_date: apiDate(endDate),
-        location_ids: this.locationId,
-        order: "event_start",
-        sort_direction: "asc",
-        page: String(page),
-      });
-      if (status) {
-        query.set("status", status);
-      }
-      const payload = await this.requestJson(`events/search?${query}`);
-      const records = extractArray(payload, ["results", "events", "data"])
-        .map(asRecord)
-        .filter((record): record is UnknownRecord => record != null);
-      let added = 0;
-      for (const record of records) {
-        const id = sourceEventId(record);
-        if (id && !seen.has(id)) {
-          seen.add(id);
-          events.push(record);
-          added += 1;
+    const searchStatus = async (requestedStatus: string | null) => {
+      for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
+        const query = new URLSearchParams({
+          event_start_date: apiDate(startDate),
+          event_end_date: apiDate(endDate),
+          location_ids: this.locationId,
+          order: "event_start",
+          sort_direction: "asc",
+          page: String(page),
+        });
+        if (requestedStatus) {
+          query.set("status", requestedStatus);
+        }
+        const payload = await this.requestJson(`events/search?${query}`);
+        const records = extractArray(payload, ["results", "events", "data"])
+          .map(asRecord)
+          .filter((record): record is UnknownRecord => record != null);
+        let added = 0;
+        for (const record of records) {
+          const id = sourceEventId(record);
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            events.push(record);
+            added += 1;
+          }
+        }
+
+        const envelope = asRecord(payload);
+        const totalPages = envelope ? asNumber(envelope.total_pages) : null;
+        if (
+          records.length === 0 ||
+          added === 0 ||
+          (totalPages != null && page >= totalPages)
+        ) {
+          break;
         }
       }
+    };
 
-      const envelope = asRecord(payload);
-      const totalPages = envelope ? asNumber(envelope.total_pages) : null;
-      if (
-        records.length === 0 ||
-        added === 0 ||
-        (totalPages != null && page >= totalPages)
-      ) {
-        break;
+    await searchStatus(status);
+    if (status === null && events.length === 0) {
+      for (const fallbackStatus of ["DEFINITE", "PROSPECT", "LOST", "CLOSED"]) {
+        try {
+          await searchStatus(fallbackStatus);
+        } catch (error) {
+          if (!(error instanceof TripleseatApiError)) throw error;
+        }
       }
     }
 
