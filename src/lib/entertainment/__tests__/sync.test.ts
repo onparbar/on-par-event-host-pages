@@ -375,9 +375,25 @@ describe("persistent entertainment synchronization", () => {
 
   it("hides manually assigned VIP reservations when the main event exists", async () => {
     const storage = new MemoryEntertainmentStorage();
+    const event = {
+      ...sourceEvent(),
+      items: [
+        ...sourceEvent().items,
+        {
+          sourceId: "pool-line",
+          name: "1 pool table for 2 hours",
+          description: "1 pool table for 2 hours",
+          categoryName: "Pool Tables",
+          quantity: 2,
+          startAt: "2026-07-28T21:00:00.000Z",
+          endAt: "2026-07-28T22:00:00.000Z",
+        },
+      ],
+      categoryNames: ["Bowling", "Pool Tables"],
+    };
     const dependencies = {
       storage,
-      adapter: adapter([sourceEvent()]),
+      adapter: adapter([event]),
       localEvents: [],
       vipPrepClient: {
         configured: false,
@@ -403,6 +419,8 @@ describe("persistent entertainment synchronization", () => {
       { storage },
     );
 
+    await syncEntertainmentDay(DATE, dependencies);
+
     const day = await getEntertainmentDay(DATE, {
       storage,
       adapter: dependencies.adapter,
@@ -418,6 +436,14 @@ describe("persistent entertainment synchronization", () => {
     expect(day.reservations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ eventName: "Redacted Sync Event" }),
+      ]),
+    );
+    expect(day.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: "Redacted Sync Event",
+          resourceCategory: "pool",
+        }),
       ]),
     );
   });

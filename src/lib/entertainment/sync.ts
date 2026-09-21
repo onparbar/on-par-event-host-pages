@@ -345,6 +345,13 @@ function isVipEntertainmentEvent(event: EntertainmentEventSnapshot) {
   );
 }
 
+function isVipEntertainmentSourceEvent(event: EntertainmentSourceEvent) {
+  return (
+    event.sourceSystem === "vip-prep" ||
+    event.tripleseatEventId.startsWith("vip-")
+  );
+}
+
 function isVipEntertainmentReservation(reservation: EntertainmentReservation) {
   return (
     reservation.source === "vip-prep" ||
@@ -379,6 +386,24 @@ function dedupeVipNamedReservations(reservations: EntertainmentReservation[]) {
           `${candidate.operatingDate}|${comparableVipEventName(candidate.eventName)}` === key,
       );
     },
+  );
+}
+
+function existingReservationsForSourceEvents(
+  reservations: readonly EntertainmentReservation[],
+  sourceEvents: readonly EntertainmentSourceEvent[],
+) {
+  const mainEventKeys = new Set(
+    sourceEvents
+      .filter((event) => !isVipEntertainmentSourceEvent(event))
+      .map((event) => `${event.localDate}|${comparableVipEventName(event.eventName)}`),
+  );
+  return reservations.filter(
+    (reservation) =>
+      !isVipEntertainmentReservation(reservation) ||
+      !mainEventKeys.has(
+        `${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`,
+      ),
   );
 }
 
@@ -656,7 +681,10 @@ export async function syncEntertainmentDay(
       buildEntertainmentSchedule({
         sourceEvents,
         localEvents: context.localEvents,
-        existingReservations: stored.reservations,
+        existingReservations: existingReservationsForSourceEvents(
+          stored.reservations,
+          sourceEvents,
+        ),
         now,
       }),
       stored.events,
