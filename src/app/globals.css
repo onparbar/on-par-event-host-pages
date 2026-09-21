@@ -458,6 +458,16 @@
   user-select: none;
 }
 
+.floor-plan-full-buyout-overlay {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  box-sizing: border-box;
+  border: 8px solid var(--event-color);
+  border-radius: 9px;
+  pointer-events: none;
+}
+
 .floor-plan-map-date {
   position: absolute;
   z-index: 2;

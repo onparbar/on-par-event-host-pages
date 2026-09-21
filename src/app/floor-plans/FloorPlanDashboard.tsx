@@ -628,6 +628,15 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       plan,
       payload.entertainmentReservations,
     );
+    for (const event of plan.events.filter((candidate) => candidate.fullBuyout)) {
+      context.globalAlpha = 0.14;
+      context.fillStyle = event.color;
+      context.fillRect(0, 0, 1920, 1080);
+      context.globalAlpha = 1;
+      context.strokeStyle = event.color;
+      context.lineWidth = 8;
+      context.strokeRect(4, 4, 1912, 1072);
+    }
     context.fillStyle = "#000000";
     context.font = "700 30px Arial";
     context.fillText(formatFullDate(date), 34, 55);
@@ -833,6 +842,18 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
               <div className="floor-plan-map-canvas" style={{ width: `${zoom * 100}%` }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img alt="On Par Entertainment floor map" draggable={false} ref={mapImageRef} src="/floor-plans/blank-floor-map.png" />
+                {plan.events.filter((event) => event.fullBuyout).map((event) => (
+                  <span
+                    aria-label={`Full facility buyout: ${event.name}`}
+                    className="floor-plan-full-buyout-overlay"
+                    key={`full-buyout-${event.id}`}
+                    style={{
+                      "--event-color": event.color,
+                      backgroundColor: `${event.color}24`,
+                      borderColor: event.color,
+                    } as React.CSSProperties}
+                  />
+                ))}
                 <div className="floor-plan-map-date" aria-hidden="true"><strong>{formatFullDate(date)}</strong>{plan.events.map((event) => <span key={event.id} style={{ color: event.color }}><b>{event.name} ({event.guestCount})</b><small>{eventTime(event)}</small></span>)}</div>
                 <div className="floor-plan-area-layer">
                   {multipleReservationOutlines.map((outline) => (

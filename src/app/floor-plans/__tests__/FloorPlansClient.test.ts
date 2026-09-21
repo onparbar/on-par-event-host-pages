@@ -470,6 +470,30 @@ describe("floor-plan dashboard organization", () => {
     expect(html).toContain("VIP 1 assigned to Redacted August 5 Event");
   });
 
+  it("highlights the entire map for a full facility buyout", () => {
+    const buyoutEvent = {
+      ...interactivePlan.events[0],
+      fullBuyout: true,
+      contractedAreaIds: ["facility"],
+      name: "Redacted Full Buyout",
+      color: "#B45309",
+    };
+    const buyoutPlan: FloorPlanDocument = {
+      ...interactivePlan,
+      events: [buyoutEvent],
+      reservations: [],
+    };
+    const html = renderToStaticMarkup(
+      createElement(PublishedFloorPlanMap, {
+        payload: { ...interactivePayload, plan: buyoutPlan },
+      }),
+    );
+
+    expect(html).toContain('class="floor-plan-full-buyout-overlay"');
+    expect(html).toContain('aria-label="Full facility buyout: Redacted Full Buyout"');
+    expect(html).toContain("--event-color:#B45309");
+  });
+
   it("renders ADF as the orange VIP 1 fill and Cassie's 9–11 PM reservation as the blue border", () => {
     const adfEvent = {
       ...interactivePlan.events[0],

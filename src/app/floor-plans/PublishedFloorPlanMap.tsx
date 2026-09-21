@@ -64,6 +64,20 @@ export default function PublishedFloorPlanMap({
           draggable={false}
           src="/floor-plans/blank-floor-map.png"
         />
+        {plan.events
+          .filter((event) => event.fullBuyout)
+          .map((event) => (
+            <span
+              aria-label={`Full facility buyout: ${event.name}`}
+              className="floor-plan-full-buyout-overlay"
+              key={`full-buyout-${event.id}`}
+              style={{
+                "--event-color": event.color,
+                backgroundColor: `${event.color}24`,
+                borderColor: event.color,
+              } as React.CSSProperties}
+            />
+          ))}
         <div className="floor-plan-map-date" aria-hidden="true">
           <strong>{formatFullDate(plan.eventDate)}</strong>
           {plan.events.map((event) => (
