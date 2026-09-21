@@ -965,9 +965,38 @@ export async function saveFloorPlanEdits(
   storage: FloorPlanStorage = getFloorPlanStorage(),
 ) {
   const body = asRecord(requested);
-  const plan = await reconciledPlan(date, storage);
   if (!body) throw new Error("Invalid floor-plan save payload.");
+  const [saved, reconciled] = await Promise.all([
+    storage.get(date),
+    reconciledPlan(date, storage),
+  ]);
   const requestedEvents = Array.isArray(body.events) ? body.events : [];
+  const requestedReservations = body.reservations;
+  const requestedReservationRows = Array.isArray(requestedReservations)
+    ? requestedReservations
+    : [];
+  const requestedEventIds = new Set(
+    requestedEvents.flatMap((value) => {
+      const id = sourceValue(asRecord(value), "id");
+      return id ? [id] : [];
+    }),
+  );
+  for (const value of requestedReservationRows) {
+    const id = sourceValue(asRecord(value), "floorPlanEventId");
+    if (id) requestedEventIds.add(id);
+  }
+
+  // A live source refresh can change the event rows between the initial GET
+  // and this save. Keep any saved event identities referenced by the editor so
+  // manual highlights are not rejected just because Tripleseat changed while
+  // the page was open. The next explicit sync still reconciles source fields.
+  const currentEventIds = new Set(reconciled.events.map((event) => event.id));
+  const savedEventsNeeded = (saved?.events ?? []).filter(
+    (event) => requestedEventIds.has(event.id) && !currentEventIds.has(event.id),
+  );
+  const plan = savedEventsNeeded.length
+    ? { ...reconciled, events: [...reconciled.events, ...savedEventsNeeded] }
+    : reconciled;
   const events = plan.events.map((event) => {
     const candidate = requestedEvents
       .map(asRecord)
@@ -992,12 +1021,17 @@ export async function saveFloorPlanEdits(
   const next = {
     ...plan,
     events,
-    reservations: sanitizeReservations(plan, body.reservations),
+    reservations: sanitizeReservations(plan, requestedReservations),
     status:
       plan.status === "Approved"
         ? ("Updated After Approval" as const)
         : plan.status,
   };
+  // Persist the floor-plan edit before updating the shared entertainment
+  // overlays. A stale/deleted entertainment reservation must not prevent the
+  // seating, room, or custom highlight changes from being saved.
+  await storage.save(next, "Saved manual floor-plan edits.");
+  const entertainmentWarnings: string[] = [];
   const entertainmentDay = await getEntertainmentDay(date).catch(() => null);
   if (entertainmentDay) {
     for (const reservation of entertainmentDay.reservations) {
@@ -1010,23 +1044,31 @@ export async function saveFloorPlanEdits(
           ),
       );
       if (!event || event.color === reservation.eventColor) continue;
-      await updateEntertainmentReservation(reservation.id, {
-        operatingDate: reservation.operatingDate,
-        eventId: event.tripleseatEventId,
-        eventName: event.name,
-        resourceId: reservation.resourceId,
-        startAt: reservation.startAt,
-        endAt: reservation.endAt,
-        eventColor: event.color,
-        notes: reservation.notes,
-        reason: "Synchronized event color from Event Host Floor Plans",
-        needsReview: reservation.needsReview,
-        forceConflict: true,
-      });
+      try {
+        await updateEntertainmentReservation(reservation.id, {
+          operatingDate: reservation.operatingDate,
+          eventId: event.tripleseatEventId,
+          eventName: event.name,
+          resourceId: reservation.resourceId,
+          startAt: reservation.startAt,
+          endAt: reservation.endAt,
+          eventColor: event.color,
+          notes: reservation.notes,
+          reason: "Synchronized event color from Event Host Floor Plans",
+          needsReview: reservation.needsReview,
+          forceConflict: true,
+        });
+      } catch {
+        entertainmentWarnings.push(
+          `The floor plan was saved, but the ${reservation.resourceName} entertainment overlay could not be updated.`,
+        );
+      }
     }
   }
-  await storage.save(next, "Saved manual floor-plan edits.");
-  return getFloorPlanDay(date, storage);
+  const savedPayload = await getFloorPlanDay(date, storage);
+  return entertainmentWarnings.length
+    ? { ...savedPayload, warnings: [...savedPayload.warnings, ...entertainmentWarnings] }
+    : savedPayload;
 }
 
 export async function validateAndSaveFloorPlan(
