@@ -373,6 +373,55 @@ describe("persistent entertainment synchronization", () => {
     );
   });
 
+  it("hides manually assigned VIP reservations when the main event exists", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const dependencies = {
+      storage,
+      adapter: adapter([sourceEvent()]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+    };
+    await syncEntertainmentDay(DATE, dependencies);
+    await createManualEntertainmentReservation(
+      {
+        operatingDate: DATE,
+        eventId: "vip-manual-event",
+        eventName: "Redacted Sync Event VIP",
+        resourceId: "bowling-1",
+        startAt: "2026-07-28T21:00:00.000Z",
+        endAt: "2026-07-28T22:00:00.000Z",
+        eventColor: "#9F1239",
+        notes: "",
+        reason: "Duplicate VIP record",
+        forceConflict: true,
+      },
+      { storage },
+    );
+
+    const day = await getEntertainmentDay(DATE, {
+      storage,
+      adapter: dependencies.adapter,
+      localEvents: [],
+      vipPrepClient: dependencies.vipPrepClient,
+    });
+
+    expect(day.reservations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventName: "Redacted Sync Event VIP" }),
+      ]),
+    );
+    expect(day.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventName: "Redacted Sync Event" }),
+      ]),
+    );
+  });
+
   it("uses the known event window when mock entertainment timing needs review", async () => {
     const storage = new MemoryEntertainmentStorage();
     const mockAdapter: TripleseatAdapter = {
