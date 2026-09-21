@@ -342,7 +342,7 @@ export function quantityForText(
     shuffleboard: "(?:(?:neo\\s*)?shuffle(?:board)?\\s+)?tables?",
   };
   const match = value.match(
-    new RegExp(`\\b(\\d{1,2})\\s+${nounPattern[category]}\\b`, "i"),
+    new RegExp(`(?<!\\d)(\\d{1,2})\\s+${nounPattern[category]}\\b`, "i"),
   );
   if (match) {
     return Number(match[1]);

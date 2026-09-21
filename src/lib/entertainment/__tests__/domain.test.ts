@@ -180,7 +180,17 @@ describe("canonical entertainment resources", () => {
   it("uses an explicit resource count before billable unit-hours", () => {
     expect(quantityForText("2 bowling lanes", "bowling", 4)).toBe(2);
     expect(quantityForText("3 lanes for 4 hours", "bowling", 12)).toBe(3);
+    expect(
+      quantityForText(
+        "Duckpin Bowling per hour, per lane Sunday-Thursday*6 people per lane4 lanes for 3 hours7p-10p",
+        "bowling",
+        12,
+      ),
+    ).toBe(4);
     expect(quantityForText("1 lane for 4 hours", "darts", 4)).toBe(1);
+    expect(
+      quantityForText("Pool Table Sunday-Thursday1 table for 2 hours8p-10p", "pool", 2),
+    ).toBe(1);
     expect(quantityForText("1 pool table for 2 hours", "pool", 2)).toBe(1);
     expect(quantityForText("1 shuffleboard table for 2 hours", "shuffleboard", 2)).toBe(1);
     expect(quantityForText("3 dart boards", "darts", null)).toBe(3);
