@@ -355,7 +355,6 @@ function isVipEntertainmentSourceEvent(event: EntertainmentSourceEvent) {
 function isVipEntertainmentReservation(reservation: EntertainmentReservation) {
   return (
     reservation.source === "vip-prep" ||
-    reservation.id.startsWith("vip-") ||
     reservation.localEventId?.startsWith("vip-") === true ||
     reservation.tripleseatEventId?.startsWith("vip-") === true
   );
