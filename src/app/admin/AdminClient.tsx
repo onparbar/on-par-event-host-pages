@@ -105,6 +105,21 @@ export function completedChecklistEventName(
   return record.eventName.trim() || fallbackName?.trim() || `Event ${record.eventId}`;
 }
 
+function itineraryMonthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function itineraryMonthLabel(monthKey: string) {
+  const parsed = new Date(`${monthKey}-01T12:00:00`);
+  return Number.isNaN(parsed.getTime())
+    ? monthKey
+    : new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "America/New_York",
+      }).format(parsed);
+}
+
 export default function AdminClient({
   archivedItineraries,
   checklistEventSummaries,
@@ -133,6 +148,16 @@ export default function AdminClient({
   const submittedRecords = checklistRecords
     .filter((record) => record.status === "submitted" && record.eventId !== 99990001)
     .sort((left, right) => (right.submittedAt || "").localeCompare(left.submittedAt || ""));
+
+  const archivedItineraryMonths = Array.from(
+    archivedItineraries.reduce((groups, item) => {
+      const key = itineraryMonthKey(item.date);
+      const current = groups.get(key) ?? [];
+      current.push(item);
+      groups.set(key, current);
+      return groups;
+    }, new Map<string, ItineraryAsset[]>()),
+  ).sort(([left], [right]) => right.localeCompare(left));
 
   async function unsubmitChecklist(eventId: number) {
     setUnsubmitEventId(eventId);
@@ -450,16 +475,23 @@ export default function AdminClient({
           <section className="asset-section admin-archive-folder">
             <h3>Past Itineraries</h3>
             <p className="meta">Archived itinerary files from parties before today.</p>
-            {archivedItineraries.length ? (
+            {archivedItineraryMonths.length ? (
               <div className="admin-archive-list">
-                {archivedItineraries.map((item) => (
-                  <div className="admin-archive-item" key={item.id}>
-                    <div>
-                      <strong>{item.name}</strong>
-                      <span className="meta">{formatEventDate(item.date)} · {item.guest_count} guests</span>
+                {archivedItineraryMonths.map(([monthKey, items]) => (
+                  <details className="admin-archive-month" key={monthKey}>
+                    <summary>{itineraryMonthLabel(monthKey)} <span className="meta">({items.length} events)</span></summary>
+                    <div className="admin-archive-month-events">
+                      {items.map((item) => (
+                        <div className="admin-archive-item" key={item.id}>
+                          <div>
+                            <strong>{item.name}</strong>
+                            <span className="meta">{formatEventDate(item.date)} · {item.guest_count} guests</span>
+                          </div>
+                          {item.pdf ? <a href={item.pdf} target="_blank" rel="noreferrer">Open itinerary</a> : <span className="meta">No PDF saved</span>}
+                        </div>
+                      ))}
                     </div>
-                    {item.pdf ? <a href={item.pdf} target="_blank" rel="noreferrer">Open itinerary</a> : <span className="meta">No PDF saved</span>}
-                  </div>
+                  </details>
                 ))}
               </div>
             ) : <p className="meta">No past itineraries are available.</p>}
