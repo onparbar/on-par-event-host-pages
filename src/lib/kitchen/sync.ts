@@ -20,6 +20,7 @@ import type {
   KitchenAddOnActivity,
   KitchenAddOnCompletion,
   KitchenChecklist,
+  KitchenSourceEvent,
 } from "./types";
 import {
   getMissingVipPrepEnvironmentVariables,
@@ -108,6 +109,53 @@ function dedupeConfirmedContractKitchenEvents(events: KitchenChecklist[]) {
         event.event.name,
         contractEvent.event.localDate,
         contractEvent.event.name,
+      ),
+  );
+}
+
+function canonicalKitchenEventName(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s+vip(?:\s+[12])?$/i, "")
+    .trim()
+    .toLocaleLowerCase("en-US");
+}
+
+function kitchenEventNamesMatch(left: string, right: string) {
+  const leftName = canonicalKitchenEventName(left);
+  const rightName = canonicalKitchenEventName(right);
+  return leftName.length >= 6 && leftName === rightName;
+}
+
+function dedupeVipKitchenSourcesByEventName(events: readonly KitchenSourceEvent[]) {
+  const eventBookings = events.filter(
+    (event) => !String(event.eventId).startsWith("vip-"),
+  );
+  return events.filter(
+    (event) =>
+      !String(event.eventId).startsWith("vip-") ||
+      !eventBookings.some((booking) =>
+        event.localDate === booking.localDate &&
+        kitchenEventNamesMatch(event.eventName, booking.eventName),
+      ),
+  );
+}
+
+function dedupeVipKitchenChecklistsByEventName(
+  events: readonly KitchenChecklist[],
+) {
+  const eventBookings = events.filter(
+    (event) => !String(event.event.eventId).startsWith("vip-"),
+  );
+  return events.filter(
+    (event) =>
+      !String(event.event.eventId).startsWith("vip-") ||
+      !eventBookings.some((booking) =>
+        event.event.localDate === booking.event.localDate &&
+        kitchenEventNamesMatch(event.event.name, booking.event.name),
       ),
   );
 }
@@ -269,10 +317,10 @@ export async function getKitchenDay(
         ),
     )
     .map((source) => generateKitchenChecklist(source));
-  const eventsWithSourceStatus = [
+  const eventsWithSourceStatus = dedupeVipKitchenChecklistsByEventName([
     ...storedAndVipEvents,
     ...confirmedContractEvents,
-  ];
+  ]);
   const events = activeKitchenChecklists(
     eventsWithSourceStatus,
     options.now ?? new Date(),
@@ -363,7 +411,7 @@ export async function syncKitchenDay(
         );
       },
     );
-    const sourceEvents = [
+    const sourceEvents = dedupeVipKitchenSourcesByEventName([
       ...upstreamEvents.filter(
         (candidate) =>
           !confirmedEvents.some((source) =>
@@ -374,10 +422,10 @@ export async function syncKitchenDay(
               source.localDate,
               source.eventName,
             ),
-          ),
+        ),
       ),
       ...confirmedEvents,
-    ];
+    ]);
     const storedEvents = sourceEvents.map((sourceEvent) => ({
       sourceEvent,
       checklist: generateKitchenChecklist(sourceEvent),

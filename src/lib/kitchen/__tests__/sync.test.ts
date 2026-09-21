@@ -198,6 +198,107 @@ describe("kitchen synchronization", () => {
     expect(day.events[0].event.eventId).toBe("vip-reservation-uuid");
   });
 
+  it("uses the event booking instead of a same-name VIP reservation for prep", async () => {
+    const eventBooking: TripleseatKitchenSourceEvent = {
+      eventId: "tripleseat-event-123",
+      bookingId: "tripleseat-booking-123",
+      eventName: "Redacted VIP",
+      localDate: "2026-08-15",
+      startTime: "2026-08-15T17:00:00-04:00",
+      endTime: "2026-08-15T20:00:00-04:00",
+      guestCount: 40,
+      status: "DEFINITE",
+      room: "Main Dining",
+      selections: [
+        {
+          name: "The Full Course",
+          sourceCategory: "Food Packages",
+          quantity: 40,
+          isFood: true,
+        },
+        {
+          name: "Wing Bar",
+          quantity: 40,
+          sourceCategory: "Food Packages",
+          isFood: true,
+        },
+      ],
+      specialNotes: [],
+      sourceUpdatedAt: "2026-08-15T12:00:00.000Z",
+      sourceState: "fresh",
+    };
+    const vipPayload = structuredClone(vipPrepPayload);
+    vipPayload.reservations[0].eventName = "Redacted VIP";
+
+    const day = await syncKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => [eventBooking]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return vipPayload;
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.events).toHaveLength(1);
+    expect(day.events[0].event.eventId).toBe("tripleseat-event-123");
+    expect(day.events[0].sections.flatMap((section) => section.rows)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ foodName: "Wings", quantity: 320 }),
+      ]),
+    );
+  });
+
+  it("matches a VIP suffix to the event booking name", async () => {
+    const eventBooking: TripleseatKitchenSourceEvent = {
+      eventId: "tripleseat-buyout-924",
+      eventName: "Peoples Buy out",
+      localDate: "2026-09-24",
+      startTime: "2026-09-24T18:00:00-04:00",
+      endTime: "2026-09-25T01:00:00-04:00",
+      guestCount: 200,
+      status: "PROSPECT",
+      fullBuyout: true,
+      room: "Full Building Buyout",
+      selections: [],
+      specialNotes: [],
+      sourceUpdatedAt: "2026-09-24T12:00:00.000Z",
+      sourceState: "fresh",
+    };
+    const vipPayload = structuredClone(vipPrepPayload);
+    vipPayload.reservations = vipPayload.reservations.map((reservation) => ({
+      ...reservation,
+      operatingDate: "2026-09-24",
+      eventName: "Peoples Buy out VIP",
+    }));
+
+    const day = await syncKitchenDay("2026-09-24", {
+      adapter: testAdapter(() => [eventBooking]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return vipPayload;
+        },
+      },
+      now: viewingTime("2026-09-24"),
+    });
+
+    expect(day.events.filter((event) => event.event.eventId.startsWith("vip-"))).toEqual([]);
+    expect(day.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: expect.objectContaining({
+            eventId: "tripleseat-buyout-924",
+            name: "Peoples Buy out",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("replaces an older same-name kitchen snapshot with contract evidence", async () => {
     const storage = createMemoryKitchenStorage();
     const stale = confirmedContractKitchenSourcesForDate("2026-08-21")[0];

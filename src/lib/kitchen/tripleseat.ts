@@ -185,9 +185,23 @@ function isFullBuyoutRecord(...records: UnknownRecord[]) {
     "color",
     "colour",
     "event_color",
+    "event_colour",
+    "eventColor",
+    "eventColour",
     "calendar_color",
+    "calendarColor",
     "booking_color",
+    "bookingColor",
     "status_color",
+    "statusColor",
+    "event_status_color",
+    "eventStatusColor",
+    "color_code",
+    "colorCode",
+    "hex_color",
+    "hexColor",
+    "background_color",
+    "backgroundColor",
   ];
   if (
     records.some((record) =>
@@ -209,7 +223,7 @@ function isFullBuyoutRecord(...records: UnknownRecord[]) {
   ];
   return records.some((record) =>
     markerKeys.some((key) =>
-      /full\s*(?:building|facility)?\s*buyout|entire\s+building/i.test(
+      /full\s*(?:(?:building|facility)\s*)?buy[\s-]*out|entire\s+building/i.test(
         asLabel(record[key]) ?? "",
       ),
     ),
