@@ -23,6 +23,7 @@ import type {
   AdminOperationsPayload,
 } from "@/lib/admin-operations";
 import { formatEventDate } from "@/lib/event-format";
+import type { ItineraryAsset } from "@/lib/event-plans/types";
 
 type AdminDateAsset = {
   date: string;
@@ -41,6 +42,7 @@ type ChecklistEventSummary = {
 };
 
 type AdminClientProps = {
+  archivedItineraries: ItineraryAsset[];
   checklistEventSummaries: ChecklistEventSummary[];
   entertainmentSchedules: AdminDateAsset[];
   floorPlans: AdminDateAsset[];
@@ -51,7 +53,7 @@ type AdminClientProps = {
   today: string;
 };
 
-type AdminTab = "readiness" | "assets" | "completed";
+type AdminTab = "readiness" | "assets" | "completed" | "archived-itineraries";
 
 type EvidenceState = "idle" | "loading" | "ready" | "error";
 
@@ -104,6 +106,7 @@ export function completedChecklistEventName(
 }
 
 export default function AdminClient({
+  archivedItineraries,
   checklistEventSummaries,
   entertainmentSchedules,
   floorPlans,
@@ -122,11 +125,40 @@ export default function AdminClient({
   const [evidenceEventId, setEvidenceEventId] = useState<number | null>(null);
   const [evidence, setEvidence] = useState<AdminContractEvidence | null>(null);
   const [evidenceState, setEvidenceState] = useState<EvidenceState>("idle");
+  const [checklistRecords, setChecklistRecords] = useState(records);
+  const [unsubmitEventId, setUnsubmitEventId] = useState<number | null>(null);
+  const [unsubmitError, setUnsubmitError] = useState<string | null>(null);
   const closeEvidenceDrawer = useCallback(() => setEvidenceEventId(null), []);
 
-  const submittedRecords = records
+  const submittedRecords = checklistRecords
     .filter((record) => record.status === "submitted" && record.eventId !== 99990001)
     .sort((left, right) => (right.submittedAt || "").localeCompare(left.submittedAt || ""));
+
+  async function unsubmitChecklist(eventId: number) {
+    setUnsubmitEventId(eventId);
+    setUnsubmitError(null);
+    try {
+      const response = await fetch(`/api/admin/checklists/${eventId}/unsubmit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { record?: ChecklistRecord; error?: string }
+        | null;
+      if (!response.ok || !payload?.record) {
+        throw new Error(payload?.error || "Unable to un-submit checklist.");
+      }
+      setChecklistRecords((current) =>
+        current.map((record) =>
+          record.eventId === eventId ? payload.record! : record,
+        ),
+      );
+    } catch (error) {
+      setUnsubmitError(error instanceof Error ? error.message : "Unable to un-submit checklist.");
+    } finally {
+      setUnsubmitEventId(null);
+    }
+  }
 
   useEffect(() => {
     if (adminState === initialState) {
@@ -324,6 +356,9 @@ export default function AdminClient({
           <button aria-pressed={activeTab === "completed"} className={`sheet-tab${activeTab === "completed" ? " active" : ""}`} onClick={() => setActiveTab("completed")} type="button">
             Completed Checklists
           </button>
+          <button aria-pressed={activeTab === "archived-itineraries"} className={`sheet-tab${activeTab === "archived-itineraries" ? " active" : ""}`} onClick={() => setActiveTab("archived-itineraries")} type="button">
+            Past Itineraries
+          </button>
         </section>
 
         {activeTab === "readiness" ? (
@@ -411,6 +446,24 @@ export default function AdminClient({
               </>
             )}
           </>
+        ) : activeTab === "archived-itineraries" ? (
+          <section className="asset-section admin-archive-folder">
+            <h3>Past Itineraries</h3>
+            <p className="meta">Archived itinerary files from parties before today.</p>
+            {archivedItineraries.length ? (
+              <div className="admin-archive-list">
+                {archivedItineraries.map((item) => (
+                  <div className="admin-archive-item" key={item.id}>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span className="meta">{formatEventDate(item.date)} · {item.guest_count} guests</span>
+                    </div>
+                    {item.pdf ? <a href={item.pdf} target="_blank" rel="noreferrer">Open itinerary</a> : <span className="meta">No PDF saved</span>}
+                  </div>
+                ))}
+              </div>
+            ) : <p className="meta">No past itineraries are available.</p>}
+          </section>
         ) : (
           <section className="completed-grid">
             {submittedRecords.length ? (
@@ -459,6 +512,16 @@ export default function AdminClient({
                         )}
                       </div>
                     </div>
+                    <div className="completed-card-actions">
+                      <button
+                        className="button-link"
+                        disabled={unsubmitEventId === record.eventId}
+                        onClick={() => void unsubmitChecklist(record.eventId)}
+                        type="button"
+                      >
+                        {unsubmitEventId === record.eventId ? "Un-submitting…" : "Un-submit checklist"}
+                      </button>
+                    </div>
                   </article>
                 );
               })
@@ -468,6 +531,7 @@ export default function AdminClient({
                 <p className="meta">Submitted checklist and add-on sheets will appear here after a BWA submits them from the checklist page.</p>
               </section>
             )}
+            {unsubmitError ? <p className="portal-form-error" role="alert">{unsubmitError}</p> : null}
           </section>
         )}
       </div>

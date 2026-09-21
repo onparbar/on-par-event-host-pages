@@ -22,7 +22,6 @@ import {
   type SoundAlertState,
 } from "../../lib/kitchen/alert-sound";
 import {
-  currentKitchenAddOnAlerts,
   dueKitchenAlerts,
   easternMinuteKey,
   kitchenTimedAlerts,
@@ -63,6 +62,7 @@ type LoadState = "loading" | "ready" | "error";
 type SyncState = "idle" | "syncing" | "error";
 type BwaSaveState = "idle" | "saving" | "saved" | "error";
 type StaffAssignmentDraft = {
+  setup: string[];
   foodRunners: string[];
   pocs: string[];
   preppedBy: string;
@@ -441,10 +441,15 @@ export default function KitchenDashboard() {
         return false;
       }
 
-      const nextAddOnAlerts = currentKitchenAddOnAlerts(
-        payload.addOnActivity ?? [],
-        dismissedAlertIdsRef.current,
-      );
+      const visiblePayload = {
+        ...payload,
+        events: payload.events.filter(
+          (event) => !String(event.event.eventId).startsWith("vip-"),
+        ),
+      };
+      // Event add-ons are delivered to GoTab KDS directly; they are not
+      // duplicated as kitchen-sheet alerts.
+      const nextAddOnAlerts: KitchenLiveAddOnAlert[] = [];
       setAddOnAlertQueue((current) => {
         const applicableIds = new Set(
           nextAddOnAlerts.map((alert) => alert.id),
@@ -462,18 +467,19 @@ export default function KitchenDashboard() {
           ? [...stillApplicable, ...additions]
           : stillApplicable;
       });
-      setDay(payload);
+      setDay(visiblePayload);
       setLiveRefreshHealthy(true);
       setLastLiveRefreshAt(new Date().toISOString());
       setStaffDrafts((current) =>
         Object.fromEntries(
-          payload.events.map((checklist) => {
+          visiblePayload.events.map((checklist) => {
             const eventKey = String(checklist.event.eventId);
             return [
               eventKey,
               background && Object.hasOwn(current, eventKey)
                 ? current[eventKey]
-                : {
+                  : {
+                    setup: checklist.setup ?? [],
                     foodRunners: checklist.foodRunners ?? (
                       checklist.foodRunnerOrBwa
                         ? [checklist.foodRunnerOrBwa]
@@ -858,6 +864,7 @@ export default function KitchenDashboard() {
   async function saveStaffAssignments(checklist: KitchenChecklist) {
     const eventKey = String(checklist.event.eventId);
     const assignments = staffDrafts[eventKey] ?? {
+      setup: [],
       foodRunners: [],
       pocs: [],
       preppedBy: "",
@@ -886,6 +893,7 @@ export default function KitchenDashboard() {
                   ? {
                       ...eventChecklist,
                       foodRunnerOrBwa: assignments.foodRunners.join(", "),
+                      setup: assignments.setup,
                       foodRunners: assignments.foodRunners,
                       pocs: assignments.pocs,
                       preppedBy: assignments.preppedBy,
@@ -1416,6 +1424,7 @@ export default function KitchenDashboard() {
                   <KitchenChecklistSheet
                     staffDraft={
                       staffDrafts[eventKey] ?? {
+                        setup: [],
                         foodRunners: [],
                         pocs: [],
                         preppedBy: "",
@@ -1467,6 +1476,7 @@ export default function KitchenDashboard() {
         <ChecklistPanel
           staffDraft={
             staffDrafts[String(selectedChecklist.event.eventId)] ?? {
+              setup: [],
               foodRunners: [],
               pocs: [],
               preppedBy: "",
@@ -1680,18 +1690,20 @@ export function KitchenEventAccordion({
 
 function StaffMultiSelect({
   label,
+  className = "kitchen-staff-select",
   onChange,
   options,
   selected,
 }: {
   label: string;
+  className?: string;
   onChange: (values: string[]) => void;
   options: readonly string[];
   selected: readonly string[];
 }) {
   const selectedSet = new Set(selected);
   return (
-    <details className="kitchen-staff-select">
+    <details className={className}>
       <summary>
         <span>{label}</span>
         <strong>{selected.length ? selected.join(", ") : "Select employees"}</strong>
@@ -1720,7 +1732,7 @@ function StaffMultiSelect({
 }
 
 export function KitchenChecklistSheet({
-  staffDraft = { foodRunners: [], pocs: [], preppedBy: "", verifiedBy: "" },
+  staffDraft = { setup: [], foodRunners: [], pocs: [], preppedBy: "", verifiedBy: "" },
   bwaDraft: _legacyBwaDraft,
   bwaOptions = [],
   bwaSaveState,
@@ -1774,6 +1786,7 @@ export function KitchenChecklistSheet({
     ]),
   ];
   const bwaChanged =
+    JSON.stringify(staffDraft.setup) !== JSON.stringify(checklist.setup ?? []) ||
     JSON.stringify(staffDraft.foodRunners) !==
       JSON.stringify(checklist.foodRunners ?? []) ||
     JSON.stringify(staffDraft.pocs) !== JSON.stringify(checklist.pocs ?? []) ||
@@ -1794,7 +1807,6 @@ export function KitchenChecklistSheet({
   const finalCompletedItemKeys = new Set(
     checklist.finalCompletedItemKeys ?? [],
   );
-  const liveFoodAddOns = checklist.liveFoodAddOns ?? [];
   const eventId = checklist.event.eventId;
   const isCompletionPending = (itemKey: string) =>
     completionPending.has(readinessRequestKey(eventId, itemKey));
@@ -1869,6 +1881,13 @@ export function KitchenChecklistSheet({
       <div className="kitchen-checklist-schedule">
         <div className="kitchen-checklist-bwa">
           <div className="kitchen-bwa-field">
+            <StaffMultiSelect
+              className="kitchen-setup-select"
+              label="Set Up"
+              onChange={(setup) => onStaffChange({ ...staffDraft, setup })}
+              options={availableBwaOptions}
+              selected={staffDraft.setup}
+            />
             <StaffMultiSelect
               label="Food Runner"
               onChange={(foodRunners) =>
@@ -2000,17 +2019,12 @@ export function KitchenChecklistSheet({
       </div>
 
       <div className="kitchen-review-area" data-kitchen-review-area>
-        <section
-          aria-live="polite"
-          className="kitchen-review-panel kitchen-addon-panel"
-        >
-          <div className="kitchen-panel-heading">
-            <h3>Live food add-ons</h3>
-            <span>Updates automatically</span>
-          </div>
-          {liveFoodAddOns.length ? (
-            <div className="kitchen-addon-list">
-              {liveFoodAddOns.map((item) => {
+        <section className="kitchen-review-panel kitchen-addon-panel kitchen-addon-panel-hidden" aria-hidden="true">
+          <span>Live food add-ons are sent directly to GoTab KDS.</span>
+        </section>
+        {true ? (
+          <div className="kitchen-addon-panel-hidden">
+              {checklist.liveFoodAddOns.map((item) => {
                 const readinessKey = quantityAwareReadinessKey({
                   ...item,
                   ruleVersion: checklist.ruleVersion,
@@ -2113,11 +2127,8 @@ export function KitchenChecklistSheet({
                   </div>
                 );
               })}
-            </div>
-          ) : (
-            <p>No food add-ons have been entered for this event.</p>
-          )}
-        </section>
+          </div>
+        ) : null}
         <section className="kitchen-review-panel">
           <h3>Food contract notes</h3>
           {(checklist.event.foodNotes ?? []).length ? (

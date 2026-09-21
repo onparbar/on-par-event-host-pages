@@ -7,11 +7,13 @@ import {
 } from "@/lib/kitchen/sync";
 import { synchronizeKitchenLiveAddOnsToEventFood } from "./sync-event-food";
 import { processGoTabDispatches } from "./worker";
+import type { EventFoodSourceType } from "./event-food";
 
 export async function synchronizeChecklistFoodAddOns(
   kitchenEventId: string,
   food: unknown,
   submittedSourceKeys?: readonly string[],
+  sourceType: EventFoodSourceType = "EVENT_HOST_ADDON",
 ) {
   const previous = await getKitchenEventFoodAddOns(kitchenEventId);
   const previousFood = previous.food as Record<string, unknown>;
@@ -57,6 +59,7 @@ export async function synchronizeChecklistFoodAddOns(
       sourceVersion: saved.revision,
       changedSourceKeys,
       dispatchImmediately: true,
+      ...(sourceType === "REFILL" ? { sourceType } : {}),
     },
   );
   const dispatch = await processGoTabDispatches();

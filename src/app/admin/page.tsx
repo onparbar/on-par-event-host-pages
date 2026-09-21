@@ -9,6 +9,7 @@ import {
   entertainmentSchedules,
   floorPlans,
   floorPlanSpecialPages,
+  itineraries,
 } from "@/lib/events";
 import { loadAdminOperations } from "@/lib/admin-operations-loader";
 
@@ -57,12 +58,16 @@ export default async function AdminPage() {
     loadAdminOperations(),
   ]);
   const today = easternToday();
+  const archivedItineraries = itineraries
+    .filter((item) => item.date < today)
+    .sort((left, right) => right.date.localeCompare(left.date));
   const checklistEventSummaries = checklistEvents.map(
     ({ id, name, date, time, poc }) => ({ id, name, date, time, poc }),
   );
   return (
     <AdminClient
       checklistEventSummaries={checklistEventSummaries}
+      archivedItineraries={archivedItineraries}
       entertainmentSchedules={entertainmentSchedules}
       floorPlans={[...floorPlans, ...floorPlanSpecialPages]}
       initialState={initialState}

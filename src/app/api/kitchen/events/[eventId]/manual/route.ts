@@ -13,6 +13,7 @@ type ManualRequest = {
   pocs?: unknown;
   preppedBy?: unknown;
   verifiedBy?: unknown;
+  setup?: unknown;
 };
 
 export async function PATCH(
@@ -38,7 +39,10 @@ export async function PATCH(
     !Array.isArray(body.pocs) ||
     !body.pocs.every((value) => typeof value === "string") ||
     typeof body.preppedBy !== "string" ||
-    typeof body.verifiedBy !== "string"
+    typeof body.verifiedBy !== "string" ||
+    (body.setup !== undefined &&
+      (!Array.isArray(body.setup) ||
+        !body.setup.every((value) => typeof value === "string")))
   ) {
     return NextResponse.json(
       { error: "Kitchen staff selections are invalid." },
@@ -56,6 +60,7 @@ export async function PATCH(
         {},
         body.preppedBy,
         body.verifiedBy,
+        body.setup ?? [],
       ),
     );
   } catch (error) {

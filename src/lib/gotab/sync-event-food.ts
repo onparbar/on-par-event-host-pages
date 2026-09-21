@@ -53,7 +53,10 @@ export async function synchronizeKitchenChecklistToEventFood(
   const projection = projectKitchenChecklist(checklist, mappings, {
     sourceType,
     sourceVersion: options.sourceVersion,
-    requesterName: checklist.pocs?.find((name) => name.trim()) ?? null,
+    requesterName:
+      checklist.foodRunners?.find((name) => name.trim()) ??
+      checklist.pocs?.find((name) => name.trim()) ??
+      (checklist.foodRunnerOrBwa?.trim() || null),
     defaultPrepLeadMinutes: configuration.defaultPrepLeadMinutes ?? 60,
   });
   await storage.saveProjectionExceptions({
@@ -98,6 +101,7 @@ export async function synchronizeKitchenLiveAddOnsToEventFood(
   options: {
     sourceVersion: number;
     changedSourceKeys: readonly string[];
+    sourceType?: EventFoodSourceType;
     actor?: string;
     storage?: EventFoodSyncStorage;
     env?: Readonly<Record<string, string | undefined>>;
@@ -116,9 +120,9 @@ export async function synchronizeKitchenLiveAddOnsToEventFood(
   };
   return synchronizeKitchenChecklistToEventFood(addOnOnlyChecklist, {
     sourceVersion: options.sourceVersion,
-    sourceType: String(checklist.event.eventId).startsWith("vip-")
+    sourceType: options.sourceType ?? (String(checklist.event.eventId).startsWith("vip-")
       ? "VIP_ADDON"
-      : "EVENT_HOST_ADDON",
+      : "EVENT_HOST_ADDON"),
     actor: options.actor ?? "EVENT_HOST_ADDON_SAVE",
     storage: options.storage,
     env: options.env,

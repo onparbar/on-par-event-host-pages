@@ -328,6 +328,57 @@ function dedupeConfirmedContractEntertainmentEvents(
   );
 }
 
+function comparableVipEventName(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/\s+VIP(?:\s+[12])?\s*$/i, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("en-US");
+}
+
+function isVipEntertainmentEvent(event: EntertainmentEventSnapshot) {
+  return (
+    event.sourceSnapshot.sourceSystem === "vip-prep" ||
+    event.eventId.startsWith("vip-") ||
+    event.tripleseatEventId.startsWith("vip-")
+  );
+}
+
+function isVipEntertainmentReservation(reservation: EntertainmentReservation) {
+  return (
+    reservation.source === "vip-prep" ||
+    reservation.id.startsWith("vip-") ||
+    reservation.tripleseatEventId?.startsWith("vip-") === true
+  );
+}
+
+function dedupeVipNamedEvents(events: EntertainmentEventSnapshot[]) {
+  const vipKeys = new Set(
+    events
+      .filter(isVipEntertainmentEvent)
+      .map((event) => `${event.operatingDate}|${comparableVipEventName(event.eventName)}`),
+  );
+  return events.filter(
+    (event) =>
+      isVipEntertainmentEvent(event) ||
+      !vipKeys.has(`${event.operatingDate}|${comparableVipEventName(event.eventName)}`),
+  );
+}
+
+function dedupeVipNamedReservations(reservations: EntertainmentReservation[]) {
+  const vipKeys = new Set(
+    reservations
+      .filter(isVipEntertainmentReservation)
+      .map((reservation) => `${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`),
+  );
+  return reservations.filter(
+    (reservation) =>
+      isVipEntertainmentReservation(reservation) ||
+      !vipKeys.has(`${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`),
+  );
+}
+
 export async function getEntertainmentDay(
   date: string,
   options: EntertainmentDependencies = {},
@@ -417,8 +468,8 @@ export async function getEntertainmentDay(
       ...confirmedSchedule.events,
     ]),
   ];
-  const events = dedupeConfirmedContractEntertainmentEvents(
-    combinedEvents,
+  const events = dedupeVipNamedEvents(
+    dedupeConfirmedContractEntertainmentEvents(combinedEvents),
   ).sort((left, right) =>
     (left.eventStartAt ?? "").localeCompare(right.eventStartAt ?? ""),
   );
@@ -434,7 +485,7 @@ export async function getEntertainmentDay(
       "sourceSystem" in event.sourceSnapshot &&
       event.sourceSnapshot.sourceSystem === "contract-evidence",
   );
-  const reservations = combinedReservations.filter(
+  const reservations = dedupeVipNamedReservations(combinedReservations).filter(
     (reservation) =>
       !contractIdentity ||
       !eventMatchesConfirmedContract(

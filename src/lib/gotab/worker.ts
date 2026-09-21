@@ -57,7 +57,9 @@ export async function processGoTabDispatches(options?: {
     }
 
     const payload = dispatch.sanitized_payload ?? {};
-    const ticketName = typeof payload?.ticketName === "string" ? payload.ticketName : "";
+    const ticketName = typeof payload?.eventName === "string"
+      ? payload.eventName
+      : typeof payload?.ticketName === "string" ? payload.ticketName : "";
     const productUuid = typeof payload?.gotabProductUuid === "string" ? payload.gotabProductUuid : "";
     const product = typeof payload?.product === "string" ? payload.product : "";
     const quantity = typeof payload?.quantity === "number" ? payload.quantity : 0;
@@ -65,6 +67,7 @@ export async function processGoTabDispatches(options?: {
     const selectedPanSize = payload?.selectedPanSize === "1/3" || payload?.selectedPanSize === "1/2"
       ? payload.selectedPanSize
       : null;
+    const sourceType = typeof payload?.requestType === "string" ? payload.requestType : undefined;
     if (!ticketName || !productUuid || !product || !Number.isSafeInteger(quantity) || quantity < 1) {
       await storage.finishDispatch(dispatch.id, { status: "HELD", lastError: "The saved Event Food payload is incomplete." });
       summary.held += 1;
@@ -81,6 +84,7 @@ export async function processGoTabDispatches(options?: {
         itemNotes: payload,
         serverName: requesterName,
         selectedPanSize,
+        sourceType: sourceType as "EVENT_HOST_ADDON" | "REFILL" | "VIP_ADDON" | "TRIPLESEAT_CONTRACT" | "CORRECTION" | "CANCELLATION" | undefined,
       });
       await storage.finishDispatch(dispatch.id, {
         status: "SENT",

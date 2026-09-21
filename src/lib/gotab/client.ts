@@ -114,6 +114,7 @@ function identifier(value: unknown) {
 export function eventKdsItemName(
   itemName: string,
   selectedPanSize: "1/3" | "1/2" | null = null,
+  sourceType: "EVENT_HOST_ADDON" | "REFILL" | "VIP_ADDON" | "TRIPLESEAT_CONTRACT" | "CORRECTION" | "CANCELLATION" = "EVENT_HOST_ADDON",
 ) {
   const normalized = itemName.trim();
   const aliases: Record<string, string> = {
@@ -154,7 +155,8 @@ export function eventKdsItemName(
     "Wings": "Wings",
   };
   const panSuffix = selectedPanSize ? ` ${selectedPanSize} PANS` : "";
-  const maximumItemNameLength = 20 - "EVENT-".length - panSuffix.length;
+  const prefix = sourceType === "REFILL" ? "REFILL-" : "EVENT-";
+  const maximumItemNameLength = 20 - prefix.length - panSuffix.length;
   const productName = (
     selectedPanSize
       ? panAliases[normalized] ?? aliases[normalized] ?? normalized
@@ -162,7 +164,7 @@ export function eventKdsItemName(
   )
     .slice(0, maximumItemNameLength)
     .trimEnd();
-  return `EVENT-${productName}${panSuffix}`;
+  return `${prefix}${productName}${panSuffix}`;
 }
 
 function normalizedPersonName(value: string) {
@@ -419,6 +421,7 @@ export class GoTabClient {
     itemNotes: Record<string, unknown>;
     serverName?: string | null;
     selectedPanSize?: "1/3" | "1/2" | null;
+    sourceType?: "EVENT_HOST_ADDON" | "REFILL" | "VIP_ADDON" | "TRIPLESEAT_CONTRACT" | "CORRECTION" | "CANCELLATION";
   }): Promise<GoTabEventFoodTabResult> {
     if (
       !input.externalId.trim() ||
@@ -445,7 +448,7 @@ export class GoTabClient {
         externalId: input.externalId,
         quantity: input.quantity,
         product: { productUuid: input.productUuid },
-        name: eventKdsItemName(input.itemName, input.selectedPanSize ?? null),
+        name: eventKdsItemName(input.itemName, input.selectedPanSize ?? null, input.sourceType),
         modifiers: [],
       }],
     };

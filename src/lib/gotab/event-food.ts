@@ -43,6 +43,15 @@ export type EventFoodDispatchStatus =
   | "CORRECTED"
   | "CANCELLED";
 
+export const KDS_LATE_AFTER_MINUTES = 5;
+
+/** GoTab/KDS tickets are late at five minutes after receipt, not four. */
+export function isKdsTicketLate(receivedAt: string, now = new Date()) {
+  const receivedTimestamp = Date.parse(receivedAt);
+  return Number.isFinite(receivedTimestamp) &&
+    now.getTime() - receivedTimestamp >= KDS_LATE_AFTER_MINUTES * 60_000;
+}
+
 export type EventFoodProductMapping = {
   id: string;
   canonicalProductKey: string;
@@ -249,15 +258,6 @@ export function assertPaymentFreeGoTabPayload(value: unknown, path = "payload"):
   }
 }
 
-const SOURCE_LABELS: Record<EventFoodSourceType, string> = {
-  TRIPLESEAT_CONTRACT: "EVENT",
-  EVENT_HOST_ADDON: "FOOD ADD-ON",
-  VIP_ADDON: "VIP FOOD",
-  REFILL: "REFILL",
-  CORRECTION: "CORRECTION",
-  CANCELLATION: "CANCEL ITEM",
-};
-
 export function buildGoTabKdsPreview(
   request: NormalizedEventFoodItem,
   eventName: string,
@@ -268,7 +268,7 @@ export function buildGoTabKdsPreview(
   if (!dispatch.enabled) warnings.push("GoTab dispatch is disabled.");
   if (dispatch.dryRun) warnings.push("DRY-RUN MODE — no KDS ticket will be created.");
   const preview = {
-    ticketName: `[${SOURCE_LABELS[request.sourceType]}] ${eventName}`.slice(0, 80),
+    ticketName: `[${request.sourceType === "VIP_ADDON" ? "VIP FOOD" : request.sourceType === "REFILL" ? "REFILL" : request.sourceType === "CORRECTION" ? "CORRECTION" : "EVENT"}] ${eventName}`.slice(0, 80),
     eventName,
     eventArea: request.eventArea,
     requestType: request.sourceType,

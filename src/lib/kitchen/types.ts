@@ -260,6 +260,7 @@ export type KitchenChecklist = {
   foodRunnerOrBwa: string;
   foodRunners?: string[];
   pocs?: string[];
+  setup?: string[];
   preppedBy?: string;
   verifiedBy?: string;
   classification: KitchenClassification;

@@ -407,6 +407,7 @@ export async function updateKitchenManualAssignments(
   options: Pick<KitchenSyncDependencies, "storage"> = {},
   preppedBy = "",
   verifiedBy = "",
+  setup: readonly string[] = [],
 ) {
   const normalizedEventId = eventId.trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalizedEventId)) {
@@ -450,6 +451,7 @@ export async function updateKitchenManualAssignments(
   };
   const normalizedPreppedBy = normalizeSingleName(preppedBy, "Prepped by");
   const normalizedVerifiedBy = normalizeSingleName(verifiedBy, "Verified by");
+  const normalizedSetup = normalizeNames(setup, "Set Up");
 
   await (options.storage ?? getKitchenStorage()).saveManualAssignments(
     normalizedEventId,
@@ -457,6 +459,7 @@ export async function updateKitchenManualAssignments(
     normalizedPocs,
     normalizedPreppedBy,
     normalizedVerifiedBy,
+    normalizedSetup,
   );
   return {
     eventId: normalizedEventId,
@@ -464,6 +467,7 @@ export async function updateKitchenManualAssignments(
     pocs: normalizedPocs,
     preppedBy: normalizedPreppedBy,
     verifiedBy: normalizedVerifiedBy,
+    setup: normalizedSetup,
   };
 }
 

@@ -45,9 +45,7 @@ type KitchenSyncState = "idle" | "syncing" | "live" | "error";
 type FoodSubmitState = "idle" | "submitting" | "sent" | "error";
 type AddOnTab =
   | "food"
-  | "taco-bar-refills"
-  | "appetizer-bar-refills"
-  | "wing-bar-refills"
+  | "refills"
   | "entertainment";
 type ChecklistWorkspace = "checklist" | "addons";
 
@@ -143,6 +141,8 @@ export default function ChecklistsClient({
   );
   const [activeEventId, setActiveEventId] = useState<number>(eligibleEvents[0]?.id ?? 0);
   const [activeAddOnTab, setActiveAddOnTab] = useState<AddOnTab>("food");
+  const [refillBar, setRefillBar] = useState<"Taco Bar" | "Wing Bar" | "Appetizer Bar">("Taco Bar");
+  const [refillItemKey, setRefillItemKey] = useState("");
   const [checklistsByEvent, setChecklistsByEvent] = useState<Record<number, EventChecklistState>>(
     () => buildInitialChecklistMap(events),
   );
@@ -483,13 +483,13 @@ export default function ChecklistsClient({
     const state = activeChecklist.food[item.key];
     return sum + foodUnitPrice(item, state) * numeric(state.quantity);
   }, 0);
-  const activeFoodAddOns = activeAddOnTab === "taco-bar-refills"
+  const refillItems = refillBar === "Taco Bar"
     ? tacoBarRefillAddOns
-    : activeAddOnTab === "appetizer-bar-refills"
-      ? appetizerBarRefillAddOns
-      : activeAddOnTab === "wing-bar-refills"
-        ? wingBarRefillAddOns
-        : standardFoodAddOns;
+    : refillBar === "Wing Bar"
+      ? wingBarRefillAddOns
+      : appetizerBarRefillAddOns;
+  const activeRefillItem = refillItems.find((item) => item.key === refillItemKey) ?? refillItems[0];
+  const activeFoodAddOns = activeAddOnTab === "food" ? standardFoodAddOns : [];
   const activeFoodSubtotal = activeFoodAddOns.reduce((sum, item) => {
     const state = activeChecklist.food[item.key];
     return sum + foodUnitPrice(item, state) * numeric(state.quantity);
@@ -677,25 +677,23 @@ export default function ChecklistsClient({
                   <h3>
                     {activeAddOnTab === "food"
                       ? "Food Add-Ons"
-                      : activeAddOnTab === "taco-bar-refills"
-                        ? "Taco Bar Refills"
-                        : activeAddOnTab === "appetizer-bar-refills"
-                          ? "Appetizer Bar Refills"
-                          : activeAddOnTab === "wing-bar-refills"
-                            ? "Wing Bar Refills"
+                      : activeAddOnTab === "refills"
+                        ? "Refills"
                         : "Entertainment & Drink Add-Ons"}
                   </h3>
                   <p>
                     {activeAddOnTab === "entertainment"
                       ? "Entertainment and drink changes stay out of Kitchen and are included in the final Admin record."
-                      : "Food changes save here and are sent to the Kitchen Dashboard and GoTab KDS live."}
+                      : activeAddOnTab === "refills"
+                        ? "Refills send directly to the Kitchen Dashboard and GoTab KDS. No pricing is collected here."
+                        : "Food changes save here and are sent to the Kitchen Dashboard and GoTab KDS live."}
                   </p>
                 </div>
                 <strong>
                   {currency(
                     activeAddOnTab === "entertainment"
                       ? entertainmentSubtotal
-                      : activeFoodSubtotal,
+                      : activeAddOnTab === "food" ? activeFoodSubtotal : 0,
                   )}
                 </strong>
               </div>
@@ -712,34 +710,14 @@ export default function ChecklistsClient({
                   <small>Live to Kitchen</small>
                 </button>
                 <button
-                  aria-selected={activeAddOnTab === "appetizer-bar-refills"}
-                  className={activeAddOnTab === "appetizer-bar-refills" ? "active" : ""}
-                  onClick={() => setActiveAddOnTab("appetizer-bar-refills")}
+                  aria-selected={activeAddOnTab === "refills"}
+                  className={activeAddOnTab === "refills" ? "active" : ""}
+                  onClick={() => setActiveAddOnTab("refills")}
                   role="tab"
                   type="button"
                 >
-                  <span>Appetizer Bar Refills</span>
+                  <span>Refills</span>
                   <small>Live to Kitchen + KDS</small>
-                </button>
-                <button
-                  aria-selected={activeAddOnTab === "wing-bar-refills"}
-                  className={activeAddOnTab === "wing-bar-refills" ? "active" : ""}
-                  onClick={() => setActiveAddOnTab("wing-bar-refills")}
-                  role="tab"
-                  type="button"
-                >
-                  <span>Wing Bar Refills</span>
-                  <small>Live to Kitchen + KDS</small>
-                </button>
-                <button
-                  aria-selected={activeAddOnTab === "taco-bar-refills"}
-                  className={activeAddOnTab === "taco-bar-refills" ? "active" : ""}
-                  onClick={() => setActiveAddOnTab("taco-bar-refills")}
-                  role="tab"
-                  type="button"
-                >
-                  <span>Taco Bar Refills</span>
-                  <small>Live to Kitchen</small>
                 </button>
                 <button
                   aria-selected={activeAddOnTab === "entertainment"}
@@ -791,7 +769,61 @@ export default function ChecklistsClient({
               )}
 
               <div className="addon-grid">
-                {activeAddOnTab === "entertainment"
+                {activeAddOnTab === "refills" ? (
+                  <article className="addon-row-card refill-selector-card">
+                    <div className="addon-controls">
+                      <label className="control-block">
+                        <span>Bar</span>
+                        <select
+                          disabled={!isEditable}
+                          value={refillBar}
+                          onChange={(event) => {
+                            const nextBar = event.target.value as typeof refillBar;
+                            setRefillBar(nextBar);
+                            setRefillItemKey("");
+                          }}
+                        >
+                          <option>Taco Bar</option>
+                          <option>Wing Bar</option>
+                          <option>Appetizer Bar</option>
+                        </select>
+                      </label>
+                      <label className="control-block">
+                        <span>Item</span>
+                        <select
+                          disabled={!isEditable}
+                          value={activeRefillItem?.key ?? ""}
+                          onChange={(event) => setRefillItemKey(event.target.value)}
+                        >
+                          {refillItems.map((item) => (
+                            <option key={item.key} value={item.key}>{item.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="control-block quantity-block">
+                        <span>Quantity</span>
+                        <select
+                          disabled={!isEditable || !activeRefillItem}
+                          value={activeRefillItem ? activeChecklist.food[activeRefillItem.key].quantity : ""}
+                          onChange={(event) => activeRefillItem && updateFoodAddOn(activeEvent.id, activeRefillItem.key, { quantity: event.target.value })}
+                        >
+                          <option value="">0</option>
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                          <option value="3">3</option>
+                        </select>
+                      </label>
+                      <button
+                        className="submit-button"
+                        disabled={!isEditable || !activeRefillItem || numeric(activeChecklist.food[activeRefillItem.key].quantity) < 1 || foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "submitting"}
+                        onClick={() => activeRefillItem && void submitFoodAddOn(activeEvent.id, activeRefillItem.key, "REFILL")}
+                        type="button"
+                      >
+                        {activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "sent" ? "Sent to Kitchen + KDS" : "Submit Refill"}
+                      </button>
+                    </div>
+                  </article>
+                ) : activeAddOnTab === "entertainment"
                   ? entertainmentAddOns.map((item) => {
                   const state = activeChecklist.entertainment[item.key];
                   const unitPrice = entertainmentUnitPrice(item, state);
@@ -867,11 +899,7 @@ export default function ChecklistsClient({
 
                         <label className="control-block quantity-block">
                           <span>Quantity</span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="0"
-                            step="1"
+                          <select
                             disabled={!isEditable}
                             value={state.quantity}
                             onChange={(event) =>
@@ -886,8 +914,12 @@ export default function ChecklistsClient({
                                 },
                               }))
                             }
-                            placeholder="0"
-                          />
+                          >
+                            <option value="">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                          </select>
                         </label>
                       </div>
                     </article>
@@ -1086,7 +1118,7 @@ export default function ChecklistsClient({
     }));
   }
 
-  async function submitFoodAddOn(eventId: number, key: string) {
+  async function submitFoodAddOn(eventId: number, key: string, sourceType: "EVENT_HOST_ADDON" | "REFILL" = "EVENT_HOST_ADDON") {
     const checklist = checklistsByEvent[eventId];
     if (!checklist || metaByEvent[eventId]?.status === "submitted") return;
     const itemStateKey = `${eventId}:${key}`;
@@ -1101,6 +1133,7 @@ export default function ChecklistsClient({
           checklist,
           syncFoodAddOns: true,
           syncFoodAddOnKeys: [key],
+          sourceType,
         }),
       });
       const payload = (await response.json()) as ChecklistSaveResponse;

@@ -184,7 +184,7 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "taco-chicken", label: "Chicken", kind: "quantity-only" },
   { key: "taco-black-beans", label: "Black Beans", kind: "quantity-only" },
   { key: "taco-tortillas", label: "Tortillas", kind: "quantity-only" },
-  { key: "taco-lettuce-wraps", label: "Lettuce Wraps", kind: "quantity-only" },
+  { key: "taco-lettuce-wraps", label: "Wraps", kind: "quantity-only" },
   { key: "taco-tomatoes", label: "Tomatoes", kind: "quantity-only" },
   { key: "taco-lettuce", label: "Lettuce", kind: "quantity-only" },
   { key: "taco-sour-cream", label: "Sour Cream", kind: "quantity-only" },

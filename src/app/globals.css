@@ -4744,6 +4744,38 @@ a {
   margin-bottom: 0;
 }
 
+.admin-archive-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.admin-archive-item {
+  align-items: center;
+  border: 1px solid rgba(24, 51, 47, 0.18);
+  border-radius: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+}
+
+.admin-archive-item > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.admin-archive-item a {
+  color: #297025;
+  font-weight: 700;
+}
+
+.completed-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
 .completed-meta-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8507,4 +8539,100 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0 0.1in;
   }
+}
+.gotab-status-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.gotab-status-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.gotab-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+.gotab-status-grid div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.gotab-status-grid span {
+  color: #526d52;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gotab-status-error {
+  color: #8b1e1e;
+  font-weight: 700;
+}
+
+.gotab-operations-card { margin-top: 18px; padding: 0; overflow: hidden; }
+.gotab-tab-list { display: flex; gap: 4px; padding: 12px 14px 0; overflow-x: auto; border-bottom: 1px solid #d8ddd4; }
+.gotab-tab-list button { padding: 11px 14px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #52605a; font: inherit; font-weight: 750; white-space: nowrap; cursor: pointer; }
+.gotab-tab-list button.active { border-bottom-color: #297025; color: #18332f; }
+.gotab-phase-notice { display: flex; gap: 10px; align-items: baseline; margin: 16px; padding: 12px 14px; border: 1px solid #dba43c; border-radius: 10px; background: #fff7df; color: #6c4700; }
+.gotab-inline-message { margin: 12px 16px 0; color: #526d52; font-weight: 700; }
+.gotab-table-scroll { overflow-x: auto; }
+.gotab-catalog-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid #e1e4df; }
+.gotab-catalog-toolbar div { display: grid; gap: 3px; }
+.gotab-catalog-toolbar small { color: #65706b; }
+.gotab-admin-table { width: 100%; min-width: 1050px; border-collapse: collapse; font-size: 13px; }
+.gotab-admin-table th, .gotab-admin-table td { padding: 11px 12px; border-bottom: 1px solid #e1e4df; text-align: left; vertical-align: middle; }
+.gotab-admin-table th { background: #f4f5ef; color: #52605a; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.gotab-admin-table td strong, .gotab-admin-table td small { display: block; }
+.gotab-admin-table td small { margin-top: 3px; color: #65706b; }
+.gotab-admin-table input, .gotab-admin-table select, .gotab-preview-layout select { max-width: 210px; min-height: 36px; padding: 7px 8px; border: 1px solid #bdc7c1; border-radius: 7px; background: #fff; color: #18332f; }
+.gotab-empty-state { padding: 34px 20px; color: #65706b; text-align: center; }
+.gotab-state { display: inline-block; padding: 4px 7px; border-radius: 999px; background: #e7ece8; color: #18332f; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+.gotab-state-failed, .gotab-state-needs_review, .gotab-state-needs_product_mapping { background: #fff0ea; color: #8f1d1d; }
+.gotab-preview-layout { display: grid; gap: 18px; padding: 20px; }
+.gotab-preview-layout > label { display: grid; gap: 7px; max-width: 520px; color: #52605a; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.gotab-preview-layout > label select { max-width: none; }
+.gotab-kds-preview { width: min(100%, 620px); border: 3px solid #18332f; background: #fff; color: #000; }
+.gotab-kds-preview header { display: grid; gap: 5px; padding: 14px 16px; background: #18332f; color: #fff; }
+.gotab-kds-preview header span { font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.gotab-kds-preview header strong { font-size: 22px; }
+.gotab-kds-preview dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.gotab-kds-preview dl div { padding: 12px 14px; border-right: 1px solid #c8cec9; border-bottom: 1px solid #c8cec9; }
+.gotab-kds-preview dt { color: #52605a; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.gotab-kds-preview dd { margin: 4px 0 0; font-size: 16px; font-weight: 800; }
+.gotab-kds-preview > p { margin: 0; padding: 12px 14px; background: #fff7df; color: #6c4700; font-weight: 700; }
+.gotab-kds-preview footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border-top: 1px solid #c8cec9; }
+
+/* Operations readability and assignment controls. */
+.kitchen-addon-panel-hidden { display: none !important; }
+.kitchen-bwa-field { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kitchen-bwa-field .kitchen-setup-select { position: relative; }
+.kitchen-bwa-field .kitchen-setup-select summary { display: grid; gap: 0.15rem; }
+.kitchen-bwa-field .kitchen-setup-select fieldset { position: absolute; z-index: 20; min-width: 220px; }
+.kitchen-verified-heading { font-size: 0.9rem; line-height: 1.1; }
+.kitchen-column-staff-select { font-size: 0.86rem; min-height: 32px; }
+.kitchen-checklist-table th,
+.kitchen-checklist-table td { font-size: 0.98rem; }
+.portal-main.page { font-size: 1.05rem; }
+.checklist-page { font-size: 1.05rem; }
+.checklist-page .field-card span,
+.checklist-page .control-block > span { font-size: 0.88rem; }
+.refill-selector-card { min-height: 180px; }
+.refill-selector-card .addon-controls { align-items: end; }
+
+@media (max-width: 900px) {
+  .kitchen-bwa-field { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .gotab-phase-notice { align-items: flex-start; flex-direction: column; }
+  .gotab-kds-preview dl { grid-template-columns: 1fr; }
 }

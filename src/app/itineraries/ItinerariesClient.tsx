@@ -72,16 +72,23 @@ function operationalNoteProvenance(note: EventPlanOperationalNote) {
 }
 
 function entertainmentGroups(event: EventPlan) {
+  const hasMiniGolf = event.entertainment.some((item) => /mini\s*-?\s*golf/i.test(item.name));
+  const miniGolfItem = {
+    title: "Mini Golf",
+    detail: "Not reserved",
+  };
+
   if (!event.entertainment.length) {
     return [
       {
         title: "No reserved entertainment",
         detail: "No entertainment reservation is listed for this event.",
       },
+      miniGolfItem,
     ];
   }
 
-  return event.entertainment.map((item) => {
+  const groups = event.entertainment.map((item) => {
     const detailParts = [item.quantity];
 
     if (item.time && !/time not listed|untimed/i.test(item.time)) {
@@ -99,6 +106,8 @@ function entertainmentGroups(event: EventPlan) {
       detail: detailParts.filter(Boolean).join(" · "),
     };
   });
+
+  return hasMiniGolf ? groups : [...groups, miniGolfItem];
 }
 
 function itineraryDrinkLines(event: EventPlan) {

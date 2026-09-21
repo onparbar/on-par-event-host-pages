@@ -25,6 +25,7 @@ type SaveChecklistRequest = {
   checklist?: EventChecklistState;
   syncFoodAddOns?: boolean;
   syncFoodAddOnKeys?: string[];
+  sourceType?: string;
 };
 
 function badRequest(message: string) {
@@ -92,16 +93,31 @@ export async function PUT(request: Request) {
     }
 
     try {
+      const sourceType = body.sourceType === "REFILL" ? "REFILL" as const : undefined;
       const kitchenSync = body.syncFoodAddOnKeys
-        ? await synchronizeChecklistFoodAddOns(
-            kitchenEventId,
-            body.checklist.food,
-            body.syncFoodAddOnKeys,
-          )
-        : await synchronizeChecklistFoodAddOns(
-            kitchenEventId,
-            body.checklist.food,
-          );
+        ? sourceType
+          ? await synchronizeChecklistFoodAddOns(
+              kitchenEventId,
+              body.checklist.food,
+              body.syncFoodAddOnKeys,
+              sourceType,
+            )
+          : await synchronizeChecklistFoodAddOns(
+              kitchenEventId,
+              body.checklist.food,
+              body.syncFoodAddOnKeys,
+            )
+        : sourceType
+          ? await synchronizeChecklistFoodAddOns(
+              kitchenEventId,
+              body.checklist.food,
+              undefined,
+              sourceType,
+            )
+          : await synchronizeChecklistFoodAddOns(
+              kitchenEventId,
+              body.checklist.food,
+            );
       const dispatchedToKds =
         kitchenSync.queued > 0 &&
         kitchenSync.exceptions === 0 &&
