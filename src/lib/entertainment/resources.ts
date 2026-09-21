@@ -313,10 +313,17 @@ export function exactResourceIdsForText(
 export function quantityForText(
   value: string,
   category: EntertainmentCategory,
-  _structuredQuantity: number | null,
+  structuredQuantity: number | null,
 ) {
   if (category === "mini-golf") {
-    return exactResourceIdsForText(value, category).length || 1;
+    // Mini Golf is open play rather than a scheduled resource reservation.
+    // Its quantity must come from the contract's structured quantity; do not
+    // infer a guest count from a named course or default to one.
+    return typeof structuredQuantity === "number" &&
+      Number.isSafeInteger(structuredQuantity) &&
+      structuredQuantity > 0
+      ? structuredQuantity
+      : null;
   }
   if (category === "private-rooms") {
     return exactResourceIdsForText(value, category).length || 1;

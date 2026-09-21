@@ -415,7 +415,7 @@ function quantityLabel(
   quantity: number | null,
   exactResourceIds: readonly string[],
 ) {
-  if (exactResourceIds.length) {
+  if (exactResourceIds.length && category !== "mini-golf") {
     return exactResourceIds
       .map(
         (resourceId) =>
@@ -431,7 +431,7 @@ function quantityLabel(
     darts: "lane",
     pool: "table",
     shuffleboard: "table",
-    "mini-golf": "course",
+    "mini-golf": "guest",
     "private-rooms": "room",
   }[category];
   return `${quantity} ${noun}${quantity === 1 ? "" : "s"}`;
@@ -523,6 +523,7 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const duration = range
       ? formattedDuration(range.startAt, range.endAt)
       : textualDuration(text) ?? "Duration not listed on BEO";
+    const isMiniGolf = category === "mini-golf";
     const structuredRange = item.startAt && item.endAt
       ? `Start ${item.startAt}; end ${item.endAt}`
       : null;
@@ -578,10 +579,12 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const mappedItem = {
       name: entertainmentName(category, exactResourceIds),
       quantity: quantityLabel(category, quantity, exactResourceIds),
-      time: range
-        ? formattedTimeRange(range.startAt, range.endAt)
-        : "Time not listed on BEO",
-      duration,
+      time: isMiniGolf
+        ? ""
+        : range
+          ? formattedTimeRange(range.startAt, range.endAt)
+          : "Time not listed on BEO",
+      duration: isMiniGolf ? "" : duration,
     } satisfies EventPlanEntertainmentItem;
     mappedItems.push({
       item: mappedItem,
@@ -611,12 +614,15 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
         `Entertainment quantity is missing for "${mapped.sourceName}".`,
       );
     }
-    if (mapped.item.time === "Time not listed on BEO") {
+    if (mapped.category !== "mini-golf" && mapped.item.time === "Time not listed on BEO") {
       reviewReasons.push(
         `Entertainment time is missing for "${mapped.sourceName}".`,
       );
     }
-    if (mapped.item.duration === "Duration not listed on BEO") {
+    if (
+      mapped.category !== "mini-golf" &&
+      mapped.item.duration === "Duration not listed on BEO"
+    ) {
       reviewReasons.push(
         `Entertainment duration is missing for "${mapped.sourceName}".`,
       );

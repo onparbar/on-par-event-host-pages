@@ -83,8 +83,12 @@ function entertainmentGroups(event: EventPlan) {
 
   const groups = event.entertainment.map((item) => {
     const detailParts = [item.quantity];
+    const isMiniGolf = /mini\s+golf/i.test(item.name);
 
-    if (item.time && !/time not listed|untimed/i.test(item.time)) {
+    if (isMiniGolf) {
+      // Mini Golf is open play. Show the contract quantity only; it has no
+      // scheduled reservation time or duration.
+    } else if (item.time && !/time not listed|untimed/i.test(item.time)) {
       detailParts.push(compactTimeRange(item.time));
     } else if (item.time && /untimed/i.test(item.time)) {
       detailParts.push("Untimed");

@@ -192,6 +192,8 @@ describe("canonical entertainment resources", () => {
       ),
     ).toBe(1);
     expect(quantityForText("Duckpin Bowling per hour", "bowling", 12)).toBeNull();
+    expect(quantityForText("Level Up Mini Golf", "mini-golf", 50)).toBe(50);
+    expect(quantityForText("Level Up Mini Golf", "mini-golf", null)).toBeNull();
   });
 
   it("produces stable accessible fallback colors and contrast text", () => {

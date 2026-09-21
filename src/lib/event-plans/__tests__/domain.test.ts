@@ -376,6 +376,40 @@ describe("Tripleseat EventPlan mapping", () => {
     ]);
   });
 
+  it("lists the contract quantity for Mini Golf without a time or duration", () => {
+    const plan = buildEventPlan(
+      source({
+        selections: [],
+        documentItems: [
+          {
+            sourceId: "mini-golf-1",
+            name: "Level Up Mini Golf",
+            description: "50 mini golf guests",
+            categoryName: "Entertainment",
+            quantity: 50,
+            startAt: null,
+            endAt: null,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.entertainment).toEqual([
+      {
+        name: "Mini Golf",
+        quantity: "50 guests",
+        time: "",
+        duration: "",
+      },
+    ]);
+    expect(plan.review_reasons).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Entertainment time is missing"),
+        expect.stringContaining("Entertainment duration is missing"),
+      ]),
+    );
+  });
+
   it("combines one base bowling hour and one extra hour into one two-hour lane reservation", () => {
     const plan = buildEventPlan(
       source({
