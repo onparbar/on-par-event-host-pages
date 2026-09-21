@@ -55,6 +55,7 @@ export type TripleseatEventPlanSource = {
   eventEndAt: string | null;
   guestCount: number | null;
   status: string | null;
+  fullBuyout?: boolean;
   rooms: string[];
   selections: KitchenSourceSelection[];
   documentItems: EntertainmentSourceItem[];

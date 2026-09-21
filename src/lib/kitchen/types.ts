@@ -32,6 +32,7 @@ export type KitchenSourceEvent = {
   endTime?: string | null;
   guestCount: number | null;
   status: string | null;
+  fullBuyout?: boolean;
   statusVerified?: boolean;
   room?: string | null;
   selections: readonly KitchenSourceSelection[];

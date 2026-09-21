@@ -92,6 +92,77 @@ describe("Tripleseat adapter security and normalization", () => {
     ]);
   });
 
+  it("keeps a red full-buyout booking across kitchen, plan, and entertainment reads", async () => {
+    const storage = createMemoryKitchenStorage();
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/events/search?")) {
+        return json({ results: [{ id: 47 }], total_pages: 1 });
+      }
+      if (url.includes("/events/47?")) {
+        return json({
+          event: {
+            id: 47,
+            name: "Redacted Full Buyout",
+            event_date_iso8601: "2026-08-06",
+            event_start_iso8601: "2026-08-06T18:00:00-04:00",
+            event_end_iso8601: "2026-08-07T01:00:00-04:00",
+            guest_count: 140,
+            status: "PROSPECT",
+            calendar_color: "red",
+            location_id: 26059,
+            rooms: [{ id: 1, name: "Main Dining Room" }],
+            updated_at: "2026-08-03T17:00:00Z",
+          },
+        });
+      }
+      if (url.includes("/menu_item_selections")) {
+        return json({ menu_item_selections: [] });
+      }
+      if (url.includes("/notes?")) {
+        return json({ notes: [] });
+      }
+      throw new Error(`Unexpected test request: ${url}`);
+    };
+    const adapter = new LiveTripleseatAdapter({
+      env: {
+        NODE_ENV: "test",
+        TRIPLESEAT_CLIENT_ID: "test-client",
+        TRIPLESEAT_CLIENT_SECRET: "test-client-secret",
+        TRIPLESEAT_ACCESS_TOKEN: "test-access-token",
+        TRIPLESEAT_REFRESH_TOKEN: "test-refresh-token",
+        TRIPLESEAT_LOCATION_ID: "26059",
+      },
+      fetchImpl,
+      storage,
+    });
+
+    const [kitchenEvent] = await adapter.fetchEventsForDate("2026-08-06");
+    const [eventPlan] = await adapter.fetchEventPlansForRange(
+      "2026-08-06",
+      "2026-08-06",
+    );
+    const [entertainmentEvent] = await adapter.fetchEntertainmentEventsForDate(
+      "2026-08-06",
+    );
+
+    expect(kitchenEvent).toMatchObject({
+      eventId: "47",
+      status: "PROSPECT",
+      fullBuyout: true,
+    });
+    expect(eventPlan).toMatchObject({
+      eventId: "47",
+      status: "PROSPECT",
+      fullBuyout: true,
+    });
+    expect(entertainmentEvent).toMatchObject({
+      tripleseatEventId: "47",
+      status: "PROSPECT",
+      fullBuyout: true,
+    });
+  });
+
   it("reports a rejected refresh token as a Tripleseat reconnection requirement", async () => {
     const adapter = new LiveTripleseatAdapter({
       env: {

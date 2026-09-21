@@ -67,8 +67,8 @@ function unique(values: readonly string[]) {
   return [...new Set(values)];
 }
 
-function isOperationalKitchenStatus(status: string | null) {
-  return !["LOST", "PROSPECT"].includes(
+function isOperationalKitchenStatus(status: string | null, fullBuyout = false) {
+  return fullBuyout || !["LOST", "PROSPECT"].includes(
     status?.trim().toLocaleUpperCase("en-US") ?? "",
   );
 }
@@ -339,7 +339,7 @@ export async function syncKitchenDay(
       ...vipPrepKitchenEvents(vipPayload?.reservations ?? []),
     ];
     const upstreamEvents = allUpstreamEvents.filter((event) =>
-      isOperationalKitchenStatus(event.status),
+      isOperationalKitchenStatus(event.status, event.fullBuyout),
     );
     const confirmedEvents = confirmedContractKitchenSourcesForDate(date).filter(
       (source) => {
@@ -355,7 +355,7 @@ export async function syncKitchenDay(
         );
         return !(
           matchingSource &&
-          (!isOperationalKitchenStatus(matchingSource.status) ||
+          (!isOperationalKitchenStatus(matchingSource.status, matchingSource.fullBuyout) ||
             sourceIsAtLeastAsNew(
               matchingSource.sourceUpdatedAt,
               source.sourceUpdatedAt,

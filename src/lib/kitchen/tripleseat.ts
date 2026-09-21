@@ -135,6 +135,87 @@ function asNumber(value: unknown) {
   return null;
 }
 
+function asLabel(value: unknown) {
+  const record = asRecord(value);
+  return (
+    asString(value) ??
+    asString(record?.name) ??
+    asString(record?.label) ??
+    asString(record?.value) ??
+    asString(record?.hex)
+  );
+}
+
+function isRedColor(value: string) {
+  const normalized = value.trim().toLocaleLowerCase("en-US");
+  if (normalized === "red" || normalized === "#f00" || normalized === "#ff0000") {
+    return true;
+  }
+  const hex = normalized.match(/^#?([0-9a-f]{6})$/i);
+  if (hex) {
+    const red = Number.parseInt(hex[1].slice(0, 2), 16);
+    const green = Number.parseInt(hex[1].slice(2, 4), 16);
+    const blue = Number.parseInt(hex[1].slice(4, 6), 16);
+    return red >= 160 && red > green * 1.6 && red > blue * 1.6;
+  }
+  const rgb = normalized.match(
+    /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/,
+  );
+  if (!rgb) return false;
+  const [red, green, blue] = rgb.slice(1).map(Number);
+  return red >= 160 && red > green * 1.6 && red > blue * 1.6;
+}
+
+function isFullBuyoutRecord(...records: UnknownRecord[]) {
+  const booleanKeys = [
+    "full_buyout",
+    "is_full_buyout",
+    "fullBuildingBuyout",
+    "isFullBuyout",
+  ];
+  if (
+    records.some((record) =>
+      booleanKeys.some((key) => record[key] === true),
+    )
+  ) {
+    return true;
+  }
+
+  const colorKeys = [
+    "color",
+    "colour",
+    "event_color",
+    "calendar_color",
+    "booking_color",
+    "status_color",
+  ];
+  if (
+    records.some((record) =>
+      colorKeys.some((key) => {
+        const value = asLabel(record[key]);
+        return value != null && isRedColor(value);
+      }),
+    )
+  ) {
+    return true;
+  }
+
+  const markerKeys = [
+    "status",
+    "event_type",
+    "event_type_name",
+    "booking_type",
+    "booking_type_name",
+  ];
+  return records.some((record) =>
+    markerKeys.some((key) =>
+      /full\s*(?:building|facility)?\s*buyout|entire\s+building/i.test(
+        asLabel(record[key]) ?? "",
+      ),
+    ),
+  );
+}
+
 function extractArray(value: unknown, keys: readonly string[]) {
   if (Array.isArray(value)) {
     return value;
@@ -1148,8 +1229,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
+    const fullBuyout = isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
-    if (status && status.toUpperCase() !== REQUIRED_STATUS) {
+    if (status && status.toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
       return null;
     }
     if (locationId && locationId !== this.locationId) {
@@ -1223,6 +1305,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         asString(detail.event_end) ||
         asString(detail.end_time),
       status,
+      ...(fullBuyout ? { fullBuyout: true } : {}),
       rooms,
       items,
       categoryNames,
@@ -1242,10 +1325,11 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
+    const fullBuyout = isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
     const bookingId = asString(detail.booking_id);
 
-    if (status && status.toUpperCase() !== REQUIRED_STATUS) {
+    if (status && status.toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
       return null;
     }
     if (locationId && locationId !== this.locationId) {
@@ -1303,6 +1387,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         asNumber(detail.guest_count) ??
         asNumber(detail.guaranteed_guest_count),
       status,
+      ...(fullBuyout ? { fullBuyout: true } : {}),
       statusVerified: status?.toUpperCase() === REQUIRED_STATUS,
       room: roomName(detail),
       selections: merged.selections,
@@ -1329,6 +1414,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
+    const fullBuyout = isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
     if (locationId && locationId !== this.locationId) {
       return null;
@@ -1409,6 +1495,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       shortenedOperationalNoteFragmentCount:
         operationalNoteResult.shortenedFragmentCount,
       sourceUpdatedAt: asString(detail.updated_at),
+      ...(fullBuyout ? { fullBuyout: true } : {}),
     };
   }
 
@@ -1436,7 +1523,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       );
     }
 
-    const summaries = await this.eventSummaries(date);
+    const summaries = await this.eventSummaries(date, date, null);
     const events: TripleseatKitchenSourceEvent[] = [];
     for (const summary of summaries) {
       const event = await this.normalizeEvent(summary, date);
@@ -1526,7 +1613,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         ].join(", ")}.`,
       );
     }
-    const summaries = await this.eventSummaries(date);
+    const summaries = await this.eventSummaries(date, date, null);
     const events = await Promise.all(
       summaries.map((summary) =>
         this.normalizeEntertainmentEvent(summary, date),

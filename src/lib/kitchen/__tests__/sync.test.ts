@@ -54,6 +54,53 @@ function viewingTime(date: string) {
 }
 
 describe("kitchen synchronization", () => {
+  it("keeps a red full-buyout event in the kitchen dashboard", async () => {
+    const storage = createMemoryKitchenStorage();
+    const result = await syncKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => [
+        {
+          eventId: "red-buyout-1",
+          eventName: "Redacted Full Buyout",
+          localDate: "2026-08-15",
+          startTime: "2026-08-15T18:00:00-04:00",
+          endTime: "2026-08-16T01:00:00-04:00",
+          guestCount: 140,
+          status: "PROSPECT",
+          fullBuyout: true,
+          room: "Full Building Buyout",
+          selections: [
+            {
+              name: "Wing Bar",
+              sourceCategory: "Wing Bar",
+              quantity: 1,
+              isFood: true,
+            },
+          ],
+        },
+      ]),
+      storage,
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: expect.objectContaining({
+            eventId: "red-buyout-1",
+            name: "Redacted Full Buyout",
+            status: "PROSPECT",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("shows the confirmed August 21 Wing Bar and five dessert platters", async () => {
     const storage = createMemoryKitchenStorage();
     const day = await getKitchenDay("2026-08-21", {

@@ -83,6 +83,45 @@ const localEvents = [
 ];
 
 describe("persistent entertainment synchronization", () => {
+  it("keeps a red full-buyout event on the entertainment schedule", async () => {
+    const storage = new MemoryEntertainmentStorage();
+    const buyout = {
+      ...sourceEvent(),
+      tripleseatEventId: "red-buyout-1",
+      eventName: "Redacted Full Buyout",
+      status: "PROSPECT",
+      fullBuyout: true,
+    };
+    const result = await syncEntertainmentDay(DATE, {
+      storage,
+      adapter: adapter([buyout]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+    });
+
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: "Redacted Full Buyout",
+          tripleseatEventId: "red-buyout-1",
+        }),
+      ]),
+    );
+    expect(result.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: "Redacted Full Buyout",
+          resourceCategory: "bowling",
+        }),
+      ]),
+    );
+  });
+
   it("shows the confirmed August 21 bowling and darts schedule", async () => {
     const storage = new MemoryEntertainmentStorage();
     const day = await getEntertainmentDay("2026-08-21", {

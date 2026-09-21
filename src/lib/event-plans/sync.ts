@@ -71,15 +71,19 @@ function storedPlan(value: EventPlanDocument): EventPlan {
 
 const EXCLUDED_OPERATIONAL_STATUSES = new Set(["LOST", "PROSPECT"]);
 
-export function isOperationalEventStatus(status: unknown) {
+export function isOperationalEventStatus(status: unknown, fullBuyout = false) {
   return !(
+    !fullBuyout &&
     typeof status === "string" &&
     EXCLUDED_OPERATIONAL_STATUSES.has(status.trim().toUpperCase())
   );
 }
 
 function storedPlanIsOperational(row: { sourceSnapshot: EventPlanDocument }) {
-  return isOperationalEventStatus(row.sourceSnapshot.status);
+  return isOperationalEventStatus(
+    row.sourceSnapshot.status,
+    row.sourceSnapshot.fullBuyout === true,
+  );
 }
 
 function legacyPlansForWindow(
@@ -162,7 +166,7 @@ export async function syncEventPlanWindow(
       window.endDate,
     );
     let sources = fetchedSources.filter((source) =>
-      isOperationalEventStatus(source.status),
+      isOperationalEventStatus(source.status, source.fullBuyout),
     );
     const confirmedRows = confirmedContractDatesInWindow(
       window.startDate,
@@ -186,7 +190,7 @@ export async function syncEventPlanWindow(
       );
       if (
         matchingFetched &&
-        (!isOperationalEventStatus(matchingFetched.status) ||
+        (!isOperationalEventStatus(matchingFetched.status, matchingFetched.fullBuyout) ||
           sourceIsAtLeastAsNew(
             matchingFetched.sourceUpdatedAt,
             confirmed.source.sourceUpdatedAt,

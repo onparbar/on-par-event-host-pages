@@ -57,6 +57,7 @@ export type EntertainmentSourceEvent = {
   eventStartAt: string | null;
   eventEndAt: string | null;
   status: string | null;
+  fullBuyout?: boolean;
   rooms: EntertainmentSourceRoom[];
   items: EntertainmentSourceItem[];
   categoryNames: string[];

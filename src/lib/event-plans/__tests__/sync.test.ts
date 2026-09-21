@@ -191,6 +191,31 @@ describe("rolling Event Host plan synchronization", () => {
     expect(result.sync?.eventCount).toBe(1);
   });
 
+  it("keeps a red full-buyout source even when its status is not definite", async () => {
+    const result = await syncEventPlanWindow(
+      { startDate: "2026-08-15", endDate: "2026-08-15" },
+      {
+        storage: createMemoryEventPlanStorage(),
+        legacyPlans: [],
+        adapter: liveAdapter(async () => [
+          source({
+            eventId: "62000005",
+            eventName: "Redacted Full Buyout",
+            status: "PROSPECT",
+            fullBuyout: true,
+          }),
+        ]),
+      },
+    );
+
+    expect(result.plans).toEqual([
+      expect.objectContaining({
+        id: 62000005,
+        name: "Redacted Full Buyout",
+      }),
+    ]);
+  });
+
   it("replaces an older incomplete Amazon source with the confirmed contract", async () => {
     const storage = createMemoryEventPlanStorage();
     const result = await syncEventPlanWindow(

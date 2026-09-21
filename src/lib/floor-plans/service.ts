@@ -83,6 +83,10 @@ function sourceValue(row: UnknownRecord | null, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function sourceBoolean(row: UnknownRecord | null, key: string) {
+  return row?.[key] === true;
+}
+
 function sourceRooms(row: UnknownRecord | null, fallback: readonly string[]) {
   return Array.isArray(row?.rooms)
     ? row!.rooms.filter((value): value is string => typeof value === "string")
@@ -118,7 +122,9 @@ function normalizedFloorPlanEvent(
   const range = timeRange(plan, sourceSnapshot);
   const status = sourceValue(sourceSnapshot, "status") ?? "Definite";
   const fullBuyout =
-    contractedAreaIds.includes("facility") || /full\s+(?:building|facility)?\s*buyout/i.test(status);
+    sourceBoolean(sourceSnapshot, "fullBuyout") ||
+    contractedAreaIds.includes("facility") ||
+    /full\s+(?:building|facility)?\s*buyout/i.test(status);
   const sourceEventIds = [
     ...new Set([
       sourceEventId,
@@ -289,6 +295,10 @@ async function sourceEventsForDate(date: string) {
     rows: rows.filter(
       (row) =>
         sourceValue(row.source, "status")?.toUpperCase() === "DEFINITE" ||
+        sourceBoolean(row.source, "fullBuyout") ||
+        /full\s+(?:building|facility)?\s*buyout/i.test(
+          sourceValue(row.source, "status") ?? "",
+        ) ||
         sourceValue(row.source, "sourceSystem") === "contract-evidence",
     ),
     sourceRowCount:

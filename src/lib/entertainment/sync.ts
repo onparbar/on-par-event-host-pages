@@ -99,8 +99,8 @@ function unique(values: readonly string[]) {
   return [...new Set(values)];
 }
 
-function isOperationalEntertainmentStatus(status: string | null) {
-  return !["LOST", "PROSPECT"].includes(
+function isOperationalEntertainmentStatus(status: string | null, fullBuyout = false) {
+  return fullBuyout || !["LOST", "PROSPECT"].includes(
     status?.trim().toLocaleUpperCase("en-US") ?? "",
   );
 }
@@ -607,7 +607,7 @@ export async function syncEntertainmentDay(
       allSourceEvents = mockSourceEvents(date, context.localEvents);
     }
     let sourceEvents = allSourceEvents.filter((event) =>
-      isOperationalEntertainmentStatus(event.status),
+      isOperationalEntertainmentStatus(event.status, event.fullBuyout),
     );
     const confirmedSources = confirmedContractEntertainmentSourcesForDate(
       date,
@@ -625,7 +625,7 @@ export async function syncEntertainmentDay(
         );
         return !(
           matchingSource &&
-          (!isOperationalEntertainmentStatus(matchingSource.status) ||
+          (!isOperationalEntertainmentStatus(matchingSource.status, matchingSource.fullBuyout) ||
             sourceIsAtLeastAsNew(
               matchingSource.sourceUpdatedAt,
               source.sourceUpdatedAt,
