@@ -100,7 +100,7 @@ describe("Tripleseat adapter security and normalization", () => {
       if (url.includes("/events/search?")) {
         const status = new URL(url).searchParams.get("status");
         requestedStatuses.push(status);
-        return status === "PROSPECT"
+        return status === "TENTATIVE"
           ? json({ results: [{ id: 48 }], total_pages: 1 })
           : json({ results: [], total_pages: 1 });
       }
@@ -113,8 +113,7 @@ describe("Tripleseat adapter security and normalization", () => {
             event_start_iso8601: "2026-09-24T18:00:00-04:00",
             event_end_iso8601: "2026-09-25T01:00:00-04:00",
             guest_count: 200,
-            status: "PROSPECT",
-            calendar_color: "red",
+            status: "TENTATIVE",
             location_id: 26059,
             rooms: [{ id: 1, name: "Full Building Buyout" }],
             updated_at: "2026-09-21T17:00:00Z",
@@ -147,9 +146,7 @@ describe("Tripleseat adapter security and normalization", () => {
     expect(requestedStatuses).toEqual([
       null,
       "DEFINITE",
-      "PROSPECT",
-      "LOST",
-      "CLOSED",
+      "TENTATIVE",
     ]);
     expect(event).toMatchObject({
       eventId: "48",

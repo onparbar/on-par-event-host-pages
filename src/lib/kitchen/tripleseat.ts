@@ -221,6 +221,15 @@ function isFullBuyoutRecord(...records: UnknownRecord[]) {
     "booking_type",
     "booking_type_name",
   ];
+  if (
+    records.some(
+      (record) =>
+        asString(record.status)?.trim().toLocaleUpperCase("en-US") ===
+        "TENTATIVE",
+    )
+  ) {
+    return true;
+  }
   return records.some((record) =>
     markerKeys.some((key) =>
       /full\s*(?:(?:building|facility)\s*)?buy[\s-]*out|entire\s+building/i.test(
@@ -1058,9 +1067,16 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
 
     await searchStatus(status);
     if (status === null && events.length === 0) {
-      for (const fallbackStatus of ["DEFINITE", "PROSPECT", "LOST", "CLOSED"]) {
+      for (const fallbackStatus of [
+        "DEFINITE",
+        "TENTATIVE",
+        "PROSPECT",
+        "LOST",
+        "CLOSED",
+      ]) {
         try {
           await searchStatus(fallbackStatus);
+          if (events.length > 0) break;
         } catch (error) {
           if (!(error instanceof TripleseatApiError)) throw error;
         }
