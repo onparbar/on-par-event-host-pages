@@ -355,6 +355,10 @@ describe("floor-plan dashboard organization", () => {
     );
 
     expect(html).toContain("Sync live from Tripleseat");
+    expect(html).toContain(
+      'href="/admin/floor-plans?date=2026-08-05"',
+    );
+    expect(html).toContain("Edit in Admin");
     expect(html).toContain("Approved Event Host floor plan");
   });
 

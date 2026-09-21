@@ -387,16 +387,24 @@ export function PublishedFloorPlanCard({
                     : liveState?.message || syncTime(plan.lastTripleseatSyncAt)}
                 </span>
               </div>
-              <button
-                className="floor-plan-live-sync-button"
-                disabled={liveState?.status === "syncing"}
-                onClick={onSync}
-                type="button"
-              >
-                {liveState?.status === "syncing"
-                  ? "Syncing…"
-                  : "Sync live from Tripleseat"}
-              </button>
+              <div className="floor-plan-live-sync-actions">
+                <a
+                  className="floor-plan-edit-button"
+                  href={`/admin/floor-plans?date=${encodeURIComponent(plan.eventDate)}`}
+                >
+                  Edit in Admin
+                </a>
+                <button
+                  className="floor-plan-live-sync-button"
+                  disabled={liveState?.status === "syncing"}
+                  onClick={onSync}
+                  type="button"
+                >
+                  {liveState?.status === "syncing"
+                    ? "Syncing…"
+                    : "Sync live from Tripleseat"}
+                </button>
+              </div>
             </div>
             <PublishedFloorPlanMap payload={payload} zoom={zoom} />
           </div>

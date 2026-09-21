@@ -5709,6 +5709,33 @@ a {
   cursor: pointer;
 }
 
+.floor-plan-live-sync-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.floor-plan-edit-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 10px 15px;
+  border: 1px solid var(--ope-muted-green);
+  border-radius: var(--portal-radius-sm);
+  background: var(--ope-white);
+  color: var(--ope-forest);
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.floor-plan-edit-button:hover {
+  border-color: var(--ope-action-green);
+  background: #f0f4ec;
+}
+
 .floor-plan-live-sync-button:hover:not(:disabled) {
   background: #1f5d1c;
 }
@@ -6184,6 +6211,15 @@ a {
 
   .floor-plan-live-sync-button {
     width: 100%;
+  }
+
+  .floor-plan-live-sync-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .floor-plan-edit-button {
+    justify-content: center;
   }
 
   .floor-plan-event-chip {
