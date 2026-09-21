@@ -72,19 +72,12 @@ function operationalNoteProvenance(note: EventPlanOperationalNote) {
 }
 
 function entertainmentGroups(event: EventPlan) {
-  const hasMiniGolf = event.entertainment.some((item) => /mini\s*-?\s*golf/i.test(item.name));
-  const miniGolfItem = {
-    title: "Mini Golf",
-    detail: "Not reserved",
-  };
-
   if (!event.entertainment.length) {
     return [
       {
         title: "No reserved entertainment",
         detail: "No entertainment reservation is listed for this event.",
       },
-      miniGolfItem,
     ];
   }
 
@@ -107,7 +100,7 @@ function entertainmentGroups(event: EventPlan) {
     };
   });
 
-  return hasMiniGolf ? groups : [...groups, miniGolfItem];
+  return groups;
 }
 
 function itineraryDrinkLines(event: EventPlan) {
