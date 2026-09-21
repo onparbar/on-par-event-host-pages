@@ -4,6 +4,7 @@ import type { TripleseatAdapter } from "@/lib/kitchen/tripleseat";
 import { createMemoryEventPlanStorage } from "../storage";
 import {
   findEventPlanById,
+  loadHistoricalEventPlans,
   loadEventPlanWindow,
   syncEventPlanWindow,
   syncRollingEventPlans,
@@ -99,6 +100,35 @@ const legacyPlan: EventPlan = {
 };
 
 describe("rolling Event Host plan synchronization", () => {
+  it("loads stored past event plans for the admin itinerary archive", async () => {
+    const storage = createMemoryEventPlanStorage();
+    await syncEventPlanWindow(
+      { startDate: "2026-09-05", endDate: "2026-09-05" },
+      {
+        now: new Date("2026-09-01T16:00:00.000Z"),
+        storage,
+        legacyPlans: [],
+        adapter: liveAdapter(async () => [
+          source({
+            eventId: "62000009",
+            localDate: "2026-09-05",
+            eventName: "Redacted September Event",
+          }),
+        ]),
+      },
+    );
+
+    const plans = await loadHistoricalEventPlans("2026-09-21", {
+      storage,
+      legacyPlans: [legacyPlan],
+    });
+
+    expect(plans.map((plan) => plan.name)).toEqual([
+      "Redacted Legacy Event",
+      "Redacted September Event",
+    ]);
+  });
+
   it("uses contract evidence until a newer successful live sync covers its date", async () => {
     let storageNow = new Date("2026-08-14T21:00:00.000Z");
     const storage = createMemoryEventPlanStorage({

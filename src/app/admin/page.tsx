@@ -12,6 +12,7 @@ import {
   itineraries,
 } from "@/lib/events";
 import { loadAdminOperations } from "@/lib/admin-operations-loader";
+import { loadHistoricalEventPlans } from "@/lib/event-plans/sync";
 
 export const metadata = {
   title: "Admin | On Par Event Host",
@@ -52,14 +53,24 @@ export default async function AdminPage() {
     return <AdminAccessGate />;
   }
 
-  const [initialState, records, operations] = await Promise.all([
+  const today = easternToday();
+  const [initialState, records, operations, historicalEventPlans] = await Promise.all([
     loadLocalPreviewFallback(loadAdminState, emptyAdminState()),
     loadLocalPreviewFallback(loadChecklistRecords, []),
     loadAdminOperations(),
+    loadHistoricalEventPlans(today),
   ]);
-  const today = easternToday();
-  const archivedItineraries = itineraries
+  const staticItinerariesById = new Map(
+    itineraries.map((item) => [item.id, item]),
+  );
+  const archivedItineraries = historicalEventPlans
     .filter((item) => item.date < today)
+    .map((item) => ({
+      ...item,
+      ...(staticItinerariesById.get(item.id)?.pdf
+        ? { pdf: staticItinerariesById.get(item.id)?.pdf }
+        : {}),
+    }))
     .sort((left, right) => right.date.localeCompare(left.date));
   const checklistEventSummaries = checklistEvents.map(
     ({ id, name, date, time, poc }) => ({ id, name, date, time, poc }),

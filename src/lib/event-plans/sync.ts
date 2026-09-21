@@ -299,6 +299,41 @@ export async function loadEventPlanWindow(
   };
 }
 
+export async function loadHistoricalEventPlans(
+  endDate: string,
+  options: Pick<EventPlanSyncOptions, "storage" | "legacyPlans"> = {},
+) {
+  const storage = options.storage ?? getEventPlanStorage();
+  const legacyPlans = options.legacyPlans ?? legacyEventPlans;
+  const historicalLegacyPlans = legacyPlans.filter(
+    (plan) => plan.date <= endDate,
+  );
+  let storedPlans: EventPlan[] = [];
+
+  try {
+    const rows = await storage.plansForWindow({
+      startDate: "2000-01-01",
+      endDate,
+    });
+    storedPlans = rows
+      .filter(storedPlanIsOperational)
+      .map((row) => storedPlan(row.plan));
+  } catch {
+    // Keep the static itinerary archive available if historical storage is
+    // unavailable during a local preview or a temporary database outage.
+  }
+
+  const byId = new Map<number, EventPlan>();
+  for (const plan of historicalLegacyPlans) byId.set(plan.id, plan);
+  for (const plan of storedPlans) byId.set(plan.id, plan);
+  return [...byId.values()].sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) ||
+      left.time.localeCompare(right.time) ||
+      left.name.localeCompare(right.name),
+  );
+}
+
 export async function findEventPlanById(
   eventId: number,
   options: Pick<EventPlanSyncOptions, "storage" | "legacyPlans"> = {},
