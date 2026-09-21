@@ -354,28 +354,30 @@ function isVipEntertainmentReservation(reservation: EntertainmentReservation) {
 }
 
 function dedupeVipNamedEvents(events: EntertainmentEventSnapshot[]) {
-  const vipKeys = new Set(
-    events
-      .filter(isVipEntertainmentEvent)
-      .map((event) => `${event.operatingDate}|${comparableVipEventName(event.eventName)}`),
-  );
   return events.filter(
-    (event) =>
-      isVipEntertainmentEvent(event) ||
-      !vipKeys.has(`${event.operatingDate}|${comparableVipEventName(event.eventName)}`),
+    (event) => {
+      if (!isVipEntertainmentEvent(event)) return true;
+      const key = `${event.operatingDate}|${comparableVipEventName(event.eventName)}`;
+      return !events.some(
+        (candidate) =>
+          !isVipEntertainmentEvent(candidate) &&
+          `${candidate.operatingDate}|${comparableVipEventName(candidate.eventName)}` === key,
+      );
+    },
   );
 }
 
 function dedupeVipNamedReservations(reservations: EntertainmentReservation[]) {
-  const vipKeys = new Set(
-    reservations
-      .filter(isVipEntertainmentReservation)
-      .map((reservation) => `${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`),
-  );
   return reservations.filter(
-    (reservation) =>
-      isVipEntertainmentReservation(reservation) ||
-      !vipKeys.has(`${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`),
+    (reservation) => {
+      if (!isVipEntertainmentReservation(reservation)) return true;
+      const key = `${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`;
+      return !reservations.some(
+        (candidate) =>
+          !isVipEntertainmentReservation(candidate) &&
+          `${candidate.operatingDate}|${comparableVipEventName(candidate.eventName)}` === key,
+      );
+    },
   );
 }
 

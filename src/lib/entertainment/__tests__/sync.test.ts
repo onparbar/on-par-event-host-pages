@@ -320,6 +320,59 @@ describe("persistent entertainment synchronization", () => {
     });
   });
 
+  it("prefers the main event when a matching VIP record is also present", async () => {
+    const event = {
+      ...sourceEvent(),
+      eventName: "Adare Pharma Solutions",
+    };
+    const vipPayload = structuredClone(vipPrepPayload);
+    vipPayload.from = DATE;
+    vipPayload.to = DATE;
+    vipPayload.reservations[0].operatingDate = DATE;
+    vipPayload.reservations[0].eventName = "Adare Pharma Solutions VIP";
+    vipPayload.reservations[0].startAt = "2026-07-28T21:00:00.000Z";
+    vipPayload.reservations[0].endAt = "2026-07-28T22:00:00.000Z";
+
+    const day = await syncEntertainmentDay(DATE, {
+      storage: new MemoryEntertainmentStorage(),
+      adapter: adapter([event]),
+      localEvents: [],
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return vipPayload;
+        },
+      },
+    });
+
+    expect(day.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: "Adare Pharma Solutions",
+          tripleseatEventId: "ts-sync-1",
+        }),
+      ]),
+    );
+    expect(day.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventName: "Adare Pharma Solutions VIP" }),
+      ]),
+    );
+    expect(day.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: "Adare Pharma Solutions",
+          resourceCategory: "bowling",
+        }),
+      ]),
+    );
+    expect(day.reservations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventName: "Adare Pharma Solutions VIP" }),
+      ]),
+    );
+  });
+
   it("uses the known event window when mock entertainment timing needs review", async () => {
     const storage = new MemoryEntertainmentStorage();
     const mockAdapter: TripleseatAdapter = {
