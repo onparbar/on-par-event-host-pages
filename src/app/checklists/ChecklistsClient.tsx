@@ -784,8 +784,8 @@ export default function ChecklistsClient({
                           }}
                         >
                           <option>Taco Bar</option>
-                          <option>Wing Bar</option>
-                          <option>Appetizer Bar</option>
+                          <option value="Wing Bar">Wing Bar Refills</option>
+                          <option value="Appetizer Bar">Appetizer Bar Refills</option>
                         </select>
                       </label>
                       <label className="control-block">
