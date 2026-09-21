@@ -1,4 +1,5 @@
 import { formatClock, parseTimeRange } from "@/lib/entertainment/time";
+import { canonicalCategoryForText } from "@/lib/entertainment/resources";
 import { floorPlanSourceNamesMatch } from "@/lib/floor-plans/source-resolution";
 import type {
   EntertainmentDayPayload,
@@ -175,6 +176,19 @@ function reservedResourcesLabel(
   return reservations.map((reservation) => reservation.resourceName).join(", ");
 }
 
+function contractMiniGolfItems(
+  items: readonly EventPlanEntertainmentItem[],
+) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (canonicalCategoryForText(item.name) !== "mini-golf") return false;
+    const key = `${item.name}|${item.quantity}`.toLocaleLowerCase("en-US");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function itineraryEntertainmentFromReservations(
   reservations: readonly EntertainmentReservation[],
 ): EventPlanEntertainmentItem[] {
@@ -223,6 +237,12 @@ export function applyEntertainmentDayToItinerary(
   if (!eventExists && reservations.length === 0) return plan;
   return {
     ...plan,
-    entertainment: itineraryEntertainmentFromReservations(reservations),
+    // Mini Golf is contract-only open play, so it has no saved timed
+    // reservation. Keep its contracted quantity when replacing timed items
+    // with the live schedule.
+    entertainment: [
+      ...itineraryEntertainmentFromReservations(reservations),
+      ...contractMiniGolfItems(plan.entertainment),
+    ],
   };
 }

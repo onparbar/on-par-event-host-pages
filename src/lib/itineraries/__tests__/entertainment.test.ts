@@ -151,6 +151,34 @@ describe("itinerary entertainment projection", () => {
     expect(applyEntertainmentDayToItinerary(plan, day([])).entertainment).toEqual([]);
   });
 
+  it("keeps the contracted Mini Golf quantity without adding a time", () => {
+    const current = applyEntertainmentDayToItinerary(
+      {
+        ...plan,
+        entertainment: [
+          ...plan.entertainment,
+          { name: "Mini Golf", quantity: "20 guests", time: "", duration: "" },
+        ],
+      },
+      day([
+        reservation({
+          resourceId: "bowling-1",
+          resourceName: "Bowling Lane 1",
+        }),
+      ]),
+    );
+
+    expect(current.entertainment).toEqual([
+      {
+        name: "Duckpin Bowling",
+        quantity: "1 lane · Bowling Lane 1",
+        time: "6:30 PM – 8:30 PM",
+        duration: "2 hours",
+      },
+      { name: "Mini Golf", quantity: "20 guests", time: "", duration: "" },
+    ]);
+  });
+
   it("preserves the event plan when no schedule event matches", () => {
     expect(applyEntertainmentDayToItinerary(plan, { ...day([]), events: [] })).toBe(plan);
   });
