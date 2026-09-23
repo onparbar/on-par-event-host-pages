@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { processGoTabDispatches } from "@/lib/gotab/worker";
 import { synchronizeVipBookingFoodToEventFood } from "@/lib/gotab/sync-event-food";
+import { GoTabIntegrationStorage } from "@/lib/gotab/storage";
 import { getKitchenDay } from "@/lib/kitchen/sync";
 import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 
@@ -37,10 +38,12 @@ export async function GET(request: Request) {
           day.missingEnvironmentVariables.includes("VIP_PREP_API_TOKEN")) {
         throw new Error("VIP booking feed is unavailable.");
       }
+      const storage = new GoTabIntegrationStorage();
       for (const checklist of day.events.filter((event) =>
         String(event.event.eventId).startsWith("vip-"),
       )) {
-        const result = await synchronizeVipBookingFoodToEventFood(checklist);
+        if (!await storage.getVipCheckin(String(checklist.event.eventId))) continue;
+        const result = await synchronizeVipBookingFoodToEventFood(checklist, { storage });
         vipBookingFood.queued += result.requestCount;
         vipBookingFood.exceptions += result.exceptionCount;
       }

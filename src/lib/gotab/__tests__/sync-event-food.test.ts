@@ -68,11 +68,54 @@ describe("Event Food synchronization", () => {
     const result = await synchronizeVipBookingFood(vipChecklist, { storage: storage as never, env });
     expect(result.requestCount).toBe(1);
     expect(storage.enqueueRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceType: "VIP_ADDON", quantity: 2, sourceRecordId: "platter-wings" }),
+      expect.objectContaining({
+        sourceType: "VIP_ADDON", quantity: 2, sourceRecordId: "platter-wings",
+        eventArea: "VIP 2", requestNotes: "Reservation time: 6:00 PM",
+      }),
       expect.objectContaining({ ticketName: "[VIP FOOD] Redacted VIP" }),
       "VIP_BOOKING_SYNC",
     );
     expect(JSON.stringify(storage.enqueueRequest.mock.calls)).not.toMatch(/unitPriceCents|totalCents/);
+  });
+
+  it("does not queue the same VIP booking food twice after a repeated check-in or sync", async () => {
+    const vipChecklist = generateKitchenChecklist(vipPrepKitchenEvents(vipPrepPayload.reservations)[0]);
+    const wing = vipChecklist.sections.flatMap((section) => section.rows)
+      .find((row) => row.key === "platter-wings")!;
+    const previous: Array<{
+      id: string; source_record_id: string; quantity: number; pan_size: string; dispatch_status: string;
+    }> = [];
+    const storage = {
+      listVipBookingFoodRequests: vi.fn().mockImplementation(async () => previous),
+      listMappings: vi.fn().mockResolvedValue([{
+        id: "vip-wing-mapping",
+        canonical_product_key: wing.key,
+        display_name: "Wing Platter",
+        aliases: [],
+        pan_size: wing.panSize === "1/3" ? "THIRD_PAN" : "HALF_PAN",
+        preparation_station: "HOT_LINE",
+        gotab_product_uuid: "wing-product",
+        mapping_status: "VERIFIED",
+        verified_at: "2026-08-11T12:00:00.000Z",
+      }]),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn().mockImplementation(async (request) => {
+        previous.push({
+          id: "request-1",
+          source_record_id: request.sourceRecordId,
+          quantity: request.quantity,
+          pan_size: request.panSize,
+          dispatch_status: "SCHEDULED",
+        });
+        return { duplicate: false };
+      }),
+      performAdministrativeAction: vi.fn(),
+    };
+    const first = await synchronizeVipBookingFood(vipChecklist, { storage: storage as never, env });
+    const repeated = await synchronizeVipBookingFood(vipChecklist, { storage: storage as never, env });
+    expect(first.requestCount).toBe(1);
+    expect(repeated.requestCount).toBe(0);
+    expect(storage.enqueueRequest).toHaveBeenCalledTimes(1);
   });
 
   it("holds a pending VIP order when booked food changes instead of sending a duplicate", async () => {

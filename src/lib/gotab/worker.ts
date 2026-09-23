@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { GoTabClient, GoTabApiError } from "./client";
 import { getGoTabConfigurationStatus, requireGoTabConfiguration } from "./config";
 import { GoTabIntegrationStorage } from "./storage";
+import { VipPrepClient } from "@/lib/vip-prep/client";
 
 export type GoTabWorkerSummary = {
   claimed: number;
@@ -21,6 +22,7 @@ export async function processGoTabDispatches(options?: {
   workerId?: string;
   limit?: number;
   env?: Readonly<Record<string, string | undefined>>;
+  vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
 }): Promise<GoTabWorkerSummary> {
   const storage = options?.storage ?? new GoTabIntegrationStorage();
   const configuration = getGoTabConfigurationStatus(options?.env);
@@ -36,8 +38,71 @@ export async function processGoTabDispatches(options?: {
     lastError: null,
   };
   let liveClient = options?.client ?? null;
+  const vipPrepClient = options?.vipPrepClient ?? new VipPrepClient();
 
   for (const dispatch of dispatches) {
+    let vipDispatch = false;
+    try {
+      const context = await storage.getDispatchRequestContext(dispatch.request_id);
+      if (!context) throw new Error("The saved food request was not found.");
+      vipDispatch = context.event_id.startsWith("vip-");
+      if (vipDispatch) {
+        const checkin = await storage.getVipCheckin(context.event_id);
+        if (!checkin) {
+          await storage.finishDispatch(dispatch.id, {
+            status: "HELD",
+            lastError: "VIP check-in required.",
+          });
+          summary.held += 1;
+          continue;
+        }
+        const release = await storage.getVipInitialFoodRelease(context.event_id);
+        if (!release) {
+          await storage.finishDispatch(dispatch.id, {
+            status: "HELD",
+            lastError: "VIP food release record is missing.",
+          });
+          summary.held += 1;
+          continue;
+        }
+        if (!context.source_record_id.startsWith("addon:") && release.status === "NO_FOOD") {
+          await storage.finishDispatch(dispatch.id, {
+            status: "HELD",
+            lastError: "VIP booking has no initial food items.",
+          });
+          summary.held += 1;
+          continue;
+        }
+        if (!context.source_record_id.startsWith("addon:") && release.status === "FAILED") {
+          await storage.finishDispatch(dispatch.id, {
+            status: "HELD",
+            lastError: "VIP initial food order needs staff review.",
+          });
+          summary.held += 1;
+          continue;
+        }
+        if (!vipPrepClient.configured) throw new Error("VIP reservation status is unavailable.");
+        const current = await vipPrepClient.fetchRange(checkin.booking_date, checkin.booking_date);
+        if (!current.reservations.some((reservation) => reservation.id === checkin.reservation_id)) {
+          await storage.finishDispatch(dispatch.id, {
+            status: "HELD",
+            lastError: "VIP reservation is cancelled or no longer active.",
+          });
+          summary.held += 1;
+          continue;
+        }
+      }
+    } catch {
+      await storage.finishDispatch(dispatch.id, {
+        status: "FAILED",
+        nextAttemptAt: new Date(Date.now() + 60_000).toISOString(),
+        lastError: "Food dispatch eligibility could not be verified.",
+      });
+      summary.failed += 1;
+      summary.lastError = "Food dispatch eligibility could not be verified.";
+      continue;
+    }
+
     if (!configuration.configured || !configuration.enabled || configuration.dryRun) {
       await storage.finishDispatch(dispatch.id, {
         status: "DRY_RUN",
@@ -99,14 +164,18 @@ export async function processGoTabDispatches(options?: {
       const temporary = error instanceof GoTabApiError && error.kind === "temporary";
       const exhausted = dispatch.attempt_count >= 5;
       await storage.finishDispatch(dispatch.id, {
-        status: temporary ? "FAILED" : "HELD",
-        nextAttemptAt: temporary && !exhausted
+        status: temporary && !vipDispatch ? "FAILED" : "HELD",
+        nextAttemptAt: temporary && !vipDispatch && !exhausted
           ? new Date(Date.now() + Math.min(60_000 * 2 ** Math.max(0, dispatch.attempt_count - 1), 15 * 60_000)).toISOString()
           : undefined,
-        lastError: errorMessage,
+        lastError: vipDispatch && temporary
+          ? "VIP delivery status is uncertain. Review before retrying."
+          : errorMessage,
       });
-      summary.lastError = errorMessage;
-      if (temporary) summary.failed += 1;
+      summary.lastError = vipDispatch && temporary
+        ? "VIP delivery status is uncertain. Review before retrying."
+        : errorMessage;
+      if (temporary && !vipDispatch) summary.failed += 1;
       else summary.held += 1;
     }
   }

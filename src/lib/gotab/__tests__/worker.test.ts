@@ -37,6 +37,9 @@ describe("GoTab dispatch worker", () => {
         sanitized_payload: { product: "Salsa" },
       }]),
       finishDispatch: vi.fn().mockResolvedValue(undefined),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "event-1", source_record_id: "refill:1", food_service_time: "2026-09-23T18:00:00Z",
+      }),
     };
 
     const result = await processGoTabDispatches({
@@ -84,6 +87,9 @@ describe("GoTab dispatch worker", () => {
         },
       }]),
       finishDispatch: vi.fn().mockResolvedValue(undefined),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "event-2", source_record_id: "addon:1", food_service_time: "2026-09-23T18:00:00Z",
+      }),
     };
 
     const result = await processGoTabDispatches({
@@ -110,6 +116,133 @@ describe("GoTab dispatch worker", () => {
       quantity: 2,
       serverName: "Ryan",
       selectedPanSize: "1/2",
+    }));
+  });
+
+  it("holds a VIP order without check-in even when live dispatch is enabled", async () => {
+    const createEventFoodTab = vi.fn();
+    const storage = {
+      claimDueDispatches: vi.fn().mockResolvedValue([{
+        id: "vip-dispatch-1",
+        request_id: "vip-request-1",
+        idempotency_key: "vip-1:VIP_ADDON:wings:1:DISPATCH",
+        action: "DISPATCH",
+        status: "SENDING",
+        attempt_count: 1,
+        sanitized_payload: {
+          ticketName: "VIP Party",
+          product: "Wings",
+          gotabProductUuid: "prd_wings",
+          quantity: 1,
+        },
+      }]),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "vip-1", source_record_id: "platter-wings", food_service_time: "2026-09-23T18:00:00Z",
+      }),
+      getVipCheckin: vi.fn().mockResolvedValue(null),
+      finishDispatch: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await processGoTabDispatches({
+      storage: storage as never,
+      env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+      client: { createEventFoodTab },
+    });
+
+    expect(result.held).toBe(1);
+    expect(storage.finishDispatch).toHaveBeenCalledWith("vip-dispatch-1", {
+      status: "HELD", lastError: "VIP check-in required.",
+    });
+    expect(createEventFoodTab).not.toHaveBeenCalled();
+  });
+
+  it("holds food for a VIP reservation that was cancelled after check-in", async () => {
+    const createEventFoodTab = vi.fn();
+    const storage = {
+      claimDueDispatches: vi.fn().mockResolvedValue([{
+        id: "vip-dispatch-2",
+        request_id: "vip-request-2",
+        idempotency_key: "vip-2:VIP_ADDON:wings:1:DISPATCH",
+        action: "DISPATCH",
+        status: "SENDING",
+        attempt_count: 1,
+        sanitized_payload: {
+          ticketName: "VIP Party",
+          product: "Wings",
+          gotabProductUuid: "prd_wings",
+          quantity: 1,
+        },
+      }]),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "vip-2", source_record_id: "platter-wings", food_service_time: "2026-09-23T18:00:00Z",
+      }),
+      getVipCheckin: vi.fn().mockResolvedValue({ reservation_id: "2", booking_date: "2026-09-23" }),
+      getVipInitialFoodRelease: vi.fn().mockResolvedValue({ status: "PENDING" }),
+      finishDispatch: vi.fn().mockResolvedValue(undefined),
+    };
+    const result = await processGoTabDispatches({
+      storage: storage as never,
+      env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+      client: { createEventFoodTab },
+      vipPrepClient: {
+        configured: true,
+        fetchRange: vi.fn().mockResolvedValue({ reservations: [] }),
+      },
+    });
+    expect(result.held).toBe(1);
+    expect(createEventFoodTab).not.toHaveBeenCalled();
+    expect(storage.finishDispatch).toHaveBeenCalledWith("vip-dispatch-2", {
+      status: "HELD", lastError: "VIP reservation is cancelled or no longer active.",
+    });
+  });
+
+  it("sends a checked-in VIP's food to GoTab with its saved ticket details", async () => {
+    const createEventFoodTab = vi.fn().mockResolvedValue({
+      tabUuid: "vip-tab", orderUuid: "vip-order", itemUuid: "vip-item",
+    });
+    const storage = {
+      claimDueDispatches: vi.fn().mockResolvedValue([{
+        id: "vip-dispatch-3",
+        request_id: "vip-request-3",
+        idempotency_key: "vip-3:VIP_ADDON:wings:1:DISPATCH",
+        action: "DISPATCH",
+        status: "SENDING",
+        attempt_count: 1,
+        sanitized_payload: {
+          eventName: "Redacted VIP",
+          product: "Wings",
+          gotabProductUuid: "prd_wings",
+          quantity: 2,
+          eventArea: "VIP 2",
+          notes: "Reservation time: 6:00 PM",
+        },
+      }]),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "vip-3", source_record_id: "platter-wings", food_service_time: "2026-09-23T18:00:00Z",
+      }),
+      getVipCheckin: vi.fn().mockResolvedValue({ reservation_id: "3", booking_date: "2026-09-23" }),
+      getVipInitialFoodRelease: vi.fn().mockResolvedValue({ status: "PENDING" }),
+      finishDispatch: vi.fn().mockResolvedValue(undefined),
+    };
+    const result = await processGoTabDispatches({
+      storage: storage as never,
+      env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+      client: { createEventFoodTab },
+      vipPrepClient: {
+        configured: true,
+        fetchRange: vi.fn().mockResolvedValue({ reservations: [{ id: "3" }] }),
+      },
+    });
+    expect(result.sent).toBe(1);
+    expect(createEventFoodTab).toHaveBeenCalledWith(expect.objectContaining({
+      ticketName: "Redacted VIP",
+      quantity: 2,
+      itemNotes: expect.objectContaining({
+        eventArea: "VIP 2", notes: "Reservation time: 6:00 PM",
+      }),
+    }));
+    expect(storage.finishDispatch).toHaveBeenCalledWith("vip-dispatch-3", expect.objectContaining({
+      status: "SENT", orderUuid: "vip-order",
     }));
   });
 });

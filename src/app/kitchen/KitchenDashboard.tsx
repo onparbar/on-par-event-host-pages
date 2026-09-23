@@ -58,6 +58,10 @@ type KitchenDayResponse = {
   missingEnvironmentVariables: string[];
 };
 
+export function printableEventChecklists(events: readonly KitchenChecklist[]) {
+  return events.filter((event) => !String(event.event.eventId).startsWith("vip-"));
+}
+
 type LoadState = "loading" | "ready" | "error";
 type SyncState = "idle" | "syncing" | "error";
 type BwaSaveState = "idle" | "saving" | "saved" | "error";
@@ -445,6 +449,11 @@ export default function KitchenDashboard() {
         return false;
       }
 
+      const visiblePayload = {
+        ...payload,
+        events: printableEventChecklists(payload.events),
+      };
+
       // Event add-ons are delivered to GoTab KDS directly; they are not
       // duplicated as kitchen-sheet alerts.
       const nextAddOnAlerts: KitchenLiveAddOnAlert[] = [];
@@ -465,12 +474,12 @@ export default function KitchenDashboard() {
           ? [...stillApplicable, ...additions]
           : stillApplicable;
       });
-      setDay(payload);
+      setDay(visiblePayload);
       setLiveRefreshHealthy(true);
       setLastLiveRefreshAt(new Date().toISOString());
       setStaffDrafts((current) =>
         Object.fromEntries(
-          payload.events.map((checklist) => {
+          visiblePayload.events.map((checklist) => {
             const eventKey = String(checklist.event.eventId);
             return [
               eventKey,
@@ -1279,7 +1288,7 @@ export default function KitchenDashboard() {
           <div>
             <span className="kitchen-eyebrow">Daily production view</span>
             <h1>{dateLabel(selectedDate)}</h1>
-            <p>Events and VIP bookings with their generated kitchen prep requirements.</p>
+            <p>Event kitchen prep requirements. VIP food is sent to KDS after check-in.</p>
           </div>
           <div className="kitchen-day-summary" aria-live="polite">
             <span className="kitchen-summary-chip">{formatCount(sortedEvents.length, "event")}</span>
@@ -1436,7 +1445,7 @@ export default function KitchenDashboard() {
             message={
               day?.archivedEventCount
                 ? "All scheduled kitchen events for this date have ended and were archived."
-                : "No events or VIP bookings are scheduled for this date."
+                : "No event kitchen checklists are scheduled for this date."
             }
             title={
               day?.archivedEventCount
@@ -1449,7 +1458,7 @@ export default function KitchenDashboard() {
         {loadState === "ready" && sortedEvents.length ? (
           <section
             className="kitchen-event-grid kitchen-event-checklist-grid kitchen-event-accordion-list"
-            aria-label="Event and VIP booking kitchen checklists"
+            aria-label="Event kitchen checklists"
           >
             {sortedEvents.map((checklist) => {
               const eventKey = String(checklist.event.eventId);

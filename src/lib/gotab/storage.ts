@@ -74,6 +74,22 @@ export type StoredVipBookingFoodRequest = {
   dispatch_status: string;
 };
 
+export type StoredVipCheckin = {
+  event_id: string;
+  reservation_id: string;
+  booking_date: string;
+  employee_name: string;
+  checked_in_at: string;
+};
+
+export type StoredVipInitialFoodRelease = {
+  reservation_id: string;
+  event_id: string;
+  expected_item_count: number;
+  status: "PENDING" | "NO_FOOD" | "FAILED";
+  last_error: string | null;
+};
+
 export class GoTabIntegrationStorage {
   constructor(
     private readonly env: NodeJS.ProcessEnv = process.env,
@@ -290,6 +306,122 @@ export class GoTabIntegrationStorage {
     );
     const rows = await response.json() as StoredVipBookingFoodRequest[];
     return rows.filter((row) => !row.source_record_id.startsWith("addon:"));
+  }
+
+  async listVipCheckinsForDate(date: string) {
+    const response = await this.request(
+      "vip_checkins",
+      new URLSearchParams({
+        select: "event_id,reservation_id,booking_date,employee_name,checked_in_at",
+        booking_date: `eq.${date}`,
+      }),
+      { method: "GET" },
+    );
+    return response.json() as Promise<StoredVipCheckin[]>;
+  }
+
+  async getVipCheckin(eventId: string) {
+    const response = await this.request(
+      "vip_checkins",
+      new URLSearchParams({
+        select: "event_id,reservation_id,booking_date,employee_name,checked_in_at",
+        event_id: `eq.${eventId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipCheckin[];
+    return rows[0] ?? null;
+  }
+
+  async confirmVipCheckin(input: {
+    eventId: string;
+    reservationId: string;
+    bookingDate: string;
+    employeeName: string;
+    expectedItemCount: number;
+  }) {
+    const response = await this.request("rpc/confirm_vip_checkin", null, {
+      method: "POST",
+      body: JSON.stringify({
+        p_event_id: input.eventId,
+        p_reservation_id: input.reservationId,
+        p_booking_date: input.bookingDate,
+        p_employee_name: input.employeeName,
+        p_expected_item_count: input.expectedItemCount,
+      }),
+    });
+    return response.json() as Promise<StoredVipCheckin>;
+  }
+
+  async getVipInitialFoodRelease(eventId: string) {
+    const response = await this.request(
+      "vip_initial_food_releases",
+      new URLSearchParams({
+        select: "reservation_id,event_id,expected_item_count,status,last_error",
+        event_id: `eq.${eventId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipInitialFoodRelease[];
+    return rows[0] ?? null;
+  }
+
+  async markVipInitialFoodReleaseFailed(eventId: string, error: string) {
+    await this.request(
+      "vip_initial_food_releases",
+      new URLSearchParams({ event_id: `eq.${eventId}` }),
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          status: "FAILED",
+          last_error: error,
+          updated_at: new Date().toISOString(),
+        }),
+      },
+    );
+  }
+
+  async releaseCheckedInVipDispatches(eventId: string) {
+    const response = await this.request("rpc/release_checked_in_vip_dispatches", null, {
+      method: "POST",
+      body: JSON.stringify({ p_event_id: eventId }),
+    });
+    return response.json() as Promise<number>;
+  }
+
+  async listVipInitialFoodDispatches(eventId: string) {
+    const requests = await this.listVipBookingFoodRequests(eventId);
+    if (!requests.length) return [];
+    const response = await this.request(
+      "event_food_dispatches",
+      new URLSearchParams({
+        select: "request_id,status",
+        request_id: `in.(${requests.map((request) => request.id).join(",")})`,
+      }),
+      { method: "GET" },
+    );
+    return response.json() as Promise<Array<{ request_id: string; status: string }>>;
+  }
+
+  async getDispatchRequestContext(requestId: string) {
+    const response = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "event_id,source_record_id,food_service_time",
+        id: `eq.${requestId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as Array<{
+      event_id: string;
+      source_record_id: string;
+      food_service_time: string;
+    }>;
+    return rows[0] ?? null;
   }
 
   async listExceptions(limit = 100) {

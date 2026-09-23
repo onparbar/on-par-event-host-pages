@@ -50,9 +50,12 @@ export async function POST(request: Request) {
           import("@/lib/gotab/sync-event-food"),
         ]);
         if (getGoTabConfigurationStatus().configured) {
+          const { GoTabIntegrationStorage } = await import("@/lib/gotab/storage");
+          const storage = new GoTabIntegrationStorage();
           for (const checklist of payload.events) {
             if (String(checklist.event.eventId).startsWith("vip-")) {
-              const result = await integration.synchronizeVipBookingFoodToEventFood(checklist);
+              if (!await storage.getVipCheckin(String(checklist.event.eventId))) continue;
+              const result = await integration.synchronizeVipBookingFoodToEventFood(checklist, { storage });
               if (result.exceptionCount > 0) {
                 payload.warnings.push(
                   `${checklist.event.name}: VIP booking food needs GoTab review.`,

@@ -54,6 +54,7 @@ const allowlist = [
   "src/lib/events.ts",
   "src/lib/kitchen",
   "src/lib/vip-prep",
+  "src/lib/vip-checkin",
   "src/lib/legacy-proxy.ts",
   "src/lib/operational-access.ts",
   "src/proxy.ts",

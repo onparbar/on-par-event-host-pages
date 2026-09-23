@@ -147,7 +147,12 @@ export function projectKitchenChecklist(
         foodServiceAt,
         prepDueAt,
         requesterName: options.requesterName ?? null,
-        requestNotes: null,
+        requestNotes: eventId.startsWith("vip-") && checklist.event.startTime &&
+          Number.isFinite(Date.parse(checklist.event.startTime))
+          ? `Reservation time: ${new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York", hour: "numeric", minute: "2-digit",
+            }).format(new Date(checklist.event.startTime))}`
+          : null,
         dietaryNotes: checklist.event.foodNotes?.map((note) => note.text).join(" | ") || null,
         allergyNotes: null,
       }, mapping));

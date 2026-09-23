@@ -17,6 +17,7 @@ const PORTAL_NAVIGATION = [
   { href: "/itineraries", label: "Itineraries" },
   { href: "/checklists", label: "Checklists" },
   { href: "/event-host-addons", label: "Add-Ons" },
+  { href: "/vip-check-in", label: "VIP CHECK-IN" },
   { href: "/kitchen", label: "Kitchen" },
   { href: "/admin", label: "Admin" },
 ] as const;

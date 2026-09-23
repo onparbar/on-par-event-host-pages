@@ -13,6 +13,7 @@ import {
   KitchenChecklistSheet,
   KitchenEventAccordion,
   nextKitchenZoom,
+  printableEventChecklists,
   shouldApplyKitchenDayResponse,
   soundAlertButtonLabel,
   timeSortValue,
@@ -151,6 +152,12 @@ describe("kitchen day response gating", () => {
 
 describe("kitchen checklist day layout", () => {
   const noop = () => {};
+
+  it("keeps VIP food off the printable kitchen sheets", () => {
+    const event = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const vip = { ...event, event: { ...event.event, eventId: "vip-reservation-1" } };
+    expect(printableEventChecklists([event, vip])).toEqual([event]);
+  });
 
   function renderSheet(checklistIndex: number) {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[checklistIndex]);
