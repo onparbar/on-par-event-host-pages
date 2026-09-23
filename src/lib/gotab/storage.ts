@@ -66,6 +66,14 @@ export type StoredEventFoodException = {
   created_at: string;
 };
 
+export type StoredVipBookingFoodRequest = {
+  id: string;
+  source_record_id: string;
+  quantity: number;
+  pan_size: string;
+  dispatch_status: string;
+};
+
 export class GoTabIntegrationStorage {
   constructor(
     private readonly env: NodeJS.ProcessEnv = process.env,
@@ -268,6 +276,20 @@ export class GoTabIntegrationStorage {
       { method: "GET" },
     );
     return response.json() as Promise<StoredEventFoodActivity[]>;
+  }
+
+  async listVipBookingFoodRequests(eventId: string) {
+    const response = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "id,source_record_id,quantity,pan_size,dispatch_status",
+        event_id: `eq.${eventId}`,
+        source_type: "eq.VIP_ADDON",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipBookingFoodRequest[];
+    return rows.filter((row) => !row.source_record_id.startsWith("addon:"));
   }
 
   async listExceptions(limit = 100) {

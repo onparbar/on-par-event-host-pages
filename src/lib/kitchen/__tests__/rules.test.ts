@@ -1845,6 +1845,24 @@ describe("classification, aliases, and review behavior", () => {
     expect(warningCodes(checklist)).not.toContain("PACKAGE_BAR_MISSING");
   });
 
+  it("matches the redacted August 21 contract's Wing Bar and five dessert platters", () => {
+    const checklist = generateKitchenChecklist(
+      sourceEvent(
+        [
+          { name: "The Full Course - Food + $20 Drink Cards", quantity: 50 },
+          { name: "Jumbo Wing Bar — Premium wings, expertly prepared and designed for effortless group dining.", quantity: 1 },
+          { name: "Desert Platter", quantity: 5 },
+        ],
+        { eventName: "Redacted Manager Outing", guestCount: 50 },
+      ),
+    );
+
+    expect(checklist.selectedBars).toEqual(["wing"]);
+    expect(row(checklist, "wing-wings").quantity).toBe(400);
+    expect(row(checklist, "dessert-platter").quantity).toBe(5);
+    expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
+  });
+
   it("recognizes Emma's September 19 Food Only Package Appetizer Bar for 15 guests", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent(

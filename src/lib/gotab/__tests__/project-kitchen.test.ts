@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { generateKitchenChecklist } from "@/lib/kitchen/rules";
 import { translateEventHostFoodAddOns } from "@/lib/kitchen/addons";
 import { projectKitchenChecklist } from "../project-kitchen";
+import { vipPrepKitchenEvents } from "@/lib/vip-prep/client";
+import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
 
 const sourceEvent = {
   eventId: 123,
@@ -17,6 +19,37 @@ const sourceEvent = {
 };
 
 describe("Tripleseat kitchen projection", () => {
+  it("sends booked VIP platter counts while retaining kitchen pan prep", () => {
+    const reservation = structuredClone(vipPrepPayload.reservations[0]);
+    reservation.foodPrep[0].quantity = 1;
+    const checklist = generateKitchenChecklist(vipPrepKitchenEvents([reservation])[0]);
+    const row = checklist.sections.flatMap((section) => section.rows)
+      .find((item) => item.key === "platter-wings")!;
+    const mappedPanSize = row.panSize === "1/3" ? "THIRD_PAN" : "HALF_PAN";
+    const result = projectKitchenChecklist(checklist, [{
+      id: "vip-wing-mapping",
+      canonicalProductKey: row.key,
+      displayName: "Wing Platter",
+      aliases: [],
+      panSize: mappedPanSize,
+      preparationStation: "FRYER",
+      gotabProductUuid: "wing-product",
+      verifiedAt: "2026-08-11T12:00:00.000Z",
+    }], {
+      sourceType: "VIP_ADDON",
+      sourceVersion: 1,
+      bookedFoodQuantities: new Map([[row.key, 1]]),
+    });
+    expect(row.numberOfPans).toBeGreaterThan(1);
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({
+      sourceRecordId: "platter-wings",
+      quantity: 1,
+      panSize: mappedPanSize,
+    });
+    expect(result.exceptions).toHaveLength(0);
+  });
+
   it("holds contracted food until a verified product mapping exists", () => {
     const result = projectKitchenChecklist(generateKitchenChecklist(sourceEvent), [], { sourceVersion: 1 });
     expect(result.requests).toHaveLength(0);

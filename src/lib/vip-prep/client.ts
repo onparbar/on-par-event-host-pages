@@ -2,15 +2,24 @@ import type { EntertainmentSourceEvent } from "@/lib/entertainment/types";
 import type { EventPlan } from "@/lib/event-plans/types";
 import type { KitchenSourceEvent } from "@/lib/kitchen/types";
 
-const DEFAULT_VIP_PREP_API_URL = "https://rexreplace.vercel.app/api/vip-prep";
+const DEFAULT_VIP_PREP_API_URL = "https://onparbookings.com/api/vip-prep";
 const KITCHEN_SELECTION_NAME_BY_VIP_CODE: Readonly<Record<string, string>> = {
   wings: "Wing Platter",
-  "mozzarella-sticks": "Mozzarella Sticks",
-  "tater-kegs": "Tater Kegs",
+  "mozzarella-sticks": "Mozzarella Stick Platter",
+  "tater-kegs": "Tater Keg Platter",
   "fry-platters": "Fry Platter",
-  "chicken-tenders": "Chicken Tenders",
+  "chicken-tenders": "Chicken Tender Platter",
   "veggie-tray": "Veggie Tray",
   "dessert-platter": "Dessert Platter",
+};
+export const KITCHEN_ROW_KEY_BY_VIP_CODE: Readonly<Record<string, string>> = {
+  wings: "platter-wings",
+  "mozzarella-sticks": "platter-mozzarella-sticks",
+  "tater-kegs": "platter-tater-kegs",
+  "fry-platters": "platter-fries",
+  "chicken-tenders": "platter-chicken-tenders",
+  "veggie-tray": "platter-veggie-tray",
+  "dessert-platter": "dessert-platter",
 };
 
 export type VipPrepFoodItem = {

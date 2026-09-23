@@ -242,6 +242,7 @@ export async function getKitchenDay(
   ]);
   let stored = initialStored;
   let contractPersistenceWarning: string | null = null;
+  let vipPersistenceWarning: string | null = null;
   const contractSources = confirmedContractKitchenSourcesForDate(
     date,
     stored.sync?.lastSuccessfulSyncAt,
@@ -275,6 +276,32 @@ export async function getKitchenDay(
         "Confirmed contract food is visible, but its kitchen checklist could not be saved for staff edits.";
     }
   }
+  if (liveVipResult.refreshed) {
+    try {
+      for (const sourceEvent of liveVipResult.events) {
+        const existing = stored.events.find((checklist) =>
+          String(checklist.event.eventId) === String(sourceEvent.eventId),
+        );
+        const checklist = generateKitchenChecklist(sourceEvent);
+        if (
+          existing &&
+          existing.event.sourceUpdatedAt === sourceEvent.sourceUpdatedAt &&
+          existing.ruleVersion === checklist.ruleVersion &&
+          JSON.stringify(existing.normalizedSelections) === JSON.stringify(checklist.normalizedSelections)
+        ) {
+          continue;
+        }
+        await storage.saveEvent({
+          sourceEvent,
+          checklist,
+        });
+      }
+      stored = await storage.getDay(date);
+    } catch {
+      vipPersistenceWarning =
+        "VIP booking prep is visible, but its kitchen checklist could not be saved for staff edits and add-ons.";
+    }
+  }
   const databaseMissing =
     storage.persistence === "database" && options.storage == null
       ? getMissingSupabaseEnvironmentVariables()
@@ -302,7 +329,14 @@ export async function getKitchenDay(
         !liveVipResult.refreshed ||
         !String(event.event.eventId).startsWith("vip-"),
     ),
-    ...liveVipResult.events.map((event) => generateKitchenChecklist(event)),
+    ...liveVipResult.events.map((event) => {
+      const fresh = generateKitchenChecklist(event);
+      return stored.events.find((checklist) =>
+        String(checklist.event.eventId) === String(event.eventId) &&
+        checklist.event.sourceUpdatedAt === event.sourceUpdatedAt &&
+        JSON.stringify(checklist.normalizedSelections) === JSON.stringify(fresh.normalizedSelections),
+      ) ?? fresh;
+    }),
   ];
   const confirmedContractEvents = contractSources
     .filter(
@@ -349,6 +383,7 @@ export async function getKitchenDay(
       ...diagnostics.warnings,
       ...(liveVipResult.error ? [liveVipResult.error] : []),
       ...(contractPersistenceWarning ? [contractPersistenceWarning] : []),
+      ...(vipPersistenceWarning ? [vipPersistenceWarning] : []),
     ]),
     missingEnvironmentVariables: unique([
       ...diagnostics.missingEnvironmentVariables,

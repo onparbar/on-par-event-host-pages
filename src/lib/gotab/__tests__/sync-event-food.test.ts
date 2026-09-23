@@ -1,17 +1,21 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { generateKitchenChecklist } from "@/lib/kitchen/rules";
+import { vipPrepKitchenEvents } from "@/lib/vip-prep/client";
+import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
 
 vi.mock("server-only", () => ({}));
 
 let synchronize: typeof import("../sync-event-food").synchronizeKitchenChecklistToEventFood;
 let synchronizeLiveAddOns: typeof import("../sync-event-food").synchronizeKitchenLiveAddOnsToEventFood;
 let sourceVersion: typeof import("../sync-event-food").eventFoodSourceVersion;
+let synchronizeVipBookingFood: typeof import("../sync-event-food").synchronizeVipBookingFoodToEventFood;
 
 beforeAll(async () => {
   ({
     synchronizeKitchenChecklistToEventFood: synchronize,
     synchronizeKitchenLiveAddOnsToEventFood: synchronizeLiveAddOns,
     eventFoodSourceVersion: sourceVersion,
+    synchronizeVipBookingFoodToEventFood: synchronizeVipBookingFood,
   } = await import("../sync-event-food"));
 });
 
@@ -40,6 +44,62 @@ const env = {
 };
 
 describe("Event Food synchronization", () => {
+  it("queues booked VIP food at prep time without payment or add-on rows", async () => {
+    const vipChecklist = generateKitchenChecklist(vipPrepKitchenEvents(vipPrepPayload.reservations)[0]);
+    const wing = vipChecklist.sections.flatMap((section) => section.rows)
+      .find((row) => row.key === "platter-wings")!;
+    const storage = {
+      listVipBookingFoodRequests: vi.fn().mockResolvedValue([]),
+      listMappings: vi.fn().mockResolvedValue([{
+        id: "vip-wing-mapping",
+        canonical_product_key: wing.key,
+        display_name: "Wing Platter",
+        aliases: [],
+        pan_size: wing.panSize === "1/3" ? "THIRD_PAN" : "HALF_PAN",
+        preparation_station: "HOT_LINE",
+        gotab_product_uuid: "wing-product",
+        mapping_status: "VERIFIED",
+        verified_at: "2026-08-11T12:00:00.000Z",
+      }]),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn().mockResolvedValue({ duplicate: false }),
+      performAdministrativeAction: vi.fn(),
+    };
+    const result = await synchronizeVipBookingFood(vipChecklist, { storage: storage as never, env });
+    expect(result.requestCount).toBe(1);
+    expect(storage.enqueueRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: "VIP_ADDON", quantity: 2, sourceRecordId: "platter-wings" }),
+      expect.objectContaining({ ticketName: "[VIP FOOD] Redacted VIP" }),
+      "VIP_BOOKING_SYNC",
+    );
+    expect(JSON.stringify(storage.enqueueRequest.mock.calls)).not.toMatch(/unitPriceCents|totalCents/);
+  });
+
+  it("holds a pending VIP order when booked food changes instead of sending a duplicate", async () => {
+    const vipChecklist = generateKitchenChecklist(vipPrepKitchenEvents(vipPrepPayload.reservations)[0]);
+    const wing = vipChecklist.sections.flatMap((section) => section.rows)
+      .find((row) => row.key === "platter-wings")!;
+    const storage = {
+      listVipBookingFoodRequests: vi.fn().mockResolvedValue([{
+        id: "previous-request",
+        source_record_id: wing.key,
+        quantity: 1,
+        pan_size: wing.panSize === "1/3" ? "THIRD_PAN" : "HALF_PAN",
+        dispatch_status: "SCHEDULED",
+      }]),
+      listMappings: vi.fn(),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn(),
+      performAdministrativeAction: vi.fn().mockResolvedValue({ request_id: "previous-request", action: "HOLD" }),
+    };
+    const result = await synchronizeVipBookingFood(vipChecklist, { storage: storage as never, env });
+    expect(result).toMatchObject({ requestCount: 0, exceptionCount: 1 });
+    expect(storage.performAdministrativeAction).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: "previous-request", action: "HOLD" }),
+    );
+    expect(storage.enqueueRequest).not.toHaveBeenCalled();
+  });
+
   it("uses a stable version until operational food content changes", () => {
     expect(sourceVersion(checklist)).toBe(sourceVersion(structuredClone(checklist)));
     const changed = structuredClone(checklist);

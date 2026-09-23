@@ -59,6 +59,7 @@ export function projectKitchenChecklist(
     sourceVersion: number;
     requesterName?: string | null;
     defaultPrepLeadMinutes?: number;
+    bookedFoodQuantities?: ReadonlyMap<string, number>;
   },
 ): EventFoodProjection {
   const eventId = String(checklist.event.eventId);
@@ -69,8 +70,13 @@ export function projectKitchenChecklist(
     ]),
   );
   const rows: ProjectableKitchenRow[] = [
-    ...checklist.sections.flatMap((section) => section.rows),
-    ...checklist.liveFoodAddOns.map((item) => ({
+    ...checklist.sections.flatMap((section) => section.rows).filter((row) =>
+      !options.bookedFoodQuantities || options.bookedFoodQuantities.has(row.key),
+    ).map((row) => ({
+      ...row,
+      orderQuantity: options.bookedFoodQuantities?.get(row.key) ?? null,
+    })),
+    ...(!options.bookedFoodQuantities ? checklist.liveFoodAddOns : []).map((item) => ({
       key: item.itemKey,
       foodName: item.foodName,
       description: item.description,

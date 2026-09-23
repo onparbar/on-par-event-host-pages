@@ -23,6 +23,7 @@ import type {
   TripleseatKitchenSourceEvent,
 } from "../tripleseat";
 import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
+import { vipPrepKitchenEvents } from "../../vip-prep/client";
 
 function testAdapter(
   getEvents: () => TripleseatKitchenSourceEvent[],
@@ -181,10 +182,11 @@ describe("kitchen synchronization", () => {
     });
   });
 
-  it("reads VIP Kitchen prep directly without Supabase persistence", async () => {
+  it("saves VIP booking prep under its stable kitchen event ID", async () => {
+    const storage = createMemoryKitchenStorage();
     const day = await getKitchenDay("2026-08-15", {
       adapter: testAdapter(() => []),
-      storage: createMemoryKitchenStorage(),
+      storage,
       vipPrepClient: {
         configured: true,
         async fetchRange() {
@@ -196,6 +198,65 @@ describe("kitchen synchronization", () => {
 
     expect(day.missingEnvironmentVariables).not.toContain("SUPABASE_SECRET_KEY");
     expect(day.events[0].event.eventId).toBe("vip-reservation-uuid");
+    await expect(storage.getEventDate("vip-reservation-uuid")).resolves.toBe("2026-08-15");
+    await updateKitchenManualAssignments(
+      "vip-reservation-uuid",
+      ["Ryan"],
+      ["Diana"],
+      { storage },
+    );
+    await updateKitchenEventFoodAddOns(
+      "vip-reservation-uuid",
+      { "tater-kegs": { quantity: 1 } },
+      { storage },
+    );
+    const refreshed = await getKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+    expect(refreshed.events[0].foodRunners).toEqual(["Ryan"]);
+    expect(refreshed.events[0].pocs).toEqual(["Diana"]);
+    expect(refreshed.events[0].liveFoodAddOns).toEqual([
+      expect.objectContaining({ itemKey: "addon:tater-kegs", quantity: 64 }),
+    ]);
+  });
+
+  it("refreshes older VIP food labels even when the booking timestamp has not changed", async () => {
+    const storage = createMemoryKitchenStorage();
+    const payload = structuredClone(vipPrepPayload);
+    payload.reservations[0].foodPrep[0].code = "tater-kegs";
+    const sourceEvent = vipPrepKitchenEvents(payload.reservations)[0];
+    const oldSource = {
+      ...sourceEvent,
+      selections: sourceEvent.selections.map((selection) => ({
+        ...selection,
+        name: "Tater Kegs",
+      })),
+    };
+    await storage.saveEvent({ sourceEvent: oldSource, checklist: generateKitchenChecklist(oldSource) });
+
+    const day = await getKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return payload;
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.events[0].sections.flatMap((section) => section.rows))
+      .toContainEqual(expect.objectContaining({ key: "platter-tater-kegs", quantity: 128 }));
+    expect(day.events[0].normalizedSelections[0].originalName).toBe("Tater Keg Platter");
   });
 
   it("uses the event booking instead of a same-name VIP reservation for prep", async () => {

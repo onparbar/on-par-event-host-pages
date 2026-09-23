@@ -51,15 +51,24 @@ export async function POST(request: Request) {
         ]);
         if (getGoTabConfigurationStatus().configured) {
           for (const checklist of payload.events) {
-            await integration.synchronizeKitchenChecklistToEventFood(checklist, {
-              sourceVersion: integration.eventFoodSourceVersion(checklist),
-              actor: "TRIPLESEAT_SYNC",
-            });
+            if (String(checklist.event.eventId).startsWith("vip-")) {
+              const result = await integration.synchronizeVipBookingFoodToEventFood(checklist);
+              if (result.exceptionCount > 0) {
+                payload.warnings.push(
+                  `${checklist.event.name}: VIP booking food needs GoTab review.`,
+                );
+              }
+            } else {
+              await integration.synchronizeKitchenChecklistToEventFood(checklist, {
+                sourceVersion: integration.eventFoodSourceVersion(checklist),
+                actor: "TRIPLESEAT_SYNC",
+              });
+            }
           }
         }
       } catch {
         payload.warnings.push(
-          "Event Food dry-run projection could not be saved. Kitchen synchronization still completed.",
+          "Event Food projection could not be saved. Kitchen synchronization still completed.",
         );
       }
     }
