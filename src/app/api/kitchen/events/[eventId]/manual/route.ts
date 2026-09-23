@@ -1,29 +1,27 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
-import { updateKitchenManualBwa } from "@/lib/kitchen/sync";
+import { updateKitchenManualAssignments } from "@/lib/kitchen/sync";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type ManualRequest = {
-  bwa?: unknown;
+  foodRunners?: unknown;
+  pocs?: unknown;
+  preppedBy?: unknown;
+  verifiedBy?: unknown;
+  setup?: unknown;
 };
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ eventId: string }> },
 ) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: ManualRequest;
@@ -35,9 +33,19 @@ export async function PATCH(
       { status: 400 },
     );
   }
-  if (typeof body.bwa !== "string") {
+  if (
+    !Array.isArray(body.foodRunners) ||
+    !body.foodRunners.every((value) => typeof value === "string") ||
+    !Array.isArray(body.pocs) ||
+    !body.pocs.every((value) => typeof value === "string") ||
+    typeof body.preppedBy !== "string" ||
+    typeof body.verifiedBy !== "string" ||
+    (body.setup !== undefined &&
+      (!Array.isArray(body.setup) ||
+        !body.setup.every((value) => typeof value === "string")))
+  ) {
     return NextResponse.json(
-      { error: "Food Runner or BWA must be a string." },
+      { error: "Kitchen staff selections are invalid." },
       { status: 400 },
     );
   }
@@ -45,13 +53,21 @@ export async function PATCH(
   try {
     const { eventId } = await context.params;
     return NextResponse.json(
-      await updateKitchenManualBwa(eventId, body.bwa),
+      await updateKitchenManualAssignments(
+        eventId,
+        body.foodRunners,
+        body.pocs,
+        {},
+        body.preppedBy,
+        body.verifiedBy,
+        body.setup ?? [],
+      ),
     );
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
-        : "Unable to save Food Runner or BWA.";
+        : "Unable to save Food Runner and POC.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

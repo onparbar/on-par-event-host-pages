@@ -17,7 +17,10 @@ import type {
   EntertainmentSourceItem,
 } from "@/lib/entertainment/types";
 import { normalizeKitchenSelection } from "@/lib/kitchen/normalize";
-import type { KitchenSourceSelection } from "@/lib/kitchen/types";
+import type {
+  KitchenSourceSelection,
+  NormalizedSelectionKind,
+} from "@/lib/kitchen/types";
 
 import {
   EVENT_PLAN_RULE_VERSION,
@@ -135,6 +138,64 @@ type ClassifiedDetails = {
   reviewReasons: string[];
 };
 
+const ITINERARY_FOOD_LABELS: Partial<
+  Record<NormalizedSelectionKind, string>
+> = {
+  "package:the-full-course": "The Full Course",
+  "package:the-front-nine": "The Front Nine",
+  "package:food-only-package": "Food Only Package",
+  "bar:taco": "Taco Bar",
+  "bar:wing": "Wing Bar",
+  "bar:appetizer": "Appetizer Bar",
+  "option:taco-lettuce-wraps": "Lettuce Wraps",
+  dessert: "Dessert Platter",
+  "platter:tater-kegs": "Tater Keg Platter",
+  "platter:chicken-tenders": "Chicken Tender Platter",
+  "platter:mozzarella-sticks": "Mozzarella Stick Platter",
+  "platter:wings": "Wing Platter",
+  "platter:veggie-tray": "Veggie Tray",
+  "platter:fries": "Fry Platter",
+  "sauce:ranch": "Ranch",
+  "sauce:marinara": "Marinara",
+};
+
+function itineraryFoodLine(selection: KitchenSourceSelection) {
+  const normalized = normalizeKitchenSelection(selection);
+  const labels = uniqueText(
+    normalized.kinds.flatMap((kind) => {
+      const label = ITINERARY_FOOD_LABELS[kind];
+      if (!label) {
+        return [];
+      }
+      if (
+        kind === "dessert" &&
+        normalized.normalizedName.startsWith("desert platter")
+      ) {
+        return ["Desert Platter"];
+      }
+      return [label];
+    }),
+  );
+  const name = labels.join(" + ") || cleanText(selection.name);
+  const quantity = selection.quantity;
+  if (
+    typeof quantity !== "number" ||
+    !Number.isInteger(quantity) ||
+    quantity <= 0
+  ) {
+    return name;
+  }
+  const quantityText = String(quantity);
+  if (
+    name.startsWith(`${quantityText} `) ||
+    name.startsWith(`${quantityText}×`) ||
+    name.startsWith(`${quantityText} ×`)
+  ) {
+    return name;
+  }
+  return `${quantityText} × ${name}`;
+}
+
 function classifySelection(
   selection: KitchenSourceSelection,
   result: ClassifiedDetails,
@@ -156,7 +217,7 @@ function classifySelection(
     selection.isFood !== false &&
     (selection.isFood === true || foodCategory || knownFood)
   ) {
-    result.food.push(name);
+    result.food.push(itineraryFoodLine(selection));
   }
   if (drinkCategory) {
     result.drinks.push(name);
@@ -198,7 +259,15 @@ function classifyDocumentItem(
   }
 
   if (isFoodCategory(item.categoryName)) {
-    result.food.push(name);
+    result.food.push(
+      itineraryFoodLine({
+        name,
+        quantity: item.quantity,
+        sourceId: item.sourceId,
+        sourceCategory: item.categoryName,
+        isFood: true,
+      }),
+    );
   }
   if (isDrinkCategory(item.categoryName)) {
     result.drinks.push(name);
@@ -346,7 +415,7 @@ function quantityLabel(
   quantity: number | null,
   exactResourceIds: readonly string[],
 ) {
-  if (exactResourceIds.length) {
+  if (exactResourceIds.length && category !== "mini-golf") {
     return exactResourceIds
       .map(
         (resourceId) =>
@@ -362,7 +431,7 @@ function quantityLabel(
     darts: "lane",
     pool: "table",
     shuffleboard: "table",
-    "mini-golf": "course",
+    "mini-golf": "guest",
     "private-rooms": "room",
   }[category];
   return `${quantity} ${noun}${quantity === 1 ? "" : "s"}`;
@@ -454,6 +523,7 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const duration = range
       ? formattedDuration(range.startAt, range.endAt)
       : textualDuration(text) ?? "Duration not listed on BEO";
+    const isMiniGolf = category === "mini-golf";
     const structuredRange = item.startAt && item.endAt
       ? `Start ${item.startAt}; end ${item.endAt}`
       : null;
@@ -487,6 +557,10 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
       isLaneRentalDurationDetail(text, category)
     ) {
       previous.item.duration = duration;
+      if (previous.numericQuantity == null && quantity != null) {
+        previous.numericQuantity = quantity;
+        previous.item.quantity = quantityLabel(category, quantity, exactResourceIds);
+      }
       appendEvidence();
       continue;
     }
@@ -505,10 +579,12 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const mappedItem = {
       name: entertainmentName(category, exactResourceIds),
       quantity: quantityLabel(category, quantity, exactResourceIds),
-      time: range
-        ? formattedTimeRange(range.startAt, range.endAt)
-        : "Time not listed on BEO",
-      duration,
+      time: isMiniGolf
+        ? ""
+        : range
+          ? formattedTimeRange(range.startAt, range.endAt)
+          : "Time not listed on BEO",
+      duration: isMiniGolf ? "" : duration,
     } satisfies EventPlanEntertainmentItem;
     mappedItems.push({
       item: mappedItem,
@@ -538,12 +614,15 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
         `Entertainment quantity is missing for "${mapped.sourceName}".`,
       );
     }
-    if (mapped.item.time === "Time not listed on BEO") {
+    if (mapped.category !== "mini-golf" && mapped.item.time === "Time not listed on BEO") {
       reviewReasons.push(
         `Entertainment time is missing for "${mapped.sourceName}".`,
       );
     }
-    if (mapped.item.duration === "Duration not listed on BEO") {
+    if (
+      mapped.category !== "mini-golf" &&
+      mapped.item.duration === "Duration not listed on BEO"
+    ) {
       reviewReasons.push(
         `Entertainment duration is missing for "${mapped.sourceName}".`,
       );

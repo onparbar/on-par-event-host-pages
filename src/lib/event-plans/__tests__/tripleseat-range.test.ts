@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryKitchenStorage } from "@/lib/kitchen/storage";
 import { LiveTripleseatAdapter } from "@/lib/kitchen/tripleseat";
+import { buildEventPlan } from "../domain";
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -48,7 +49,16 @@ describe("Tripleseat rolling event-plan source", () => {
                 line_items: [
                   {
                     id: 701,
-                    description: "Tater Keg Platter",
+                    display_name: "Tater Keg Platter",
+                    description:
+                      "Tater Keg PlatterSuper sized crispy on the outside mashed potato on the inside tots with cheese, bacon and chives",
+                    quantity: 1,
+                    category: { name: "Food Platters" },
+                  },
+                  {
+                    id: 703,
+                    display_name: "Desert Platter",
+                    description: "Desert PlatterAssorted sweets for the event.",
                     quantity: 1,
                     category: { name: "Food Platters" },
                   },
@@ -130,10 +140,19 @@ describe("Tripleseat rolling event-plan source", () => {
         name: "Tater Keg Platter",
         quantity: 1,
       }),
+      expect.objectContaining({
+        name: "Desert Platter",
+        quantity: 1,
+      }),
     ]);
     expect(plans[0].documentItems.map((item) => item.name)).toEqual([
-      "Tater Keg Platter",
+      "Tater Keg PlatterSuper sized crispy on the outside mashed potato on the inside tots with cheese, bacon and chives",
+      "Desert PlatterAssorted sweets for the event.",
       "Duckpin Bowling",
+    ]);
+    expect(buildEventPlan(plans[0]).food).toEqual([
+      "1 × Tater Keg Platter",
+      "1 × Desert Platter",
     ]);
     expect(plans[0].operationalNotes).toEqual([
       expect.objectContaining({

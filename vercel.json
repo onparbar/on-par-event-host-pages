@@ -4,6 +4,10 @@
     {
       "path": "/api/event-plans/sync",
       "schedule": "5 10 * * *"
+    },
+    {
+      "path": "/api/gotab/reconcile",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

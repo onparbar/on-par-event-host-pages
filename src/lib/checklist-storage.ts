@@ -2,7 +2,7 @@ import type { ChecklistRecord } from "@/lib/checklist-model";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const CHECKLIST_COLUMNS =
-  "event_id,bwa,extras_added,remaining_drink_card_balance,tasks,entertainment,food,status,updated_at,submitted_at";
+  "event_id,event_name,event_date,poc,bwa,extras_added,remaining_drink_card_balance,tasks,entertainment,food,status,updated_at,submitted_at";
 
 type ChecklistPayload = {
   bwa?: string;
@@ -24,7 +24,9 @@ export type SaveChecklistInput = {
 
 type DatabaseRecord = {
   event_id: number | string;
+  event_name?: string | null;
   event_date?: string | null;
+  poc?: string | null;
   bwa?: string | null;
   extras_added?: string | null;
   remaining_drink_card_balance?: string | null;
@@ -114,6 +116,9 @@ async function databaseRequest<T>(url: string, init?: RequestInit): Promise<T> {
 function toChecklistRecord(record: DatabaseRecord): ChecklistRecord {
   return {
     eventId: Number(record.event_id),
+    eventName: record.event_name ?? "",
+    eventDate: record.event_date ?? "",
+    poc: record.poc ?? "",
     bwa: record.bwa ?? "",
     extrasAdded: record.extras_added ?? "",
     remainingDrinkCardBalance: record.remaining_drink_card_balance ?? "",

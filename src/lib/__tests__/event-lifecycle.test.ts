@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeDatedAssets,
   activeEvents,
+  availableChecklistEvents,
   easternDateValue,
   isEventOver,
 } from "../event-lifecycle";
@@ -53,6 +54,29 @@ describe("event lifecycle", () => {
     expect(activeEvents([needsReview], [], new Date("2027-01-01T00:00:00.000Z"))).toEqual([
       needsReview,
     ]);
+  });
+
+  it("keeps unfinished checklist events through the full following day", () => {
+    const checklistEvent = {
+      id: 8,
+      date: "2026-08-06",
+      time: "12:00 PM - 3:00 PM",
+    };
+
+    expect(
+      availableChecklistEvents(
+        [checklistEvent],
+        [8],
+        new Date("2026-08-08T03:59:00.000Z"),
+      ),
+    ).toEqual([checklistEvent]);
+    expect(
+      availableChecklistEvents(
+        [checklistEvent],
+        [],
+        new Date("2026-08-08T04:00:00.000Z"),
+      ),
+    ).toEqual([]);
   });
 
   it("archives a dated floor plan after every attached event has ended", () => {
