@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import { GoTabClient, GoTabApiError } from "./client";
 import { getGoTabConfigurationStatus, requireGoTabConfiguration } from "./config";
 import { GoTabIntegrationStorage } from "./storage";
-import { VipPrepClient } from "@/lib/vip-prep/client";
+import { VipPrepClient, vipPrepExternalId } from "@/lib/vip-prep/client";
+import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
 
 export type GoTabWorkerSummary = {
   claimed: number;
@@ -81,9 +82,12 @@ export async function processGoTabDispatches(options?: {
           summary.held += 1;
           continue;
         }
-        if (!vipPrepClient.configured) throw new Error("VIP reservation status is unavailable.");
-        const current = await vipPrepClient.fetchRange(checkin.booking_date, checkin.booking_date);
-        if (!current.reservations.some((reservation) => reservation.id === checkin.reservation_id)) {
+        const testReservation = vipKdsTestReservation(checkin.booking_date);
+        const isActiveTest = testReservation?.id === checkin.reservation_id &&
+          vipPrepExternalId(testReservation) === context.event_id;
+        if (!isActiveTest && !vipPrepClient.configured) throw new Error("VIP reservation status is unavailable.");
+        const current = isActiveTest ? null : await vipPrepClient.fetchRange(checkin.booking_date, checkin.booking_date);
+        if (!isActiveTest && !current?.reservations.some((reservation) => reservation.id === checkin.reservation_id)) {
           await storage.finishDispatch(dispatch.id, {
             status: "HELD",
             lastError: "VIP reservation is cancelled or no longer active.",

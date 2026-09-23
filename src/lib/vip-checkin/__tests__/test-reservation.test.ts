@@ -7,6 +7,7 @@ describe("temporary VIP KDS test reservation", () => {
   it("contains only one chicken tender and one dessert platter at 1:45 PM", () => {
     const reservation = vipKdsTestReservation("2026-09-23", testTime);
     expect(reservation).toMatchObject({
+      id: "event-host-kds-retest-20260923",
       status: "confirmed",
       startAt: "2026-09-23T13:45:00-04:00",
       foodPrep: [

@@ -25,6 +25,99 @@ function environment(overrides: Record<string, string> = {}) {
 }
 
 describe("GoTab dispatch worker", () => {
+  it("sends the active synthetic VIP retest but does not require it in the live booking feed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-23T18:15:00Z");
+    try {
+      const createEventFoodTab = vi.fn().mockResolvedValue({
+        tabUuid: "test-tab", orderUuid: "test-order", itemUuid: "test-item",
+      });
+      const storage = {
+        claimDueDispatches: vi.fn().mockResolvedValue([{
+          id: "test-dispatch",
+          request_id: "test-request",
+          idempotency_key: "vip-retest:VIP_ADDON:chicken:1:DISPATCH",
+          action: "DISPATCH",
+          status: "SENDING",
+          attempt_count: 1,
+          sanitized_payload: {
+            eventName: "VIP KDS RETEST — DO NOT PREPARE",
+            product: "Chicken Tenders",
+            gotabProductUuid: "prd_chicken",
+            quantity: 1,
+          },
+        }]),
+        getDispatchRequestContext: vi.fn().mockResolvedValue({
+          event_id: "vip-event-host-kds-retest-20260923",
+          source_record_id: "platter-chicken-tenders",
+          food_service_time: "2026-09-23T17:30:00Z",
+        }),
+        getVipCheckin: vi.fn().mockResolvedValue({
+          reservation_id: "event-host-kds-retest-20260923", booking_date: "2026-09-23",
+        }),
+        getVipInitialFoodRelease: vi.fn().mockResolvedValue({ status: "PENDING" }),
+        finishDispatch: vi.fn().mockResolvedValue(undefined),
+      };
+      const vipPrepClient = {
+        configured: true,
+        fetchRange: vi.fn().mockResolvedValue({ reservations: [] }),
+      };
+      const result = await processGoTabDispatches({
+        storage: storage as never,
+        env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+        client: { createEventFoodTab },
+        vipPrepClient,
+      });
+      expect(result.sent).toBe(1);
+      expect(vipPrepClient.fetchRange).not.toHaveBeenCalled();
+      expect(createEventFoodTab).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the superseded synthetic VIP test from reaching GoTab", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-23T18:15:00Z");
+    try {
+      const createEventFoodTab = vi.fn();
+      const storage = {
+        claimDueDispatches: vi.fn().mockResolvedValue([{
+          id: "old-test-dispatch",
+          request_id: "old-test-request",
+          idempotency_key: "vip-old-test:VIP_ADDON:chicken:1:DISPATCH",
+          action: "DISPATCH",
+          status: "SENDING",
+          attempt_count: 1,
+          sanitized_payload: { eventName: "VIP KDS TEST", product: "Chicken Tenders", gotabProductUuid: "prd_chicken", quantity: 1 },
+        }]),
+        getDispatchRequestContext: vi.fn().mockResolvedValue({
+          event_id: "vip-event-host-kds-test-20260923",
+          source_record_id: "platter-chicken-tenders",
+          food_service_time: "2026-09-23T17:30:00Z",
+        }),
+        getVipCheckin: vi.fn().mockResolvedValue({
+          reservation_id: "event-host-kds-test-20260923", booking_date: "2026-09-23",
+        }),
+        getVipInitialFoodRelease: vi.fn().mockResolvedValue({ status: "PENDING" }),
+        finishDispatch: vi.fn().mockResolvedValue(undefined),
+      };
+      const result = await processGoTabDispatches({
+        storage: storage as never,
+        env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+        client: { createEventFoodTab },
+        vipPrepClient: { configured: true, fetchRange: vi.fn().mockResolvedValue({ reservations: [] }) },
+      });
+      expect(result.held).toBe(1);
+      expect(createEventFoodTab).not.toHaveBeenCalled();
+      expect(storage.finishDispatch).toHaveBeenCalledWith("old-test-dispatch", {
+        status: "HELD", lastError: "VIP reservation is cancelled or no longer active.",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("completes due requests as dry-run without a GoTab write", async () => {
     const storage = {
       claimDueDispatches: vi.fn().mockResolvedValue([{

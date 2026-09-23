@@ -22,7 +22,7 @@ describe("VIP arrival and food release", () => {
     vi.useFakeTimers();
     vi.setSystemTime("2026-09-23T18:00:00Z");
     try {
-      const testId = "event-host-kds-test-20260923";
+      const testId = "event-host-kds-retest-20260923";
       const testEventId = `vip-${testId}`;
       const saved = {
         event_id: testEventId,
