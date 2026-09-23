@@ -6694,6 +6694,7 @@ a {
 
 .kitchen-sync-controls {
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .kitchen-reconnect-panel {

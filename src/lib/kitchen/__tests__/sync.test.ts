@@ -1,16 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMemoryKitchenStorage,
   SupabaseKitchenStorage,
 } from "../storage";
 import { quantityAwareReadinessKey } from "../readiness";
 import { generateKitchenChecklist } from "../rules";
+import { MOCK_KITCHEN_EVENTS } from "../fixtures";
 import { confirmedContractKitchenSourcesForDate } from "../../confirmed-contract-events";
 import {
   getKitchenEventFoodAddOns,
   getKitchenDay,
   normalizeKitchenEventAddOnFood,
   syncKitchenDay,
+  syncVipBookingDay,
   updateKitchenEventFoodAddOns,
   updateKitchenItemCompletion,
   updateKitchenItemPrepped,
@@ -55,6 +57,63 @@ function viewingTime(date: string) {
 }
 
 describe("kitchen synchronization", () => {
+  it("refreshes VIP bookings without Tripleseat sync and preserves other kitchen events", async () => {
+    const storage = createMemoryKitchenStorage();
+    const corporateEvent = {
+      ...MOCK_KITCHEN_EVENTS[0],
+      localDate: "2026-08-15",
+    };
+    await storage.saveEvent({
+      sourceEvent: corporateEvent,
+      checklist: generateKitchenChecklist(corporateEvent),
+    });
+    const fetchRange = vi.fn(async () => structuredClone(vipPrepPayload));
+    const adapter = testAdapter(() => {
+      throw new Error("Tripleseat is unavailable");
+    });
+
+    const day = await syncVipBookingDay("2026-08-15", {
+      adapter,
+      storage,
+      vipPrepClient: { configured: true, fetchRange },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(fetchRange).toHaveBeenCalledExactlyOnceWith("2026-08-15", "2026-08-15");
+    expect(day.bookingCount).toBe(1);
+    expect(day.events.map((event) => event.event.eventId)).toEqual(
+      expect.arrayContaining(["mock-taco-001", "vip-reservation-uuid"]),
+    );
+    expect((await storage.getDay("2026-08-15")).events).toHaveLength(2);
+  });
+
+  it("reports a booking feed failure without replacing the saved kitchen day", async () => {
+    const storage = createMemoryKitchenStorage();
+    const existing = {
+      ...MOCK_KITCHEN_EVENTS[0],
+      localDate: "2026-08-15",
+    };
+    await storage.saveEvent({
+      sourceEvent: existing,
+      checklist: generateKitchenChecklist(existing),
+    });
+
+    await expect(syncVipBookingDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          throw new Error("network detail must not reach the UI");
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    })).rejects.toThrow("OnPar bookings could not be refreshed.");
+    expect((await storage.getDay("2026-08-15")).events.map(
+      (event) => event.event.eventId,
+    )).toEqual(["mock-taco-001"]);
+  });
+
   it("keeps a red full-buyout event in the kitchen dashboard", async () => {
     const storage = createMemoryKitchenStorage();
     const result = await syncKitchenDay("2026-08-15", {

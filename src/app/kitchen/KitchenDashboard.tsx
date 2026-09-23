@@ -356,6 +356,8 @@ export default function KitchenDashboard() {
   const [day, setDay] = useState<KitchenDayResponse | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [syncState, setSyncState] = useState<SyncState>("idle");
+  const [bookingSyncState, setBookingSyncState] = useState<SyncState>("idle");
+  const [bookingSyncMessage, setBookingSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | number | null>(null);
   const [pendingPrintId, setPendingPrintId] = useState<string | number | null>(null);
@@ -404,6 +406,8 @@ export default function KitchenDashboard() {
     setAddOnAlertQueue([]);
     setSelectedDate(nextDate);
     setSyncState("idle");
+    setBookingSyncState("idle");
+    setBookingSyncMessage("");
     setError("");
   }, []);
 
@@ -441,12 +445,6 @@ export default function KitchenDashboard() {
         return false;
       }
 
-      const visiblePayload = {
-        ...payload,
-        events: payload.events.filter(
-          (event) => !String(event.event.eventId).startsWith("vip-"),
-        ),
-      };
       // Event add-ons are delivered to GoTab KDS directly; they are not
       // duplicated as kitchen-sheet alerts.
       const nextAddOnAlerts: KitchenLiveAddOnAlert[] = [];
@@ -467,12 +465,12 @@ export default function KitchenDashboard() {
           ? [...stillApplicable, ...additions]
           : stillApplicable;
       });
-      setDay(visiblePayload);
+      setDay(payload);
       setLiveRefreshHealthy(true);
       setLastLiveRefreshAt(new Date().toISOString());
       setStaffDrafts((current) =>
         Object.fromEntries(
-          visiblePayload.events.map((checklist) => {
+          payload.events.map((checklist) => {
             const eventKey = String(checklist.event.eventId);
             return [
               eventKey,
@@ -858,6 +856,36 @@ export default function KitchenDashboard() {
       }
       setSyncState("error");
       setError(message);
+    }
+  }
+
+  async function syncBookings() {
+    const syncDate = selectedDateRef.current;
+    setBookingSyncState("syncing");
+    setBookingSyncMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/kitchen/bookings/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date: syncDate }),
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string; bookingCount?: number } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to refresh OnPar bookings.");
+      }
+      if (selectedDateRef.current !== syncDate) return;
+      await loadDay(syncDate);
+      if (selectedDateRef.current !== syncDate) return;
+      setBookingSyncState("idle");
+      const count = payload?.bookingCount ?? 0;
+      setBookingSyncMessage(`Booking Sync complete: ${formatCount(count, "VIP booking")}.`);
+    } catch (syncError) {
+      if (selectedDateRef.current !== syncDate) return;
+      await loadDay(syncDate);
+      if (selectedDateRef.current !== syncDate) return;
+      setBookingSyncState("error");
+      setError(syncError instanceof Error ? syncError.message : "Unable to refresh OnPar bookings.");
     }
   }
 
@@ -1251,7 +1279,7 @@ export default function KitchenDashboard() {
           <div>
             <span className="kitchen-eyebrow">Daily production view</span>
             <h1>{dateLabel(selectedDate)}</h1>
-            <p>Definite events and their generated kitchen prep requirements.</p>
+            <p>Events and VIP bookings with their generated kitchen prep requirements.</p>
           </div>
           <div className="kitchen-day-summary" aria-live="polite">
             <span className="kitchen-summary-chip">{formatCount(sortedEvents.length, "event")}</span>
@@ -1305,14 +1333,23 @@ export default function KitchenDashboard() {
             <div className="kitchen-sync-copy" aria-live="polite">
               <strong>Last synced: {formatTimestamp(day?.lastSyncedAt ?? null)}</strong>
               <span className="kitchen-source-note">{sourceModeLabel(day?.sourceMode ?? "")}</span>
+              {bookingSyncMessage ? <span className="kitchen-source-note" role="status">{bookingSyncMessage}</span> : null}
             </div>
             <button
               className="kitchen-primary-button"
-              disabled={syncState === "syncing"}
+              disabled={syncState === "syncing" || bookingSyncState === "syncing"}
               onClick={() => void syncDay()}
               type="button"
             >
               {syncState === "syncing" ? "Syncing…" : "Sync now"}
+            </button>
+            <button
+              className="kitchen-secondary-button"
+              disabled={syncState === "syncing" || bookingSyncState === "syncing"}
+              onClick={() => void syncBookings()}
+              type="button"
+            >
+              {bookingSyncState === "syncing" ? "Syncing bookings…" : "Booking Sync"}
             </button>
           </div>
         </section>
@@ -1365,7 +1402,7 @@ export default function KitchenDashboard() {
               !
             </span>
             <div>
-              <strong>{syncState === "error" ? "Sync failed" : "Kitchen data unavailable"}</strong>
+              <strong>{bookingSyncState === "error" ? "Booking Sync failed" : syncState === "error" ? "Sync failed" : "Kitchen data unavailable"}</strong>
               <p>{error}</p>
             </div>
           </section>
@@ -1399,7 +1436,7 @@ export default function KitchenDashboard() {
             message={
               day?.archivedEventCount
                 ? "All scheduled kitchen events for this date have ended and were archived."
-                : "No definite Tripleseat events are scheduled for this date."
+                : "No events or VIP bookings are scheduled for this date."
             }
             title={
               day?.archivedEventCount
@@ -1412,7 +1449,7 @@ export default function KitchenDashboard() {
         {loadState === "ready" && sortedEvents.length ? (
           <section
             className="kitchen-event-grid kitchen-event-checklist-grid kitchen-event-accordion-list"
-            aria-label="Definite event kitchen checklists"
+            aria-label="Event and VIP booking kitchen checklists"
           >
             {sortedEvents.map((checklist) => {
               const eventKey = String(checklist.event.eventId);

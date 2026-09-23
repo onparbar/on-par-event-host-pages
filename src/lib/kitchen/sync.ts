@@ -24,6 +24,7 @@ import type {
 } from "./types";
 import {
   getMissingVipPrepEnvironmentVariables,
+  VipPrepApiError,
   VipPrepClient,
   vipPrepKitchenEvents,
 } from "../vip-prep/client";
@@ -480,6 +481,38 @@ export async function syncKitchenDay(
       // Preserve the original safe integration error if sync-state storage fails.
     }
     throw new KitchenSyncError(message);
+  }
+}
+
+export async function syncVipBookingDay(
+  date: string,
+  options: KitchenSyncDependencies = {},
+): Promise<KitchenDayPayload & { bookingCount: number }> {
+  assertKitchenDate(date);
+  const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+  if (!vipPrepClient.configured) {
+    throw new KitchenSyncError("OnPar Booking Sync is not configured.");
+  }
+
+  try {
+    const bookingPayload = await vipPrepClient.fetchRange(date, date);
+    const day = await getKitchenDay(date, {
+      ...options,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return bookingPayload;
+        },
+      },
+    });
+    if (day.warnings.some((warning) => warning.startsWith("VIP booking prep is visible"))) {
+      throw new KitchenSyncError("VIP booking prep could not be saved to the kitchen sheet.");
+    }
+    return { ...day, bookingCount: bookingPayload.reservationCount };
+  } catch (error) {
+    if (error instanceof KitchenSyncError) throw error;
+    if (error instanceof VipPrepApiError) throw new KitchenSyncError(error.message);
+    throw new KitchenSyncError("OnPar bookings could not be refreshed.");
   }
 }
 
