@@ -3,6 +3,7 @@ import "server-only";
 import { GoTabIntegrationStorage } from "@/lib/gotab/storage";
 import { processGoTabDispatches } from "@/lib/gotab/worker";
 import { synchronizeVipBookingFoodToEventFood } from "@/lib/gotab/sync-event-food";
+import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { KITCHEN_STAFF_ROSTER } from "@/lib/kitchen/storage";
 import { generateKitchenChecklist } from "@/lib/kitchen/rules";
 import { assertKitchenDate } from "@/lib/kitchen/sync";
@@ -16,6 +17,7 @@ import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
 
 export type VipFoodStatus =
   | "NOT_CHECKED_IN"
+  | "FOOD_SCHEDULED"
   | "SENDING_FOOD"
   | "FOOD_SENT"
   | "FOOD_SEND_FAILED"
@@ -59,6 +61,8 @@ async function foodStatus(eventId: string, storage: GoTabIntegrationStorage): Pr
   const sentCount = new Set(dispatches.filter((dispatch) => dispatch.status === "SENT")
     .map((dispatch) => dispatch.request_id)).size;
   if (sentCount >= release.expected_item_count) return "FOOD_SENT";
+  if (new Set(dispatches.filter((dispatch) => dispatch.status === "SCHEDULED")
+    .map((dispatch) => dispatch.request_id)).size >= release.expected_item_count) return "FOOD_SCHEDULED";
   return "SENDING_FOOD";
 }
 
@@ -105,6 +109,9 @@ export async function confirmVipArrival(
   options: CheckinDependencies = {},
 ): Promise<VipCheckinRow> {
   assertKitchenDate(date);
+  if (date > todayInEntertainmentTimeZone()) {
+    throw new Error("VIP check-in is available on the reservation date, including before its start time.");
+  }
   const normalizedEmployee = employeeName.trim();
   if (!KITCHEN_STAFF_ROSTER.some((name) => name === normalizedEmployee)) {
     throw new Error("Select an employee from the approved roster.");
@@ -141,7 +148,6 @@ export async function confirmVipArrival(
       if (projection.exceptionCount > 0) {
         await storage.markVipInitialFoodReleaseFailed(eventId, "A food item needs GoTab mapping or review.");
       }
-      await storage.releaseCheckedInVipDispatches(eventId);
       const dispatch = options.dispatch ?? processGoTabDispatches;
       await dispatch({ storage });
     } catch {

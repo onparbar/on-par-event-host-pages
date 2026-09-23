@@ -8,6 +8,7 @@ import type { VipCheckinRow, VipFoodStatus } from "@/lib/vip-checkin/service";
 const EMPLOYEE_STORAGE_KEY = "event-host-vip-check-in-employee";
 const statusLabels: Record<VipFoodStatus, string> = {
   NOT_CHECKED_IN: "Waiting for check-in",
+  FOOD_SCHEDULED: "Scheduled for Kitchen Prep",
   SENDING_FOOD: "Sending Food",
   FOOD_SENT: "Food Sent",
   FOOD_SEND_FAILED: "Food Send Failed",
@@ -136,7 +137,7 @@ export default function VipCheckInClient() {
       <PortalPageHeader
         eyebrow="Staff operations"
         title="VIP CHECK-IN"
-        description="Confirm a VIP group when they arrive. Their reserved food is released to the kitchen only after check-in."
+        description="Early check-in is available before the reservation starts. Booked food stays scheduled for kitchen prep time."
       />
 
       <div className="vip-checkin-controls">

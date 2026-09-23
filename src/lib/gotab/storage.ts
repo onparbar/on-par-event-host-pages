@@ -384,14 +384,6 @@ export class GoTabIntegrationStorage {
     );
   }
 
-  async releaseCheckedInVipDispatches(eventId: string) {
-    const response = await this.request("rpc/release_checked_in_vip_dispatches", null, {
-      method: "POST",
-      body: JSON.stringify({ p_event_id: eventId }),
-    });
-    return response.json() as Promise<number>;
-  }
-
   async listVipInitialFoodDispatches(eventId: string) {
     const requests = await this.listVipBookingFoodRequests(eventId);
     if (!requests.length) return [];

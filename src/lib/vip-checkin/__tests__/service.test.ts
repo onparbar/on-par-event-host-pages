@@ -18,9 +18,23 @@ function client(foodPrep = reservation.foodPrep) {
 }
 
 describe("VIP arrival and food release", () => {
-  it("shows the temporary KDS test VIP and sends its two items only on check-in", async () => {
+  it("does not check in a VIP before its reservation date", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime("2026-09-23T18:00:00Z");
+    vi.setSystemTime("2026-09-22T16:00:00Z");
+    try {
+      const testClient = { configured: true, fetchRange: vi.fn() };
+      await expect(confirmVipArrival("event-host-kds-retest-20260923", "2026-09-23", "Tina", {
+        client: testClient,
+      })).rejects.toThrow("VIP check-in is available on the reservation date");
+      expect(testClient.fetchRange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows early VIP check-in while leaving booked food scheduled for prep time", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-23T16:00:00Z");
     try {
       const testId = "event-host-kds-retest-20260923";
       const testEventId = `vip-${testId}`;
@@ -29,7 +43,7 @@ describe("VIP arrival and food release", () => {
         reservation_id: testId,
         booking_date: "2026-09-23",
         employee_name: "Tina",
-        checked_in_at: "2026-09-23T18:00:00Z",
+        checked_in_at: "2026-09-23T16:00:00Z",
       };
       const storage = {
         listVipCheckinsForDate: vi.fn().mockResolvedValue([]),
@@ -37,10 +51,9 @@ describe("VIP arrival and food release", () => {
         getVipCheckin: vi.fn().mockResolvedValue(saved),
         getVipInitialFoodRelease: vi.fn().mockResolvedValue({ expected_item_count: 2, status: "PENDING" }),
         listVipInitialFoodDispatches: vi.fn().mockResolvedValue([
-          { request_id: "chicken", status: "SENT" },
-          { request_id: "dessert", status: "SENT" },
+          { request_id: "chicken", status: "SCHEDULED" },
+          { request_id: "dessert", status: "SCHEDULED" },
         ]),
-        releaseCheckedInVipDispatches: vi.fn().mockResolvedValue(2),
       };
       const testClient = {
         configured: true,
@@ -53,7 +66,7 @@ describe("VIP arrival and food release", () => {
       expect(storage.confirmVipCheckin).not.toHaveBeenCalled();
 
       const synchronizeFood = vi.fn().mockResolvedValue({ exceptionCount: 0 });
-      const dispatch = vi.fn().mockResolvedValue({ sent: 2 });
+      const dispatch = vi.fn().mockResolvedValue({ sent: 0 });
       const result = await confirmVipArrival(testId, "2026-09-23", "Tina", {
         client: testClient, storage: storage as never,
         synchronizeFood: synchronizeFood as never,
@@ -65,7 +78,8 @@ describe("VIP arrival and food release", () => {
       }));
       expect(synchronizeFood).toHaveBeenCalledOnce();
       expect(dispatch).toHaveBeenCalledOnce();
-      expect(result.foodStatus).toBe("FOOD_SENT");
+      expect(result.checkedInAt).toBe("2026-09-23T16:00:00Z");
+      expect(result.foodStatus).toBe("FOOD_SCHEDULED");
     } finally {
       vi.useRealTimers();
     }
@@ -113,7 +127,6 @@ describe("VIP arrival and food release", () => {
         request_id: "request-1", status: dispatchStatus,
       }]),
       listVipCheckinsForDate: vi.fn().mockImplementation(async () => saved ? [saved] : []),
-      releaseCheckedInVipDispatches: vi.fn().mockResolvedValue(1),
     };
     const synchronizeFood = vi.fn().mockResolvedValue({ exceptionCount: 0 });
     const dispatch = vi.fn().mockImplementation(async () => {
@@ -132,7 +145,6 @@ describe("VIP arrival and food release", () => {
     expect(storage.confirmVipCheckin).toHaveBeenCalledWith(expect.objectContaining({
       eventId, reservationId: reservation.id, expectedItemCount: 1,
     }));
-    expect(storage.releaseCheckedInVipDispatches).toHaveBeenCalledWith(eventId);
     expect(synchronizeFood).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledTimes(1);
 

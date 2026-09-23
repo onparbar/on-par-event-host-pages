@@ -50,6 +50,7 @@ export async function POST(request: Request) {
       "Select an employee from the approved roster.",
       "Invalid VIP reservation.",
       "This VIP reservation is no longer active. No food was sent.",
+      "VIP check-in is available on the reservation date, including before its start time.",
       "OnPar bookings is not configured.",
     ].includes(error.message) ? error.message : "VIP check-in could not be completed.";
     return NextResponse.json({ error: message }, { status: 409 });
