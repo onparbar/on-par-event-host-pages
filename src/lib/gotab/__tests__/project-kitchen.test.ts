@@ -50,6 +50,42 @@ describe("Tripleseat kitchen projection", () => {
     expect(result.exceptions).toHaveLength(0);
   });
 
+  it("projects the redacted September 23 VIP's three booked platters without prep sauces", () => {
+    const reservation = structuredClone(vipPrepPayload.reservations[0]);
+    reservation.operatingDate = "2026-09-23";
+    reservation.startAt = "2026-09-23T22:00:00.000Z";
+    reservation.endAt = "2026-09-24T00:00:00.000Z";
+    reservation.foodPrep = [
+      { code: "chicken-tenders", label: "Chicken Tenders", quantity: 1, unitPriceCents: 0, totalCents: 0 },
+      { code: "mozzarella-sticks", label: "Mozzarella Sticks", quantity: 1, unitPriceCents: 0, totalCents: 0 },
+      { code: "tater-kegs", label: "Tater Kegs", quantity: 1, unitPriceCents: 0, totalCents: 0 },
+    ];
+    const checklist = generateKitchenChecklist(vipPrepKitchenEvents([reservation])[0]);
+    const keys = ["platter-chicken-tenders", "platter-mozzarella-sticks", "platter-tater-kegs"];
+    const mappings = keys.map((key) => ({
+      id: key,
+      canonicalProductKey: key,
+      displayName: key,
+      aliases: [],
+      panSize: "THIRD_PAN" as const,
+      preparationStation: "FRYER" as const,
+      gotabProductUuid: `product-${key}`,
+      verifiedAt: "2026-08-11T12:00:00.000Z",
+    }));
+    const projection = projectKitchenChecklist(checklist, mappings, {
+      sourceType: "VIP_ADDON",
+      sourceVersion: 1,
+      bookedFoodQuantities: new Map(keys.map((key) => [key, 1])),
+    });
+
+    expect(projection.exceptions).toEqual([]);
+    expect(projection.requests).toHaveLength(3);
+    expect(projection.requests.map((request) => request.sourceRecordId).sort()).toEqual(keys);
+    expect(projection.requests.every((request) =>
+      request.quantity === 1 && request.prepDueAt === "2026-09-23T21:15:00.000Z",
+    )).toBe(true);
+  });
+
   it("holds contracted food until a verified product mapping exists", () => {
     const result = projectKitchenChecklist(generateKitchenChecklist(sourceEvent), [], { sourceVersion: 1 });
     expect(result.requests).toHaveLength(0);
