@@ -133,11 +133,11 @@ function isoTimestamp(value: string, field: string) {
 function normalizedPanSize(source: EventFoodSourceItem) {
   if (source.panSize === "1/3") return "THIRD_PAN" as const;
   if (source.panSize === "1/2") return "HALF_PAN" as const;
+  const unit = source.unit.toLowerCase();
+  if (unit.includes("pretzel plate") || unit.includes("tray")) return "TRAY" as const;
   if (source.numberOfPans != null && source.numberOfPans > 0) {
     throw new Error(`${source.foodName} uses an unsupported pan size.`);
   }
-  const unit = source.unit.toLowerCase();
-  if (unit.includes("pretzel plate") || unit.includes("tray")) return "TRAY" as const;
   if (unit.includes("bowl")) return "BOWL" as const;
   if (unit.includes("dozen")) return "DOZEN" as const;
   if (unit === "each") return "EACH" as const;

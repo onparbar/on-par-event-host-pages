@@ -82,6 +82,11 @@ export default async function HomePage() {
             <strong>Event Add-Ons</strong>
             <span>Send Food add-ons live to Kitchen and close the complete add-on record to Admin.</span>
           </Link>
+          <Link className="home-link portal-module-card" href="/vip-check-in">
+            <span className="portal-module-kicker">VIP arrivals</span>
+            <strong>VIP Check-In</strong>
+            <span>Confirm VIP arrivals and release their reserved food to the kitchen.</span>
+          </Link>
           <Link className="home-link portal-module-card" href="/kitchen">
             <span className="portal-module-kicker">Daily production</span>
             <strong>Event Kitchen</strong>

@@ -18,6 +18,59 @@ function client(foodPrep = reservation.foodPrep) {
 }
 
 describe("VIP arrival and food release", () => {
+  it("shows the temporary KDS test VIP and sends its two items only on check-in", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-23T18:00:00Z");
+    try {
+      const testId = "event-host-kds-test-20260923";
+      const testEventId = `vip-${testId}`;
+      const saved = {
+        event_id: testEventId,
+        reservation_id: testId,
+        booking_date: "2026-09-23",
+        employee_name: "Tina",
+        checked_in_at: "2026-09-23T18:00:00Z",
+      };
+      const storage = {
+        listVipCheckinsForDate: vi.fn().mockResolvedValue([]),
+        confirmVipCheckin: vi.fn().mockResolvedValue(saved),
+        getVipCheckin: vi.fn().mockResolvedValue(saved),
+        getVipInitialFoodRelease: vi.fn().mockResolvedValue({ expected_item_count: 2, status: "PENDING" }),
+        listVipInitialFoodDispatches: vi.fn().mockResolvedValue([
+          { request_id: "chicken", status: "SENT" },
+          { request_id: "dessert", status: "SENT" },
+        ]),
+        releaseCheckedInVipDispatches: vi.fn().mockResolvedValue(2),
+      };
+      const testClient = {
+        configured: true,
+        fetchRange: vi.fn().mockResolvedValue({ ...vipPrepPayload, reservations: [] }),
+      };
+      const before = await listVipCheckins("2026-09-23", {
+        client: testClient, storage: storage as never,
+      });
+      expect(before).toMatchObject([{ reservationId: testId, foodStatus: "NOT_CHECKED_IN" }]);
+      expect(storage.confirmVipCheckin).not.toHaveBeenCalled();
+
+      const synchronizeFood = vi.fn().mockResolvedValue({ exceptionCount: 0 });
+      const dispatch = vi.fn().mockResolvedValue({ sent: 2 });
+      const result = await confirmVipArrival(testId, "2026-09-23", "Tina", {
+        client: testClient, storage: storage as never,
+        synchronizeFood: synchronizeFood as never,
+        dispatch: dispatch as never,
+      });
+      expect(storage.confirmVipCheckin).toHaveBeenCalledWith(expect.objectContaining({
+        eventId: testEventId,
+        expectedItemCount: 2,
+      }));
+      expect(synchronizeFood).toHaveBeenCalledOnce();
+      expect(dispatch).toHaveBeenCalledOnce();
+      expect(result.foodStatus).toBe("FOOD_SENT");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a late, not-checked-in VIP visible without dispatching food", async () => {
     const storage = {
       listVipCheckinsForDate: vi.fn().mockResolvedValue([]),

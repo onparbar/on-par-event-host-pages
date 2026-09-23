@@ -39,7 +39,6 @@ export default function VipCheckInClient() {
   const [employeeName, setEmployeeName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [accessState, setAccessState] = useState<"authorized" | "needs-admin" | "can-authorize">("authorized");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const pendingRef = useRef<string | null>(null);
   const dateRef = useRef(date);
@@ -56,22 +55,13 @@ export default function VipCheckInClient() {
         reservations?: VipCheckinRow[];
         employees?: string[];
         error?: string;
-        canAuthorize?: boolean;
       };
-      if (response.status === 403) {
-        if (selectedDate !== dateRef.current || sequence !== refreshSeq.current) return;
-        setRows([]);
-        setError("");
-        setAccessState(payload.canAuthorize ? "can-authorize" : "needs-admin");
-        return;
-      }
       if (!response.ok || !payload.reservations) {
         throw new Error(payload.error || "VIP reservations could not be loaded.");
       }
       if (selectedDate !== dateRef.current || sequence !== refreshSeq.current) return;
       setRows(payload.reservations);
       setEmployees(payload.employees ?? []);
-      setAccessState("authorized");
       setError("");
     } catch (loadError) {
       if (selectedDate === dateRef.current && sequence === refreshSeq.current) {
@@ -128,17 +118,6 @@ export default function VipCheckInClient() {
     }
   }
 
-  async function authorizeTablet() {
-    setError("");
-    try {
-      const response = await fetch("/api/vip-checkin/device", { method: "POST" });
-      if (!response.ok) throw new Error("An admin must authorize this tablet before staff can check in VIPs.");
-      await refresh(date);
-    } catch (authorizationError) {
-      setError(authorizationError instanceof Error ? authorizationError.message : "Tablet authorization failed.");
-    }
-  }
-
   function selectEmployee(value: string) {
     setEmployeeName(value);
     try {
@@ -177,19 +156,8 @@ export default function VipCheckInClient() {
       </div>
 
       {error ? <p className="vip-checkin-error" role="alert">{error}</p> : null}
-      {accessState !== "authorized" ? (
-        <div className="vip-checkin-access">
-          <h2>Authorize this staff tablet</h2>
-          <p>An admin authorizes each tablet once. Employees then select their name here—no employee code is needed.</p>
-          {accessState === "can-authorize" ? (
-            <button type="button" onClick={() => void authorizeTablet()}>Authorize this tablet</button>
-          ) : (
-            <p>Ask an admin to sign in on the <a href="/admin">Admin tab</a> using this tablet, then return here and tap Refresh.</p>
-          )}
-        </div>
-      ) : null}
       {loading ? <p className="vip-checkin-empty">Loading VIP reservations…</p> : null}
-      {!loading && accessState === "authorized" && !rows.length ? (
+      {!loading && !rows.length ? (
         <p className="vip-checkin-empty">No active VIP reservations found for {easternDate(date)}.</p>
       ) : null}
 

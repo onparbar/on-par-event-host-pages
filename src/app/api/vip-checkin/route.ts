@@ -1,24 +1,14 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
 import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { KITCHEN_STAFF_ROSTER } from "@/lib/kitchen/storage";
 import { assertKitchenDate } from "@/lib/kitchen/sync";
 import { isSameOriginOperationalRequest, operationalAccessDenied } from "@/lib/operational-access";
 import { confirmVipArrival, listVipCheckins } from "@/lib/vip-checkin/service";
-import { hasVipDeviceSession } from "@/lib/vip-checkin/device-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const cookieStore = await cookies();
-  if (!hasVipDeviceSession(cookieStore)) {
-    return NextResponse.json({
-      error: "This tablet needs one-time admin authorization for VIP check-in.",
-      canAuthorize: hasAdminSession(cookieStore),
-    }, { status: 403 });
-  }
   const date = new URL(request.url).searchParams.get("date") ?? todayInEntertainmentTimeZone();
   try {
     assertKitchenDate(date);
@@ -41,9 +31,6 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   if (!isSameOriginOperationalRequest(request)) return operationalAccessDenied();
-  if (!hasVipDeviceSession(await cookies())) {
-    return NextResponse.json({ error: "This tablet is not authorized for VIP check-in." }, { status: 403 });
-  }
   let body: { reservationId?: unknown; date?: unknown; employeeName?: unknown };
   try {
     body = await request.json() as typeof body;

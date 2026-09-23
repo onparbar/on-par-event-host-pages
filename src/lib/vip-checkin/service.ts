@@ -12,6 +12,7 @@ import {
   vipPrepExternalId,
   vipPrepKitchenEvents,
 } from "@/lib/vip-prep/client";
+import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
 
 export type VipFoodStatus =
   | "NOT_CHECKED_IN"
@@ -73,7 +74,9 @@ export async function listVipCheckins(
     storage.listVipCheckinsForDate(date),
   ]);
   const checkinById = new Map(checkins.map((row) => [row.reservation_id, row]));
-  const rows = await Promise.all(payload.reservations.map(async (reservation) => {
+  const testReservation = vipKdsTestReservation(date);
+  const reservations = testReservation ? [...payload.reservations, testReservation] : payload.reservations;
+  const rows = await Promise.all(reservations.map(async (reservation) => {
     const checkin = checkinById.get(reservation.id);
     return {
       reservationId: reservation.id,
@@ -112,7 +115,9 @@ export async function confirmVipArrival(
   const { client, storage } = dependencies(options);
   if (!client.configured) throw new Error("OnPar bookings is not configured.");
   const payload = await client.fetchRange(date, date);
-  const reservation = payload.reservations.find((item) => item.id === reservationId);
+  const testReservation = vipKdsTestReservation(date);
+  const reservation = [...payload.reservations, ...(testReservation ? [testReservation] : [])]
+    .find((item) => item.id === reservationId);
   if (!reservation || !["confirmed", "checked_in"].includes(reservation.status)) {
     throw new Error("This VIP reservation is no longer active. No food was sent.");
   }

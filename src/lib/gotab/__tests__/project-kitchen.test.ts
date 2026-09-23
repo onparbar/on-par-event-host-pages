@@ -4,6 +4,7 @@ import { translateEventHostFoodAddOns } from "@/lib/kitchen/addons";
 import { projectKitchenChecklist } from "../project-kitchen";
 import { vipPrepKitchenEvents } from "@/lib/vip-prep/client";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
+import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
 
 const sourceEvent = {
   eventId: 123,
@@ -19,6 +20,34 @@ const sourceEvent = {
 };
 
 describe("Tripleseat kitchen projection", () => {
+  it("projects the temporary VIP check-in test as exactly two single-item KDS requests", () => {
+    const reservation = vipKdsTestReservation("2026-09-23", Date.parse("2026-09-23T18:00:00Z"))!;
+    const checklist = generateKitchenChecklist(vipPrepKitchenEvents([reservation])[0]);
+    const keys = ["platter-chicken-tenders", "dessert-platter"];
+    const mappings = keys.map((key) => {
+      const row = checklist.sections.flatMap((section) => section.rows)
+        .find((item) => item.key === key)!;
+      return {
+        id: key,
+        canonicalProductKey: key,
+        displayName: row.foodName,
+        aliases: [],
+        panSize: (row.panSize === "1/3" ? "THIRD_PAN" : row.panSize === "1/2" ? "HALF_PAN" : "TRAY") as "THIRD_PAN" | "HALF_PAN" | "TRAY",
+        preparationStation: (key === "dessert-platter" ? "COLD_PREP" : "FRYER") as "COLD_PREP" | "FRYER",
+        gotabProductUuid: `test-${key}`,
+        verifiedAt: "2026-09-23T17:00:00Z",
+      };
+    });
+    const projection = projectKitchenChecklist(checklist, mappings, {
+      sourceType: "VIP_ADDON",
+      sourceVersion: 1,
+      bookedFoodQuantities: new Map(keys.map((key) => [key, 1])),
+    });
+    expect(projection.exceptions).toEqual([]);
+    expect(projection.requests.map((request) => [request.sourceRecordId, request.quantity]).sort())
+      .toEqual([["dessert-platter", 1], ["platter-chicken-tenders", 1]]);
+  });
+
   it("sends booked VIP platter counts while retaining kitchen pan prep", () => {
     const reservation = structuredClone(vipPrepPayload.reservations[0]);
     reservation.foodPrep[0].quantity = 1;
