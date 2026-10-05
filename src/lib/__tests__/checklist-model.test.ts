@@ -18,6 +18,22 @@ const emptyFoodState: FoodState = {
 };
 
 describe("Event Host food add-ons", () => {
+  it("prices each dessert platter at $120 even when an old draft has a manual price", () => {
+    const dessert = foodAddOns.find((item) => item.key === "dessert-platter")!;
+    expect(dessert.kind).toBe("fixed-price");
+    expect(foodUnitPrice(dessert, { quantity: "2", manualPrice: "25" })).toBe(120);
+  });
+
+  it("prices mini golf by the entered guest count", () => {
+    const miniGolf = entertainmentAddOns.find((item) => item.key === "mini-golf")!;
+    expect(miniGolf.unitLabel).toBe("guests");
+    expect(entertainmentUnitPrice(miniGolf, {
+      quantity: "20",
+      selectedRateKey: "",
+      manualPrice: "",
+    }) * 20).toBe(180);
+  });
+
   it("prices pool tables by the selected weekday rate", () => {
     const pool = entertainmentAddOns.find((item) => item.key === "pool-tables")!;
     expect(entertainmentUnitPrice(pool, {

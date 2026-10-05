@@ -94,7 +94,7 @@ export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
     label: "Mini Golf",
     kind: "fixed-price",
     fixedPrice: 9,
-    unitLabel: "courses",
+    unitLabel: "guests",
   },
   {
     key: "shuffleboard",
@@ -179,7 +179,7 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "garlic-parm", label: "Garlic Parm", kind: "fixed-price", fixedPrice: 5 },
   { key: "buffalo-sauce", label: "Buffalo Sauce", kind: "fixed-price", fixedPrice: 5 },
   { key: "ranch", label: "Ranch", kind: "fixed-price", fixedPrice: 5 },
-  { key: "dessert-platter", label: "Dessert Platter", kind: "manual-price" },
+  { key: "dessert-platter", label: "Dessert Platter", kind: "fixed-price", fixedPrice: 120 },
   { key: "taco-beef", label: "Beef", kind: "quantity-only" },
   { key: "taco-chicken", label: "Chicken", kind: "quantity-only" },
   { key: "taco-black-beans", label: "Black Beans", kind: "quantity-only" },
