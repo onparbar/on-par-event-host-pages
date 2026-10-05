@@ -10,15 +10,18 @@ function request(
   query = "from=2026-08-04&to=2026-08-11",
   token = "test-entertainment-service-token",
 ) {
-  return new Request(`https://example.test/api/entertainment-schedule?${query}`, {
-    headers: token ? { authorization: `Bearer ${token}` } : undefined,
-  });
+  return new Request(
+    `https://example.test/api/entertainment-schedule?${query}`,
+    {
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    },
+  );
 }
 
 function reservation(date: string, resourceId: string) {
   return {
     id: `${date}:${resourceId}`,
-    tripleseatEventId: "tripleseat-event-1",
+    tripleseatEventId: "tripleseat-event-1" as string | null,
     localEventId: "local-event-1",
     eventName: "Redacted Event",
     operatingDate: date,
@@ -31,9 +34,23 @@ function reservation(date: string, resourceId: string) {
     source: "tripleseat",
     manualOverride: false,
     needsReview: false,
+    reviewIssues: [],
     updatedAt: `${date}T12:00:00.000Z`,
     notes: "Must not be exposed",
     tripleseatBookingId: "booking-must-not-be-exposed",
+  };
+}
+
+function day(date: string, reservations = [reservation(date, "bowling-1")]) {
+  return {
+    date,
+    reservations,
+    events: [],
+    conflicts: [],
+    sync: null,
+    sourceMode: "live",
+    warnings: [],
+    missingEnvironmentVariables: [],
   };
 }
 
@@ -45,9 +62,7 @@ describe("read-only entertainment schedule service API", () => {
       "ENTERTAINMENT_SCHEDULE_API_TOKEN",
       "test-entertainment-service-token",
     );
-    getEntertainmentDay.mockImplementation(async (date: string) => ({
-      reservations: [reservation(date, "bowling-1")],
-    }));
+    getEntertainmentDay.mockImplementation(async (date: string) => day(date));
   });
 
   afterEach(() => {
@@ -57,7 +72,10 @@ describe("read-only entertainment schedule service API", () => {
   it("rejects missing, incorrect, and unconfigured bearer tokens", async () => {
     const { GET } = await import("../route");
 
-    for (const candidate of [request(undefined, ""), request(undefined, "wrong")]) {
+    for (const candidate of [
+      request(undefined, ""),
+      request(undefined, "wrong"),
+    ]) {
       const response = await GET(candidate);
       expect(response.status).toBe(401);
       expect(response.headers.get("www-authenticate")).toBe("Bearer");
@@ -82,8 +100,9 @@ describe("read-only entertainment schedule service API", () => {
   });
 
   it("returns a sanitized, sorted reservation projection for every date", async () => {
-    getEntertainmentDay.mockImplementation(async (date: string) => ({
-      reservations:
+    getEntertainmentDay.mockImplementation(async (date: string) =>
+      day(
+        date,
         date === "2026-08-04"
           ? [
               reservation(date, "bowling-2"),
@@ -93,11 +112,10 @@ describe("read-only entertainment schedule service API", () => {
               },
             ]
           : [reservation(date, "bowling-1")],
-    }));
-    const { GET } = await import("../route");
-    const response = await GET(
-      request("from=2026-08-04&to=2026-08-05"),
+      ),
     );
+    const { GET } = await import("../route");
+    const response = await GET(request("from=2026-08-04&to=2026-08-05"));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
@@ -111,11 +129,9 @@ describe("read-only entertainment schedule service API", () => {
       timeZone: "America/New_York",
       reservationCount: 3,
     });
-    expect(payload.reservations.map((item: { id: string }) => item.id)).toEqual([
-      "2026-08-04:bowling-1",
-      "2026-08-04:bowling-2",
-      "2026-08-05:bowling-1",
-    ]);
+    expect(payload.reservations.map((item: { id: string }) => item.id)).toEqual(
+      ["2026-08-04:bowling-1", "2026-08-04:bowling-2", "2026-08-05:bowling-1"],
+    );
     expect(payload.reservations[0]).toMatchObject({
       eventId: "local-event-1",
       eventName: "Redacted Event",
@@ -126,6 +142,16 @@ describe("read-only entertainment schedule service API", () => {
     });
     expect(payload.reservations[0]).not.toHaveProperty("notes");
     expect(payload.reservations[0]).not.toHaveProperty("tripleseatBookingId");
+    expect(payload.evidence).toMatchObject({
+      version: 1,
+      allSyncsFresh: false,
+      coverage: {
+        dates: ["2026-08-04", "2026-08-05"],
+        overlapComplete: false,
+        buyoutsComplete: false,
+      },
+    });
+    expect(payload.evidence.days[0].issues).toContain("sync_missing");
   });
 
   it("returns a safe upstream error", async () => {

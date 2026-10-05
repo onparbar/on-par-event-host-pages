@@ -405,24 +405,82 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
     }
   }
 
+  private async allRows<T>(
+    table: string,
+    params: URLSearchParams,
+    identity: keyof T,
+  ): Promise<T[]> {
+    const rows: T[] = [];
+    const seen = new Set<unknown>();
+    let total: number | null = null;
+    do {
+      const query = new URLSearchParams(params);
+      query.set("offset", String(rows.length));
+      query.set("limit", "500");
+      const response = await this.request(table, query, {
+        headers: { Prefer: "count=exact" },
+      });
+      if (!response.ok)
+        throw new Error(
+          `Entertainment database request failed (${response.status}).`,
+        );
+      const range = response.headers
+        .get("content-range")
+        ?.match(/^(?:(\d+)-(\d+)|\*)\/(\d+)$/);
+      const page = (await response.json()) as T[];
+      const count = range ? Number(range[3]) : NaN;
+      if (
+        !range ||
+        !Array.isArray(page) ||
+        !Number.isSafeInteger(count) ||
+        count > 10_000 ||
+        (total != null && total !== count) ||
+        (count === 0
+          ? page.length !== 0
+          : Number(range[1]) !== rows.length ||
+            Number(range[2]) !== rows.length + page.length - 1 ||
+            page.length === 0) ||
+        rows.length + page.length > count
+      ) {
+        throw new Error(
+          "Entertainment database pagination could not be verified.",
+        );
+      }
+      total = count;
+      for (const row of page) {
+        const id = row?.[identity];
+        if (typeof id !== "string" || !id || seen.has(id)) {
+          throw new Error(
+            "Entertainment database pagination could not be verified.",
+          );
+        }
+        seen.add(id);
+        rows.push(row);
+      }
+    } while (rows.length < total);
+    return rows;
+  }
+
   async getDay(date: string): Promise<StoredEntertainmentDay> {
     const [eventRows, reservationRows, syncRows] = await Promise.all([
-      this.jsonRequest<EventRow[]>(
+      this.allRows<EventRow>(
         "entertainment_event_snapshots",
         new URLSearchParams({
           select: "*",
           operating_date: `eq.${date}`,
           active: "eq.true",
-          order: "event_start_at.asc.nullslast,event_name.asc",
+          order: "event_start_at.asc.nullslast,event_id.asc",
         }),
+        "event_id",
       ),
-      this.jsonRequest<ReservationRow[]>(
+      this.allRows<ReservationRow>(
         "entertainment_reservations",
         new URLSearchParams({
           select: "*",
           operating_date: `eq.${date}`,
-          order: "start_at.asc,resource_id.asc",
+          order: "start_at.asc,resource_id.asc,id.asc",
         }),
+        "id",
       ),
       this.jsonRequest<SyncRow[]>(
         "entertainment_sync_runs",

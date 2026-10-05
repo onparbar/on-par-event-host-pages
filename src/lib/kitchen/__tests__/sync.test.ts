@@ -120,6 +120,7 @@ describe("kitchen synchronization", () => {
       adapter: testAdapter(() => [
         {
           eventId: "red-buyout-1",
+          documentMetadata: [],
           eventName: "Redacted Full Buyout",
           localDate: "2026-08-15",
           startTime: "2026-08-15T18:00:00-04:00",
@@ -321,6 +322,7 @@ describe("kitchen synchronization", () => {
   it("uses the event booking instead of a same-name VIP reservation for prep", async () => {
     const eventBooking: TripleseatKitchenSourceEvent = {
       eventId: "tripleseat-event-123",
+      documentMetadata: [],
       bookingId: "tripleseat-booking-123",
       eventName: "Redacted VIP",
       localDate: "2026-08-15",
@@ -374,6 +376,7 @@ describe("kitchen synchronization", () => {
   it("matches a VIP suffix to the event booking name", async () => {
     const eventBooking: TripleseatKitchenSourceEvent = {
       eventId: "tripleseat-buyout-924",
+      documentMetadata: [],
       eventName: "Peoples Buy out",
       localDate: "2026-09-24",
       startTime: "2026-09-24T18:00:00-04:00",
@@ -406,7 +409,7 @@ describe("kitchen synchronization", () => {
       now: viewingTime("2026-09-24"),
     });
 
-    expect(day.events.filter((event) => event.event.eventId.startsWith("vip-"))).toEqual([]);
+    expect(day.events.filter((event) => String(event.event.eventId).startsWith("vip-"))).toEqual([]);
     expect(day.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -454,7 +457,7 @@ describe("kitchen synchronization", () => {
     incomplete.sourceUpdatedAt = "2026-08-14T20:00:00.000Z";
 
     const day = await syncKitchenDay("2026-08-21", {
-      adapter: testAdapter(() => [incomplete]),
+      adapter: testAdapter(() => [{ ...incomplete, documentMetadata: [] }]),
       storage: createMemoryKitchenStorage(),
       vipPrepClient: {
         configured: false,
@@ -478,7 +481,7 @@ describe("kitchen synchronization", () => {
     lost.status = "LOST";
 
     const day = await syncKitchenDay("2026-08-21", {
-      adapter: testAdapter(() => [lost]),
+      adapter: testAdapter(() => [{ ...lost, documentMetadata: [] }]),
       storage: createMemoryKitchenStorage(),
       vipPrepClient: { configured: false, fetchRange: async () => vipPrepPayload },
       now: new Date("2026-08-14T22:00:00.000Z"),

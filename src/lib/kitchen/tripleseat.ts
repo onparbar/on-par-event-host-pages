@@ -1022,11 +1022,14 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     startDate: string,
     endDate = startDate,
     status: string | null = REQUIRED_STATUS,
+    requireComplete = false,
   ) {
     const events: UnknownRecord[] = [];
     const seen = new Set<string>();
 
     const searchStatus = async (requestedStatus: string | null) => {
+      let expectedPages: number | null = null;
+      const statusSeen = new Set<string>();
       for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
         const query = new URLSearchParams({
           event_start_date: apiDate(startDate),
@@ -1040,12 +1043,45 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
           query.set("status", requestedStatus);
         }
         const payload = await this.requestJson(`events/search?${query}`);
+        const envelope = asRecord(payload);
+        const totalPages = envelope ? asNumber(envelope.total_pages) : null;
+        if (requireComplete) {
+          if (
+            !Array.isArray(envelope?.results) ||
+            totalPages == null ||
+            !Number.isInteger(totalPages) ||
+            totalPages < 0 ||
+            totalPages > MAX_EVENT_PAGES ||
+            (expectedPages != null && totalPages !== expectedPages)
+          ) {
+            throw new Error(
+              "Tripleseat event search completeness could not be verified.",
+            );
+          }
+          expectedPages = totalPages;
+        }
         const records = extractArray(payload, ["results", "events", "data"])
           .map(asRecord)
           .filter((record): record is UnknownRecord => record != null);
         let added = 0;
+        if (
+          requireComplete &&
+          (records.length !== (envelope!.results as unknown[]).length ||
+            (records.length === 0 && totalPages! > 1) ||
+            (totalPages === 0 && records.length > 0))
+        ) {
+          throw new Error(
+            "Tripleseat event search completeness could not be verified.",
+          );
+        }
         for (const record of records) {
           const id = sourceEventId(record);
+          if (requireComplete && (!id || statusSeen.has(id))) {
+            throw new Error(
+              "Tripleseat event search completeness could not be verified.",
+            );
+          }
+          if (id) statusSeen.add(id);
           if (id && !seen.has(id)) {
             seen.add(id);
             events.push(record);
@@ -1053,11 +1089,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
           }
         }
 
-        const envelope = asRecord(payload);
-        const totalPages = envelope ? asNumber(envelope.total_pages) : null;
         if (
           records.length === 0 ||
-          added === 0 ||
+          (!requireComplete && added === 0) ||
           (totalPages != null && page >= totalPages)
         ) {
           break;
@@ -1076,8 +1110,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       ]) {
         try {
           await searchStatus(fallbackStatus);
-          if (events.length > 0) break;
+          if (!requireComplete && events.length > 0) break;
         } catch (error) {
+          if (requireComplete) throw error;
           if (!(error instanceof TripleseatApiError)) throw error;
         }
       }
@@ -1272,7 +1307,10 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
-    const fullBuyout = isFullBuyoutRecord(summary, detail);
+    // On Par uses every Tentative event as a complete venue buyout, independent of its name.
+    const fullBuyout =
+      status?.trim().toUpperCase() === "TENTATIVE" ||
+      isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
     if (status && status.toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
       return null;
@@ -1656,7 +1694,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         ].join(", ")}.`,
       );
     }
-    const summaries = await this.eventSummaries(date, date, null);
+    const summaries = await this.eventSummaries(date, date, null, true);
     const events = await Promise.all(
       summaries.map((summary) =>
         this.normalizeEntertainmentEvent(summary, date),
