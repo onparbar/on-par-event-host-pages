@@ -5,6 +5,7 @@ import {
   appetizerBarRefillAddOns,
   entertainmentAddOns,
   entertainmentUnitPrice,
+  numeric,
   standardFoodAddOns,
   tacoBarRefillAddOns,
   wingBarRefillAddOns,
@@ -46,6 +47,11 @@ describe("Event Host food add-ons", () => {
       selectedRateKey: "fri-sat",
       manualPrice: "",
     })).toBe(18);
+    expect(entertainmentUnitPrice(pool, {
+      quantity: "5",
+      selectedRateKey: "fri-sat",
+      manualPrice: "",
+    }) * numeric("5")).toBe(90);
   });
 
   it("uses the same food keys as the Kitchen live add-on rules", () => {
