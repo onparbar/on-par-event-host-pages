@@ -7,6 +7,7 @@ import type {
 } from "@/lib/admin-operations";
 import {
   AdminOperationsReview,
+  completedChecklistEventName,
   ContractEvidenceDrawer,
 } from "../AdminClient";
 
@@ -51,6 +52,15 @@ const operations: AdminOperationsPayload = {
 };
 
 describe("admin event readiness UI", () => {
+  it("uses the saved event name for completed checklists", () => {
+    expect(
+      completedChecklistEventName(
+        { eventId: 7002, eventName: "Correct Event Name" },
+        "Wrong Static Name",
+      ),
+    ).toBe("Correct Event Name");
+  });
+
   it("renders completeness, source access, and combined conflicts", () => {
     const html = renderToStaticMarkup(
       createElement(AdminOperationsReview, {

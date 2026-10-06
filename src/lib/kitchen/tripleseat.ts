@@ -35,6 +35,12 @@ const UNASSIGNABLE_BOOKING_DOCUMENTS_NOTE =
   "Needs Review: Tripleseat booking documents were not imported because they could not be assigned to exactly one matching event. Review the source event.";
 const UNVERIFIED_BOOKING_CONTRACT_NOTE =
   "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.";
+const CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS = new Set([
+  "mozzarella sticks",
+  "wings",
+  "chicken tenders",
+  "fries",
+]);
 
 type UnknownRecord = Record<string, unknown>;
 type FetchImplementation = typeof fetch;
@@ -127,6 +133,110 @@ function asNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function asLabel(value: unknown) {
+  const record = asRecord(value);
+  return (
+    asString(value) ??
+    asString(record?.name) ??
+    asString(record?.label) ??
+    asString(record?.value) ??
+    asString(record?.hex)
+  );
+}
+
+function isRedColor(value: string) {
+  const normalized = value.trim().toLocaleLowerCase("en-US");
+  if (normalized === "red" || normalized === "#f00" || normalized === "#ff0000") {
+    return true;
+  }
+  const hex = normalized.match(/^#?([0-9a-f]{6})$/i);
+  if (hex) {
+    const red = Number.parseInt(hex[1].slice(0, 2), 16);
+    const green = Number.parseInt(hex[1].slice(2, 4), 16);
+    const blue = Number.parseInt(hex[1].slice(4, 6), 16);
+    return red >= 160 && red > green * 1.6 && red > blue * 1.6;
+  }
+  const rgb = normalized.match(
+    /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/,
+  );
+  if (!rgb) return false;
+  const [red, green, blue] = rgb.slice(1).map(Number);
+  return red >= 160 && red > green * 1.6 && red > blue * 1.6;
+}
+
+function isFullBuyoutRecord(...records: UnknownRecord[]) {
+  const booleanKeys = [
+    "full_buyout",
+    "is_full_buyout",
+    "fullBuildingBuyout",
+    "isFullBuyout",
+  ];
+  if (
+    records.some((record) =>
+      booleanKeys.some((key) => record[key] === true),
+    )
+  ) {
+    return true;
+  }
+
+  const colorKeys = [
+    "color",
+    "colour",
+    "event_color",
+    "event_colour",
+    "eventColor",
+    "eventColour",
+    "calendar_color",
+    "calendarColor",
+    "booking_color",
+    "bookingColor",
+    "status_color",
+    "statusColor",
+    "event_status_color",
+    "eventStatusColor",
+    "color_code",
+    "colorCode",
+    "hex_color",
+    "hexColor",
+    "background_color",
+    "backgroundColor",
+  ];
+  if (
+    records.some((record) =>
+      colorKeys.some((key) => {
+        const value = asLabel(record[key]);
+        return value != null && isRedColor(value);
+      }),
+    )
+  ) {
+    return true;
+  }
+
+  const markerKeys = [
+    "status",
+    "event_type",
+    "event_type_name",
+    "booking_type",
+    "booking_type_name",
+  ];
+  if (
+    records.some(
+      (record) =>
+        asString(record.status)?.trim().toLocaleUpperCase("en-US") ===
+        "TENTATIVE",
+    )
+  ) {
+    return true;
+  }
+  return records.some((record) =>
+    markerKeys.some((key) =>
+      /full\s*(?:(?:building|facility)\s*)?buy[\s-]*out|entire\s+building/i.test(
+        asLabel(record[key]) ?? "",
+      ),
+    ),
+  );
 }
 
 function extractArray(value: unknown, keys: readonly string[]) {
@@ -390,6 +500,19 @@ function normalizeMenuSelection(value: unknown): KitchenSourceSelection[] {
   }
 
   const selection = normalizeMenuSelectionRecord(record);
+  if (
+    selection &&
+    selection.sourceId != null &&
+    selection.sourceCategory == null &&
+    selection.quantity != null &&
+    Number.isInteger(selection.quantity) &&
+    selection.quantity > 0 &&
+    CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS.has(
+      normalizedSelectionName(selection.name),
+    )
+  ) {
+    selection.isFood = true;
+  }
   const modifiers = extractArray(record.menu_modifier_selections, [
     "menu_modifier_selections",
   ]).flatMap((modifier) => {
@@ -419,10 +542,10 @@ function foodDocumentSelections(event: UnknownRecord) {
         continue;
       }
       const name =
-        asString(line.description) ||
         asString(line.display_name) ||
         asString(line.internal_name) ||
-        asString(line.name);
+        asString(line.name) ||
+        asString(line.description);
       if (!name) {
         continue;
       }
@@ -458,13 +581,15 @@ function documentFoodNotes(
           const category = documentLineItemCategory(line.category);
           const categoryKey = normalizedSelectionName(
             category.displayName ?? "",
-          );
+          ).replace(/[_-]+/g, " ");
+          if (!/^special instructions?$/.test(categoryKey)) {
+            return [];
+          }
           const candidates = [];
           const longDescription = asString(line.long_description);
           if (longDescription) {
             candidates.push({
               body: longDescription,
-              foodContext: category.isFood,
               source,
               sourceId:
                 asString(line.id) ??
@@ -474,26 +599,21 @@ function documentFoodNotes(
                 asString(documentRecord.updated_at),
             });
           }
-          if (
-            categoryKey === "notes" ||
-            categoryKey === "special notes"
-          ) {
-            const description =
-              asString(line.description) ||
-              asString(line.display_name) ||
-              asString(line.name);
-            if (description) {
-              candidates.push({
-                body: description,
-                source,
-                sourceId:
-                  asString(line.id) ??
-                  (documentId ? `document:${documentId}` : null),
-                sourceUpdatedAt:
-                  asString(line.updated_at) ??
-                  asString(documentRecord.updated_at),
-              });
-            }
+          const description =
+            asString(line.description) ||
+            asString(line.display_name) ||
+            asString(line.name);
+          if (description) {
+            candidates.push({
+              body: description,
+              source,
+              sourceId:
+                asString(line.id) ??
+                (documentId ? `document:${documentId}` : null),
+              sourceUpdatedAt:
+                asString(line.updated_at) ??
+                asString(documentRecord.updated_at),
+            });
           }
           return candidates;
         },
@@ -906,40 +1026,60 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const events: UnknownRecord[] = [];
     const seen = new Set<string>();
 
-    for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
-      const query = new URLSearchParams({
-        event_start_date: apiDate(startDate),
-        event_end_date: apiDate(endDate),
-        location_ids: this.locationId,
-        order: "event_start",
-        sort_direction: "asc",
-        page: String(page),
-      });
-      if (status) {
-        query.set("status", status);
-      }
-      const payload = await this.requestJson(`events/search?${query}`);
-      const records = extractArray(payload, ["results", "events", "data"])
-        .map(asRecord)
-        .filter((record): record is UnknownRecord => record != null);
-      let added = 0;
-      for (const record of records) {
-        const id = sourceEventId(record);
-        if (id && !seen.has(id)) {
-          seen.add(id);
-          events.push(record);
-          added += 1;
+    const searchStatus = async (requestedStatus: string | null) => {
+      for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
+        const query = new URLSearchParams({
+          event_start_date: apiDate(startDate),
+          event_end_date: apiDate(endDate),
+          location_ids: this.locationId,
+          order: "event_start",
+          sort_direction: "asc",
+          page: String(page),
+        });
+        if (requestedStatus) {
+          query.set("status", requestedStatus);
+        }
+        const payload = await this.requestJson(`events/search?${query}`);
+        const records = extractArray(payload, ["results", "events", "data"])
+          .map(asRecord)
+          .filter((record): record is UnknownRecord => record != null);
+        let added = 0;
+        for (const record of records) {
+          const id = sourceEventId(record);
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            events.push(record);
+            added += 1;
+          }
+        }
+
+        const envelope = asRecord(payload);
+        const totalPages = envelope ? asNumber(envelope.total_pages) : null;
+        if (
+          records.length === 0 ||
+          added === 0 ||
+          (totalPages != null && page >= totalPages)
+        ) {
+          break;
         }
       }
+    };
 
-      const envelope = asRecord(payload);
-      const totalPages = envelope ? asNumber(envelope.total_pages) : null;
-      if (
-        records.length === 0 ||
-        added === 0 ||
-        (totalPages != null && page >= totalPages)
-      ) {
-        break;
+    await searchStatus(status);
+    if (status === null && events.length === 0) {
+      for (const fallbackStatus of [
+        "DEFINITE",
+        "TENTATIVE",
+        "PROSPECT",
+        "LOST",
+        "CLOSED",
+      ]) {
+        try {
+          await searchStatus(fallbackStatus);
+          if (events.length > 0) break;
+        } catch (error) {
+          if (!(error instanceof TripleseatApiError)) throw error;
+        }
       }
     }
 
@@ -1006,18 +1146,10 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       };
     }
 
-    const bookingNotes = await this.parentFoodNotes(
-      "bookings",
-      bookingId,
-      "booking-note",
-    );
     return {
       selections: foodDocumentSelections(booking),
       metadata: documentMetadata(booking),
-      foodNotes: mergeKitchenFoodNotes(
-        documentFoodNotes(booking, "booking-document"),
-        bookingNotes,
-      ),
+      foodNotes: documentFoodNotes(booking, "booking-document"),
       notes: [] as string[],
     };
   }
@@ -1091,31 +1223,6 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     return (await this.noteRecords("events", eventId)).length;
   }
 
-  private async parentFoodNotes(
-    parent: "events" | "bookings",
-    parentId: string,
-    source: "event-note" | "booking-note",
-  ) {
-    const notes = await this.noteRecords(parent, parentId);
-    return extractKitchenFoodNotes(
-      notes.flatMap((note) => {
-        const body = asString(note.body);
-        return body
-          ? [
-              {
-                body,
-                source,
-                sourceId: asString(note.id),
-                sourceUpdatedAt:
-                  asString(note.updated_at) ??
-                  asString(note.created_at),
-              },
-            ]
-          : [];
-      }),
-    );
-  }
-
   private async bookingEntertainmentItems(
     bookingId: string,
     eventId: string,
@@ -1165,8 +1272,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
+    const fullBuyout = isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
-    if (status && status.toUpperCase() !== REQUIRED_STATUS) {
+    if (status && status.toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
       return null;
     }
     if (locationId && locationId !== this.locationId) {
@@ -1240,6 +1348,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         asString(detail.event_end) ||
         asString(detail.end_time),
       status,
+      ...(fullBuyout ? { fullBuyout: true } : {}),
       rooms,
       items,
       categoryNames,
@@ -1259,10 +1368,11 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
+    const fullBuyout = isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
     const bookingId = asString(detail.booking_id);
 
-    if (status && status.toUpperCase() !== REQUIRED_STATUS) {
+    if (status && status.toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
       return null;
     }
     if (locationId && locationId !== this.locationId) {
@@ -1270,12 +1380,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     }
 
     const eventDocumentSelections = foodDocumentSelections(detail);
-    const [structuredSelections, eventNotes] = await Promise.all([
-      this.menuSelections(eventId),
-      this.parentFoodNotes("events", eventId, "event-note"),
-    ]);
+    const structuredSelections = await this.menuSelections(eventId);
     const bookingDocuments =
-      bookingId && eventDocumentSelections.length === 0
+      bookingId
         ? await this.bookingDocuments(bookingId, eventId)
         : {
             selections: [] as KitchenSourceSelection[],
@@ -1287,19 +1394,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       structuredSelections,
       [...eventDocumentSelections, ...bookingDocuments.selections],
     );
-    const description = asString(detail.description);
     const foodNotes = mergeKitchenFoodNotes(
-      description
-        ? extractKitchenFoodNotes([
-            {
-              body: description,
-              source: "event-description",
-              sourceId: eventId,
-              sourceUpdatedAt: asString(detail.updated_at),
-            },
-          ])
-        : [],
-      eventNotes,
       documentFoodNotes(detail, "event-document"),
       bookingDocuments.foodNotes,
     );
@@ -1335,6 +1430,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         asNumber(detail.guest_count) ??
         asNumber(detail.guaranteed_guest_count),
       status,
+      ...(fullBuyout ? { fullBuyout: true } : {}),
       statusVerified: status?.toUpperCase() === REQUIRED_STATUS,
       room: roomName(detail),
       selections: merged.selections,
@@ -1361,6 +1457,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
+    const fullBuyout = isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
     if (locationId && locationId !== this.locationId) {
       return null;
@@ -1441,6 +1538,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       shortenedOperationalNoteFragmentCount:
         operationalNoteResult.shortenedFragmentCount,
       sourceUpdatedAt: asString(detail.updated_at),
+      ...(fullBuyout ? { fullBuyout: true } : {}),
     };
   }
 
@@ -1468,7 +1566,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       );
     }
 
-    const summaries = await this.eventSummaries(date);
+    const summaries = await this.eventSummaries(date, date, null);
     const events: TripleseatKitchenSourceEvent[] = [];
     for (const summary of summaries) {
       const event = await this.normalizeEvent(summary, date);
@@ -1558,7 +1656,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         ].join(", ")}.`,
       );
     }
-    const summaries = await this.eventSummaries(date);
+    const summaries = await this.eventSummaries(date, date, null);
     const events = await Promise.all(
       summaries.map((summary) =>
         this.normalizeEntertainmentEvent(summary, date),

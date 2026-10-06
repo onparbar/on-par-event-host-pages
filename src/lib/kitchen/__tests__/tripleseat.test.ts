@@ -92,6 +92,140 @@ describe("Tripleseat adapter security and normalization", () => {
     ]);
   });
 
+  it("falls back to explicit statuses when an unfiltered date search is empty", async () => {
+    const storage = createMemoryKitchenStorage();
+    const requestedStatuses: Array<string | null> = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/events/search?")) {
+        const status = new URL(url).searchParams.get("status");
+        requestedStatuses.push(status);
+        return status === "TENTATIVE"
+          ? json({ results: [{ id: 48 }], total_pages: 1 })
+          : json({ results: [], total_pages: 1 });
+      }
+      if (url.includes("/events/48?")) {
+        return json({
+          event: {
+            id: 48,
+            name: "Redacted 9/24 Buyout",
+            event_date_iso8601: "2026-09-24",
+            event_start_iso8601: "2026-09-24T18:00:00-04:00",
+            event_end_iso8601: "2026-09-25T01:00:00-04:00",
+            guest_count: 200,
+            status: "TENTATIVE",
+            location_id: 26059,
+            rooms: [{ id: 1, name: "Full Building Buyout" }],
+            updated_at: "2026-09-21T17:00:00Z",
+          },
+        });
+      }
+      if (url.includes("/menu_item_selections")) {
+        return json({ menu_item_selections: [] });
+      }
+      if (url.includes("/notes?")) {
+        return json({ notes: [] });
+      }
+      throw new Error(`Unexpected test request: ${url}`);
+    };
+    const adapter = new LiveTripleseatAdapter({
+      env: {
+        NODE_ENV: "test",
+        TRIPLESEAT_CLIENT_ID: "test-client",
+        TRIPLESEAT_CLIENT_SECRET: "test-client-secret",
+        TRIPLESEAT_ACCESS_TOKEN: "test-access-token",
+        TRIPLESEAT_REFRESH_TOKEN: "test-refresh-token",
+        TRIPLESEAT_LOCATION_ID: "26059",
+      },
+      fetchImpl,
+      storage,
+    });
+
+    const [event] = await adapter.fetchEventsForDate("2026-09-24");
+
+    expect(requestedStatuses).toEqual([
+      null,
+      "DEFINITE",
+      "TENTATIVE",
+    ]);
+    expect(event).toMatchObject({
+      eventId: "48",
+      eventName: "Redacted 9/24 Buyout",
+      fullBuyout: true,
+    });
+  });
+
+  it("keeps a red full-buyout booking across kitchen, plan, and entertainment reads", async () => {
+    const storage = createMemoryKitchenStorage();
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/events/search?")) {
+        return json({ results: [{ id: 47 }], total_pages: 1 });
+      }
+      if (url.includes("/events/47?")) {
+        return json({
+          event: {
+            id: 47,
+            name: "Redacted Full Buyout",
+            event_date_iso8601: "2026-08-06",
+            event_start_iso8601: "2026-08-06T18:00:00-04:00",
+            event_end_iso8601: "2026-08-07T01:00:00-04:00",
+            guest_count: 140,
+            status: "PROSPECT",
+            calendar_color: "red",
+            location_id: 26059,
+            rooms: [{ id: 1, name: "Main Dining Room" }],
+            updated_at: "2026-08-03T17:00:00Z",
+          },
+        });
+      }
+      if (url.includes("/menu_item_selections")) {
+        return json({ menu_item_selections: [] });
+      }
+      if (url.includes("/notes?")) {
+        return json({ notes: [] });
+      }
+      throw new Error(`Unexpected test request: ${url}`);
+    };
+    const adapter = new LiveTripleseatAdapter({
+      env: {
+        NODE_ENV: "test",
+        TRIPLESEAT_CLIENT_ID: "test-client",
+        TRIPLESEAT_CLIENT_SECRET: "test-client-secret",
+        TRIPLESEAT_ACCESS_TOKEN: "test-access-token",
+        TRIPLESEAT_REFRESH_TOKEN: "test-refresh-token",
+        TRIPLESEAT_LOCATION_ID: "26059",
+      },
+      fetchImpl,
+      storage,
+    });
+
+    const [kitchenEvent] = await adapter.fetchEventsForDate("2026-08-06");
+    const [eventPlan] = await adapter.fetchEventPlansForRange(
+      "2026-08-06",
+      "2026-08-06",
+    );
+    const [entertainmentEvent] = await adapter.fetchEntertainmentEventsForDate(
+      "2026-08-06",
+    );
+
+    expect(kitchenEvent).toMatchObject({
+      eventId: "47",
+      status: "PROSPECT",
+      fullBuyout: true,
+    });
+    expect(eventPlan).toMatchObject({
+      eventId: "47",
+      status: "PROSPECT",
+      fullBuyout: true,
+    });
+    expect(entertainmentEvent).toMatchObject({
+      tripleseatEventId: "47",
+      status: "PROSPECT",
+      fullBuyout: true,
+    });
+  });
+
   it("reports a rejected refresh token as a Tripleseat reconnection requirement", async () => {
     const adapter = new LiveTripleseatAdapter({
       env: {
@@ -190,6 +324,12 @@ describe("Tripleseat adapter security and normalization", () => {
                     quantity: 48,
                     category: { name: "Dessert" },
                   },
+                  {
+                    id: 505,
+                    description: "Prepare one gluten-free meal for the guest.",
+                    category: { name: "Special Instructions" },
+                    updated_at: "2026-07-28T15:45:00Z",
+                  },
                 ],
               },
             ],
@@ -223,6 +363,28 @@ describe("Tripleseat adapter security and normalization", () => {
               category: { name: "Darts" },
             },
           ],
+        });
+      }
+      if (url.includes("/bookings/7?show_financial=true")) {
+        return json({
+          booking: {
+            id: 7,
+            event_ids: [42],
+            documents: [
+              {
+                id: 100,
+                title: "Booking Food Contract",
+                line_items: [
+                  {
+                    id: 506,
+                    description: "Fry Platter",
+                    quantity: 1,
+                    category: { name: "Food Platters" },
+                  },
+                ],
+              },
+            ],
+          },
         });
       }
       if (url.includes("/notes?")) {
@@ -264,6 +426,7 @@ describe("Tripleseat adapter security and normalization", () => {
       "Tater Keg Platter",
       "Darts",
       "Cookies — Premium, generously sized cookies designed to be shared.",
+      "Fry Platter",
     ]);
     expect(events[0].selections[2]).toMatchObject({
       quantity: 2,
@@ -295,29 +458,36 @@ describe("Tripleseat adapter security and normalization", () => {
       quantity: 2,
       unit: "pretzel plates",
     });
+    expect(
+      checklist.sections
+        .flatMap((section) => section.rows)
+        .find((row) => row.key === "platter-fries"),
+    ).toMatchObject({
+      foodName: "Fries",
+      quantity: 1,
+    });
     expect(events[0].specialNotes).toEqual([]);
     expect(events[0].foodNotes).toEqual([
       expect.objectContaining({
-        source: "event-description",
-        sourceId: "42",
-      }),
-      expect.objectContaining({
-        source: "event-note",
-        sourceId: "1",
-        sourceUpdatedAt: "2026-07-28T15:30:00Z",
+        text: "Prepare one gluten-free meal for the guest.",
+        source: "event-document",
+        sourceId: "505",
+        sourceUpdatedAt: "2026-07-28T15:45:00Z",
       }),
     ]);
-    const serializedNotes = JSON.stringify(events[0].foodNotes);
-    expect(serializedNotes).not.toContain("planner@example.org");
-    expect(serializedNotes).not.toContain("937-555");
-    expect(serializedNotes).toContain("[email redacted]");
-    expect(serializedNotes).toContain("[phone redacted]");
+    expect(urls.some((url) => url.includes("/notes?"))).toBe(false);
     expect(events[0].documentMetadata).toEqual([
       {
         id: "99",
         title: "Event Order",
         documentTemplateId: "12",
         viewNames: ["Kitchen Sheet"],
+      },
+      {
+        id: "100",
+        title: "Booking Food Contract",
+        documentTemplateId: null,
+        viewNames: [],
       },
     ]);
     expect(urls.some((url) => url.includes("/api/v1/"))).toBe(false);
@@ -326,7 +496,7 @@ describe("Tripleseat adapter security and normalization", () => {
       urls.some((url) =>
         url.endsWith("/v1/bookings/7?show_financial=true"),
       ),
-    ).toBe(false);
+    ).toBe(true);
 
     const encrypted = await storage.getEncryptedTokenState();
     expect(encrypted?.encryptedTokens).not.toContain("rotated-access-token");
@@ -402,7 +572,152 @@ describe("Tripleseat adapter security and normalization", () => {
     ]);
   });
 
-  it("uses booking food documents when structured selections are non-food only", async () => {
+  it("imports exact categoryless top-level platter products without importing their modifiers", async () => {
+    const storage = createMemoryKitchenStorage();
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/events/search?")) {
+        return json({ results: [{ id: 60558000 }], total_pages: 1 });
+      }
+      if (url.includes("/events/60558000?")) {
+        return json({
+          event: {
+            id: 60558000,
+            booking_id: 57128424,
+            name: "Redacted Birthday Party",
+            event_date_iso8601: "2026-09-05",
+            event_start_iso8601: "2026-09-05T14:00:00-04:00",
+            event_end_iso8601: "2026-09-05T17:00:00-04:00",
+            guest_count: 25,
+            status: "DEFINITE",
+            location_id: 26059,
+          },
+        });
+      }
+      if (url.includes("/menu_item_selections")) {
+        return json({
+          menu_item_selections: [
+            {
+              id: 3066969,
+              display_name: "Mozzarella Sticks",
+              quantity: 3,
+            },
+            {
+              id: 3066970,
+              display_name: "Wings",
+              quantity: 2,
+              menu_modifier_selections: [
+                {
+                  id: 4114171,
+                  display_name:
+                    "Jumbo Bone-In Wings — Big, bold, and built for sharing with the whole group.",
+                },
+              ],
+            },
+            {
+              id: 3066971,
+              display_name: "Chicken Tenders",
+              quantity: 2,
+              menu_modifier_selections: [
+                {
+                  id: 4114172,
+                  display_name:
+                    "Crispy Chicken Tenders — A crowd-favorite choice, designed for everyone.",
+                },
+              ],
+            },
+            {
+              id: 3066972,
+              display_name: "Fries",
+              quantity: 4,
+              menu_modifier_selections: [
+                {
+                  id: 4114173,
+                  display_name:
+                    "Crispy Seasoned Fries — A classic shareable favorite.",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (url.includes("/bookings/57128424?show_financial=true")) {
+        return json({ error: "forbidden" }, 403);
+      }
+      throw new Error(`Unexpected test request: ${url}`);
+    };
+    const adapter = new LiveTripleseatAdapter({
+      env: {
+        NODE_ENV: "test",
+        TRIPLESEAT_CLIENT_ID: "test-client",
+        TRIPLESEAT_CLIENT_SECRET: "test-client-secret",
+        TRIPLESEAT_ACCESS_TOKEN: "test-access-token",
+        TRIPLESEAT_REFRESH_TOKEN: "test-refresh-token",
+        TRIPLESEAT_LOCATION_ID: "26059",
+      },
+      fetchImpl,
+      storage,
+    });
+
+    const [event] = await adapter.fetchEventsForDate("2026-09-05");
+    const checklist = generateKitchenChecklist(event);
+    const rows = new Map(
+      checklist.sections
+        .flatMap((section) => section.rows)
+        .map((item) => [item.key, item]),
+    );
+
+    expect(
+      event.selections.filter((selection) => selection.isFood === true),
+    ).toEqual([
+      expect.objectContaining({ name: "Mozzarella Sticks", quantity: 3 }),
+      expect.objectContaining({ name: "Wings", quantity: 2 }),
+      expect.objectContaining({ name: "Chicken Tenders", quantity: 2 }),
+      expect.objectContaining({ name: "Fries", quantity: 4 }),
+    ]);
+    expect(rows.get("platter-mozzarella-sticks")).toMatchObject({
+      quantity: 12,
+      unit: "pounds",
+      numberOfPans: 3,
+      panSize: "1/2",
+    });
+    expect(rows.get("platter-wings")).toMatchObject({
+      quantity: 128,
+      unit: "each",
+      numberOfPans: 2,
+      panSize: "1/2",
+    });
+    expect(rows.get("platter-chicken-tenders")).toMatchObject({
+      quantity: 128,
+      unit: "each",
+      numberOfPans: 2,
+      panSize: "1/2",
+    });
+    expect(rows.get("platter-fries")).toMatchObject({
+      quantity: 4,
+      unit: "bags",
+      numberOfPans: 4,
+      panSize: "1/2",
+    });
+    expect(rows.get("sauce-marinara")).toMatchObject({
+      quantity: 3,
+      unit: "bowls",
+    });
+    expect(rows.get("sauce-ranch")).toMatchObject({
+      quantity: 4,
+      unit: "bowls",
+    });
+    expect(checklist.chafingDishes).toEqual({
+      bars: 0,
+      hotPlatters: 6,
+      total: 6,
+    });
+    expect(event.specialNotes).toEqual([
+      "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.",
+    ]);
+  });
+
+  it("uses booking contract selections and Special Instructions while excluding booking notes", async () => {
     const storage = createMemoryKitchenStorage();
     let bookingRequested = false;
     const fetchImpl: typeof fetch = async (input) => {
@@ -467,6 +782,12 @@ describe("Tripleseat adapter security and normalization", () => {
                     quantity: 1,
                     category: { internal_name: "Food Platters" },
                   },
+                  {
+                    id: 921,
+                    description: "Guest has a shellfish allergy.",
+                    category: { internal_name: "Special Instructions" },
+                    updated_at: "2026-07-28T16:45:00Z",
+                  },
                 ],
               },
             ],
@@ -511,9 +832,9 @@ describe("Tripleseat adapter security and normalization", () => {
     expect(event.foodNotes).toEqual([
       {
         text: "Guest has a shellfish allergy.",
-        source: "booking-note",
-        sourceId: "421",
-        sourceUpdatedAt: "2026-07-28T16:30:00Z",
+        source: "booking-document",
+        sourceId: "921",
+        sourceUpdatedAt: "2026-07-28T16:45:00Z",
       },
     ]);
     expect(warningCodes).toContain("SPECIAL_NOTE_REQUIRES_REVIEW");

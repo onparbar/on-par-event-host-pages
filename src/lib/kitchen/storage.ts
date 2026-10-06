@@ -14,6 +14,39 @@ import type {
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const WEBHOOK_PROCESSING_LEASE_MS = 10 * 60 * 1000;
 const WEBHOOK_DEDUPLICATION_WINDOW_MS = 10 * 60 * 1000;
+export const KITCHEN_STAFF_ROSTER = [
+  "Adrian",
+  "Alanis",
+  "Ashleigh",
+  "Austin",
+  "Brooke",
+  "Cameron",
+  "Carlos",
+  "Chase",
+  "Daniel",
+  "Derek",
+  "Diana",
+  "Emily",
+  "Enrique",
+  "Estuardo",
+  "Geldi",
+  "Jasmonica",
+  "Julio",
+  "Kaleb",
+  "Karla",
+  "Lex",
+  "Lindsey",
+  "Molly",
+  "Rocky",
+  "Ryan",
+  "Samantha",
+  "Saul",
+  "Selena",
+  "Staci",
+  "Taylor",
+  "Tina",
+  "Veronica",
+] as const;
 
 export type KitchenSyncStatus = "running" | "success" | "error";
 
@@ -35,6 +68,7 @@ export type StoredKitchenEvent = {
 export type StoredKitchenDay = {
   date: string;
   events: KitchenChecklist[];
+  bwaOptions: string[];
   sync: KitchenSyncState | null;
   addOnActivity: KitchenAddOnActivity[];
   addOnCompletions: KitchenAddOnCompletion[];
@@ -73,12 +107,28 @@ export interface KitchenStorage {
   readonly persistence: "database" | "memory";
   getDay(date: string): Promise<StoredKitchenDay>;
   getEventDate(eventId: string): Promise<string | null>;
+  saveEvent(event: StoredKitchenEvent): Promise<void>;
   replaceDay(date: string, events: readonly StoredKitchenEvent[]): Promise<void>;
+  saveManualAssignments(
+    eventId: string,
+    foodRunners: readonly string[],
+    pocs: readonly string[],
+    preppedBy?: string,
+    verifiedBy?: string,
+    setup?: readonly string[],
+  ): Promise<void>;
   saveManualBwa(eventId: string, bwa: string): Promise<void>;
   saveItemReadiness(
     eventId: string,
     itemKey: string,
     ready: boolean,
+  ): Promise<void>;
+  saveItemPrepped(
+    eventId: string,
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string | null,
+    updatedAt: string,
   ): Promise<void>;
   saveItemCompletion(
     eventId: string,
@@ -134,6 +184,8 @@ type ChecklistRow = {
 type ManualRow = {
   event_id: string;
   bwa: string | null;
+  food_runners: string[] | null;
+  pocs: string[] | null;
 };
 
 type ItemReadinessRow = {
@@ -141,6 +193,9 @@ type ItemReadinessRow = {
   item_key: string;
   ready: boolean;
   updated_at: string;
+  prepped: boolean;
+  prepped_updated_at: string | null;
+  prepped_by: string | null;
   completed: boolean;
   completed_updated_at: string | null;
 };
@@ -169,6 +224,35 @@ type TokenRow = {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+function savedBwaOptions() {
+  return [...KITCHEN_STAFF_ROSTER].sort((left, right) =>
+    left.localeCompare(right, "en", { sensitivity: "base" }),
+  );
+}
+
+const KITCHEN_ROLE_METADATA_PREFIX = "__kitchen_roles__:";
+
+function manualRoleMetadata(value: string | null) {
+  if (!value?.startsWith(KITCHEN_ROLE_METADATA_PREFIX)) {
+    return { preppedBy: "", verifiedBy: "", setup: [] as string[] };
+  }
+  try {
+    const parsed = JSON.parse(
+      value.slice(KITCHEN_ROLE_METADATA_PREFIX.length),
+    ) as { preppedBy?: unknown; verifiedBy?: unknown; setup?: unknown };
+    return {
+      preppedBy: typeof parsed.preppedBy === "string" ? parsed.preppedBy : "",
+      verifiedBy:
+        typeof parsed.verifiedBy === "string" ? parsed.verifiedBy : "",
+      setup: Array.isArray(parsed.setup)
+        ? parsed.setup.filter((value): value is string => typeof value === "string")
+        : [],
+    };
+  } catch {
+    return { preppedBy: "", verifiedBy: "", setup: [] as string[] };
+  }
 }
 
 function checklistForCurrentRules(
@@ -254,6 +338,12 @@ type CurrentReadiness = {
 type CurrentCompletion = {
   completed: boolean;
   updatedAt: string;
+};
+
+type CurrentPrepped = {
+  prepped: boolean;
+  updatedAt: string;
+  employeeName: string | null;
 };
 
 function liveAddOnAlertMetadata(
@@ -431,7 +521,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       >("kitchen_event_snapshots", snapshotParams),
       this.jsonRequest<ManualRow[]>(
         "kitchen_manual_assignments",
-        new URLSearchParams({ select: "event_id,bwa" }),
+        new URLSearchParams({ select: "event_id,bwa,food_runners,pocs" }),
       ),
       this.jsonRequest<SyncRow[]>("kitchen_sync_runs", syncParams),
     ]);
@@ -447,9 +537,9 @@ export class SupabaseKitchenStorage implements KitchenStorage {
             "kitchen_item_readiness",
             new URLSearchParams({
               select:
-                "event_id,item_key,ready,updated_at,completed,completed_updated_at",
+                "event_id,item_key,ready,updated_at,prepped,prepped_updated_at,prepped_by,completed,completed_updated_at",
               event_id: `in.(${queryableEventIds.join(",")})`,
-              or: "(ready.eq.true,completed.eq.true)",
+              or: "(ready.eq.true,prepped.eq.true,completed.eq.true)",
             }),
           ),
       queryableEventIds.length === 0
@@ -464,15 +554,52 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     ]);
 
     const manualByEvent = new Map(
-      manualRows.map((row) => [row.event_id, row.bwa ?? ""]),
+      manualRows.map((row) => {
+        const storedBwa = row.bwa?.trim() ?? "";
+        const legacy = storedBwa.startsWith(KITCHEN_ROLE_METADATA_PREFIX)
+          ? ""
+          : storedBwa;
+        const roleMetadata = manualRoleMetadata(storedBwa);
+        return [
+          row.event_id,
+          {
+            foodRunners: row.food_runners?.length
+              ? row.food_runners
+              : legacy
+                ? [legacy]
+                : [],
+            pocs: row.pocs ?? [],
+            ...roleMetadata,
+          },
+        ] as const;
+      }),
     );
     const completedItemsByEvent = new Map<string, string[]>();
+    const preppedItemsByEvent = new Map<string, string[]>();
+    const preppedItemDetailsByEvent = new Map<
+      string,
+      Record<
+        string,
+        { employeeName: string | null; preppedAt: string | null }
+      >
+    >();
     const finalCompletedItemsByEvent = new Map<string, string[]>();
     const readinessByEvent = new Map<
       string,
       Map<string, CurrentReadiness>
     >();
     for (const row of itemReadinessRows) {
+      if (row.prepped) {
+        const itemKeys = preppedItemsByEvent.get(row.event_id) ?? [];
+        itemKeys.push(row.item_key);
+        preppedItemsByEvent.set(row.event_id, itemKeys);
+        const details = preppedItemDetailsByEvent.get(row.event_id) ?? {};
+        details[row.item_key] = {
+          employeeName: row.prepped_by ?? null,
+          preppedAt: row.prepped_updated_at ?? null,
+        };
+        preppedItemDetailsByEvent.set(row.event_id, details);
+      }
       if (row.completed) {
         const itemKeys =
           finalCompletedItemsByEvent.get(row.event_id) ?? [];
@@ -512,10 +639,21 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       );
       return {
         ...derivedChecklist,
-        foodRunnerOrBwa: manualByEvent.get(row.event_id) ?? "",
+        foodRunnerOrBwa:
+          manualByEvent.get(row.event_id)?.foodRunners.join(", ") ?? "",
+        foodRunners: manualByEvent.get(row.event_id)?.foodRunners ?? [],
+        pocs: manualByEvent.get(row.event_id)?.pocs ?? [],
+        setup: manualByEvent.get(row.event_id)?.setup ?? [],
+        preppedBy: manualByEvent.get(row.event_id)?.preppedBy ?? "",
+        verifiedBy: manualByEvent.get(row.event_id)?.verifiedBy ?? "",
         completedItemKeys: (
           completedItemsByEvent.get(row.event_id) ?? []
         ).sort(),
+        preppedItemKeys: (
+          preppedItemsByEvent.get(row.event_id) ?? []
+        ).sort(),
+        preppedItemDetails:
+          preppedItemDetailsByEvent.get(row.event_id) ?? {},
         finalCompletedItemKeys: (
           finalCompletedItemsByEvent.get(row.event_id) ?? []
         ).sort(),
@@ -537,6 +675,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     return {
       date,
       events: sortedEvents,
+      bwaOptions: savedBwaOptions(),
       sync: syncStateFromRow(syncRows[0]),
       ...alertMetadata,
     };
@@ -554,6 +693,48 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       }),
     );
     return rows[0]?.event_date ?? null;
+  }
+
+  async saveEvent({ sourceEvent, checklist }: StoredKitchenEvent) {
+    const now = new Date().toISOString();
+    const eventId = String(sourceEvent.eventId);
+    await this.emptyRequest(
+      "kitchen_event_snapshots",
+      new URLSearchParams({ on_conflict: "event_id" }),
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          event_id: eventId,
+          booking_id:
+            sourceEvent.bookingId == null
+              ? null
+              : String(sourceEvent.bookingId),
+          event_name: sourceEvent.eventName,
+          event_date: sourceEvent.localDate,
+          status: sourceEvent.status,
+          source_snapshot: sourceEvent,
+          source_updated_at: sourceEvent.sourceUpdatedAt ?? null,
+          synced_at: now,
+        } satisfies SnapshotRow),
+      },
+    );
+    await this.emptyRequest(
+      "kitchen_checklists",
+      new URLSearchParams({ on_conflict: "event_id" }),
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({
+          event_id: eventId,
+          event_date: sourceEvent.localDate,
+          checklist,
+          rule_version: checklist.ruleVersion,
+          source_updated_at: sourceEvent.sourceUpdatedAt ?? null,
+          generated_at: now,
+        } satisfies ChecklistRow),
+      },
+    );
   }
 
   async replaceDay(date: string, events: readonly StoredKitchenEvent[]) {
@@ -632,7 +813,14 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     );
   }
 
-  async saveManualBwa(eventId: string, bwa: string) {
+  async saveManualAssignments(
+    eventId: string,
+    foodRunners: readonly string[],
+    pocs: readonly string[],
+    preppedBy = "",
+    verifiedBy = "",
+    setup: readonly string[] = [],
+  ) {
     await this.emptyRequest(
       "kitchen_manual_assignments",
       new URLSearchParams({ on_conflict: "event_id" }),
@@ -643,11 +831,21 @@ export class SupabaseKitchenStorage implements KitchenStorage {
         },
         body: JSON.stringify({
           event_id: eventId,
-          bwa,
+          bwa: `${KITCHEN_ROLE_METADATA_PREFIX}${JSON.stringify({
+            preppedBy,
+            verifiedBy,
+            setup,
+          })}`,
+          food_runners: foodRunners,
+          pocs,
           updated_at: new Date().toISOString(),
         }),
       },
     );
+  }
+
+  async saveManualBwa(eventId: string, bwa: string) {
+    await this.saveManualAssignments(eventId, bwa ? [bwa] : [], []);
   }
 
   async saveItemReadiness(
@@ -691,6 +889,32 @@ export class SupabaseKitchenStorage implements KitchenStorage {
           item_key: itemKey,
           completed,
           completed_updated_at: new Date().toISOString(),
+        }),
+      },
+    );
+  }
+
+  async saveItemPrepped(
+    eventId: string,
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string | null,
+    updatedAt: string,
+  ) {
+    await this.emptyRequest(
+      "kitchen_item_readiness",
+      new URLSearchParams({ on_conflict: "event_id,item_key" }),
+      {
+        method: "POST",
+        headers: {
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({
+          event_id: eventId,
+          item_key: itemKey,
+          prepped,
+          prepped_updated_at: updatedAt,
+          prepped_by: prepped ? employeeName : null,
         }),
       },
     );
@@ -952,7 +1176,16 @@ export class SupabaseKitchenStorage implements KitchenStorage {
 export class MemoryKitchenStorage implements KitchenStorage {
   readonly persistence = "memory" as const;
   private readonly days = new Map<string, StoredKitchenEvent[]>();
-  private readonly manualBwa = new Map<string, string>();
+  private readonly manualAssignments = new Map<
+    string,
+    {
+      foodRunners: string[];
+      pocs: string[];
+      preppedBy: string;
+      verifiedBy: string;
+      setup: string[];
+    }
+  >();
   private readonly itemReadiness = new Map<
     string,
     Map<string, CurrentReadiness>
@@ -960,6 +1193,10 @@ export class MemoryKitchenStorage implements KitchenStorage {
   private readonly itemCompletion = new Map<
     string,
     Map<string, CurrentCompletion>
+  >();
+  private readonly itemPrepped = new Map<
+    string,
+    Map<string, CurrentPrepped>
   >();
   private readonly foodAddOns = new Map<string, StoredKitchenFoodAddOns>();
   private readonly syncRuns = new Map<string, KitchenSyncState>();
@@ -990,13 +1227,37 @@ export class MemoryKitchenStorage implements KitchenStorage {
       );
       return {
         ...derivedChecklist,
-        foodRunnerOrBwa: this.manualBwa.get(eventId) ?? "",
+        foodRunnerOrBwa:
+          this.manualAssignments.get(eventId)?.foodRunners.join(", ") ?? "",
+        foodRunners:
+          this.manualAssignments.get(eventId)?.foodRunners ?? [],
+        pocs: this.manualAssignments.get(eventId)?.pocs ?? [],
+        preppedBy: this.manualAssignments.get(eventId)?.preppedBy ?? "",
+        verifiedBy: this.manualAssignments.get(eventId)?.verifiedBy ?? "",
+        setup: this.manualAssignments.get(eventId)?.setup ?? [],
         completedItemKeys: [
           ...(this.itemReadiness.get(eventId)?.entries() ?? []),
         ]
           .filter(([, readiness]) => readiness.ready)
           .map(([itemKey]) => itemKey)
           .sort(),
+        preppedItemKeys: [
+          ...(this.itemPrepped.get(eventId)?.entries() ?? []),
+        ]
+          .filter(([, state]) => state.prepped)
+          .map(([itemKey]) => itemKey)
+          .sort(),
+        preppedItemDetails: Object.fromEntries(
+          [...(this.itemPrepped.get(eventId)?.entries() ?? [])]
+            .filter(([, state]) => state.prepped)
+            .map(([itemKey, state]) => [
+              itemKey,
+              {
+                employeeName: state.employeeName,
+                preppedAt: state.updatedAt,
+              },
+            ]),
+        ),
         finalCompletedItemKeys: [
           ...(this.itemCompletion.get(eventId)?.entries() ?? []),
         ]
@@ -1023,6 +1284,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
     return {
       date,
       events: sortedEvents,
+      bwaOptions: savedBwaOptions(),
       sync: clone(this.syncRuns.get(date) ?? null),
       ...alertMetadata,
     };
@@ -1038,6 +1300,21 @@ export class MemoryKitchenStorage implements KitchenStorage {
       }
     }
     return null;
+  }
+
+  async saveEvent(event: StoredKitchenEvent) {
+    const eventId = String(event.sourceEvent.eventId);
+    for (const [storedDate, storedEvents] of this.days) {
+      const remaining = storedEvents.filter(
+        ({ sourceEvent }) => String(sourceEvent.eventId) !== eventId,
+      );
+      if (remaining.length !== storedEvents.length) {
+        this.days.set(storedDate, remaining);
+      }
+    }
+    const values = this.days.get(event.sourceEvent.localDate) ?? [];
+    values.push(clone(event));
+    this.days.set(event.sourceEvent.localDate, values);
   }
 
   async replaceDay(date: string, events: readonly StoredKitchenEvent[]) {
@@ -1074,6 +1351,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
         if (!stillStored) {
           this.foodAddOns.delete(eventId);
           this.itemReadiness.delete(eventId);
+          this.itemPrepped.delete(eventId);
           this.itemCompletion.delete(eventId);
         }
       }
@@ -1081,8 +1359,25 @@ export class MemoryKitchenStorage implements KitchenStorage {
     this.days.set(date, clone([...events]));
   }
 
+  async saveManualAssignments(
+    eventId: string,
+    foodRunners: readonly string[],
+    pocs: readonly string[],
+    preppedBy = "",
+    verifiedBy = "",
+    setup: readonly string[] = [],
+  ) {
+    this.manualAssignments.set(eventId, {
+      foodRunners: [...foodRunners],
+      pocs: [...pocs],
+      preppedBy,
+      verifiedBy,
+      setup: [...setup],
+    });
+  }
+
   async saveManualBwa(eventId: string, bwa: string) {
-    this.manualBwa.set(eventId, bwa);
+    await this.saveManualAssignments(eventId, bwa ? [bwa] : [], []);
   }
 
   async saveItemReadiness(
@@ -1109,6 +1404,22 @@ export class MemoryKitchenStorage implements KitchenStorage {
       updatedAt: new Date().toISOString(),
     });
     this.itemCompletion.set(eventId, completion);
+  }
+
+  async saveItemPrepped(
+    eventId: string,
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string | null,
+    updatedAt: string,
+  ) {
+    const state = this.itemPrepped.get(eventId) ?? new Map();
+    state.set(itemKey, {
+      prepped,
+      updatedAt,
+      employeeName: prepped ? employeeName : null,
+    });
+    this.itemPrepped.set(eventId, state);
   }
 
   async getFoodAddOns(eventId: string) {

@@ -1,6 +1,3 @@
-import { cookies } from "next/headers";
-import { hasAdminSession } from "@/lib/admin-auth";
-import KitchenAccessGate from "./KitchenAccessGate";
 import KitchenDashboard from "./KitchenDashboard";
 
 export const metadata = {
@@ -14,11 +11,5 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function KitchenPage() {
-  const cookieStore = await cookies();
-
-  if (!hasAdminSession(cookieStore)) {
-    return <KitchenAccessGate />;
-  }
-
   return <KitchenDashboard />;
 }

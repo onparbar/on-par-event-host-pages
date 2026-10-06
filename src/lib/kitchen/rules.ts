@@ -46,6 +46,7 @@ const BAR_ORDER: readonly BarType[] = ["taco", "wing", "appetizer"];
 const PACKAGE_ORDER: readonly PackageMarker[] = [
   "the-full-course",
   "the-front-nine",
+  "food-only-package",
 ];
 
 const LEGACY_REFERENCE_FOODS = new Set([
@@ -381,6 +382,7 @@ export function packHotPlatters(
     (sum, item) => sum + item.platterCount,
     0,
   );
+  const distinctPannedItemCount = new Set(items.map((item) => item.key)).size;
 
   if (totalHotPlatters === 0) {
     return {
@@ -392,30 +394,16 @@ export function packHotPlatters(
     };
   }
 
-  const approved = {
-    2: { panSize: "1/2" as const, chafingDishes: 1 },
-    3: { panSize: "1/3" as const, chafingDishes: 1 },
-    4: { panSize: "1/2" as const, chafingDishes: 2 },
-    6: { panSize: "1/3" as const, chafingDishes: 2 },
-  }[totalHotPlatters];
-
-  if (!approved) {
-    return {
-      status: "needs-review",
-      reason: "unapproved-total",
-      totalHotPlatters,
-      panCount: null,
-      panSize: null,
-      chafingDishes: null,
-    };
-  }
+  const panSize = distinctPannedItemCount % 2 === 0 ? "1/2" : "1/3";
+  const panCount = totalHotPlatters === 1 ? 3 : totalHotPlatters;
+  const pansPerChafingDish = panSize === "1/2" ? 2 : 3;
 
   return {
     status: "approved",
     totalHotPlatters,
-    panCount: totalHotPlatters,
-    panSize: approved.panSize,
-    chafingDishes: approved.chafingDishes,
+    panCount,
+    panSize,
+    chafingDishes: Math.ceil(panCount / pansPerChafingDish),
   };
 }
 
@@ -514,6 +502,7 @@ export function generateKitchenChecklist(
     "marinara" | "ranch",
     Set<string>
   >();
+  const packingItems: PlatterPackingItem[] = [];
   const addApprovedSauceBowls = (
     sauce: "marinara" | "ranch",
     bowlCount: number,
@@ -614,7 +603,7 @@ export function generateKitchenChecklist(
     addWarning(warnings, warningKeys, {
       code: "PACKAGE_BAR_MISSING",
       message:
-        "A Full Course or Front Nine package marker is present, but no structured bar selection identifies Taco, Wing, or Appetizer Bar.",
+        "An approved food package marker is present, but no structured bar selection identifies Taco, Wing, or Appetizer Bar.",
       requiresReview: true,
       scope: "event",
     });
@@ -624,7 +613,7 @@ export function generateKitchenChecklist(
     addWarning(warnings, warningKeys, {
       code: "BAR_WITHOUT_PACKAGE_MARKER",
       message:
-        "A bar selection is present without The Full Course or The Front Nine; the written rule classifies this event as platter-only.",
+        "A bar selection is present without an approved food package marker; the written rule classifies this event as platter-only.",
       requiresReview: true,
       scope: "event",
     });
@@ -670,19 +659,6 @@ export function generateKitchenChecklist(
         selectionName: selection.originalName,
       });
     }
-  }
-
-  if (
-    !selections.some(isKnownFoodSelection) &&
-    liveAddOnEffects.length === 0
-  ) {
-    addWarning(warnings, warningKeys, {
-      code: "NO_FOOD_SELECTIONS",
-      message:
-        "No structured food/menu selections were provided for this definite event.",
-      requiresReview: true,
-      scope: "event",
-    });
   }
 
   const normalizedStatus = sourceEvent.status
@@ -1023,6 +999,11 @@ export function generateKitchenChecklist(
           minutes: config.prepLeadMinutes.chickenTenders,
         },
       });
+      packingItems.push(
+        { key: "appetizer-tater-kegs", platterCount: 1 },
+        { key: "appetizer-mozzarella-sticks", platterCount: 1 },
+        { key: "appetizer-chicken-tenders", platterCount: 1 },
+      );
       activateConflict("CHECKLIST_PAN_SIZE_OPTIONS", false);
     } else {
       barQuantitiesApproved = false;
@@ -1036,7 +1017,8 @@ export function generateKitchenChecklist(
     .filter(
       (selection) =>
         selection.quantityProvided &&
-        (selection.normalizedName === "dessert platter" ||
+        (selection.normalizedName.startsWith("dessert platter") ||
+          selection.normalizedName.startsWith("desert platter") ||
           selection.normalizedName === "dessert tray" ||
           selection.normalizedName.startsWith("assorted desserts") ||
           selection.normalizedName.startsWith("assorted deserts")),
@@ -1061,7 +1043,7 @@ export function generateKitchenChecklist(
       foodName: "Assorted Desserts",
       quantity: dessertCount,
       unit: "pretzel plates",
-      numberOfPans: null,
+      numberOfPans: dessertCount,
       panSize: null,
       prepTiming: {
         kind: "minutes-before-food-ready",
@@ -1090,7 +1072,6 @@ export function generateKitchenChecklist(
     }
   }
 
-  const packingItems: PlatterPackingItem[] = [];
   for (const kind of PLATTER_KIND_ORDER) {
     const platterCount = platterCounts.get(kind);
     if (platterCount == null) {
@@ -1234,13 +1215,25 @@ export function generateKitchenChecklist(
   }
 
   const platterPacking = packHotPlatters(packingItems);
-  if (platterPacking.status !== "approved") {
-    addWarning(warnings, warningKeys, {
-      code: "UNAPPROVED_PLATTER_PACKING",
-      message: `Hot-platter packing is approved only for totals 2, 3, 4, and 6; this event has ${platterPacking.totalHotPlatters}.`,
-      requiresReview: true,
-      scope: "event",
-    });
+  if (platterPacking.panSize != null) {
+    const packedCounts = new Map<KitchenFoodKey, number>();
+    for (const item of packingItems) {
+      packedCounts.set(
+        item.key,
+        (packedCounts.get(item.key) ?? 0) + item.platterCount,
+      );
+    }
+    for (const rows of rowsByCategory.values()) {
+      for (const row of rows) {
+        const packedCount = packedCounts.get(row.key);
+        if (packedCount == null) {
+          continue;
+        }
+        row.numberOfPans =
+          platterPacking.totalHotPlatters === 1 ? 3 : packedCount;
+        row.panSize = platterPacking.panSize;
+      }
+    }
   }
 
   if (hasKind(selections, "sauce:marinara")) {
@@ -1311,15 +1304,24 @@ export function generateKitchenChecklist(
         effectiveGuestCount > config.barTables.doubleAboveGuestCount
           ? config.barTables.mirroredTablesPerBar
           : config.barTables.normalTablesPerBar;
-      barChafingDishes = tablesPerBar * activeBars.length;
+      const separatelyCountedBars = activeBars.filter(
+        (bar) => bar !== "appetizer",
+      );
+      barChafingDishes = tablesPerBar * separatelyCountedBars.length;
       activateConflict("MIRRORED_TABLE_TRIGGER", false);
     }
   }
 
+  const chafingSetupMultiplier =
+    validGuestCount(effectiveGuestCount) &&
+    effectiveGuestCount > config.chafingSetup.doubleAboveGuestCount
+      ? config.chafingSetup.largeEventMultiplier
+      : 1;
+  if (barChafingDishes != null) {
+    barChafingDishes *= chafingSetupMultiplier;
+  }
   const hotPlatterChafingDishes =
-    platterPacking.status === "approved"
-      ? platterPacking.chafingDishes
-      : null;
+    platterPacking.chafingDishes * chafingSetupMultiplier;
   const totalChafingDishes =
     barChafingDishes == null || hotPlatterChafingDishes == null
       ? null
@@ -1468,6 +1470,8 @@ export function generateKitchenChecklist(
       specialNotes,
     },
     foodRunnerOrBwa: "",
+    foodRunners: [],
+    pocs: [],
     classification,
     packageMarkers,
     selectedBars,
@@ -1488,6 +1492,7 @@ export function generateKitchenChecklist(
     sections,
     liveFoodAddOns: liveFoodAddOns.map((item) => ({ ...item })),
     completedItemKeys: [],
+    preppedItemKeys: [],
     finalCompletedItemKeys: [],
     chafingDishes: {
       bars: barChafingDishes,

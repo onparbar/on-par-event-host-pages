@@ -55,6 +55,7 @@ export type TripleseatEventPlanSource = {
   eventEndAt: string | null;
   guestCount: number | null;
   status: string | null;
+  fullBuyout?: boolean;
   rooms: string[];
   selections: KitchenSourceSelection[];
   documentItems: EntertainmentSourceItem[];
@@ -64,6 +65,7 @@ export type TripleseatEventPlanSource = {
   omittedOperationalNoteFragmentCount?: number;
   shortenedOperationalNoteFragmentCount?: number;
   sourceUpdatedAt: string | null;
+  sourceSystem?: "tripleseat" | "contract-evidence";
 };
 
 export type EventPlanSyncState = {

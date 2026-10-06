@@ -17,6 +17,7 @@ const PORTAL_NAVIGATION = [
   { href: "/itineraries", label: "Itineraries" },
   { href: "/checklists", label: "Checklists" },
   { href: "/event-host-addons", label: "Add-Ons" },
+  { href: "/vip-check-in", label: "VIP CHECK-IN" },
   { href: "/kitchen", label: "Kitchen" },
   { href: "/admin", label: "Admin" },
 ] as const;
@@ -177,6 +178,56 @@ export function PortalFrame({
   return (
     <div className={`portal-shell${className ? ` ${className}` : ""}`}>
       {children}
+    </div>
+  );
+}
+
+export function PortalZoomControls({
+  label,
+  maximum,
+  minimum,
+  onChange,
+  resetValue,
+  step,
+  value,
+}: {
+  label: string;
+  maximum: number;
+  minimum: number;
+  onChange: (value: number) => void;
+  resetValue: number;
+  step: number;
+  value: number;
+}) {
+  return (
+    <div aria-label={label} className="portal-zoom-controls" role="group">
+      <button
+        aria-label={`${label}: zoom out`}
+        className="portal-header-button"
+        disabled={value <= minimum}
+        onClick={() => onChange(Math.max(minimum, value - step))}
+        type="button"
+      >
+        −
+      </button>
+      <button
+        aria-label={`Reset ${label.toLowerCase()} from ${value}% to ${resetValue}%`}
+        className="portal-header-button portal-zoom-value"
+        disabled={value === resetValue}
+        onClick={() => onChange(resetValue)}
+        type="button"
+      >
+        {value}%
+      </button>
+      <button
+        aria-label={`${label}: zoom in`}
+        className="portal-header-button"
+        disabled={value >= maximum}
+        onClick={() => onChange(Math.min(maximum, value + step))}
+        type="button"
+      >
+        +
+      </button>
     </div>
   );
 }

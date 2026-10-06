@@ -8,6 +8,7 @@ export type PanCapacityKey =
   | "taterKegs"
   | "chickenTenders"
   | "mozzarellaSticks"
+  | "platterMozzarellaSticks"
   | "wings";
 
 export type PanCapacityRule = {
@@ -82,6 +83,10 @@ export type KitchenRuleConfig = {
     doubleAboveGuestCount: number;
     normalTablesPerBar: number;
     mirroredTablesPerBar: number;
+  };
+  chafingSetup: {
+    doubleAboveGuestCount: number;
+    largeEventMultiplier: number;
   };
   prepLeadMinutes: {
     tacoBeef: number;
@@ -161,10 +166,10 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
     code: "CHECKLIST_PAN_SIZE_OPTIONS",
     title: "Checklist pan-size columns",
     writtenRule:
-      "Use the approved per-item prep-pan capacities and keep chafing-display packing separate.",
+      "Pack hot platter items together. Use 1/2 pans when the number of distinct panned food items is even, or 1/3 pans when it is odd. A single hot platter uses three 1/3 pans.",
     referenceRule: "The checklist displays two unlabeled pan-size subcolumns and shows both 1/2 and 1/3 for several rows.",
     currentResolution:
-      "Use confirmed 1/3-pan capacities for wings, tenders, tater kegs, and mozzarella; retain the separate approved chafing rule.",
+      "Count Appetizer Bar's tater kegs, mozzarella sticks, and chicken tenders as three hot items. Two 1/2 pans or three 1/3 pans fill one chafing dish.",
     appliesTo: ["wing", "appetizer", "platters"],
   },
   {
@@ -185,10 +190,10 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
   },
   {
     code: "MARINARA_EIGHT_OUNCES",
-    title: "Appetizer Bar sauce amount",
-    writtenRule: "Every Appetizer Bar receives one bowl of marinara and one bowl of ranch.",
+    title: "Mozzarella and Appetizer Bar sauce amount",
+    writtenRule: "Every Appetizer Bar receives one bowl of marinara and one bowl of ranch; every Mozzarella Stick Platter receives one bowl of marinara.",
     referenceRule: "The Appetizer sheet says mozzarella sticks receive eight ounces of marinara without saying per pan, group, or event.",
-    currentResolution: "Use one bowl of each sauce per Appetizer Bar, independent of guest count.",
+    currentResolution: "Use one bowl of each sauce per Appetizer Bar and one marinara bowl per Mozzarella Stick Platter.",
     appliesTo: ["appetizer", "sauce-marinara", "sauce-ranch"],
   },
   {
@@ -257,19 +262,19 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
   "wing-fries":
     "Wing Bar fries; prepare 5 pounds for each started group of 25 guests.",
   "appetizer-tater-kegs":
-    "Appetizer Bar tater kegs; pack up to 25 in each 1/3 pan.",
+    "Appetizer Bar tater kegs; pan size follows the combined hot-platter packing rule.",
   "appetizer-mozzarella-sticks":
-    "Appetizer Bar mozzarella sticks; pack up to 3 pounds in each 1/3 pan.",
+    "Appetizer Bar mozzarella sticks; pan size follows the combined hot-platter packing rule.",
   "appetizer-chicken-tenders":
-    "Appetizer Bar chicken tenders; pack up to 25 in each 1/3 pan.",
+    "Appetizer Bar chicken tenders; pan size follows the combined hot-platter packing rule.",
   "platter-tater-kegs":
-    "Tater Keg Platters contain 64 each; pack up to 25 in each 1/3 pan.",
+    "Tater Keg Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
   "platter-chicken-tenders":
-    "Chicken Tender Platters contain 50 each; pack up to 25 in each 1/3 pan.",
+    "Chicken Tender Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
   "platter-mozzarella-sticks":
-    "Mozzarella Stick Platters contain 4 pounds; pack up to 3 pounds in each 1/3 pan.",
+    "Mozzarella Stick Platters contain 4 pounds; pan size follows the combined hot-platter packing rule.",
   "platter-wings":
-    "Wing Platters contain 64 each; pack up to 25 in each 1/3 pan.",
+    "Wing Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
   "platter-veggie-tray":
     "Assorted fresh vegetables arranged on pretzel plates with ranch required.",
   "platter-fries":
@@ -281,7 +286,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-04.2",
+  ruleVersion: "ope-kitchen-2026-08-14.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -292,7 +297,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
     chickenPoundsPerPan: 2.5,
     beanRecipesPerBatch: 1,
     beefPansPerBatch: 1,
-    beanPansPerBatch: 1,
+    beanPansPerBatch: 2,
     panSize: "1/3",
     tortillaGuestsPerPack: 8,
   },
@@ -327,6 +332,10 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
       amountPerPan: 3,
       panSize: "1/3",
     },
+    platterMozzarellaSticks: {
+      amountPerPan: 2,
+      panSize: "1/2",
+    },
     wings: {
       amountPerPan: 25,
       panSize: "1/3",
@@ -337,6 +346,10 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
     doubleAboveGuestCount: 75,
     normalTablesPerBar: 1,
     mirroredTablesPerBar: 2,
+  },
+  chafingSetup: {
+    doubleAboveGuestCount: 200,
+    largeEventMultiplier: 2,
   },
   prepLeadMinutes: {
     tacoBeef: 180,
@@ -365,7 +378,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
       "platter:chicken-tenders": {
         rowKey: "platter-chicken-tenders",
         foodName: "Chicken Tenders",
-        amountPerPlatter: 50,
+        amountPerPlatter: 64,
         unit: "each",
         hot: true,
         panCapacityKey: "chickenTenders",
@@ -380,10 +393,10 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         amountPerPlatter: 4,
         unit: "pounds",
         hot: true,
-        panCapacityKey: "mozzarellaSticks",
+        panCapacityKey: "platterMozzarellaSticks",
         sauce: {
           name: "marinara",
-          bowlsPerPlatter: null,
+          bowlsPerPlatter: 1,
         },
       },
       "platter:wings": {

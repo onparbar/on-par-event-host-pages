@@ -1,6 +1,4 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
 import {
   assertKitchenDate,
   getKitchenDay,
@@ -9,19 +7,7 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
-
 export async function GET(request: Request) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
-  }
-
   const date = new URL(request.url).searchParams.get("date") ?? "";
   try {
     assertKitchenDate(date);

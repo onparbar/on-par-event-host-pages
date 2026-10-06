@@ -52,6 +52,70 @@ function checklist(eventId: string): KitchenChecklist {
 }
 
 describe("Supabase kitchen storage authentication", () => {
+  it("returns only the approved roster as sorted dropdown options", async () => {
+    const storage = new SupabaseKitchenStorage({
+      env: {
+        NODE_ENV: "test",
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SECRET_KEY: "sb_secret_test-value",
+      },
+      fetchImpl: async (input) => {
+        const table = new URL(String(input)).pathname.split("/").pop();
+        return Response.json(
+          table === "kitchen_manual_assignments"
+            ? [
+                { event_id: "1", bwa: "  Ryan (POC)  " },
+                { event_id: "2", bwa: "Diana (FR)" },
+                { event_id: "3", bwa: "Ryan (POC)" },
+                { event_id: "4", bwa: "" },
+              ]
+            : [],
+        );
+      },
+    });
+
+    const day = await storage.getDay("2026-07-29");
+    expect(day.bwaOptions).toEqual([
+      "Adrian",
+      "Alanis",
+      "Ashleigh",
+      "Austin",
+      "Brooke",
+      "Cameron",
+      "Carlos",
+      "Chase",
+      "Daniel",
+      "Derek",
+      "Diana",
+      "Emily",
+      "Enrique",
+      "Estuardo",
+      "Geldi",
+      "Jasmonica",
+      "Julio",
+      "Kaleb",
+      "Karla",
+      "Lex",
+      "Lindsey",
+      "Molly",
+      "Rocky",
+      "Ryan",
+      "Samantha",
+      "Saul",
+      "Selena",
+      "Staci",
+      "Taylor",
+      "Tina",
+      "Veronica",
+    ]);
+    expect(day.bwaOptions).toEqual(
+      [...day.bwaOptions].sort((left, right) =>
+        left.localeCompare(right, "en", { sensitivity: "base" }),
+      ),
+    );
+    expect(new Set(day.bwaOptions).size).toBe(day.bwaOptions.length);
+  });
+
   it("sends a new sb_secret key only through the apikey header", async () => {
     const captured: Headers[] = [];
     const storage = new SupabaseKitchenStorage({
@@ -206,6 +270,47 @@ describe("Supabase kitchen storage authentication", () => {
     expect(body).not.toHaveProperty("updated_at");
   });
 
+  it("writes per-item Prepped employee and server timestamp without changing other states", async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const storage = new SupabaseKitchenStorage({
+      env: {
+        NODE_ENV: "test",
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SECRET_KEY: "sb_secret_test-value",
+      },
+      fetchImpl: async (input, init) => {
+        requests.push({ url: String(input), init });
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await storage.saveItemPrepped(
+      "12345",
+      "addon:wings",
+      true,
+      "Diana",
+      "2026-08-14T16:05:00.000Z",
+    );
+
+    const request = requests[0];
+    const body = JSON.parse(String(request.init?.body)) as Record<
+      string,
+      unknown
+    >;
+    expect(new URL(request.url).pathname).toBe(
+      "/rest/v1/kitchen_item_readiness",
+    );
+    expect(body).toEqual({
+      event_id: "12345",
+      item_key: "addon:wings",
+      prepped: true,
+      prepped_updated_at: "2026-08-14T16:05:00.000Z",
+      prepped_by: "Diana",
+    });
+    expect(body).not.toHaveProperty("ready");
+    expect(body).not.toHaveProperty("completed");
+  });
+
   it("joins readiness and dedicated add-ons by exact visible event ID", async () => {
     const requests: { url: string; headers: Headers }[] = [];
     const wingsReadinessKey = quantityAwareReadinessKey({
@@ -258,6 +363,9 @@ describe("Supabase kitchen storage authentication", () => {
                     item_key: wingsReadinessKey,
                     ready: true,
                     updated_at: "2026-07-29T13:45:00Z",
+                    prepped: true,
+                    prepped_updated_at: "2026-07-29T13:35:00Z",
+                    prepped_by: "Diana",
                     completed: true,
                     completed_updated_at: "2026-07-29T14:15:00Z",
                   },
@@ -266,6 +374,9 @@ describe("Supabase kitchen storage authentication", () => {
                     item_key: "taco-beef",
                     ready: true,
                     updated_at: "2026-07-29T13:46:00Z",
+                    prepped: true,
+                    prepped_updated_at: "2026-07-29T13:36:00Z",
+                    prepped_by: null,
                     completed: false,
                     completed_updated_at: null,
                   },
@@ -309,6 +420,13 @@ describe("Supabase kitchen storage authentication", () => {
     expect(numericEvent?.finalCompletedItemKeys).toEqual([
       wingsReadinessKey,
     ]);
+    expect(numericEvent?.preppedItemKeys).toEqual([wingsReadinessKey]);
+    expect(numericEvent?.preppedItemDetails).toEqual({
+      [wingsReadinessKey]: {
+        employeeName: "Diana",
+        preppedAt: "2026-07-29T13:35:00Z",
+      },
+    });
     expect(numericEvent?.chafingDishes).toEqual({
       bars: 1,
       hotPlatters: 1,
@@ -332,6 +450,13 @@ describe("Supabase kitchen storage authentication", () => {
       }),
     ]);
     expect(previewEvent?.completedItemKeys).toEqual(["taco-beef"]);
+    expect(previewEvent?.preppedItemKeys).toEqual(["taco-beef"]);
+    expect(previewEvent?.preppedItemDetails).toEqual({
+      "taco-beef": {
+        employeeName: null,
+        preppedAt: "2026-07-29T13:36:00Z",
+      },
+    });
     expect(previewEvent?.finalCompletedItemKeys).toEqual([]);
     expect(previewEvent?.chafingDishes).toEqual({
       bars: 1,
@@ -391,11 +516,11 @@ describe("Supabase kitchen storage authentication", () => {
     expect(
       new URL(readinessRequest?.url ?? "").searchParams.get("select"),
     ).toBe(
-      "event_id,item_key,ready,updated_at,completed,completed_updated_at",
+      "event_id,item_key,ready,updated_at,prepped,prepped_updated_at,prepped_by,completed,completed_updated_at",
     );
     expect(
       new URL(readinessRequest?.url ?? "").searchParams.get("or"),
-    ).toBe("(ready.eq.true,completed.eq.true)");
+    ).toBe("(ready.eq.true,prepped.eq.true,completed.eq.true)");
     expect(
       new URL(addOnRequest?.url ?? "").searchParams.get("event_id"),
     ).toBe("in.(12345,preview-alpha)");
@@ -557,6 +682,63 @@ describe("Supabase kitchen storage authentication", () => {
     );
   });
 
+  it("preserves the Prepped employee snapshot across resync and clears it when unchecked", async () => {
+    const storage = createMemoryKitchenStorage();
+    const event = sourceEvent("preview-alpha");
+    await storage.replaceDay("2026-07-29", [
+      {
+        sourceEvent: event,
+        checklist: generateKitchenChecklist(event),
+      },
+    ]);
+    const storedChecklist = (await storage.getDay("2026-07-29")).events[0];
+    const beef = storedChecklist.sections
+      .flatMap((section) => section.rows)
+      .find((row) => row.key === "taco-beef")!;
+    const itemKey = quantityAwareReadinessKey({
+      itemKey: beef.key,
+      quantity: beef.quantity,
+      numberOfPans: beef.numberOfPans,
+      panSize: beef.panSize,
+      unit: beef.unit,
+      ruleVersion: storedChecklist.ruleVersion,
+    });
+
+    await storage.saveItemPrepped(
+      "preview-alpha",
+      itemKey,
+      true,
+      "Diana",
+      "2026-08-14T16:05:00.000Z",
+    );
+    await storage.replaceDay("2026-07-29", [
+      {
+        sourceEvent: event,
+        checklist: generateKitchenChecklist(event),
+      },
+    ]);
+
+    const resynced = (await storage.getDay("2026-07-29")).events[0];
+    expect(resynced.preppedItemKeys).toEqual([itemKey]);
+    expect(resynced.preppedItemDetails).toEqual({
+      [itemKey]: {
+        employeeName: "Diana",
+        preppedAt: "2026-08-14T16:05:00.000Z",
+      },
+    });
+
+    await storage.saveItemPrepped(
+      "preview-alpha",
+      itemKey,
+      false,
+      null,
+      "2026-08-14T16:06:00.000Z",
+    );
+    const unchecked = (await storage.getDay("2026-07-29")).events[0];
+    expect(unchecked.preppedItemKeys).toEqual([]);
+    expect(unchecked.preppedItemDetails).toEqual({});
+  });
+
   it("recalculates a stored checklist when the kitchen rule version changes", async () => {
     const storage = createMemoryKitchenStorage();
     const event = sourceEvent("preview-alpha");
@@ -580,7 +762,7 @@ describe("Supabase kitchen storage authentication", () => {
       .flatMap((section) => section.rows)
       .find((item) => item.key === "taco-chicken");
 
-    expect(day.events[0].ruleVersion).toBe("ope-kitchen-2026-08-04.2");
+    expect(day.events[0].ruleVersion).toBe("ope-kitchen-2026-08-14.1");
     expect(currentChicken).toMatchObject({
       quantity: 5,
       numberOfPans: 2,

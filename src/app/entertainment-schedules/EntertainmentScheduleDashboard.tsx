@@ -5,10 +5,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import {
   PortalFrame,
   PortalHeader,
+  PortalZoomControls,
 } from "@/app/_components/PortalShell";
 import {
   ENTERTAINMENT_CATEGORY_LABELS,
@@ -17,6 +19,7 @@ import {
   resourcesForCategory,
   textColorForBackground,
 } from "@/lib/entertainment/resources";
+import { broadcastEntertainmentUpdate } from "@/lib/entertainment/live-updates";
 import {
   addCalendarDays,
   clampOperatingMinutes,
@@ -39,26 +42,86 @@ import type {
   EntertainmentResource,
 } from "@/lib/entertainment/types";
 
-const TIMELINE_WIDTH = 1_080;
 const PIXELS_PER_MINUTE = 1.2;
+const COMPACT_PIXELS_PER_MINUTE = 0.98;
 const OPERATING_MINUTES = 15 * 60;
-const RESOURCE_ROW_HEIGHT = 28;
-const RESERVATION_SLOT_HEIGHT = 24;
+const RESOURCE_COLUMN_WIDTH = 190;
+const COMPACT_RESOURCE_COLUMN_WIDTH = 140;
+const RESOURCE_ROW_HEIGHT_MIN = 14;
+const RESOURCE_ROW_HEIGHT_MAX = 22;
+const ENTERTAINMENT_ZOOM_MIN = 27;
+const ENTERTAINMENT_ZOOM_MAX = 120;
+const ENTERTAINMENT_ZOOM_STEP = 10;
+const ENTERTAINMENT_ZOOM_DEFAULT = 80;
+const ENTERTAINMENT_LAYOUT_GAP = 8;
+const ENTERTAINMENT_FIT_GUTTER = 20;
+const ENTERTAINMENT_KIOSK_GRID_HEADER_HEIGHT = 30;
+const ENTERTAINMENT_KIOSK_GROUP_HEADER_HEIGHT = 18;
+const ENTERTAINMENT_VERTICAL_FIT_GUTTER = 28;
 const CATEGORY_ORDER: EntertainmentCategory[] = [
   "bowling",
   "darts",
   "pool",
   "shuffleboard",
-  "mini-golf",
   "private-rooms",
 ];
+const MAIN_CATEGORIES: EntertainmentCategory[] = [
+  "bowling",
+  "private-rooms",
+];
+const COMPACT_CATEGORIES: EntertainmentCategory[] = [
+  "darts",
+  "pool",
+  "shuffleboard",
+];
 
-type ScheduleFilter =
-  | "all"
-  | "conflicts"
-  | "review"
-  | "manual"
-  | EntertainmentCategory;
+export function calculateEntertainmentFitZoom(availableWidth: number) {
+  const fixedWidth =
+    RESOURCE_COLUMN_WIDTH +
+    COMPACT_RESOURCE_COLUMN_WIDTH +
+    ENTERTAINMENT_LAYOUT_GAP +
+    ENTERTAINMENT_FIT_GUTTER;
+  const timelineWidthAtFullScale =
+    OPERATING_MINUTES *
+    (PIXELS_PER_MINUTE + COMPACT_PIXELS_PER_MINUTE);
+  const fittedZoom = Math.floor(
+    ((Math.max(0, availableWidth) - fixedWidth) /
+      timelineWidthAtFullScale) *
+      100,
+  );
+
+  return Math.max(
+    ENTERTAINMENT_ZOOM_MIN,
+    Math.min(ENTERTAINMENT_ZOOM_MAX, fittedZoom),
+  );
+}
+
+export function calculateEntertainmentFitRowHeight(
+  availableHeight: number,
+  mainSlotUnits: number,
+  compactSlotUnits: number,
+) {
+  function fitColumn(slotUnits: number, groupCount: number) {
+    const fixedHeight =
+      ENTERTAINMENT_KIOSK_GRID_HEADER_HEIGHT +
+      groupCount * ENTERTAINMENT_KIOSK_GROUP_HEADER_HEIGHT +
+      ENTERTAINMENT_VERTICAL_FIT_GUTTER;
+    return Math.floor(
+      (Math.max(0, availableHeight) - fixedHeight) /
+        Math.max(1, slotUnits),
+    );
+  }
+
+  const fittedHeight = Math.min(
+    fitColumn(mainSlotUnits, MAIN_CATEGORIES.length),
+    fitColumn(compactSlotUnits, COMPACT_CATEGORIES.length),
+  );
+
+  return Math.max(
+    RESOURCE_ROW_HEIGHT_MIN,
+    Math.min(RESOURCE_ROW_HEIGHT_MAX, fittedHeight),
+  );
+}
 
 type DragPreview = {
   reservationId: string;
@@ -195,7 +258,10 @@ function hourLabels() {
   });
 }
 
-function layoutReservations(reservations: EntertainmentReservation[]) {
+function layoutReservations(
+  reservations: EntertainmentReservation[],
+  rowHeight: number,
+) {
   const sorted = [...reservations].sort(
     (left, right) =>
       Date.parse(left.startAt) - Date.parse(right.startAt) ||
@@ -214,11 +280,28 @@ function layoutReservations(reservations: EntertainmentReservation[]) {
   });
   return {
     placed,
-    height: Math.max(
-      RESOURCE_ROW_HEIGHT,
-      slotEnds.length * RESERVATION_SLOT_HEIGHT + 4,
-    ),
+    slotCount: Math.max(1, slotEnds.length),
+    height: Math.max(1, slotEnds.length) * rowHeight,
   };
+}
+
+export function calculateEntertainmentColumnSlotUnits(
+  reservations: EntertainmentReservation[],
+  categories: readonly EntertainmentCategory[],
+) {
+  return categories
+    .flatMap((category) => resourcesForCategory(category))
+    .reduce(
+      (total, resource) =>
+        total +
+        layoutReservations(
+          reservations.filter(
+            (reservation) => reservation.resourceId === resource.id,
+          ),
+          1,
+        ).slotCount,
+      0,
+    );
 }
 
 function eventTimes(event: EntertainmentEventSnapshot) {
@@ -228,11 +311,25 @@ function eventTimes(event: EntertainmentEventSnapshot) {
   return `${formatClock(event.eventStartAt)} – ${formatClock(event.eventEndAt)}`;
 }
 
-function sourceIcon(reservation: EntertainmentReservation) {
-  if (reservation.manualOverride) {
-    return "✎";
+function compactClock(iso: string) {
+  const match = formatClock(iso).match(/^(\d{1,2}):(\d{2})\s(AM|PM)$/);
+  if (!match) {
+    return formatClock(iso);
   }
-  return reservation.source === "tripleseat" ? "↻" : "!";
+  const time = match[2] === "00" ? match[1] : `${match[1]}:${match[2]}`;
+  return { time, period: match[3].toLowerCase().charAt(0) };
+}
+
+function compactTimeRange(startAt: string, endAt: string) {
+  const start = compactClock(startAt);
+  const end = compactClock(endAt);
+  if (typeof start === "string" || typeof end === "string") {
+    return `${formatClock(startAt)} – ${formatClock(endAt)}`;
+  }
+  if (start.period === end.period) {
+    return `${start.time}–${end.time}${end.period}`;
+  }
+  return `${start.time}${start.period}–${end.time}${end.period}`;
 }
 
 async function responseError(response: Response) {
@@ -424,7 +521,6 @@ function ReservationModal({
           <label className="entertainment-field">
             <span>Event color</span>
             <input
-              disabled={Boolean(value.eventId)}
               onChange={(event) =>
                 setValue((current) => ({
                   ...current,
@@ -642,26 +738,38 @@ function ReservationModal({
 
 export default function EntertainmentScheduleDashboard({
   initialDate,
+  initialPayload = null,
 }: {
   initialDate: string;
+  initialPayload?: EntertainmentDayPayload | null;
 }) {
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [payload, setPayload] = useState<EntertainmentDayPayload | null>(
-    null,
+    initialPayload,
   );
   const [state, setState] = useState<
     "loading" | "ready" | "syncing" | "saving" | "error"
-  >("loading");
+  >(initialPayload ? "ready" : "loading");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [filter, setFilter] = useState<ScheduleFilter>("all");
-  const [search, setSearch] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [scheduleZoom, setScheduleZoom] = useState(
+    ENTERTAINMENT_ZOOM_DEFAULT,
+  );
+  const [scheduleFitZoom, setScheduleFitZoom] = useState(
+    ENTERTAINMENT_ZOOM_DEFAULT,
+  );
+  const [scheduleRowHeight, setScheduleRowHeight] = useState(
+    RESOURCE_ROW_HEIGHT_MAX,
+  );
   const [modal, setModal] = useState<ReservationDraft | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const dragPreviewRef = useRef<DragPreview | null>(null);
   const [rangeDraft, setRangeDraft] = useState<RangeDraft | null>(null);
   const autoSyncDates = useRef(new Set<string>());
+  const scheduleScrollRef = useRef<HTMLDivElement>(null);
+  const previousFitZoomRef = useRef(ENTERTAINMENT_ZOOM_DEFAULT);
   const [now, setNow] = useState(() => new Date());
 
   const weekStart = startOfWeek(selectedDate);
@@ -673,6 +781,16 @@ export default function EntertainmentScheduleDashboard({
     selectedDate === today
       ? operatingMinutesForIso(now.toISOString(), selectedDate)
       : null;
+  const pixelsPerMinute =
+    PIXELS_PER_MINUTE * (scheduleZoom / 100);
+  const compactPixelsPerMinute =
+    COMPACT_PIXELS_PER_MINUTE * (scheduleZoom / 100);
+  const timelineWidth = OPERATING_MINUTES * pixelsPerMinute;
+  const compactTimelineWidth =
+    OPERATING_MINUTES * compactPixelsPerMinute;
+  const scheduleGridWidth = RESOURCE_COLUMN_WIDTH + timelineWidth;
+  const compactScheduleGridWidth =
+    COMPACT_RESOURCE_COLUMN_WIDTH + compactTimelineWidth;
 
   async function loadDay(date: string, signal?: AbortSignal) {
     const response = await fetch(
@@ -710,6 +828,11 @@ export default function EntertainmentScheduleDashboard({
     setError("");
     setNotice("");
     setSelectedEvent(null);
+    setIsEditing(false);
+    setModal(null);
+    setDragPreview(null);
+    dragPreviewRef.current = null;
+    setRangeDraft(null);
     void loadDay(selectedDate, controller.signal).catch((loadError) => {
       if (controller.signal.aborted) {
         return;
@@ -729,12 +852,67 @@ export default function EntertainmentScheduleDashboard({
     return () => window.clearInterval(interval);
   }, []);
 
+  const mainSlotUnits = useMemo(
+    () =>
+      calculateEntertainmentColumnSlotUnits(
+        payload?.reservations ?? [],
+        MAIN_CATEGORIES,
+      ),
+    [payload?.reservations],
+  );
+  const compactSlotUnits = useMemo(
+    () =>
+      calculateEntertainmentColumnSlotUnits(
+        payload?.reservations ?? [],
+        COMPACT_CATEGORIES,
+      ),
+    [payload?.reservations],
+  );
+
+  useEffect(() => {
+    const scheduleScroll = scheduleScrollRef.current;
+    if (!scheduleScroll) {
+      return;
+    }
+    const observedScheduleScroll = scheduleScroll;
+
+    function updateScheduleFit() {
+      const nextFitZoom = calculateEntertainmentFitZoom(
+        observedScheduleScroll.clientWidth,
+      );
+      const nextRowHeight = calculateEntertainmentFitRowHeight(
+        observedScheduleScroll.clientHeight,
+        mainSlotUnits,
+        compactSlotUnits,
+      );
+      const previousFitZoom = previousFitZoomRef.current;
+      setScheduleFitZoom(nextFitZoom);
+      setScheduleRowHeight(nextRowHeight);
+      setScheduleZoom((currentZoom) =>
+        currentZoom === previousFitZoom
+          ? nextFitZoom
+          : currentZoom,
+      );
+      previousFitZoomRef.current = nextFitZoom;
+    }
+
+    updateScheduleFit();
+    const resizeObserver = new ResizeObserver(updateScheduleFit);
+    resizeObserver.observe(observedScheduleScroll);
+    return () => resizeObserver.disconnect();
+  }, [compactSlotUnits, mainSlotUnits, state]);
+
   async function syncDay(automatic = false) {
     if (state === "syncing") {
       return;
     }
     setState("syncing");
     setError("");
+    setIsEditing(false);
+    setModal(null);
+    setRangeDraft(null);
+    setDragPreview(null);
+    dragPreviewRef.current = null;
     if (!automatic) {
       setNotice("");
     }
@@ -750,6 +928,7 @@ export default function EntertainmentScheduleDashboard({
       const next = (await response.json()) as EntertainmentDayPayload;
       setPayload(next);
       setState("ready");
+      broadcastEntertainmentUpdate("sync", selectedDate);
       setNotice(
         `Sync complete: ${next.sync?.eventsProcessed ?? 0} events, ${
           next.sync?.reservationsCreated ?? 0
@@ -782,9 +961,16 @@ export default function EntertainmentScheduleDashboard({
     }
   }, [payload, selectedDate]);
 
-  async function lockDashboard() {
-    await fetch("/api/admin-session", { method: "DELETE" });
-    window.location.reload();
+  function finishEditing() {
+    if (state === "saving") {
+      return;
+    }
+    setIsEditing(false);
+    setModal(null);
+    setRangeDraft(null);
+    setDragPreview(null);
+    dragPreviewRef.current = null;
+    setNotice("Schedule saved. Editing is locked.");
   }
 
   const conflictReservationIds = useMemo(
@@ -797,7 +983,7 @@ export default function EntertainmentScheduleDashboard({
   );
 
   const displayedReservations = useMemo(() => {
-    const values = (payload?.reservations ?? []).map((reservation) => {
+    return (payload?.reservations ?? []).map((reservation) => {
       if (dragPreview?.reservationId !== reservation.id) {
         return reservation;
       }
@@ -818,35 +1004,9 @@ export default function EntertainmentScheduleDashboard({
         ),
       };
     });
-    return values.filter((reservation) => {
-      const queryMatches =
-        !search.trim() ||
-        reservation.eventName
-          .toLowerCase()
-          .includes(search.trim().toLowerCase());
-      if (!queryMatches) {
-        return false;
-      }
-      if (filter === "all") {
-        return true;
-      }
-      if (filter === "conflicts") {
-        return conflictReservationIds.has(reservation.id);
-      }
-      if (filter === "review") {
-        return reservation.needsReview;
-      }
-      if (filter === "manual") {
-        return reservation.manualOverride;
-      }
-      return reservation.resourceCategory === filter;
-    });
   }, [
-    conflictReservationIds,
     dragPreview,
-    filter,
     payload?.reservations,
-    search,
     selectedDate,
   ]);
 
@@ -862,17 +1022,12 @@ export default function EntertainmentScheduleDashboard({
           displayedReservations.filter(
             (reservation) => reservation.resourceId === resource.id,
           ),
+          scheduleRowHeight,
         ),
       );
     }
     return map;
-  }, [displayedReservations]);
-
-  const displayedCategories = CATEGORY_ORDER.includes(
-    filter as EntertainmentCategory,
-  )
-    ? [filter as EntertainmentCategory]
-    : CATEGORY_ORDER;
+  }, [displayedReservations, scheduleRowHeight]);
 
   function draftForReservation(reservation: EntertainmentReservation) {
     setModal({
@@ -987,6 +1142,10 @@ export default function EntertainmentScheduleDashboard({
       }
       setModal(null);
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate(
+        draft.reservation ? "update" : "create",
+        selectedDate,
+      );
       setNotice("Reservation saved locally in Event Host.");
     } catch (saveError) {
       setState("ready");
@@ -1032,6 +1191,7 @@ export default function EntertainmentScheduleDashboard({
       setDragPreview(null);
       dragPreviewRef.current = null;
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate("update", selectedDate);
       setNotice("Reservation updated and conflicts recalculated.");
     } catch (saveError) {
       setDragPreview(null);
@@ -1069,6 +1229,7 @@ export default function EntertainmentScheduleDashboard({
       }
       setModal(null);
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate("remove", selectedDate);
       setNotice("Reservation removed from the local schedule.");
     } catch (removeError) {
       setState("ready");
@@ -1095,6 +1256,7 @@ export default function EntertainmentScheduleDashboard({
       );
       setModal(null);
       await loadDay(selectedDate);
+      broadcastEntertainmentUpdate("revert", selectedDate);
       setNotice("The saved Tripleseat value is active again.");
     } catch (revertError) {
       setState("ready");
@@ -1110,7 +1272,11 @@ export default function EntertainmentScheduleDashboard({
     event: React.PointerEvent<HTMLElement>,
     reservation: EntertainmentReservation,
     mode: "move" | "resize-start" | "resize-end",
+    interactionPixelsPerMinute: number,
   ) {
+    if (!isEditing) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const originStart =
@@ -1136,7 +1302,7 @@ export default function EntertainmentScheduleDashboard({
         moved = true;
       }
       const deltaMinutes = snapOperatingMinutes(
-        deltaX / PIXELS_PER_MINUTE,
+        deltaX / interactionPixelsPerMinute,
       );
       let startMinute = originStart;
       let endMinute = originEnd;
@@ -1208,8 +1374,10 @@ export default function EntertainmentScheduleDashboard({
   function beginRangeSelection(
     event: React.PointerEvent<HTMLDivElement>,
     resource: EntertainmentResource,
+    interactionPixelsPerMinute: number,
   ) {
     if (
+      !isEditing ||
       event.button !== 0 ||
       (event.target as HTMLElement).closest(".entertainment-reservation-block")
     ) {
@@ -1219,7 +1387,7 @@ export default function EntertainmentScheduleDashboard({
     const rect = row.getBoundingClientRect();
     const startMinute = clampOperatingMinutes(
       snapOperatingMinutes(
-        (event.clientX - rect.left) / PIXELS_PER_MINUTE,
+        (event.clientX - rect.left) / interactionPixelsPerMinute,
       ),
     );
     let currentMinute = startMinute;
@@ -1232,7 +1400,8 @@ export default function EntertainmentScheduleDashboard({
     function handleMove(pointerEvent: PointerEvent) {
       currentMinute = clampOperatingMinutes(
         snapOperatingMinutes(
-          (pointerEvent.clientX - rect.left) / PIXELS_PER_MINUTE,
+          (pointerEvent.clientX - rect.left) /
+            interactionPixelsPerMinute,
         ),
       );
       const low = Math.min(startMinute, currentMinute);
@@ -1266,24 +1435,294 @@ export default function EntertainmentScheduleDashboard({
     window.addEventListener("pointerup", handleUp, { once: true });
   }
 
-  const filteredEventList = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return (payload?.events ?? []).filter(
-      (event) =>
-        !query || event.eventName.toLowerCase().includes(query),
-    );
-  }, [payload?.events, search]);
+  const eventList = payload?.events ?? [];
+  const visibleWarnings = (payload?.warnings ?? []).filter(
+    (warning) =>
+      warning !==
+      "The latest Tripleseat sync failed. The last saved schedule remains visible.",
+  );
 
-  const pageConflictCount = payload?.conflicts.length ?? 0;
-  const pageReviewCount =
-    payload?.events.filter((event) => event.needsReview).length ?? 0;
+  function renderScheduleColumn(
+    categories: readonly EntertainmentCategory[],
+    variant: "main" | "compact",
+    columnPixelsPerMinute: number,
+    columnTimelineWidth: number,
+    columnResourceWidth: number,
+    columnGridWidth: number,
+  ) {
+    const labels = hourLabels();
+    const visibleLabels =
+      variant === "compact" || columnPixelsPerMinute < 0.62
+        ? labels.filter((_, index) => index % 2 === 0)
+        : labels;
+
+    return (
+      <div
+        className={`entertainment-grid-column is-${variant}`}
+        data-layout-region={variant}
+        style={{
+          "--ent-grid-width": `${columnGridWidth}px`,
+          "--ent-hour-width": `${60 * columnPixelsPerMinute}px`,
+          "--ent-quarter-width": `${15 * columnPixelsPerMinute}px`,
+          "--ent-resource-width": `${columnResourceWidth}px`,
+          "--ent-timeline-width": `${columnTimelineWidth}px`,
+          width: columnGridWidth,
+        } as CSSProperties}
+      >
+        <div className="entertainment-grid-header">
+          <div className="entertainment-resource-heading">
+            {variant === "main" ? "Physical resource" : "Other activities"}
+          </div>
+          <div
+            className="entertainment-time-heading"
+            style={{ width: columnTimelineWidth }}
+          >
+            {visibleLabels.map((hour) => (
+              <span
+                className={
+                  hour.minute === OPERATING_MINUTES ? "is-end" : ""
+                }
+                key={hour.label}
+                style={{
+                  left: hour.minute * columnPixelsPerMinute,
+                }}
+              >
+                {hour.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        {categories.map((category) => (
+          <div
+            className={`entertainment-resource-group has-category-border category-${category}`}
+            data-category={category}
+            data-layout-region={variant}
+            key={category}
+          >
+            <div className="entertainment-group-heading">
+              {ENTERTAINMENT_CATEGORY_LABELS[category]}
+            </div>
+            {resourcesForCategory(category).map((resource) => {
+              const layout = reservationsByResource.get(resource.id) ?? {
+                placed: [],
+                slotCount: 1,
+                height: scheduleRowHeight,
+              };
+              return (
+                <div
+                  className="entertainment-resource-row"
+                  data-resource-id={resource.id}
+                  key={resource.id}
+                  style={{ minHeight: layout.height }}
+                >
+                  <div className="entertainment-resource-name">
+                    {resource.canonicalName}
+                  </div>
+                  <div
+                    aria-label={`${resource.canonicalName} timeline${
+                      isEditing
+                        ? ". Drag an empty range to add a reservation."
+                        : ". Editing is locked."
+                    }`}
+                    className={`entertainment-resource-timeline${
+                      isEditing ? " is-editable" : ""
+                    }`}
+                    data-resource-id={resource.id}
+                    onPointerDown={
+                      isEditing
+                        ? (event) =>
+                            beginRangeSelection(
+                              event,
+                              resource,
+                              columnPixelsPerMinute,
+                            )
+                        : undefined
+                    }
+                    style={{
+                      height: layout.height,
+                      width: columnTimelineWidth,
+                    }}
+                  >
+                    {nowMinutes != null &&
+                    nowMinutes >= 0 &&
+                    nowMinutes <= OPERATING_MINUTES ? (
+                      <span
+                        aria-hidden="true"
+                        className="entertainment-now-line"
+                        style={{
+                          left: nowMinutes * columnPixelsPerMinute,
+                        }}
+                      />
+                    ) : null}
+                    {rangeDraft?.resourceId === resource.id ? (
+                      <span
+                        className="entertainment-range-draft"
+                        style={{
+                          height: Math.max(
+                            12,
+                            scheduleRowHeight -
+                              (scheduleRowHeight <= 14 ? 2 : 3),
+                          ),
+                          left:
+                            rangeDraft.startMinute *
+                            columnPixelsPerMinute,
+                          top: scheduleRowHeight <= 14 ? 1 : 2,
+                          width:
+                            (rangeDraft.endMinute -
+                              rangeDraft.startMinute) *
+                            columnPixelsPerMinute,
+                        }}
+                      />
+                    ) : null}
+                    {layout.placed.map(({ reservation, slot }) => {
+                      const startMinute =
+                        operatingMinutesForIso(
+                          reservation.startAt,
+                          selectedDate,
+                        ) ?? 0;
+                      const endMinute =
+                        operatingMinutesForIso(
+                          reservation.endAt,
+                          selectedDate,
+                        ) ?? startMinute + 15;
+                      const left =
+                        Math.max(0, startMinute) *
+                        columnPixelsPerMinute;
+                      const width =
+                        Math.max(
+                          15,
+                          Math.min(OPERATING_MINUTES, endMinute) -
+                            Math.max(0, startMinute),
+                        ) * columnPixelsPerMinute;
+                      const hasConflict = conflictReservationIds.has(
+                        reservation.id,
+                      );
+                      const isUnrelated =
+                        selectedEvent != null &&
+                        reservationEventKey(reservation) !== selectedEvent;
+                      return (
+                        <button
+                          aria-disabled={!isEditing}
+                          aria-label={`${reservation.eventName}, ${reservation.resourceName}, ${formatClock(
+                            reservation.startAt,
+                          )} to ${formatClock(reservation.endAt)}${
+                            hasConflict ? ", overlap conflict" : ""
+                          }`}
+                          className={[
+                            "entertainment-reservation-block",
+                            reservation.needsReview ? "needs-review" : "",
+                            hasConflict ? "has-conflict" : "",
+                            isUnrelated ? "is-dimmed" : "",
+                            isEditing ? "is-editable" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          key={reservation.id}
+                          onPointerDown={
+                            isEditing
+                              ? (event) =>
+                                  beginBlockInteraction(
+                                    event,
+                                    reservation,
+                                    "move",
+                                    columnPixelsPerMinute,
+                                  )
+                              : undefined
+                          }
+                          style={{
+                            backgroundColor: reservation.eventColor,
+                            color: textColorForBackground(
+                              reservation.eventColor,
+                            ),
+                            height: Math.max(
+                              12,
+                              scheduleRowHeight -
+                                (scheduleRowHeight <= 14 ? 2 : 3),
+                            ),
+                            left,
+                            top:
+                              slot * scheduleRowHeight +
+                              (scheduleRowHeight <= 14 ? 1 : 2),
+                            width,
+                          }}
+                          tabIndex={isEditing ? 0 : -1}
+                          title={`${formatClock(
+                            reservation.startAt,
+                          )} – ${formatClock(reservation.endAt)}\n${
+                            reservation.eventName
+                          }\n${reservation.resourceName}`}
+                          type="button"
+                        >
+                          {isEditing ? (
+                            <span
+                              aria-hidden="true"
+                              className="entertainment-resize-handle is-left"
+                              onPointerDown={(event) =>
+                                beginBlockInteraction(
+                                  event,
+                                  reservation,
+                                  "resize-start",
+                                  columnPixelsPerMinute,
+                                )
+                              }
+                            />
+                          ) : null}
+                          <span className="entertainment-block-copy">
+                            <strong>
+                              {width >= 140
+                                ? `${formatClock(reservation.startAt)} – ${formatClock(reservation.endAt)}`
+                                : compactTimeRange(
+                                    reservation.startAt,
+                                    reservation.endAt,
+                                  )}
+                            </strong>
+                            {width >= 210 ? (
+                              <span>{reservation.eventName}</span>
+                            ) : null}
+                          </span>
+                          {isEditing ? (
+                            <span
+                              aria-hidden="true"
+                              className="entertainment-resize-handle is-right"
+                              onPointerDown={(event) =>
+                                beginBlockInteraction(
+                                  event,
+                                  reservation,
+                                  "resize-end",
+                                  columnPixelsPerMinute,
+                                )
+                              }
+                            />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <PortalFrame className="entertainment-dashboard-shell">
       <PortalHeader
+        actions={
+          <PortalZoomControls
+            label="Entertainment schedule zoom"
+            maximum={ENTERTAINMENT_ZOOM_MAX}
+            minimum={ENTERTAINMENT_ZOOM_MIN}
+            onChange={setScheduleZoom}
+            resetValue={scheduleFitZoom}
+            step={ENTERTAINMENT_ZOOM_STEP}
+            value={scheduleZoom}
+          />
+        }
         allowFullscreen
         blocked={Boolean(modal)}
-        onLock={() => void lockDashboard()}
         sectionSubtitle="Resource operations"
         sectionTitle="Entertainment Schedule"
       />
@@ -1344,80 +1783,64 @@ export default function EntertainmentScheduleDashboard({
             })}
           </div>
           <div className="entertainment-sync-area">
-            <div>
+            <div className="entertainment-sync-status">
               <strong>{syncLabel(payload)}</strong>
               <span>
-                {payload?.sync?.status === "error"
+                {isEditing
+                  ? "Editing enabled · changes save as they are made"
+                  : payload?.sync?.status === "error"
                   ? "Last saved schedule retained"
-                  : `${payload?.sync?.warningsCreated ?? 0} review items`}
+                  : "Editing locked"}
               </span>
             </div>
-            <button
-              className="entertainment-primary-button"
-              disabled={state === "syncing" || state === "saving"}
-              onClick={() => void syncDay()}
-              type="button"
-            >
-              {state === "syncing"
-                ? "Syncing…"
-                : (
-                    <>
-                      <span className="entertainment-sync-label-long">
-                        ↻ Sync from Tripleseat
-                      </span>
-                      <span className="entertainment-sync-label-short">
-                        ↻ Sync
-                      </span>
-                    </>
-                  )}
-            </button>
-          </div>
-          </section>
-
-          <section className="entertainment-filter-bar">
-          <label>
-            <span className="entertainment-visually-hidden">
-              Search by event name
-            </span>
-            <input
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search event name"
-              type="search"
-              value={search}
-            />
-          </label>
-          <div aria-label="Schedule filters" className="entertainment-filters">
-            {[
-              ["all", "All Resources"],
-              ["conflicts", "Review Conflicts"],
-              ["review", "Needs Review"],
-              ["manual", "Manually Edited"],
-              ["bowling", "Bowling"],
-              ["darts", "Darts"],
-              ["pool", "Pool"],
-              ["shuffleboard", "Shuffleboard"],
-              ["mini-golf", "Mini Golf"],
-              ["private-rooms", "Private Rooms"],
-            ].map(([value, label]) => (
+            <div className="entertainment-sync-actions">
               <button
-                className={filter === value ? "is-active" : ""}
-                key={value}
-                onClick={() => setFilter(value as ScheduleFilter)}
+                className="entertainment-primary-button"
+                disabled={
+                  isEditing || state === "syncing" || state === "saving"
+                }
+                onClick={() => void syncDay()}
                 type="button"
               >
-                {label}
+                {state === "syncing"
+                  ? "Syncing…"
+                  : (
+                      <>
+                        <span className="entertainment-sync-label-long">
+                          ↻ Sync from Tripleseat
+                        </span>
+                        <span className="entertainment-sync-label-short">
+                          ↻ Sync
+                        </span>
+                      </>
+                    )}
               </button>
-            ))}
-          </div>
-          <div className="entertainment-summary">
-            <span>{payload?.events.length ?? 0} events</span>
-            <span>{payload?.reservations.length ?? 0} reservations</span>
-            <span className={pageConflictCount ? "is-danger" : ""}>
-              {pageConflictCount} conflicts
-            </span>
-            <span className={pageReviewCount ? "is-warning" : ""}>
-              {pageReviewCount} need review
-            </span>
+              <button
+                aria-pressed={isEditing}
+                className="entertainment-secondary-button entertainment-edit-mode-button"
+                disabled={
+                  isEditing ||
+                  state === "loading" ||
+                  state === "syncing" ||
+                  state === "saving"
+                }
+                onClick={() => {
+                  setIsEditing(true);
+                  setNotice("Editing enabled. Select Save when you are finished.");
+                }}
+                type="button"
+              >
+                Edit
+              </button>
+              <button
+                className="entertainment-primary-button entertainment-save-mode-button"
+                disabled={!isEditing || state === "saving"}
+                onClick={finishEditing}
+                type="button"
+              >
+                {state === "saving" ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
           </section>
 
@@ -1432,9 +1855,9 @@ export default function EntertainmentScheduleDashboard({
               <span>{error}</span>
             </div>
           ) : null}
-          {payload?.warnings.length ? (
+          {visibleWarnings.length ? (
             <div className="entertainment-warning-message">
-              {payload.warnings.join(" ")}
+              {visibleWarnings.join(" ")}
             </div>
           ) : null}
           {payload?.missingEnvironmentVariables.length ? (
@@ -1448,7 +1871,9 @@ export default function EntertainmentScheduleDashboard({
         <div className="entertainment-workspace">
           <section
             aria-busy={state === "loading"}
-            className="entertainment-schedule-card"
+            className={`entertainment-schedule-card ${
+              isEditing ? "is-editing" : "is-locked"
+            }`}
           >
             {state === "loading" && !payload ? (
               <div className="entertainment-loading-state">
@@ -1467,251 +1892,40 @@ export default function EntertainmentScheduleDashboard({
                 </button>
               </div>
             ) : (
-              <div className="entertainment-grid-scroll">
-                <div className="entertainment-grid">
-                  <div className="entertainment-grid-header">
-                    <div className="entertainment-resource-heading">
-                      Physical resource
-                    </div>
-                    <div
-                      className="entertainment-time-heading"
-                      style={{ width: TIMELINE_WIDTH }}
-                    >
-                      {hourLabels().map((hour, index) => (
-                        <span
-                          className={
-                            index === hourLabels().length - 1
-                              ? "is-end"
-                              : ""
-                          }
-                          key={hour.label}
-                          style={{
-                            left: hour.minute * PIXELS_PER_MINUTE,
-                          }}
-                        >
-                          {hour.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  {displayedCategories.map((category) => (
-                    <div
-                      className="entertainment-resource-group"
-                      key={category}
-                    >
-                      <div className="entertainment-group-heading">
-                        {ENTERTAINMENT_CATEGORY_LABELS[category]}
-                      </div>
-                      {resourcesForCategory(category).map((resource) => {
-                        const layout = reservationsByResource.get(
-                          resource.id,
-                        ) ?? {
-                          placed: [],
-                          height: RESOURCE_ROW_HEIGHT,
-                        };
-                        return (
-                          <div
-                            className="entertainment-resource-row"
-                            data-resource-id={resource.id}
-                            key={resource.id}
-                            style={{ minHeight: layout.height }}
-                          >
-                            <div className="entertainment-resource-name">
-                              {resource.canonicalName}
-                            </div>
-                            <div
-                              aria-label={`${resource.canonicalName} timeline. Drag an empty range to add a reservation.`}
-                              className="entertainment-resource-timeline"
-                              data-resource-id={resource.id}
-                              onPointerDown={(event) =>
-                                beginRangeSelection(event, resource)
-                              }
-                              style={{
-                                height: layout.height,
-                                width: TIMELINE_WIDTH,
-                              }}
-                            >
-                              {nowMinutes != null &&
-                              nowMinutes >= 0 &&
-                              nowMinutes <= OPERATING_MINUTES ? (
-                                <span
-                                  aria-hidden="true"
-                                  className="entertainment-now-line"
-                                  style={{
-                                    left:
-                                      nowMinutes * PIXELS_PER_MINUTE,
-                                  }}
-                                />
-                              ) : null}
-                              {rangeDraft?.resourceId === resource.id ? (
-                                <span
-                                  className="entertainment-range-draft"
-                                  style={{
-                                    left:
-                                      rangeDraft.startMinute *
-                                      PIXELS_PER_MINUTE,
-                                    width:
-                                      (rangeDraft.endMinute -
-                                        rangeDraft.startMinute) *
-                                      PIXELS_PER_MINUTE,
-                                  }}
-                                />
-                              ) : null}
-                              {layout.placed.map(
-                                ({ reservation, slot }) => {
-                                  const startMinute =
-                                    operatingMinutesForIso(
-                                      reservation.startAt,
-                                      selectedDate,
-                                    ) ?? 0;
-                                  const endMinute =
-                                    operatingMinutesForIso(
-                                      reservation.endAt,
-                                      selectedDate,
-                                    ) ?? startMinute + 15;
-                                  const left =
-                                    Math.max(0, startMinute) *
-                                    PIXELS_PER_MINUTE;
-                                  const width =
-                                    Math.max(
-                                      15,
-                                      Math.min(
-                                        OPERATING_MINUTES,
-                                        endMinute,
-                                      ) - Math.max(0, startMinute),
-                                    ) * PIXELS_PER_MINUTE;
-                                  const hasConflict =
-                                    conflictReservationIds.has(
-                                      reservation.id,
-                                    );
-                                  const isUnrelated =
-                                    selectedEvent != null &&
-                                    reservationEventKey(reservation) !==
-                                      selectedEvent;
-                                  return (
-                                    <button
-                                      aria-label={`${reservation.eventName}, ${reservation.resourceName}, ${formatClock(
-                                        reservation.startAt,
-                                      )} to ${formatClock(
-                                        reservation.endAt,
-                                      )}${
-                                        hasConflict
-                                          ? ", overlap conflict"
-                                          : ""
-                                      }`}
-                                      className={[
-                                        "entertainment-reservation-block",
-                                        reservation.needsReview
-                                          ? "needs-review"
-                                          : "",
-                                        hasConflict ? "has-conflict" : "",
-                                        isUnrelated ? "is-dimmed" : "",
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" ")}
-                                      key={reservation.id}
-                                      onPointerDown={(event) =>
-                                        beginBlockInteraction(
-                                          event,
-                                          reservation,
-                                          "move",
-                                        )
-                                      }
-                                      style={{
-                                        backgroundColor:
-                                          reservation.eventColor,
-                                        color: textColorForBackground(
-                                          reservation.eventColor,
-                                        ),
-                                        left,
-                                        top:
-                                          slot * RESERVATION_SLOT_HEIGHT + 3,
-                                        width,
-                                      }}
-                                      title={`${formatClock(
-                                        reservation.startAt,
-                                      )} – ${formatClock(
-                                        reservation.endAt,
-                                      )}\n${reservation.eventName}\n${
-                                        reservation.resourceName
-                                      }`}
-                                      type="button"
-                                    >
-                                      <span
-                                        aria-hidden="true"
-                                        className="entertainment-resize-handle is-left"
-                                        onPointerDown={(event) =>
-                                          beginBlockInteraction(
-                                            event,
-                                            reservation,
-                                            "resize-start",
-                                          )
-                                        }
-                                      />
-                                      <span className="entertainment-block-copy">
-                                        <strong>
-                                          {formatClock(
-                                            reservation.startAt,
-                                          )}{" "}
-                                          –{" "}
-                                          {formatClock(
-                                            reservation.endAt,
-                                          )}
-                                        </strong>
-                                        {width >= 210 ? (
-                                          <span>
-                                            {reservation.eventName}
-                                          </span>
-                                        ) : null}
-                                      </span>
-                                      <span
-                                        aria-label={
-                                          reservation.manualOverride
-                                            ? "Manual override"
-                                            : reservation.source ===
-                                                "tripleseat"
-                                              ? "Imported from Tripleseat"
-                                              : "Needs review"
-                                        }
-                                        className="entertainment-source-icon"
-                                      >
-                                        {sourceIcon(reservation)}
-                                      </span>
-                                      {hasConflict ? (
-                                        <span
-                                          aria-hidden="true"
-                                          className="entertainment-conflict-icon"
-                                        >
-                                          !
-                                        </span>
-                                      ) : null}
-                                      <span
-                                        aria-hidden="true"
-                                        className="entertainment-resize-handle is-right"
-                                        onPointerDown={(event) =>
-                                          beginBlockInteraction(
-                                            event,
-                                            reservation,
-                                            "resize-end",
-                                          )
-                                        }
-                                      />
-                                    </button>
-                                  );
-                                },
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
+              <div
+                className="entertainment-grid-scroll"
+                ref={scheduleScrollRef}
+              >
+                <div
+                  className="entertainment-grid entertainment-grid-layout"
+                  style={{
+                    "--ent-layout-width": `${scheduleGridWidth + compactScheduleGridWidth + ENTERTAINMENT_LAYOUT_GAP}px`,
+                    "--ent-main-grid-width": `${scheduleGridWidth}px`,
+                    "--ent-compact-grid-width": `${compactScheduleGridWidth}px`,
+                  } as CSSProperties}
+                >
+                  {renderScheduleColumn(
+                    MAIN_CATEGORIES,
+                    "main",
+                    pixelsPerMinute,
+                    timelineWidth,
+                    RESOURCE_COLUMN_WIDTH,
+                    scheduleGridWidth,
+                  )}
+                  {renderScheduleColumn(
+                    COMPACT_CATEGORIES,
+                    "compact",
+                    compactPixelsPerMinute,
+                    compactTimelineWidth,
+                    COMPACT_RESOURCE_COLUMN_WIDTH,
+                    compactScheduleGridWidth,
+                  )}
                 </div>
               </div>
             )}
           </section>
 
-          <details className="entertainment-event-panel" open>
+          <details className="entertainment-event-panel">
             <summary>
               <span>
                 <span className="entertainment-eyebrow">Tripleseat events</span>
@@ -1722,6 +1936,7 @@ export default function EntertainmentScheduleDashboard({
                 <span aria-hidden="true">⌄</span>
               </span>
             </summary>
+            <div className="entertainment-event-panel-body">
             {selectedEvent ? (
               <button
                 className="entertainment-clear-filter"
@@ -1732,8 +1947,8 @@ export default function EntertainmentScheduleDashboard({
               </button>
             ) : null}
             <div className="entertainment-event-list">
-              {filteredEventList.length ? (
-                filteredEventList.map((event) => {
+              {eventList.length ? (
+                eventList.map((event) => {
                   const key = eventKey(event);
                   const eventReservations =
                     payload?.reservations.filter(
@@ -1835,6 +2050,7 @@ export default function EntertainmentScheduleDashboard({
                   </span>
                 </div>
               )}
+            </div>
             </div>
           </details>
         </div>

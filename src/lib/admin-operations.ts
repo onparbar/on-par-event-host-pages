@@ -257,7 +257,9 @@ export function evaluateEventCompleteness({
       : check("food-quantities", "Food quantities", "complete", `${kitchenRows.length} operational food line${kitchenRows.length === 1 ? "" : "s"} have quantities.`);
 
   const floorPlanEvent = floorPlan?.events.find(
-    (event) => event.tripleseatEventId === String(plan.id),
+    (event) =>
+      event.tripleseatEventId === String(plan.id) ||
+      event.source.sourceEventIds?.includes(String(plan.id)),
   );
   const floorPlanAssignments = floorPlanEvent
     ? floorPlan!.reservations.filter(
@@ -272,9 +274,14 @@ export function evaluateEventCompleteness({
         ? check("floor-plan", "Floor plan", "complete", `${floorPlan.status} with ${floorPlanAssignments.length} assignment${floorPlanAssignments.length === 1 ? "" : "s"}.`)
         : check("floor-plan", "Floor plan", "needs-review", `${floorPlan.status} with ${floorPlanAssignments.length} saved assignment${floorPlanAssignments.length === 1 ? "" : "s"}.`);
 
-  const staffAssignments = !kitchen?.foodRunnerOrBwa.trim()
-    ? check("staff-assignments", "Staff assignments", "missing", "No Food Runner/BWA assignment is saved.")
-    : check("staff-assignments", "Staff assignments", "needs-review", `${kitchen.foodRunnerOrBwa} is saved in the legacy BWA field; separate POC and FR roles are not yet available.`);
+  const foodRunners = kitchen?.foodRunners ?? [];
+  const pocs = kitchen?.pocs ?? [];
+  const legacyAssignment = kitchen?.foodRunnerOrBwa.trim() ?? "";
+  const staffAssignments = foodRunners.length > 0 && pocs.length > 0
+    ? check("staff-assignments", "Staff assignments", "complete", `Food Runner: ${foodRunners.join(", ")}; POC: ${pocs.join(", ")}.`)
+    : legacyAssignment
+      ? check("staff-assignments", "Staff assignments", "needs-review", `${legacyAssignment} is saved in the legacy assignment field; select a POC.`)
+      : check("staff-assignments", "Staff assignments", "missing", "Food Runner and POC assignments are both required.");
 
   const checks = [
     endTime,

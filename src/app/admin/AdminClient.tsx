@@ -23,6 +23,7 @@ import type {
   AdminOperationsPayload,
 } from "@/lib/admin-operations";
 import { formatEventDate } from "@/lib/event-format";
+import type { ItineraryAsset } from "@/lib/event-plans/types";
 
 type AdminDateAsset = {
   date: string;
@@ -41,6 +42,7 @@ type ChecklistEventSummary = {
 };
 
 type AdminClientProps = {
+  archivedItineraries: ItineraryAsset[];
   checklistEventSummaries: ChecklistEventSummary[];
   entertainmentSchedules: AdminDateAsset[];
   floorPlans: AdminDateAsset[];
@@ -51,7 +53,7 @@ type AdminClientProps = {
   today: string;
 };
 
-type AdminTab = "readiness" | "assets" | "completed";
+type AdminTab = "readiness" | "assets" | "completed" | "archived-itineraries";
 
 type EvidenceState = "idle" | "loading" | "ready" | "error";
 
@@ -96,7 +98,30 @@ function completedTaskCount(record: ChecklistRecord) {
   return { completed, total };
 }
 
+export function completedChecklistEventName(
+  record: Pick<ChecklistRecord, "eventId" | "eventName">,
+  fallbackName?: string,
+) {
+  return record.eventName.trim() || fallbackName?.trim() || `Event ${record.eventId}`;
+}
+
+function itineraryMonthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function itineraryMonthLabel(monthKey: string) {
+  const parsed = new Date(`${monthKey}-01T12:00:00`);
+  return Number.isNaN(parsed.getTime())
+    ? monthKey
+    : new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "America/New_York",
+      }).format(parsed);
+}
+
 export default function AdminClient({
+  archivedItineraries,
   checklistEventSummaries,
   entertainmentSchedules,
   floorPlans,
@@ -115,11 +140,50 @@ export default function AdminClient({
   const [evidenceEventId, setEvidenceEventId] = useState<number | null>(null);
   const [evidence, setEvidence] = useState<AdminContractEvidence | null>(null);
   const [evidenceState, setEvidenceState] = useState<EvidenceState>("idle");
+  const [checklistRecords, setChecklistRecords] = useState(records);
+  const [unsubmitEventId, setUnsubmitEventId] = useState<number | null>(null);
+  const [unsubmitError, setUnsubmitError] = useState<string | null>(null);
   const closeEvidenceDrawer = useCallback(() => setEvidenceEventId(null), []);
 
-  const submittedRecords = records
+  const submittedRecords = checklistRecords
     .filter((record) => record.status === "submitted" && record.eventId !== 99990001)
     .sort((left, right) => (right.submittedAt || "").localeCompare(left.submittedAt || ""));
+
+  const archivedItineraryMonths = Array.from(
+    archivedItineraries.reduce((groups, item) => {
+      const key = itineraryMonthKey(item.date);
+      const current = groups.get(key) ?? [];
+      current.push(item);
+      groups.set(key, current);
+      return groups;
+    }, new Map<string, ItineraryAsset[]>()),
+  ).sort(([left], [right]) => right.localeCompare(left));
+
+  async function unsubmitChecklist(eventId: number) {
+    setUnsubmitEventId(eventId);
+    setUnsubmitError(null);
+    try {
+      const response = await fetch(`/api/admin/checklists/${eventId}/unsubmit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { record?: ChecklistRecord; error?: string }
+        | null;
+      if (!response.ok || !payload?.record) {
+        throw new Error(payload?.error || "Unable to un-submit checklist.");
+      }
+      setChecklistRecords((current) =>
+        current.map((record) =>
+          record.eventId === eventId ? payload.record! : record,
+        ),
+      );
+    } catch (error) {
+      setUnsubmitError(error instanceof Error ? error.message : "Unable to un-submit checklist.");
+    } finally {
+      setUnsubmitEventId(null);
+    }
+  }
 
   useEffect(() => {
     if (adminState === initialState) {
@@ -300,6 +364,11 @@ export default function AdminClient({
             <strong>Event Add-Ons</strong>
             <span>Enter Food and Entertainment additions; only Food is mirrored live to Kitchen.</span>
           </Link>
+          <Link className="portal-operation-card" href="/admin/integrations/gotab">
+            <span className="portal-module-kicker">Dry-run integration</span>
+            <strong>GoTab Kitchen Dispatch</strong>
+            <span>Verify server configuration, location access, product reads, and dispatch safety.</span>
+          </Link>
         </section>
 
         <section className="sheet-tab-strip" aria-label="Admin sections">
@@ -311,6 +380,9 @@ export default function AdminClient({
           </button>
           <button aria-pressed={activeTab === "completed"} className={`sheet-tab${activeTab === "completed" ? " active" : ""}`} onClick={() => setActiveTab("completed")} type="button">
             Completed Checklists
+          </button>
+          <button aria-pressed={activeTab === "archived-itineraries"} className={`sheet-tab${activeTab === "archived-itineraries" ? " active" : ""}`} onClick={() => setActiveTab("archived-itineraries")} type="button">
+            Past Itineraries
           </button>
         </section>
 
@@ -399,6 +471,43 @@ export default function AdminClient({
               </>
             )}
           </>
+        ) : activeTab === "archived-itineraries" ? (
+          <section className="asset-section admin-archive-folder">
+            <h3>Past Itineraries</h3>
+            <p className="meta">Archived itinerary files from parties before today.</p>
+            {archivedItineraryMonths.length ? (
+              <div className="admin-archive-list">
+                {archivedItineraryMonths.map(([monthKey, items]) => (
+                  <details className="admin-archive-month" key={monthKey}>
+                    <summary>{itineraryMonthLabel(monthKey)} <span className="meta">({items.length} events)</span></summary>
+                    <div className="admin-archive-month-events">
+                      {items.map((item) => (
+                        <div className="admin-archive-item" key={item.id}>
+                          <div>
+                            <strong>{item.name}</strong>
+                            <span className="meta">{formatEventDate(item.date)} · {item.guest_count} guests</span>
+                          </div>
+                          {item.pdf ? (
+                            <a href={item.pdf} target="_blank" rel="noreferrer">
+                              Open itinerary
+                            </a>
+                          ) : (
+                            <a
+                              href={`/itineraries?eventId=${item.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open itinerary view
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            ) : <p className="meta">No past itineraries are available.</p>}
+          </section>
         ) : (
           <section className="completed-grid">
             {submittedRecords.length ? (
@@ -408,11 +517,14 @@ export default function AdminClient({
                 );
                 const addOnLines = submittedAddOnLines(record);
                 const progress = completedTaskCount(record);
+                const eventName = completedChecklistEventName(record, event?.name);
+                const eventDate = record.eventDate || event?.date;
+                const poc = record.poc.trim() || event?.poc;
                 return (
                   <article className="asset-section completed-card" key={record.eventId}>
-                    <h3>{event?.name ?? `Event ${record.eventId}`}</h3>
+                    <h3>{eventName}</h3>
                     <p className="meta">
-                      {event ? formatEventDate(event.date) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{event?.poc ? ` | ${event.poc}` : ""}
+                      {eventDate ? formatEventDate(eventDate) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{poc ? ` | ${poc}` : ""}
                     </p>
                     <div className="completed-meta-grid">
                       <div className="checklist-meta-card">
@@ -444,6 +556,16 @@ export default function AdminClient({
                         )}
                       </div>
                     </div>
+                    <div className="completed-card-actions">
+                      <button
+                        className="button-link"
+                        disabled={unsubmitEventId === record.eventId}
+                        onClick={() => void unsubmitChecklist(record.eventId)}
+                        type="button"
+                      >
+                        {unsubmitEventId === record.eventId ? "Un-submitting…" : "Un-submit checklist"}
+                      </button>
+                    </div>
                   </article>
                 );
               })
@@ -453,6 +575,7 @@ export default function AdminClient({
                 <p className="meta">Submitted checklist and add-on sheets will appear here after a BWA submits them from the checklist page.</p>
               </section>
             )}
+            {unsubmitError ? <p className="portal-form-error" role="alert">{unsubmitError}</p> : null}
           </section>
         )}
       </div>
