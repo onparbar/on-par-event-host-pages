@@ -105,8 +105,25 @@ resource ID/name/category, ISO start and end times, event color, source,
 manual-override and review flags, and update time. It deliberately excludes
 booking details, notes, source documents, audit history, and all write actions.
 
+The additive `evidence` object reports each requested date's upstream sync
+status and timestamps, source mode, event identities (including buyouts without
+allocation rows), unresolved allocation IDs, conflict counts and safe issue
+codes. `generatedAt` is the response time, not the last successful Tripleseat
+sync. `allSyncsFresh` requires successful live syncs within two minutes for
+every date; it does not prove that inventory is available. Failed, running,
+partial, missing, future-dated or stale sync evidence never counts as fresh.
+
+Version 1 explicitly reports `coverage.overlapComplete=false` and
+`coverage.buyoutsComplete=false`: saved operating-date slices and historical
+syncs do not prove that every spanning event and Tentative buyout is present.
+Consumers must not promote this diagnostic feed into automatic availability.
+See [the evidence contract and rollout checks](docs/final-call-source-evidence.md).
+
 Kitchen and Entertainment Schedule synchronization filter the configured OPE
-location and exact `DEFINITE` event status.
+location. Entertainment includes every `TENTATIVE` event as a full venue
+buyout, regardless of its name or whether it has entertainment line items.
+The existing named-buyout handling is retained. Ordinary kitchen selection
+continues to use `DEFINITE` status.
 Structured menu selections are preferred. Approved `Food Packages` and
 `Food Platters` document line items are the fallback when selections are
 absent. It does not scrape Tripleseat or automate login.

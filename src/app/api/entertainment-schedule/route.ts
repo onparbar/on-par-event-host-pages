@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { getEntertainmentDay } from "@/lib/entertainment/sync";
+import { entertainmentServiceEvidence } from "@/lib/entertainment/service-evidence";
 import { isValidEntertainmentDate } from "@/lib/entertainment/time";
 import { ENTERTAINMENT_TIME_ZONE } from "@/lib/entertainment/types";
 
@@ -125,6 +126,7 @@ export async function GET(request: Request) {
         timeZone: ENTERTAINMENT_TIME_ZONE,
         reservationCount: reservations.length,
         reservations,
+        evidence: entertainmentServiceEvidence(days),
       },
       { headers: { "cache-control": "private, no-store" } },
     );
