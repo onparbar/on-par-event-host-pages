@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { getEntertainmentDay } from "@/lib/entertainment/sync";
+import { entertainmentServiceEvidence } from "@/lib/entertainment/service-evidence";
+import { readEntertainmentInterval } from "@/lib/entertainment/interval-evidence";
 import { isValidEntertainmentDate } from "@/lib/entertainment/time";
 import { ENTERTAINMENT_TIME_ZONE } from "@/lib/entertainment/types";
 
@@ -92,6 +94,11 @@ export async function GET(request: Request) {
   }
 
   try {
+    if (searchParams.get("coverage") === "interval") {
+      return NextResponse.json(await readEntertainmentInterval(from, to), {
+        headers: { "cache-control": "private, no-store" },
+      });
+    }
     const days = await Promise.all(dates.map((date) => getEntertainmentDay(date)));
     const reservations = days
       .flatMap((day) => day.reservations)
@@ -125,6 +132,7 @@ export async function GET(request: Request) {
         timeZone: ENTERTAINMENT_TIME_ZONE,
         reservationCount: reservations.length,
         reservations,
+        evidence: entertainmentServiceEvidence(days),
       },
       { headers: { "cache-control": "private, no-store" } },
     );

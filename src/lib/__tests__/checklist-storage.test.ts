@@ -87,7 +87,7 @@ describe("legacy Event Host checklist database authentication", () => {
   it("loads the saved event identity used by completed checklists", async () => {
     vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
     vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test_value");
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       Response.json([
         {
           event_id: 7002,
