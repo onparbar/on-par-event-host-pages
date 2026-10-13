@@ -499,6 +499,40 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
     };
   }
 
+  /** One SQL statement gives a consistent saved-data snapshot, without REST pagination. */
+  async getInterval(startAt: string, endAt: string) {
+    const value = await this.jsonRequest<{
+      read_at: string;
+      events: EventRow[];
+      reservations: ReservationRow[];
+    }>("rpc/final_call_read_entertainment_interval", undefined, {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      redirect: "error",
+      body: JSON.stringify({ p_start: startAt, p_end: endAt }),
+    });
+    if (!Array.isArray(value.events) || !Array.isArray(value.reservations) ||
+      value.events.length > 10_000 || value.reservations.length > 10_000 ||
+      !Number.isFinite(Date.parse(value.read_at))) {
+      throw new Error("Entertainment interval snapshot could not be verified.");
+    }
+    return {
+      readAt: value.read_at,
+      events: value.events.map(eventFromRow),
+      reservations: value.reservations.map(reservationFromRow),
+    };
+  }
+
+  async recordIntervalEvidence(id: string, payload: unknown) {
+    await this.emptyRequest("entertainment_source_reads", undefined, {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      redirect: "error",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ id, payload }),
+    });
+  }
+
   async getReservation(reservationId: string) {
     const rows = await this.jsonRequest<ReservationRow[]>(
       "entertainment_reservations",

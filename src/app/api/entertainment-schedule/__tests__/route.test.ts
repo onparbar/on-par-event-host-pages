@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getEntertainmentDay = vi.fn();
+const readEntertainmentInterval = vi.fn();
 
 vi.mock("@/lib/entertainment/sync", () => ({
   getEntertainmentDay,
 }));
+vi.mock("@/lib/entertainment/interval-evidence", () => ({ readEntertainmentInterval }));
 
 function request(
   query = "from=2026-08-04&to=2026-08-11",
@@ -163,5 +165,29 @@ describe("read-only entertainment schedule service API", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Unable to load the saved entertainment schedule.",
     });
+  });
+
+  it("authenticates interval reads and preserves the stored evidence envelope", async () => {
+    const { GET } = await import("../route");
+    const query = "from=2026-08-04&to=2026-08-05&coverage=interval";
+    expect((await GET(request(query, "wrong"))).status).toBe(401);
+    expect(readEntertainmentInterval).not.toHaveBeenCalled();
+    const payload = { evidence: { version: 2, receiptId: "original-receipt" } };
+    readEntertainmentInterval.mockResolvedValue(payload);
+    const response = await GET(request(query));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.json()).toEqual(payload);
+    expect(readEntertainmentInterval).toHaveBeenCalledWith("2026-08-04", "2026-08-05");
+    expect(getEntertainmentDay).not.toHaveBeenCalled();
+  });
+
+  it("returns a sanitized failure when an interval read or receipt fails", async () => {
+    readEntertainmentInterval.mockRejectedValue(new Error("private database detail"));
+    const { GET } = await import("../route");
+    const response = await GET(request("from=2026-08-04&to=2026-08-05&coverage=interval"));
+    expect(response.status).toBe(502);
+    expect(JSON.stringify(await response.json())).not.toContain("private database");
+    expect(getEntertainmentDay).not.toHaveBeenCalled();
   });
 });

@@ -79,6 +79,10 @@ export interface TripleseatAdapter {
   fetchEntertainmentEventsForDate?(
     date: string,
   ): Promise<EntertainmentSourceEvent[]>;
+  fetchEntertainmentEventsOverlappingRange?(
+    from: string,
+    to: string,
+  ): Promise<EntertainmentSourceEvent[]>;
   fetchEventDateById(eventId: string): Promise<string | null>;
   getDiagnostics(): TripleseatDiagnostics;
 }
@@ -1023,6 +1027,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     endDate = startDate,
     status: string | null = REQUIRED_STATUS,
     requireComplete = false,
+    overlap = false,
   ) {
     const events: UnknownRecord[] = [];
     const seen = new Set<string>();
@@ -1032,8 +1037,8 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       const statusSeen = new Set<string>();
       for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
         const query = new URLSearchParams({
-          event_start_date: apiDate(startDate),
-          event_end_date: apiDate(endDate),
+          [overlap ? "date_range_start" : "event_start_date"]: apiDate(startDate),
+          [overlap ? "date_range_end" : "event_end_date"]: apiDate(endDate),
           location_ids: this.locationId,
           order: "event_start",
           sort_direction: "asc",
@@ -1299,6 +1304,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
   private async normalizeEntertainmentEvent(
     summary: UnknownRecord,
     requestedDate: string,
+    strict = false,
   ): Promise<EntertainmentSourceEvent | null> {
     const summaryId = sourceEventId(summary);
     if (!summaryId) {
@@ -1312,7 +1318,11 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       status?.trim().toUpperCase() === "TENTATIVE" ||
       isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
-    if (status && status.toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
+    if (strict && (sourceEventId(detail) !== summaryId || locationId !== this.locationId || !status ||
+      !["DEFINITE", "TENTATIVE", "PROSPECT", "LOST", "CLOSED", "CANCELED", "CANCELLED"].includes(status.trim().toUpperCase()))) {
+      throw new Error("Tripleseat entertainment identity or location could not be verified.");
+    }
+    if (status && status.trim().toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
       return null;
     }
     if (locationId && locationId !== this.locationId) {
@@ -1708,6 +1718,25 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       .sort((left, right) =>
         (left.eventStartAt ?? "").localeCompare(right.eventStartAt ?? ""),
       );
+  }
+
+  /** Inclusive calendar overlap search: do not filter the result by its starting date. */
+  async fetchEntertainmentEventsOverlappingRange(from: string, to: string) {
+    if (!isValidKitchenDate(from) || !isValidKitchenDate(to) || from > to ||
+      Date.parse(to) - Date.parse(from) > 33 * 86_400_000) {
+      throw new Error("Entertainment overlap range is invalid.");
+    }
+    await this.ensureInitialized();
+    const summaries = await this.eventSummaries(from, to, null, true, true);
+    const events: EntertainmentSourceEvent[] = [];
+    // Bound upstream concurrency. A failed detail read invalidates the whole result.
+    for (let index = 0; index < summaries.length; index += 5) {
+      const batch = await Promise.all(summaries.slice(index, index + 5).map(
+        (summary) => this.normalizeEntertainmentEvent(summary, from, true),
+      ));
+      events.push(...batch.filter((event): event is EntertainmentSourceEvent => event != null));
+    }
+    return events;
   }
 
   async fetchEventDateById(eventId: string) {

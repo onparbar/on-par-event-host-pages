@@ -57,6 +57,27 @@ describe("Tripleseat entertainment projection", () => {
     event_end_iso8601: "2026-07-28T19:00:00-04:00",
   };
 
+  it("uses overlap filters and preserves an event that started days before the requested date", async () => {
+    const urls: string[] = [];
+    const events = await testAdapter({ ...ordinaryTentative,
+      event_date_iso8601: "2026-07-20",
+      event_start_iso8601: "2026-07-20T17:00:00-04:00",
+    }, urls).fetchEntertainmentEventsOverlappingRange("2026-07-27", "2026-07-29");
+    expect(events[0].localDate).toBe("2026-07-20");
+    const query = new URL(urls.find((url) => url.includes("/events/search?"))!).searchParams;
+    expect(query.get("date_range_start")).toBeTruthy();
+    expect(query.get("date_range_end")).toBeTruthy();
+    expect(query.has("event_start_date")).toBe(false);
+    expect(query.has("event_end_date")).toBe(false);
+  });
+
+  it.each([{ location_id: 999 }, { location_id: null }, { id: 999 }, { id: null }, { status: null }])(
+    "rejects incomplete scoped identities during overlap reads: %j", async (change) => {
+      await expect(testAdapter({ ...ordinaryTentative, ...change }, [])
+        .fetchEntertainmentEventsOverlappingRange("2026-07-27", "2026-07-29")).rejects.toThrow();
+    },
+  );
+
   it("retains every Tentative event as a buyout even without entertainment rows or a buyout name", async () => {
     const events = await testAdapter(
       ordinaryTentative,
