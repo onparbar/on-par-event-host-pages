@@ -126,8 +126,9 @@ npx --yes supabase@2.119.0 db query --project-ref tmnstuthbllnoqgepotn --file sc
 npx --yes supabase@2.119.0 db advisors --project-ref tmnstuthbllnoqgepotn --type security
 ```
 
-Expected smoke result: `service_interval_read = PASS`, with event and reservation
-counts. Zero counts can be valid. The checks are read-only and return no guest
+Expected smoke result: `service_interval_read = PASS`. Submit the entire smoke
+file together; an invalid response or permission error must stop the operation.
+The checks are read-only and return no guest
 names or raw event payloads. Report any advisor findings for the new receipt
 table or RPC; unrelated existing findings are separate work.
 

@@ -1,6 +1,5 @@
 -- Read-only checks; no customer rows or credentials are returned.
 -- A PASS here verifies database structure/permissions, not live Tripleseat coverage.
-begin read only;
 with objects as (
   select to_regclass('public.entertainment_source_reads') as receipts,
     to_regprocedure('public.final_call_read_entertainment_interval(timestamptz,timestamptz)') as rpc,
@@ -49,4 +48,3 @@ with objects as (
 )
 select check_name, case when passed then 'PASS' else 'STOP' end as result
 from checks order by check_name;
-rollback;

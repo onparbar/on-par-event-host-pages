@@ -22,7 +22,7 @@ describe("interval migration operator checks", () => {
     await migrate();
     expect((await report("verify")).every((row) => row.result === "PASS")).toBe(true);
     expect(await report("smoke")).toEqual([
-      { check_name: "service_interval_read", result: "PASS", event_count: 0, reservation_count: 0 },
+      { check_name: "service_interval_read", result: "PASS" },
     ]);
     expect((await db.query("select count(*)::int as count from entertainment_source_reads")).rows).toEqual([{ count: 0 }]);
   });
@@ -59,5 +59,12 @@ describe("interval migration operator checks", () => {
     await db.exec("revoke select on entertainment_event_snapshots from service_role");
     expect(await report("preflight")).toContainEqual({ check_name: "service_can_read_existing_schedule", result: "STOP" });
     await expect(report("smoke")).rejects.toThrow(/permission denied/);
+  });
+
+  it("rejects an RPC that runs but returns an invalid result shape", async () => {
+    await migrate();
+    await db.exec(`create or replace function final_call_read_entertainment_interval(p_start timestamptz, p_end timestamptz)
+      returns jsonb language sql stable security invoker as 'select null::jsonb'`);
+    await expect(report("smoke")).rejects.toThrow(/STOP: service interval response has an invalid shape/);
   });
 });

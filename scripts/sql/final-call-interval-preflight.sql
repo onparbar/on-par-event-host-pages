@@ -1,6 +1,5 @@
 -- Read-only prerequisite checks. Run on the verified Event Host project.
 -- Every row must say PASS before applying the source migration.
-begin read only;
 with objects as (
   select to_regclass('public.entertainment_event_snapshots') as events,
     to_regclass('public.entertainment_reservations') as reservations,
@@ -46,4 +45,3 @@ with objects as (
 )
 select check_name, case when passed then 'PASS' else 'STOP' end as result
 from checks order by check_name;
-rollback;
