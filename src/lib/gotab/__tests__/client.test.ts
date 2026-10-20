@@ -383,6 +383,94 @@ describe("GoTab server client", () => {
     });
   });
 
+  it.each([
+    {
+      scenario: "the confirmed Lex nickname",
+      serverName: "Lex",
+      employees: [{ userId: "runner-1", name: "Alexis Younker", displayName: "Alexis Younker", archived: null }],
+      expectedEmployeeId: "runner-1",
+    },
+    {
+      scenario: "case and whitespace differences in the confirmed identity",
+      serverName: "  lEx  ",
+      employees: [{ userId: "runner-1", name: " ALEXIS  YOUNKER ", displayName: "Alexis", archived: null }],
+      expectedEmployeeId: "runner-1",
+    },
+    {
+      scenario: "another employee sharing Alexis's first name",
+      serverName: "Lex",
+      employees: [
+        { userId: "runner-2", name: "Alexis Other", displayName: "Lex", archived: null },
+        { userId: "runner-1", name: "Alexis Younker", displayName: "Alexis Younker", archived: null },
+      ],
+      expectedEmployeeId: "runner-1",
+    },
+    {
+      scenario: "a missing confirmed employee without guessing a different Lex",
+      serverName: "Lex",
+      employees: [{ userId: "runner-2", name: "Alexis Other", displayName: "Lex", archived: null }],
+      expectedEmployeeId: undefined,
+    },
+    {
+      scenario: "an archived confirmed employee",
+      serverName: "Lex",
+      employees: [{ userId: "runner-1", name: "Alexis Younker", displayName: "Alexis Younker", archived: "2026-10-20T12:00:00Z" }],
+      expectedEmployeeId: undefined,
+    },
+    {
+      scenario: "duplicate directory rows for the same confirmed employee ID",
+      serverName: "Lex",
+      employees: [
+        { userId: "runner-1", name: "Alexis Younker", displayName: "Alexis", archived: null },
+        { userId: "runner-1", name: "Alexis Younker", displayName: "Alexis Younker", archived: null },
+      ],
+      expectedEmployeeId: "runner-1",
+    },
+    {
+      scenario: "duplicate active records for the confirmed full name",
+      serverName: "Lex",
+      employees: [
+        { userId: "runner-1", name: "Alexis Younker", displayName: "Alexis Younker", archived: null },
+        { userId: "runner-2", name: "Alexis Younker", displayName: "Alexis Younker", archived: null },
+      ],
+      expectedEmployeeId: undefined,
+    },
+  ])("resolves $scenario safely for the KDS Server", async ({ serverName, employees, expectedEmployeeId }) => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) {
+        return json({ token: "server-token", expiresIn: 86400 });
+      }
+      if (url.endsWith("/api/loc")) {
+        return json([{ locationUuid: "location-2", locationId: 2, name: "On Par" }]);
+      }
+      if (url.endsWith("/api/graph")) {
+        return json({ data: { employeesList: employees } });
+      }
+      return json({ data: { tabUuid: "tab-runner", status: "OPEN", orders: [{ orderId: "138103003" }] } });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+
+    await client.createEventFoodTab({
+      externalId: "event:ADDON:chicken-tenders:1:DISPATCH",
+      ticketName: "Event Name",
+      productUuid: "prd_chicken_tenders",
+      quantity: 1,
+      itemName: "Chicken Tenders",
+      itemNotes: {},
+      serverName,
+    });
+
+    const orderRequests = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).filter(
+      ([url]) => url.endsWith("/api/loc/location-2/tabs"),
+    );
+    expect(orderRequests).toHaveLength(1);
+    const order = JSON.parse(String(orderRequests[0][1].body));
+    expect(order.employeeId).toBe(expectedEmployeeId);
+    expect(order.name).toBe("Event Name");
+    expect(order.spotUuid).toBe(configuration.eventSpotUuid);
+    expect(order.items).toMatchObject([{ quantity: 1 }]);
+  });
+
   it("does not guess the KDS Server when a POC name is ambiguous", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.endsWith("/api/oauth/token")) {
