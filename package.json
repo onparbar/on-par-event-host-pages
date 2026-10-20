@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:shared-postgres": "node scripts/test-shared-postgres.mjs",
     "test:watch": "vitest",
     "verify": "python3 verify_next_assets.py"
   },
@@ -22,6 +23,8 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "embedded-postgres": "18.4.0-beta.17",
+    "pg": "8.23.1",
     "typescript": "^5.9.0",
     "vitest": "^4.1.10"
   }
