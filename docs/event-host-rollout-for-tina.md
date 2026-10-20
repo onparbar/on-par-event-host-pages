@@ -1,9 +1,34 @@
 # Event Host: Tina's access and migration steps
 
-Prepared October 13, 2026. Carlos selected the GitHub workflow with **no additional
+Updated October 20, 2026. Carlos selected the GitHub workflow with **no additional
 paid Vercel seat**. This document covers the source evidence change in
 [PR #3](https://github.com/onparbar/on-par-event-host-pages/pull/3).
 It does not activate shared reservation protection or change a reservation.
+
+## Current hold points — October 20
+
+Both Carlos accounts now have Vercel Viewer access. Database access remains an
+owner decision; the owner-operated path is available. Tina's authenticated CLI
+inspection reports six passing preflight rows, but substantial historical
+migration/version drift. **Do not run the apply step below until the exact
+canonical history/adoption manifest has been reviewed and owner-authorized and
+a fresh dry run lists only the source migration.** Preserve all 15 remote
+history records, the current Mini Golf constraint extension and current Food
+Runner assignments. Current effects of unrecorded operational files do not
+prove past execution. Do not replay mapping upserts or superseded backfills,
+blanket-mark versions applied, or conceal drift with a reduced manifest.
+Keep other applications' SQL and private audit data out of this public repo.
+
+The source candidate now incorporates operations through `8598f39`, preserving
+all five newer operations fixes. Vercel Production tracks `main`; PR #3 targets
+`codex/event-host-dashboard-deploy`, which has diverged from `main`. A reviewed
+release path and explicit production approval are still required. Do not
+retarget the PR, change branch tracking or promote an older preview as a shortcut.
+
+The new authenticated runtime endpoint in section 4 can verify configuration
+before any database migration. It performs no database or upstream request.
+It does not prove database connectivity, installed migrations, live source
+completeness or shared booking protection.
 
 ## 1. Give Carlos free Vercel visibility
 
@@ -94,7 +119,7 @@ credentials into a different environment just to make a test pass.
 ### Run read-only checks and inspect migration history
 
 ```sh
-npx --yes supabase@2.119.0 db query --project-ref tmnstuthbllnoqgepotn --file scripts/sql/final-call-interval-preflight.sql
+npx --yes supabase@2.119.0 db query --linked --project-ref tmnstuthbllnoqgepotn --file scripts/sql/final-call-interval-preflight.sql
 npx --yes supabase@2.119.0 migration list --project-ref tmnstuthbllnoqgepotn
 npx --yes supabase@2.119.0 db push --project-ref tmnstuthbllnoqgepotn --dry-run --skip-vault
 ```
@@ -110,19 +135,20 @@ verification below and reconcile history before attempting another migration.
 
 ### Apply and verify
 
-Only after the preceding checks pass:
+Only after the preceding checks pass and the owner approves the exact source
+migration/reconciliation on the verified target:
 
 ```sh
 npx --yes supabase@2.119.0 db push --project-ref tmnstuthbllnoqgepotn --skip-vault
 npx --yes supabase@2.119.0 migration list --project-ref tmnstuthbllnoqgepotn
-npx --yes supabase@2.119.0 db query --project-ref tmnstuthbllnoqgepotn --file scripts/sql/final-call-interval-verify.sql
+npx --yes supabase@2.119.0 db query --linked --project-ref tmnstuthbllnoqgepotn --file scripts/sql/final-call-interval-verify.sql
 ```
 
 Confirm migration **`20261013181916`** is recorded remotely and all **seven
 verification rows say PASS**. Then run:
 
 ```sh
-npx --yes supabase@2.119.0 db query --project-ref tmnstuthbllnoqgepotn --file scripts/sql/final-call-interval-smoke.sql
+npx --yes supabase@2.119.0 db query --linked --project-ref tmnstuthbllnoqgepotn --file scripts/sql/final-call-interval-smoke.sql
 npx --yes supabase@2.119.0 db advisors --project-ref tmnstuthbllnoqgepotn --type security
 ```
 
@@ -140,6 +166,46 @@ PASS/STOP row passed; inspect the returned rows.
 
 ## 4. Verify the preview before releasing through GitHub
 
+### Configuration-only check, before source acceptance
+
+The combined candidate exposes `GET /api/entertainment-schedule/runtime` with
+the existing Bearer service authentication. It reports only the resolved
+Supabase project ref, whether a database credential is configured, effective
+Tripleseat live/mock selection, deployment environment and full Git SHA. The
+database URL resolver and live/mock selector are shared with the actual clients.
+There are no database reads/writes, snapshot syncs, upstream calls or receipts.
+Unknown/custom database URLs and unknown deployment identities fail verification.
+
+From the **Final Call workspace**, run:
+
+```sh
+npm run event-host:runtime -- https://VERIFIED-IMMUTABLE-PREVIEW-HOST tmnstuthbllnoqgepotn FULL_40_CHARACTER_PREVIEW_COMMIT
+```
+
+Provision the existing matching `ENTERTAINMENT_SCHEDULE_API_TOKEN` into the
+consumer's process environment as `EVENT_HOST_SCHEDULE_API_TOKEN` through an
+approved secret manager/environment loader. These scripts do not automatically
+load an env file. Never place credentials in arguments, comments, logs or email.
+Do not rotate or replace an unavailable token simply to run a test.
+
+Preview protection is separate from service authentication. Where existing
+Vercel project permissions allow Trusted Sources access, supply a short-lived
+Event Host project OIDC token as `EVENT_HOST_PREVIEW_OIDC_TOKEN` and its exact
+canonical preview origin as `EVENT_HOST_PREVIEW_ORIGIN`. Both must be present.
+The consumer sends `x-vercel-trusted-oidc-idp-token` only to that bound preview;
+it refuses a different preview, production, or redirects. It never implicitly
+uses a Final Call project's ambient OIDC token. A Chrome Viewer session alone
+does not authenticate this command. Keep Deployment Protection enabled; the
+owner can alternatively use supported authenticated CLI transport to inspect
+the same endpoint securely.
+
+Require the expected database ref, full commit, Preview environment, configured
+credential and live adapter selection. `configurationVerified: true` proves
+only those settings for that candidate, never database access or available
+inventory; `availability` remains `unknown`.
+
+### Source acceptance and release
+
 1. Open PR #3's **Vercel** check and select the latest Ready preview for its exact
    commit. Give Carlos the ordinary deployment/preview URL and commit SHA.
 2. Tina checks that existing server-side settings are present in the intended
@@ -147,8 +213,10 @@ PASS/STOP row passed; inspect the returned rows.
    credential, and live Tripleseat connection/location. Confirm presence and
    scope only; do not copy values into chat. The interval read requires live
    Tripleseat mode, not mock mode. Reuse the established integration credentials.
-3. Carlos runs the prepared local diagnostic against that preview using the
-   existing service token supplied securely. The command accepts an optional
+3. After migration verification and approval for receipt-producing acceptance,
+   Carlos runs the prepared local diagnostic against that preview using the
+   existing service token supplied securely. It uses the same process environment
+   and optional origin-bound Preview authentication described above. The command accepts an optional
    third argument for the verified Event Host preview origin:
 
    ```sh
@@ -173,11 +241,12 @@ PASS/STOP row passed; inspect the returned rows.
    failures must be tested in an isolated environment, without breaking the live
    integration. Review/resynchronize old saved allocations through the normal
    staff workflow only when an actual mismatch has been identified.
-6. After database and preview acceptance, approve/merge **PR #3 only** into the
-   confirmed production branch. Let the existing Git integration deploy it, then
-   confirm the deployed SHA and repeat the source checks on production. If an
-   approval or promotion is required by existing Vercel settings, Tina performs
-   it. Do not merge just because a preview build is green.
+6. After database, preview and mirror acceptance, obtain the reviewed release
+   plan and explicit owner approval. The PR target currently differs from the
+   tracked production branch; merging this PR alone is not a verified production
+   release procedure. Preserve the latest operations lineage, validate the exact
+   release SHA and redacted contract, then use only the approved deployment path
+   and recheck production. Do not merge just because a preview build is green.
 
 Keep the REX and Waitlist `ENTERTAINMENT_INTERVAL_EVIDENCE` flags off until their
 mirror checks pass. Those applications must preserve the original receipt,

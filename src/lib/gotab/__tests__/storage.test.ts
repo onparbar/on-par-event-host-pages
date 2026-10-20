@@ -15,6 +15,7 @@ describe("GoTab kitchen staff lookup", () => {
   ])("reads only the selected event's current Food Runner: $expected", async ({ rows, expected }) => {
     const fetchImpl = vi.fn().mockResolvedValue(Response.json(rows));
     const storage = new GoTabIntegrationStorage({
+      NODE_ENV: "test",
       SUPABASE_URL: "https://example.supabase.co",
       SUPABASE_SECRET_KEY: "test-secret",
     }, fetchImpl);
@@ -31,7 +32,7 @@ describe("GoTab kitchen staff lookup", () => {
 
   it("does not treat a failed staff lookup as an unassigned event", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
-    const storage = new GoTabIntegrationStorage({ SUPABASE_SECRET_KEY: "test-secret" }, fetchImpl);
+    const storage = new GoTabIntegrationStorage({ NODE_ENV: "test", SUPABASE_SECRET_KEY: "test-secret" }, fetchImpl);
     await expect(storage.getKitchenFoodRunner("event-1")).rejects.toThrow("database request failed (503)");
   });
 });

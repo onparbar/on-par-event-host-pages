@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseSecret } from "../kitchen/storage";
+import { entertainmentSupabaseBaseUrl } from "./configuration";
 import type {
   EntertainmentAuditEntry,
   EntertainmentEventSnapshot,
   EntertainmentReservation,
   EntertainmentSyncState,
 } from "./types";
-
-const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 
 type FetchImplementation = typeof fetch;
 
@@ -305,10 +304,6 @@ function auditFromRow(row: AuditRow): EntertainmentAuditEntry {
   };
 }
 
-function cleanBaseUrl(value: string) {
-  return value.replace(/\/+$/, "");
-}
-
 function isJwt(value: string) {
   return /^eyJ[^.]*\.[^.]+\.[^.]+$/.test(value);
 }
@@ -352,9 +347,7 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
   }
 
   private tableUrl(table: string, params?: URLSearchParams) {
-    const baseUrl = cleanBaseUrl(
-      this.env.SUPABASE_URL?.trim() || DEFAULT_SUPABASE_URL,
-    );
+    const baseUrl = entertainmentSupabaseBaseUrl(this.env);
     const query = params?.toString();
     return `${baseUrl}/rest/v1/${table}${query ? `?${query}` : ""}`;
   }

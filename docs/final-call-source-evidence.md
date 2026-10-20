@@ -8,6 +8,22 @@ For the GitHub workflow without another paid Vercel seat, use
 The evidence object omits event names, notes, booking identifiers,
 raw errors, environment variable names and raw source snapshots.
 
+## Configuration-only diagnostic — October 20, 2026
+
+`GET /api/entertainment-schedule/runtime` requires the same Bearer service token
+and returns a private, non-cacheable configuration report. Its allowlist contains
+the resolved Supabase project ref, credential-presence boolean, effective
+Tripleseat live/mock selection, deployment environment and full commit SHA.
+It shares the real clients' URL and adapter-selection logic, but constructs no
+client and performs no network/database call or receipt write. Invalid or custom
+database URLs are represented as an unknown identity, never echoed.
+
+This endpoint may be checked before migration or receipt-producing HTTP
+acceptance. A matching report establishes configuration for that exact candidate
+only. It does not establish database connectivity, schema permissions, actual
+upstream success, source completeness or reservation protection. The rollout
+guide documents the separate service-token and Preview-authentication requirements.
+
 ## Reading the report
 
 - `generatedAt`: when this response was assembled. Never use it as the source
