@@ -35,12 +35,14 @@ before any database migration. It performs no database or upstream request.
 It does not prove database connectivity, installed migrations, live source
 completeness or shared booking protection.
 
-Carlos has confirmed that Mini Golf belongs in the shared-protection scope.
-The source currently treats it as untimed open play and excludes it from timed
-reservations/conflict checks. Confirm the capacity and timing rules for Level
-Up, Wild Axe and Great Escape before changing that behavior. Course identities
-alone do not establish exclusive booking units or player limits. This remains
-separate from the source-only migration and PR #3 release.
+Carlos clarified that Mini Golf has **no capacity cap**. Preserve its open-play
+behavior for Level Up, Wild Axe and Great Escape; do not model the courses as
+three exclusive booking slots, impose a player limit, or derive a limit from
+the approximate 800-person description. Mini Golf remains visible as an
+uncapped entertainment item, separate from the 29 finite reservable resources.
+This does not change the existing whole-venue buyout rules. No capacity-policy
+decision is outstanding for Mini Golf and no source-only migration change is
+needed for this clarification.
 
 ## 1. Give Carlos free Vercel visibility
 
