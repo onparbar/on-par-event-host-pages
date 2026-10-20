@@ -24,6 +24,12 @@ prove past execution. Do not replay mapping upserts or superseded backfills,
 blanket-mark versions applied, or conceal drift with a reduced manifest.
 Keep other applications' SQL and private audit data out of this public repo.
 
+The [private migration-history comparison helper](migration-history-review.md)
+can fingerprint the full local inventory against an existing owner audit or a
+read-only history export. It makes no database connection or repair and always
+requires review. Its report helps prepare the exact manifest; it does not
+establish schema equivalence or replace the source-only dry run.
+
 The source candidate now incorporates operations through `8598f39`, preserving
 all five newer operations fixes. Vercel Production tracks `main`; PR #3 targets
 `codex/event-host-dashboard-deploy`, which has diverged from `main`. A reviewed
