@@ -31,6 +31,7 @@ import {
   type KitchenTimedAlert,
 } from "../../lib/kitchen/alerts";
 import { quantityAwareReadinessKey } from "../../lib/kitchen/readiness";
+import { appetizerDropReminder } from "../../lib/kitchen/appetizer-drop";
 import type {
   KitchenAddOnActivity,
   KitchenAddOnCompletion,
@@ -677,6 +678,7 @@ export default function KitchenDashboard() {
       const dueThisMinute = timedAlerts.filter(
         (alert) =>
           alert.scheduledAt === currentMinute &&
+          (!alert.expiresAt || alert.expiresAt > currentMinute) &&
           !dismissedAlertIdsRef.current.has(alert.id),
       );
       setAlertQueue((current) => {
@@ -684,7 +686,8 @@ export default function KitchenDashboard() {
           timedAlerts.map((alert) => alert.id),
         );
         const stillApplicable = current.filter(
-          (alert) => currentAlertIds.has(alert.id),
+          (alert) => currentAlertIds.has(alert.id) &&
+            (!alert.expiresAt || alert.expiresAt > currentMinute),
         );
         const existingIds = new Set(
           stillApplicable.map((alert) => alert.id),
@@ -1726,8 +1729,11 @@ export function KitchenEventAccordion({
       data-kitchen-event-accordion={String(checklist.event.eventId)}
     >
       <summary className="kitchen-event-accordion-summary">
-        <strong>{checklist.event.name}</strong>
-        <span>{eventTime}</span>
+        <span className="kitchen-event-accordion-identity">
+          <strong>{checklist.event.name}</strong>
+          <span className="kitchen-event-area">Area reserved: {checklist.event.room || "Area not listed"}</span>
+        </span>
+        <span className="kitchen-event-accordion-time">{eventTime}</span>
       </summary>
       <div className="kitchen-event-accordion-content">{children}</div>
     </details>
@@ -1825,6 +1831,7 @@ export function KitchenChecklistSheet({
   const visibleSections = [...checklist.sections]
     .filter((section) => section.rows.length > 0)
     .sort((left, right) => categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category));
+  const dropReminder = appetizerDropReminder(checklist);
   const reviewMessages = [
     ...new Set([
       ...checklist.warnings.map((warning) => warning.message),
@@ -1885,8 +1892,6 @@ export function KitchenChecklistSheet({
             <p>
               {formatTime(checklist.timing.startTime ?? checklist.event.startTime)}
               {checklist.event.endTime ? `–${formatTime(checklist.event.endTime)}` : ""}
-              {" · "}
-              {checklist.event.room || "Room or area not listed"}
               {checklist.selectedCategories.length
                 ? ` · ${checklist.selectedCategories
                     .map((category) => categoryLabels[category])
@@ -1895,6 +1900,10 @@ export function KitchenChecklistSheet({
             </p>
           </div>
         ) : null}
+        <div className="kitchen-checklist-header-fact kitchen-reserved-area">
+          <span>Area reserved</span>
+          <strong>{checklist.event.room || "Area not listed"}</strong>
+        </div>
         <div className="kitchen-checklist-header-fact">
           <span>Number of guests</span>
           <strong>{checklist.event.guestCount ?? "Needs review"}</strong>
@@ -1984,11 +1993,37 @@ export function KitchenChecklistSheet({
         />
       </div>
 
+      {dropReminder ? (
+        <section
+          className={`kitchen-drop-reminder${dropReminder.source === "needs-review" ? " kitchen-drop-reminder-review" : ""}`}
+          aria-label="Appetizer drop reminder"
+        >
+          <strong>
+            {dropReminder.scheduledAt
+              ? `Drop appetizers at ${formatTime(dropReminder.scheduledAt)}`
+              : "Appetizer drop time needs review"}
+          </strong>
+          <span>
+            {dropReminder.source === "default"
+              ? "30 minutes before the event."
+              : dropReminder.source === "contract"
+                ? "Uses the contract's food timing instruction."
+                : "Confirm the food timing notes before dropping appetizers; no automatic drop alert is scheduled."}
+          </span>
+          <span>{dropReminder.itemNames.join(", ")}</span>
+          {dropReminder.sourceNotes.length ? (
+            <details>
+              <summary>Food timing notes</summary>
+              {dropReminder.sourceNotes.map((note) => <p key={note}>{note}</p>)}
+            </details>
+          ) : null}
+        </section>
+      ) : null}
+
       <div className="kitchen-table-scroll">
         <table className="kitchen-checklist-table">
           <thead>
             <tr>
-              <th scope="col">Ready</th>
               <th scope="col">
                 <span className="kitchen-verified-heading">Prepped</span>
                 <select
@@ -2010,10 +2045,6 @@ export function KitchenChecklistSheet({
                   ))}
                 </select>
               </th>
-              <th scope="col">Food Name</th>
-              <th scope="col">Number of Pans</th>
-              <th scope="col">Pan Size</th>
-              <th scope="col">Quantity</th>
               <th scope="col">
                 <span className="kitchen-verified-heading">Verified</span>
                 <small className="kitchen-verified-subheading">
@@ -2038,6 +2069,11 @@ export function KitchenChecklistSheet({
                   ))}
                 </select>
               </th>
+              <th scope="col">Ready</th>
+              <th scope="col">Food Name</th>
+              <th scope="col">Number of Pans</th>
+              <th scope="col">Pan Size</th>
+              <th scope="col">Quantity</th>
             </tr>
           </thead>
           <tbody>
@@ -2323,22 +2359,6 @@ function ChecklistSection({
             className={`kitchen-category-${categoryClassName}${isReady ? " kitchen-item-complete" : ""}`}
             key={row.key}
           >
-            <td className="kitchen-ready-cell" data-label="Ready">
-              <label className="kitchen-ready-control">
-                <input
-                  aria-label={`Mark ${row.foodName} ready`}
-                  checked={isReady}
-                  disabled={
-                    !onReadyChange || isReadinessPending(readinessKey)
-                  }
-                  onChange={(event) =>
-                    onReadyChange?.(readinessKey, event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                <span className="kitchen-visually-hidden">Ready</span>
-              </label>
-            </td>
             <td className="kitchen-ready-cell" data-label="Prepped">
               <div className="kitchen-prepped-control">
                 <label className="kitchen-ready-control">
@@ -2367,30 +2387,6 @@ function ChecklistSection({
                 ) : null}
               </div>
             </td>
-            <td data-label="Food name">
-              <button
-                aria-haspopup="dialog"
-                className="kitchen-food-button"
-                onClick={() =>
-                  onOpenDescription?.({
-                    foodName: row.foodName,
-                    description:
-                      row.description ||
-                      "No additional food description is available.",
-                    quantity: row.quantity,
-                    unit: row.unit,
-                    numberOfPans: row.numberOfPans,
-                    panSize: row.panSize,
-                  })
-                }
-                type="button"
-              >
-                {row.foodName}
-              </button>
-            </td>
-            <td data-label="Number of pans">{row.numberOfPans ?? "—"}</td>
-            <td data-label="Pan size">{row.panSize ?? "—"}</td>
-            <td data-label="Quantity">{formatQuantity(row)}</td>
             <td
               className="kitchen-completed-cell"
               data-label="Verified (different person)"
@@ -2416,6 +2412,46 @@ function ChecklistSection({
                 </span>
               </label>
             </td>
+            <td className="kitchen-ready-cell" data-label="Ready">
+              <label className="kitchen-ready-control">
+                <input
+                  aria-label={`Mark ${row.foodName} ready`}
+                  checked={isReady}
+                  disabled={
+                    !onReadyChange || isReadinessPending(readinessKey)
+                  }
+                  onChange={(event) =>
+                    onReadyChange?.(readinessKey, event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="kitchen-visually-hidden">Ready</span>
+              </label>
+            </td>
+            <td data-label="Food name">
+              <button
+                aria-haspopup="dialog"
+                className="kitchen-food-button"
+                onClick={() =>
+                  onOpenDescription?.({
+                    foodName: row.foodName,
+                    description:
+                      row.description ||
+                      "No additional food description is available.",
+                    quantity: row.quantity,
+                    unit: row.unit,
+                    numberOfPans: row.numberOfPans,
+                    panSize: row.panSize,
+                  })
+                }
+                type="button"
+              >
+                {row.foodName}
+              </button>
+            </td>
+            <td data-label="Number of pans">{row.numberOfPans ?? "—"}</td>
+            <td data-label="Pan size">{row.panSize ?? "—"}</td>
+            <td data-label="Quantity">{formatQuantity(row)}</td>
           </tr>
         );
       })}
@@ -2529,7 +2565,9 @@ function KitchenAlertDialog({
             ? "New or updated food add-on"
             : alert.kind === "prep"
               ? "Start prepping now"
-              : "Food should be ready"}
+              : alert.kind === "appetizer-drop"
+                ? "Drop appetizers now"
+                : "Food should be ready"}
         </h2>
         <strong>{alert.eventName}</strong>
         <p id="kitchen-alert-description">

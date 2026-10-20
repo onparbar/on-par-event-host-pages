@@ -143,10 +143,11 @@ describe("translateEventHostFoodAddOns", () => {
       { sourceKey: "appetizer-refill-chicken-tenders", foodName: "Chicken Tenders", sourceUnitLabel: "requested units" },
       { sourceKey: "appetizer-refill-marinara", foodName: "Marinara", sourceUnitLabel: "requested units" },
       { sourceKey: "appetizer-refill-ranch", foodName: "Ranch", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-bbq", foodName: "BBQ Sauce", sourceUnitLabel: "requested units" },
       { sourceKey: "wing-refill-wings", foodName: "Wings", sourceUnitLabel: "requested units" },
       { sourceKey: "wing-refill-fries", foodName: "Fries", sourceUnitLabel: "requested units" },
       { sourceKey: "wing-refill-ranch", foodName: "Ranch", sourceUnitLabel: "requested units" },
-      { sourceKey: "wing-refill-bbq", foodName: "BBQ", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-bbq", foodName: "BBQ Sauce", sourceUnitLabel: "requested units" },
       { sourceKey: "wing-refill-garlic-parm", foodName: "Garlic Parm", sourceUnitLabel: "requested units" },
       { sourceKey: "wing-refill-buffalo", foodName: "Buffalo Sauce", sourceUnitLabel: "requested units" },
     ]);

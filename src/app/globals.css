@@ -6862,22 +6862,30 @@ a {
   font-size: clamp(1rem, 1.4vw, 1.25rem);
 }
 
-.kitchen-event-accordion-summary span {
+.kitchen-event-accordion-time {
   color: #33433d;
   font-size: 0.9rem;
   font-weight: 800;
   white-space: nowrap;
 }
 
+.kitchen-event-accordion-identity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kitchen-event-area {
+  color: #33433d;
+  font-size: 0.85rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .kitchen-event-accordion-content > .kitchen-checklist {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-}
-
-.kitchen-checklist-heading-accordion {
-  min-height: 0;
-  grid-template-columns: repeat(2, minmax(110px, 1fr)) auto;
 }
 
 .kitchen-card-button {
@@ -6997,7 +7005,12 @@ a {
   gap: 1px;
   border-bottom: 3px solid var(--ope-black);
   background: var(--ope-black);
-  grid-template-columns: minmax(0, 2.4fr) minmax(110px, 0.6fr) minmax(110px, 0.6fr) auto;
+  grid-template-columns: minmax(0, 2.4fr) minmax(120px, 1fr) repeat(2, minmax(110px, 0.6fr)) auto;
+}
+
+.kitchen-checklist-heading-accordion {
+  min-height: 0;
+  grid-template-columns: minmax(120px, 1.5fr) repeat(2, minmax(110px, 1fr)) auto;
 }
 
 .kitchen-checklist-event-name,
@@ -7233,6 +7246,35 @@ a {
   overflow-x: auto;
 }
 
+.kitchen-drop-reminder {
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--ope-forest);
+  background: #f2f4ef;
+  color: var(--ope-forest);
+  font-size: 0.85rem;
+}
+
+.kitchen-drop-reminder strong {
+  font-size: 1rem;
+}
+
+.kitchen-drop-reminder-review {
+  border-color: #9e681f;
+  background: #fff2cc;
+  color: #5f3909;
+}
+
+.kitchen-drop-reminder summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.kitchen-drop-reminder p {
+  margin: 6px 0 0;
+}
+
 .kitchen-checklist-table {
   width: 100%;
   border-collapse: collapse;
@@ -7262,34 +7304,34 @@ a {
 }
 
 .kitchen-checklist-table thead th:first-child {
-  width: 7%;
+  width: 14%;
   text-align: center;
 }
 
 .kitchen-checklist-table thead th:nth-child(2) {
-  width: 7%;
+  width: 14%;
   text-align: center;
 }
 
 .kitchen-checklist-table thead th:nth-child(3) {
-  width: 28%;
+  width: 7%;
+  text-align: center;
 }
 
 .kitchen-checklist-table thead th:nth-child(4) {
-  width: 14%;
+  width: 25%;
 }
 
 .kitchen-checklist-table thead th:nth-child(5) {
-  width: 11%;
+  width: 12%;
 }
 
 .kitchen-checklist-table thead th:nth-child(6) {
-  width: 18%;
+  width: 10%;
 }
 
 .kitchen-checklist-table thead th:nth-child(7) {
-  width: 15%;
-  text-align: center;
+  width: 18%;
 }
 
 .kitchen-verified-heading,
@@ -8042,7 +8084,7 @@ a {
   }
 }
 
-@media (max-width: 720px) {
+@media screen and (max-width: 720px) {
   .kitchen-reconnect-panel {
     align-items: stretch;
     flex-direction: column;
@@ -8107,6 +8149,10 @@ a {
     grid-template-columns: minmax(0, 1fr) repeat(2, minmax(110px, 0.45fr));
   }
 
+  .kitchen-checklist-event-name {
+    grid-column: 1 / -1;
+  }
+
   .kitchen-checklist-brand-actions {
     grid-column: 1 / -1;
     justify-content: space-between;
@@ -8142,13 +8188,26 @@ a {
   }
 
   .kitchen-checklist-table thead {
-    position: absolute;
-    overflow: hidden;
-    width: 1px;
-    height: 1px;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    clip-path: inset(50%);
+    display: block;
+  }
+
+  .kitchen-checklist-table thead tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .kitchen-checklist-table thead th:nth-child(n) {
+    width: auto;
+    padding: 8px;
+    letter-spacing: 0;
+  }
+
+  .kitchen-checklist-table thead th:nth-child(n + 4) {
+    display: none;
+  }
+
+  .kitchen-checklist-table .kitchen-column-staff-select {
+    min-height: 40px;
   }
 
   .kitchen-checklist-table,
@@ -8161,11 +8220,11 @@ a {
 
   .kitchen-checklist-table tr:not(.kitchen-category-heading) {
     display: grid;
-    grid-template-columns: 64px repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .kitchen-checklist-table tr:not(.kitchen-category-heading) td:nth-child(3) {
-    grid-column: 2 / -1;
+  .kitchen-checklist-table tr:not(.kitchen-category-heading) td:nth-child(4) {
+    grid-column: 1 / -1;
     font-size: 1.02rem;
   }
 
@@ -8211,13 +8270,13 @@ a {
   }
 }
 
-@media (max-width: 500px) {
+@media screen and (max-width: 500px) {
   .kitchen-event-accordion-summary {
     gap: 3px 10px;
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .kitchen-event-accordion-summary span {
+  .kitchen-event-accordion-time {
     grid-column: 1;
     grid-row: 2;
   }
@@ -8238,9 +8297,6 @@ a {
     grid-column: auto;
   }
 
-  .kitchen-checklist-table tr:not(.kitchen-category-heading) {
-    grid-template-columns: minmax(64px, 0.65fr) minmax(0, 1.35fr);
-  }
 }
 
 @media print {
@@ -8304,6 +8360,17 @@ a {
 
   .kitchen-checklist-heading h2 {
     font-size: 18pt;
+  }
+
+  .kitchen-drop-reminder {
+    border-color: #000;
+    background: #fff;
+    color: #000;
+    font-size: 9pt;
+  }
+
+  .kitchen-drop-reminder strong {
+    font-size: 10pt;
   }
 
   .kitchen-print-logo {

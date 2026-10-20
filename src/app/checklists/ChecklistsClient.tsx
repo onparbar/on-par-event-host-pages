@@ -811,6 +811,13 @@ export default function ChecklistsClient({
                           <option value="1">1</option>
                           <option value="2">2</option>
                           <option value="3">3</option>
+                          <option value="4">4</option>
+                          <option value="5">5</option>
+                          <option value="6">6</option>
+                          <option value="7">7</option>
+                          <option value="8">8</option>
+                          <option value="9">9</option>
+                          <option value="10">10</option>
                         </select>
                       </label>
                       <button
@@ -910,33 +917,20 @@ export default function ChecklistsClient({
 
                         <label className="control-block quantity-block">
                           <span>Quantity</span>
-                          {item.key === "mini-golf" ? (
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              min="0"
-                              step="1"
-                              disabled={!isEditable}
-                              value={state.quantity}
-                              onChange={(event) => {
-                                const quantity = event.target.value;
-                                if (quantity !== "" && (!/^\d+$/.test(quantity) || !Number.isSafeInteger(Number(quantity)))) return;
-                                updateQuantity(quantity);
-                              }}
-                              placeholder="0"
-                            />
-                          ) : (
-                            <select
-                              disabled={!isEditable}
-                              value={state.quantity}
-                              onChange={(event) => updateQuantity(event.target.value)}
-                            >
-                              <option value="">0</option>
-                              <option value="1">1</option>
-                              <option value="2">2</option>
-                              <option value="3">3</option>
-                            </select>
-                          )}
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            step="1"
+                            disabled={!isEditable}
+                            value={state.quantity}
+                            onChange={(event) => {
+                              const quantity = event.target.value;
+                              if (quantity !== "" && (!/^\d+$/.test(quantity) || !Number.isSafeInteger(Number(quantity)))) return;
+                              updateQuantity(quantity);
+                            }}
+                            placeholder="0"
+                          />
                         </label>
                       </div>
                     </article>

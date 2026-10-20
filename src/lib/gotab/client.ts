@@ -389,6 +389,15 @@ export class GoTabClient {
       throw error;
     }
     const requestedName = normalizedPersonName(serverName);
+    // Owner-confirmed staff identity: Event Host's Lex is GoTab's Alexis Younker.
+    // Require a unique active full-name match; never fall back to another Lex.
+    if (requestedName === "lex") {
+      return uniqueEmployeeId(employees.filter(
+        (employee) =>
+          employee.fullName != null &&
+          normalizedPersonName(employee.fullName) === "alexis younker",
+      ));
+    }
     const displayMatches = employees.filter(
       (employee) => normalizedPersonName(employee.displayName) === requestedName,
     );

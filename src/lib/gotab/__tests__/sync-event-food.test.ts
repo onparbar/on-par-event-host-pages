@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { generateKitchenChecklist } from "@/lib/kitchen/rules";
+import { translateEventHostFoodAddOns } from "@/lib/kitchen/addons";
 import { vipPrepKitchenEvents } from "@/lib/vip-prep/client";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
 
@@ -166,8 +167,8 @@ describe("Event Food synchronization", () => {
     expect(storage.enqueueRequest).not.toHaveBeenCalled();
   });
 
-  it("enqueues a verified mapped product with a sanitized dry-run preview", async () => {
-    const assignedChecklist = { ...checklist, pocs: ["Ryan", "Diana"] };
+  it.each(["Carlos", null])("keeps the Food Runner (%s) separate from the POC in the preview", async (foodRunner) => {
+    const assignedChecklist = { ...checklist, foodRunners: foodRunner ? [foodRunner] : [], pocs: ["Ryan", "Diana"] };
     const storage = {
       listMappings: vi.fn().mockResolvedValue([{
         id: "mapping-1",
@@ -197,10 +198,10 @@ describe("Event Food synchronization", () => {
       expect.objectContaining({
         eventName: "OPE KDS Integration Test",
         panSize: "TRAY",
-        requesterName: "Ryan",
+        requesterName: foodRunner,
       }),
       expect.objectContaining({
-        requesterName: "Ryan",
+        requesterName: foodRunner,
         warnings: expect.arrayContaining(["GoTab dispatch is disabled."]),
       }),
       "SYSTEM",
@@ -281,5 +282,54 @@ describe("Event Food synchronization", () => {
       "EVENT_HOST_ADDON_SAVE",
       { immediate: true },
     );
+  });
+
+  it.each(["VERIFIED", "DISABLED"])("uses only a verified BBQ mapping for Appetizer refills: %s", async (mappingStatus) => {
+    const refillChecklist = {
+      ...checklist,
+      liveFoodAddOns: translateEventHostFoodAddOns({
+        "appetizer-refill-bbq": { quantity: 10 },
+      }, "2026-08-15T16:00:00.000Z"),
+    };
+    const storage = {
+      listMappings: vi.fn().mockResolvedValue([{
+        id: "mapping-bbq",
+        canonical_product_key: "addon:wing-refill-bbq",
+        aliases: [],
+        display_name: "BBQ",
+        pan_size: "NOT_APPLICABLE",
+        preparation_station: "COLD_PREP",
+        gotab_product_uuid: "prd_a7f6Zpe_0WsCxf_yftoeP1pA",
+        mapping_status: mappingStatus,
+        verified_at: "2026-08-11T12:00:00.000Z",
+      }]),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn().mockResolvedValue({ duplicate: false }),
+    };
+    const result = await synchronizeLiveAddOns(refillChecklist, {
+      sourceVersion: 2,
+      changedSourceKeys: ["appetizer-refill-bbq"],
+      sourceType: "REFILL",
+      storage: storage as never,
+      env,
+    });
+
+    if (mappingStatus === "VERIFIED") {
+      expect(result).toMatchObject({ requestCount: 1, exceptionCount: 0 });
+      expect(storage.enqueueRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceRecordId: "addon:appetizer-refill-bbq",
+          sourceType: "REFILL",
+          quantity: 10,
+          gotabProductUuid: "prd_a7f6Zpe_0WsCxf_yftoeP1pA",
+        }),
+        expect.anything(),
+        "EVENT_HOST_ADDON_SAVE",
+        { immediate: true },
+      );
+    } else {
+      expect(result).toMatchObject({ requestCount: 0, exceptionCount: 1 });
+      expect(storage.enqueueRequest).not.toHaveBeenCalled();
+    }
   });
 });
