@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getSupabaseSecret } from "@/lib/kitchen/storage";
+import { getSupabaseSecret, KITCHEN_ROLE_METADATA_PREFIX } from "@/lib/kitchen/storage";
 import type { GoTabCapabilityCheck } from "./client";
 import type { NormalizedEventFoodItem } from "./event-food";
 
@@ -414,6 +414,22 @@ export class GoTabIntegrationStorage {
       food_service_time: string;
     }>;
     return rows[0] ?? null;
+  }
+
+  async getKitchenFoodRunner(eventId: string) {
+    const response = await this.request(
+      "kitchen_manual_assignments",
+      new URLSearchParams({
+        select: "bwa,food_runners",
+        event_id: `eq.${eventId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as Array<{ bwa: string | null; food_runners: string[] | null }>;
+    const legacy = rows[0]?.bwa?.trim();
+    return rows[0]?.food_runners?.find((name) => name.trim())?.trim() ??
+      (legacy && !legacy.startsWith(KITCHEN_ROLE_METADATA_PREFIX) ? legacy : null);
   }
 
   async listExceptions(limit = 100) {

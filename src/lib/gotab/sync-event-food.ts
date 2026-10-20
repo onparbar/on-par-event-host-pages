@@ -61,7 +61,6 @@ export async function synchronizeKitchenChecklistToEventFood(
     sourceVersion: options.sourceVersion,
     requesterName:
       checklist.foodRunners?.find((name) => name.trim()) ??
-      checklist.pocs?.find((name) => name.trim()) ??
       (checklist.foodRunnerOrBwa?.trim() || null),
     defaultPrepLeadMinutes: configuration.defaultPrepLeadMinutes ?? 60,
     bookedFoodQuantities: options.bookedFoodQuantities,

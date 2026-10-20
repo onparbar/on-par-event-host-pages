@@ -232,7 +232,7 @@ function savedBwaOptions() {
   );
 }
 
-const KITCHEN_ROLE_METADATA_PREFIX = "__kitchen_roles__:";
+export const KITCHEN_ROLE_METADATA_PREFIX = "__kitchen_roles__:";
 
 function manualRoleMetadata(value: string | null) {
   if (!value?.startsWith(KITCHEN_ROLE_METADATA_PREFIX)) {

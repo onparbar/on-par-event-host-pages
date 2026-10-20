@@ -33,6 +33,7 @@ describe("GoTab dispatch worker", () => {
         tabUuid: "test-tab", orderUuid: "test-order", itemUuid: "test-item",
       });
       const storage = {
+        getKitchenFoodRunner: vi.fn().mockResolvedValue("Carlos"),
         claimDueDispatches: vi.fn().mockResolvedValue([{
           id: "test-dispatch",
           request_id: "test-request",
@@ -156,13 +157,14 @@ describe("GoTab dispatch worker", () => {
     );
   });
 
-  it("sends a documented payment-free catalog order only when live dispatch is enabled", async () => {
+  it.each(["Carlos", null])("uses the current Food Runner (%s), not the queued staff snapshot", async (foodRunner) => {
     const createEventFoodTab = vi.fn().mockResolvedValue({
       tabUuid: "tab-1",
       orderUuid: "order-1",
       itemUuid: "item-1",
     });
     const storage = {
+      getKitchenFoodRunner: vi.fn().mockResolvedValue(foodRunner),
       claimDueDispatches: vi.fn().mockResolvedValue([{
         id: "dispatch-2",
         request_id: "request-2",
@@ -207,9 +209,10 @@ describe("GoTab dispatch worker", () => {
     );
     expect(createEventFoodTab).toHaveBeenCalledWith(expect.objectContaining({
       quantity: 2,
-      serverName: "Ryan",
+      serverName: foodRunner,
       selectedPanSize: "1/2",
     }));
+    expect(storage.getKitchenFoodRunner).toHaveBeenCalledWith("event-2");
   });
 
   it("holds a VIP order without check-in even when live dispatch is enabled", async () => {
@@ -247,6 +250,36 @@ describe("GoTab dispatch worker", () => {
       status: "HELD", lastError: "VIP check-in required.",
     });
     expect(createEventFoodTab).not.toHaveBeenCalled();
+  });
+
+  it("does not send an order with stale staff when the current assignment cannot be read", async () => {
+    const createEventFoodTab = vi.fn();
+    const storage = {
+      claimDueDispatches: vi.fn().mockResolvedValue([{
+        id: "staff-unavailable", request_id: "request-staff", idempotency_key: "event:REFILL:staff:1:DISPATCH",
+        action: "DISPATCH", status: "SENDING", attempt_count: 1,
+        sanitized_payload: {
+          eventName: "Redacted Event", product: "Wings", gotabProductUuid: "prd_wings", quantity: 1,
+          requesterName: "Old Assignment",
+        },
+      }]),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "event-staff", source_record_id: "addon:1", food_service_time: "2026-10-20T18:00:00Z",
+      }),
+      getKitchenFoodRunner: vi.fn().mockRejectedValue(new Error("Kitchen staff lookup failed.")),
+      finishDispatch: vi.fn(),
+    };
+    const result = await processGoTabDispatches({
+      storage: storage as never,
+      env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+      client: { createEventFoodTab },
+    });
+    expect(result.failed).toBe(1);
+    expect(createEventFoodTab).not.toHaveBeenCalled();
+    expect(storage.finishDispatch).toHaveBeenCalledWith("staff-unavailable", expect.objectContaining({
+      status: "FAILED", nextAttemptAt: expect.any(String),
+      lastError: "The current Kitchen Food Runner could not be read. No order was sent.",
+    }));
   });
 
   it("holds food for a VIP reservation that was cancelled after check-in", async () => {
@@ -294,6 +327,7 @@ describe("GoTab dispatch worker", () => {
       tabUuid: "vip-tab", orderUuid: "vip-order", itemUuid: "vip-item",
     });
     const storage = {
+      getKitchenFoodRunner: vi.fn().mockResolvedValue("Brooke"),
       claimDueDispatches: vi.fn().mockResolvedValue([{
         id: "vip-dispatch-3",
         request_id: "vip-request-3",
@@ -329,6 +363,7 @@ describe("GoTab dispatch worker", () => {
     expect(result.sent).toBe(1);
     expect(createEventFoodTab).toHaveBeenCalledWith(expect.objectContaining({
       ticketName: "Redacted VIP",
+      serverName: "Brooke",
       quantity: 2,
       itemNotes: expect.objectContaining({
         eventArea: "VIP 2", notes: "Reservation time: 6:00 PM",
