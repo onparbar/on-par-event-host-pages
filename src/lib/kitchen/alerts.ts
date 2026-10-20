@@ -3,13 +3,17 @@ import type {
   KitchenAddOnCompletion,
   KitchenChecklist,
 } from "./types";
+import { appetizerDropReminder, kitchenLocalMinute } from "./appetizer-drop";
+import { kitchenEventInterval } from "./lifecycle";
+import { quantityAwareReadinessKey } from "./readiness";
 
 export type KitchenTimedAlert = {
   id: string;
   eventId: string;
   eventName: string;
-  kind: "prep" | "ready";
+  kind: "prep" | "ready" | "appetizer-drop";
   scheduledAt: string;
+  expiresAt?: string;
 };
 
 export type KitchenLiveAddOnAlert = {
@@ -54,21 +58,7 @@ function adjacentDateKeys(date: string) {
 }
 
 export function easternMinuteKey(value: Date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(value);
-  const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, part.value]),
-  );
-  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+  return kitchenLocalMinute(value.getTime());
 }
 
 export function kitchenTimedAlerts(
@@ -83,7 +73,7 @@ export function kitchenTimedAlerts(
       continue;
     }
     const eventId = String(checklist.event.eventId);
-    const candidates = [
+    const candidates: { kind: KitchenTimedAlert["kind"]; scheduledAt: string | null; expiresAt?: string }[] = [
       {
         kind: "prep" as const,
         scheduledAt: localMinute(checklist.timing.earliestPrepTime),
@@ -93,6 +83,31 @@ export function kitchenTimedAlerts(
         scheduledAt: localMinute(checklist.timing.foodReadyBy),
       },
     ];
+    const drop = appetizerDropReminder(checklist);
+    if (drop?.scheduledAt) {
+      const completed = new Set(checklist.completedItemKeys);
+      const hasUnreadyFood = checklist.sections.flatMap((section) => section.rows).some(
+        (row) => drop.itemKeys.includes(row.key) && !completed.has(quantityAwareReadinessKey({
+          itemKey: row.key,
+          quantity: row.quantity,
+          numberOfPans: row.numberOfPans,
+          panSize: row.panSize,
+          unit: row.unit,
+          ruleVersion: checklist.ruleVersion,
+        })),
+      );
+      const interval = kitchenEventInterval(checklist.event);
+      const expiresAt = drop.source === "contract"
+        ? interval.endAt ?? interval.startAt
+        : interval.startAt;
+      if (hasUnreadyFood) {
+        candidates.push({
+          kind: "appetizer-drop",
+          scheduledAt: drop.scheduledAt,
+          ...(expiresAt !== null ? { expiresAt: kitchenLocalMinute(expiresAt) } : {}),
+        });
+      }
+    }
 
     for (const candidate of candidates) {
       if (
@@ -107,6 +122,7 @@ export function kitchenTimedAlerts(
         eventName: checklist.event.name,
         kind: candidate.kind,
         scheduledAt: candidate.scheduledAt,
+        ...(candidate.expiresAt ? { expiresAt: candidate.expiresAt } : {}),
       });
     }
   }
@@ -129,6 +145,7 @@ export function dueKitchenAlerts(
     (alert) =>
       alert.scheduledAt > lastCheckedAt &&
       alert.scheduledAt <= currentMinute &&
+      (!alert.expiresAt || currentMinute < alert.expiresAt) &&
       !dismissedIds.has(alert.id),
   );
 }
@@ -143,6 +160,7 @@ export function newlyObservedDueKitchenAlerts(
     (alert) =>
       !knownIds.has(alert.id) &&
       alert.scheduledAt <= currentMinute &&
+      (!alert.expiresAt || currentMinute < alert.expiresAt) &&
       !dismissedIds.has(alert.id),
   );
 }

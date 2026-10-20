@@ -76,7 +76,7 @@ describe("Event Host food add-ons", () => {
     expect(tacoBarRefillAddOns).toHaveLength(11);
     expect(tacoBarRefillAddOns.every((item) => item.key.startsWith("taco-"))).toBe(true);
     expect(standardFoodAddOns.every((item) => !item.key.startsWith("taco-"))).toBe(true);
-    expect(appetizerBarRefillAddOns).toHaveLength(5);
+    expect(appetizerBarRefillAddOns).toHaveLength(6);
     expect(wingBarRefillAddOns).toHaveLength(6);
     expect([
       ...standardFoodAddOns,
@@ -86,5 +86,11 @@ describe("Event Host food add-ons", () => {
     ].map((item) => item.key).sort()).toEqual(
       foodAddOns.map((item) => item.key).sort(),
     );
+  });
+
+  it("offers BBQ sauce once in Food and in both bar refill lists", () => {
+    for (const options of [standardFoodAddOns, appetizerBarRefillAddOns, wingBarRefillAddOns]) {
+      expect(options.filter((item) => item.label === "BBQ Sauce")).toHaveLength(1);
+    }
   });
 });

@@ -196,10 +196,11 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "appetizer-refill-chicken-tenders", label: "Chicken Tenders", kind: "quantity-only" },
   { key: "appetizer-refill-marinara", label: "Marinara", kind: "quantity-only" },
   { key: "appetizer-refill-ranch", label: "Ranch", kind: "quantity-only" },
+  { key: "appetizer-refill-bbq", label: "BBQ Sauce", kind: "quantity-only" },
   { key: "wing-refill-wings", label: "Wings", kind: "quantity-only" },
   { key: "wing-refill-fries", label: "Fries", kind: "quantity-only" },
   { key: "wing-refill-ranch", label: "Ranch", kind: "quantity-only" },
-  { key: "wing-refill-bbq", label: "BBQ", kind: "quantity-only" },
+  { key: "wing-refill-bbq", label: "BBQ Sauce", kind: "quantity-only" },
   { key: "wing-refill-garlic-parm", label: "Garlic Parm", kind: "quantity-only" },
   { key: "wing-refill-buffalo", label: "Buffalo Sauce", kind: "quantity-only" },
 ];
