@@ -8,7 +8,12 @@ It does not activate shared reservation protection or change a reservation.
 ## Current hold points — October 20
 
 Both Carlos accounts now have Vercel Viewer access. Database access remains an
-owner decision; the owner-operated path is available. Tina's authenticated CLI
+owner decision; the owner-operated path is available. The combined candidate's
+October 20 Git preview attempt was rejected with a permission error. Viewer
+access is not evidence of permission to create a deployment. Tina must use an
+already-authorized owner workflow or resolve the specific permission issue;
+do not add a paid seat or alter commit attribution to bypass it.
+Tina's authenticated CLI
 inspection reports six passing preflight rows, but substantial historical
 migration/version drift. **Do not run the apply step below until the exact
 canonical history/adoption manifest has been reviewed and owner-authorized and
@@ -30,6 +35,13 @@ before any database migration. It performs no database or upstream request.
 It does not prove database connectivity, installed migrations, live source
 completeness or shared booking protection.
 
+Carlos has confirmed that Mini Golf belongs in the shared-protection scope.
+The source currently treats it as untimed open play and excludes it from timed
+reservations/conflict checks. Confirm the capacity and timing rules for Level
+Up, Wild Axe and Great Escape before changing that behavior. Course identities
+alone do not establish exclusive booking units or player limits. This remains
+separate from the source-only migration and PR #3 release.
+
 ## 1. Give Carlos free Vercel visibility
 
 1. Sign in to Vercel and select team **`tina-marketing4464`**.
@@ -47,9 +59,11 @@ completeness or shared booking protection.
    do not change branch tracking to make it match this document.
 
 The repository is already public and Carlos already has GitHub write access.
-Vercel built its source PR successfully. No additional GitHub invitation or paid
-Vercel role is needed to prepare changes and generate Git previews. Viewer
-access does not permit editing hosting settings; Tina retains those actions.
+Vercel built earlier source commits successfully, but the October 20 combined
+candidate's preview was denied by deployment permissions. No additional GitHub
+invitation is needed to prepare source changes. An authorized owner must handle
+the current preview blocker; Viewer access does not establish deployment or
+hosting-setting permission. Tina retains those actions.
 If Vercel protects a preview, use the Viewer login or its supported sharing flow;
 do not disable deployment protection.
 
