@@ -1,8 +1,11 @@
 # Final Call source evidence
 
-The authenticated schedule endpoint keeps its existing reservation projection
-and adds `evidence.version=1`. No new credential or database migration is
-required. The evidence object omits event names, notes, booking identifiers,
+The default authenticated schedule endpoint keeps its existing reservation projection
+and adds `evidence.version=1`. Version 1 requires no new credential or database migration.
+The opt-in version 2 interval mode below does require its source migration.
+For the GitHub workflow without another paid Vercel seat, use
+[Tina's access and migration steps](event-host-rollout-for-tina.md).
+The evidence object omits event names, notes, booking identifiers,
 raw errors, environment variable names and raw source snapshots.
 
 ## Reading the report
@@ -33,13 +36,13 @@ counts with stable ordering and reject missing pages, duplicate identities or
 changing totals. These checks detect common truncation failures; separate
 paginated HTTP reads are not one atomic database snapshot.
 
-## Remaining availability gates
+## Version 1 limitations and rollout gates
 
 1. Verify a deployed response against its actual upstream sync record, including
    an upstream failure that leaves the saved schedule visible.
-2. Implement and persist proof of interval-overlap coverage, including events
+2. Deploy and verify version 2 proof of interval-overlap coverage, including events
    starting before the requested interval and the required buffers. Current
-   syncs search by event start date; merely adding adjacent dates does not prove
+   version 1 syncs search by event start date; merely adding adjacent dates does not prove
    arbitrary multi-day coverage.
 3. Resynchronize and verify every Tentative event after deploying the new
    inclusion rule. Existing saved schedules may have omitted such events.
@@ -85,5 +88,7 @@ must not truncate spanning reservations by `operatingDate`.
 Before rollout: verify the migration and live authenticated read on the intended
 Vercel/Supabase projects; compare a spanning event and a Tentative buyout to
 Tripleseat; resolve allocation review issues; propagate the contract through
-both mirrors. The connected accounts still lack access to Event Host's
-`tina-marketing4464` Vercel team and `tmnstuthbllnoqgepotn` Supabase project.
+both mirrors. Carlos selected GitHub changes plus free Viewer access on Vercel;
+Tina retains hosting administration. Supabase access to `tmnstuthbllnoqgepotn` or
+an owner-run migration remains necessary. The linked rollout guide includes
+read-only prerequisite, permission and service-RPC checks.
