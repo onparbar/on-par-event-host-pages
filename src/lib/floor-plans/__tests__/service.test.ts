@@ -605,6 +605,48 @@ describe("Floor Plan Tripleseat source enforcement", () => {
     });
   });
 
+  it.each(["read", "source refresh"] as const)(
+    "preserves the generation rule version and saved highlights during %s",
+    async (operation) => {
+      const floorPlanStorage = new MemoryFloorPlanStorage();
+      setEventPlanStorageForTests(createMemoryEventPlanStorage());
+      setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+      setTripleseatAdapterForTests(adapter(async () => [source()]));
+      const initial = await generateFloorPlan("2026-08-06", "fill-missing", floorPlanStorage);
+      const previous = await floorPlanStorage.save(
+        { ...initial.plan, ruleVersion: "floor-plan-v1.3.3" },
+        "Saved earlier seating rules.",
+      );
+
+      const payload = operation === "read"
+        ? await getFloorPlanDay("2026-08-06", floorPlanStorage)
+        : await refreshFloorPlanSources("2026-08-06", floorPlanStorage);
+
+      expect(payload.plan.ruleVersion).toBe(previous.ruleVersion);
+      expect(payload.plan.reservations).toEqual(previous.reservations);
+      expect((await floorPlanStorage.get("2026-08-06"))?.ruleVersion).toBe(previous.ruleVersion);
+      expect(payload.warnings).toContainEqual(expect.stringContaining("Replace generated only"));
+    },
+  );
+
+  it("records current seating rules only after regenerating saved suggestions", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source()]));
+    const initial = await generateFloorPlan("2026-08-06", "fill-missing", floorPlanStorage);
+    await floorPlanStorage.save(
+      { ...initial.plan, ruleVersion: "floor-plan-v1.3.3" },
+      "Saved earlier seating rules.",
+    );
+
+    const payload = await generateFloorPlan("2026-08-06", "replace-generated", floorPlanStorage);
+
+    expect(payload.plan.ruleVersion).toBe(FLOOR_PLAN_RULE_VERSION);
+    expect((await floorPlanStorage.get("2026-08-06"))?.ruleVersion).toBe(FLOOR_PLAN_RULE_VERSION);
+    expect(payload.warnings.some((warning) => warning.includes("earlier seating rule version"))).toBe(false);
+  });
+
   it("excludes PROSPECT and LOST events from operational floor plans", async () => {
     const floorPlanStorage = new MemoryFloorPlanStorage();
     setEventPlanStorageForTests(createMemoryEventPlanStorage());

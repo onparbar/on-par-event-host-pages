@@ -306,6 +306,11 @@ export function FloorPlanCard({
               </>
             )}
             <div className="floor-plan-image-frame">
+              {!asset.specialPage ? (
+                <p className="floor-plan-special-note">
+                  This static image shows the whole day. Individual-event filtering is available on saved editable Event Host plans.
+                </p>
+              ) : null}
               <div
                 className="floor-plan-zoom-stage"
                 style={{ width: `${zoom}%` }}

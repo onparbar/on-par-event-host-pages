@@ -1,8 +1,12 @@
+"use client";
+
+import { useState } from "react";
 import {
   AREAS,
   getFloorPlanArea,
 } from "@/lib/floor-plans/configuration/areas";
 import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
+import { floorPlanEventView } from "@/lib/floor-plans/event-view";
 import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
@@ -14,13 +18,8 @@ import {
   visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
 import type { FloorPlanDayPayload } from "@/lib/floor-plans/types";
-import { formatClock, formatFullDate } from "@/lib/entertainment/time";
-
-function eventTime(startAt: string | null, endAt: string | null) {
-  return startAt && endAt
-    ? `${formatClock(startAt)} – ${formatClock(endAt)}`
-    : "Time needs review";
-}
+import FloorPlanEventLegend from "./FloorPlanEventLegend";
+import FloorPlanLocalOutlines from "./FloorPlanLocalOutlines";
 
 export default function PublishedFloorPlanMap({
   payload,
@@ -29,21 +28,44 @@ export default function PublishedFloorPlanMap({
   payload: FloorPlanDayPayload;
   zoom?: number;
 }) {
-  const { plan } = payload;
+  const [selection, setSelection] = useState({ planId: "", eventId: null as string | null });
+  return (
+    <PublishedFloorPlanMapView
+      onSelectEvent={(eventId) => setSelection({ planId: payload.plan.id, eventId })}
+      payload={payload}
+      selectedEventId={selection.planId === payload.plan.id ? selection.eventId : null}
+      zoom={zoom}
+    />
+  );
+}
+
+export function PublishedFloorPlanMapView({
+  payload,
+  zoom = 100,
+  selectedEventId,
+  onSelectEvent,
+}: {
+  payload: FloorPlanDayPayload;
+  zoom?: number;
+  selectedEventId: string | null;
+  onSelectEvent: (eventId: string | null) => void;
+}) {
+  const view = floorPlanEventView(payload.plan, payload.entertainmentReservations, selectedEventId);
+  const { plan, entertainmentReservations } = view;
   const visibleEntertainment = visibleEntertainmentReservations(
     plan,
-    payload.entertainmentReservations,
+    entertainmentReservations,
   );
   const multipleReservationOutlines = entertainmentMultipleReservationOutlines(
     plan,
-    payload.entertainmentReservations,
+    entertainmentReservations,
   );
   const eventFillColors = new Map(
     plan.events.map((event) => [
       event.id,
       floorPlanEventFillColor(
         plan,
-        payload.entertainmentReservations,
+        entertainmentReservations,
         event,
       ),
     ]),
@@ -51,6 +73,11 @@ export default function PublishedFloorPlanMap({
 
   return (
     <div className="published-floor-plan-map">
+      {view.selectedEventId && (payload.floorPlanConflicts.length || payload.entertainmentConflicts.length) ? (
+        <p className="floor-plan-warning-copy" role="status">
+          Full-day conflicts: {payload.floorPlanConflicts.length + payload.entertainmentConflicts.length}. Showing one event does not remove conflicts with other parties.
+        </p>
+      ) : null}
       <div
         className="floor-plan-map-canvas"
         style={{
@@ -78,16 +105,13 @@ export default function PublishedFloorPlanMap({
               } as React.CSSProperties}
             />
           ))}
-        <div className="floor-plan-map-date" aria-hidden="true">
-          <strong>{formatFullDate(plan.eventDate)}</strong>
-          {plan.events.map((event) => (
-            <span key={event.id} style={{ color: event.color }}>
-              <b>{event.name} ({event.guestCount})</b>
-              <small>{eventTime(event.startAt, event.endAt)}</small>
-            </span>
-          ))}
-        </div>
+        <FloorPlanEventLegend
+          onSelectEvent={onSelectEvent}
+          plan={payload.plan}
+          selectedEventId={view.selectedEventId}
+        />
         <div className="floor-plan-area-layer published-floor-plan-area-layer">
+          <FloorPlanLocalOutlines plan={plan} entertainmentReservations={entertainmentReservations} />
           {multipleReservationOutlines.map((outline) => (
             <span
               aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}${outline.timeLabel ? `, ${outline.timeLabel}` : ""}`}

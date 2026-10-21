@@ -23,6 +23,8 @@ import type {
   EntertainmentSourceEvent,
   EntertainmentSourceItem,
 } from "./types";
+import { resolveAreaAlias } from "../floor-plans/configuration/aliases";
+import { selectEntertainmentResources } from "../floor-plans/configuration/adjacency";
 
 export type LocalEntertainmentItem = {
   name: string;
@@ -156,6 +158,7 @@ export function findAdjacentAvailableResources(
     "resourceId" | "startAt" | "endAt" | "active"
   >[],
   excludedResourceIds: readonly string[] = [],
+  seatingAreaIds: readonly string[] = [],
 ) {
   const excluded = new Set(excludedResourceIds);
   const available = resourcesForCategory(category).filter(
@@ -170,6 +173,16 @@ export function findAdjacentAvailableResources(
   );
   if (quantity <= 0) {
     return [];
+  }
+  if (category === "bowling" && seatingAreaIds.length > 0) {
+    const availableIds = new Set(available.map((resource) => resource.id));
+    const unavailable = new Set(
+      resourcesForCategory(category)
+        .filter((resource) => !availableIds.has(resource.id))
+        .map((resource) => resource.id),
+    );
+    return selectEntertainmentResources(seatingAreaIds, category, quantity, unavailable)
+      .flatMap((id) => getEntertainmentResource(id) ?? []);
   }
   for (let index = 0; index <= available.length - quantity; index += 1) {
     const candidate = available.slice(index, index + quantity);
@@ -351,6 +364,11 @@ export function buildEntertainmentSchedule({
     const isContractEvidence = source.sourceSystem === "contract-evidence";
     const match = matchLocalEvent(source, localEvents);
     const localEvent = match?.event ?? null;
+    const seatingAreaIds = (source.rooms.length
+      ? source.rooms.map((room) => room.name)
+      : localEvent?.rooms ?? []
+    ).flatMap((room) => resolveAreaAlias(room) ?? [])
+      .filter((areaId) => areaId !== "facility");
     const eventIssues: EntertainmentReviewIssue[] = [];
     if (isContractEvidence) {
       eventIssues.push({
@@ -530,6 +548,7 @@ export function buildEntertainmentSchedule({
           timing.endAt,
           occupied,
           chosenIds,
+          seatingAreaIds,
         );
         chosenIds.push(...autoAssigned.map((resource) => resource.id));
         if (autoAssigned.length > 0) {

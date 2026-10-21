@@ -128,6 +128,15 @@ function mergeOnParGroup(
   const primary = orderedOnPar[0];
   const tripleseatRows = matchingRows.filter((row) => !isOnParBookingRow(row));
   const allRows = [...tripleseatRows, ...orderedOnPar];
+  // A matching VIP block identifies the reserved room, not a replacement for
+  // the corporate BEO's attendance. Never inflate seating from its party size.
+  const guestCount = tripleseatRows[0]?.plan.guest_count ??
+    Math.max(...orderedOnPar.map((row) => row.plan.guest_count));
+  const guestCountReview = tripleseatRows.length && orderedOnPar.some(
+    (row) => row.plan.guest_count !== guestCount,
+  )
+    ? ["VIP booking guest count differs from the BEO; floor-plan seating uses the BEO guest count."]
+    : [];
   const tripleseatRooms = uniqueStrings(
     tripleseatRows.flatMap((row) => row.plan.rooms),
   );
@@ -144,7 +153,7 @@ function mergeOnParGroup(
   return {
     plan: {
       ...primary.plan,
-      guest_count: Math.max(...allRows.map((row) => row.plan.guest_count)),
+      guest_count: guestCount,
       rooms: uniqueStrings([...tripleseatRooms, ...onParRooms]),
       food: uniqueStrings(allRows.flatMap((row) => row.plan.food)),
       drink_options: uniqueStrings(
@@ -164,11 +173,13 @@ function mergeOnParGroup(
       ).join(" "),
       needs_review:
         extraReviewReasons.length > 0 ||
+        guestCountReview.length > 0 ||
         allRows.some((row) => row.plan.needs_review),
       review_reasons: uniqueStrings(
         [
           ...allRows.flatMap((row) => row.plan.review_reasons ?? []),
           ...extraReviewReasons,
+          ...guestCountReview,
         ],
       ),
       source_updated_at: newestTimestamp(

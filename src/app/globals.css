@@ -470,14 +470,62 @@
 
 .floor-plan-map-date {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   top: 3.2%;
   left: 2.1%;
   display: grid;
   width: 29%;
   gap: 7px;
   color: var(--ope-black);
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.floor-plan-map-date .floor-plan-event-filter {
+  min-height: 44px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  text-align: left;
+  cursor: pointer;
+}
+
+.floor-plan-map-date .floor-plan-event-filter:hover,
+.floor-plan-map-date .floor-plan-event-filter[aria-pressed="true"] {
+  border-color: currentColor;
+}
+
+.floor-plan-map-date button:focus-visible {
+  outline: 3px solid #18332f;
+  outline-offset: 2px;
+}
+
+.floor-plan-map-date .floor-plan-event-filter.is-hidden-event {
+  opacity: 0.65;
+}
+
+.floor-plan-event-view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+}
+
+.floor-plan-event-view-controls button {
+  min-height: 44px;
+  padding: 5px 10px;
+  border: 1px solid #526d52;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #18332f;
+  cursor: pointer;
+}
+
+.floor-plan-event-view-controls button[aria-pressed="true"] {
+  background: #18332f;
+  color: #ffffff;
 }
 
 .floor-plan-map-date strong {
@@ -514,6 +562,16 @@
   box-sizing: border-box;
   border: 5px solid var(--event-color);
   border-radius: 5px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.floor-plan-local-reservation-outline {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  border: 3px solid;
+  border-radius: 3px;
   background: transparent;
   pointer-events: none;
 }
@@ -1012,6 +1070,12 @@
     print-color-adjust: exact;
   }
 
+  .floor-plan-local-reservation-outline {
+    border-color: #000000 !important;
+    border-style: dashed;
+    background: transparent !important;
+  }
+
   .floor-plan-entertainment-multiple-outline {
     background: transparent !important;
   }
@@ -1026,6 +1090,18 @@
     color: #000000 !important;
     text-decoration: underline;
     text-decoration-style: double;
+  }
+
+  .floor-plan-event-view-controls,
+  .floor-plan-event-filter.is-hidden-event {
+    display: none !important;
+  }
+
+  .floor-plan-map-date .floor-plan-event-filter {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
 }
 

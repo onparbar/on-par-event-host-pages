@@ -37,7 +37,7 @@ function rectangleTable(
     name,
     shortLabel,
     type: "rectangle-table",
-    capacity: 8,
+    capacity: 10,
     parentAreaId,
     x,
     y,
@@ -106,12 +106,14 @@ function entertainmentArea(
   width: number,
   height: number,
   shortLabel: string,
+  capacity = 0,
 ) {
   return area({
     id,
     name,
     shortLabel,
     type,
+    capacity,
     entertainmentResourceId,
     x,
     y,
@@ -140,13 +142,13 @@ const baseAreas: FloorPlanArea[] = [
   entertainmentArea("level-up-mini-golf", "Level Up Mini Golf", "mini-golf", "mini-golf-level-up", 690, 487, 164, 42, "MINI GOLF"),
   entertainmentArea("wild-axe-mini-golf", "Wild Axe Mini Golf", "mini-golf", "mini-golf-wild-axe", 730, 719, 164, 42, "MINI GOLF"),
   entertainmentArea("great-escape-mini-golf", "Great Escape Mini Golf", "mini-golf", "mini-golf-great-escape", 622, 818, 164, 41, "MINI GOLF"),
-  entertainmentArea("vip-1", "VIP 1", "room", "private-room-vip-1", 1072, 544, 120, 80, "VIP 1"),
-  entertainmentArea("vip-2", "VIP 2", "room", "private-room-vip-2", 1197, 544, 136, 80, "VIP 2"),
+  entertainmentArea("vip-1", "VIP 1", "room", "private-room-vip-1", 1072, 544, 120, 80, "VIP 1", 20),
+  entertainmentArea("vip-2", "VIP 2", "room", "private-room-vip-2", 1197, 544, 136, 80, "VIP 2", 20),
   rectangleTable("vip1-extra-front-1", "VIP 1 Extra Table 1", "vip-1", 1049, 391, 18, 50),
   rectangleTable("vip1-extra-front-2", "VIP 1 Extra Table 2", "vip-1", 1094, 391, 18, 50),
   rectangleTable("vip1-extra-front-3", "VIP 1 Extra Table 3", "vip-1", 1052, 456, 15, 44),
   rectangleTable("vip1-extra-front-4", "VIP 1 Extra Table 4", "vip-1", 1097, 455, 15, 45),
-  area({ id: "vip1-conversation-wall", name: "VIP 1 Conversation Wall", shortLabel: "CONVO", type: "seating-section", parentAreaId: "vip-1", x: 1163, y: 397, width: 88, height: 44 }),
+  area({ id: "vip1-conversation-wall", name: "VIP 1 Conversation Wall", shortLabel: "CONVO", type: "seating-section", capacity: 10, parentAreaId: "vip-1", x: 1163, y: 397, width: 88, height: 44 }),
   area({ id: "vip1-extra-convo", name: "VIP 1 Conversation Seating", shortLabel: "VIP 1", type: "seating-section", parentAreaId: "vip-1", x: 1164, y: 448, width: 87, height: 52 }),
   foodTable("vip1-food-table", "VIP 1 ADA Food Table", "vip-1", 1119, 508, 68, 25),
   foodTable("vip2-food-table", "VIP 2 ADA Food Table", "vip-2", 1217, 508, 68, 22),
@@ -160,11 +162,11 @@ const baseAreas: FloorPlanArea[] = [
   rectangleTable("main-rect-right-1", "Main Dining Table R1", "main-dining", 1296, 791, 55, 19),
   rectangleTable("main-rect-right-2", "Main Dining Table R2", "main-dining", 1296, 830, 55, 19),
   rectangleTable("main-rect-right-3", "Main Dining Table R3", "main-dining", 1296, 870, 55, 19),
-  area({ id: "main-convo-1", name: "Main Dining Conversation Wall 1", shortLabel: "CONVO", type: "seating-section", parentAreaId: "main-dining", x: 1187, y: 833, width: 75, height: 33 }),
-  area({ id: "main-convo-2", name: "Main Dining Conversation Wall 2", shortLabel: "CONVO", type: "seating-section", parentAreaId: "main-dining", x: 1186, y: 874, width: 74, height: 33 }),
-  area({ id: "main-round-left", name: "Main Dining Round Table 1", shortLabel: "", type: "service-area", parentAreaId: "main-dining", x: 1148, y: 737, width: 28, height: 26, isReservable: false }),
-  area({ id: "main-round-center", name: "Main Dining Round Table 2", shortLabel: "", type: "service-area", parentAreaId: "main-dining", x: 1292, y: 737, width: 28, height: 26, isReservable: false }),
-  area({ id: "main-round-right", name: "Main Dining Round Table 3", shortLabel: "", type: "service-area", parentAreaId: "main-dining", x: 1337, y: 740, width: 27, height: 26, isReservable: false }),
+  area({ id: "main-convo-1", name: "Main Dining Conversation Wall 1", shortLabel: "CONVO", type: "seating-section", capacity: 10, parentAreaId: "main-dining", x: 1187, y: 833, width: 75, height: 33 }),
+  area({ id: "main-convo-2", name: "Main Dining Conversation Wall 2", shortLabel: "CONVO", type: "seating-section", capacity: 10, parentAreaId: "main-dining", x: 1186, y: 874, width: 74, height: 33 }),
+  squareTable("main-round-left", "Main Dining Square Table 1", "main-dining", 1148, 737, 28, 26),
+  squareTable("main-round-center", "Main Dining Square Table 2", "main-dining", 1292, 737, 28, 26),
+  squareTable("main-round-right", "Main Dining Square Table 3", "main-dining", 1337, 740, 27, 26),
   rectangleTable("ge-table-1", "GEG Table 1", "geg-tables", 916, 850, 55, 19, "GEG"),
   rectangleTable("ge-table-2", "GEG Table 2", "geg-tables", 916, 884, 55, 19, "GEG"),
   rectangleTable("ge-table-3", "GEG Table 3", "geg-tables", 916, 919, 55, 19, "GEG"),
@@ -216,10 +218,6 @@ const AREA_BY_ENTERTAINMENT_RESOURCE = new Map(
   ),
 );
 
-const FIXED_SEATING_HIGHLIGHTS_BY_AREA: Record<string, readonly string[]> = {
-  "vip-1": ["vip1-conversation-wall", "vip1-extra-convo"],
-};
-
 export function getFloorPlanArea(areaId: string) {
   return AREA_BY_ID.get(areaId) ?? null;
 }
@@ -237,11 +235,13 @@ export function seatingTablesForArea(areaId: string) {
   );
 }
 
-export function fixedSeatingHighlightsForArea(areaId: string) {
-  return (FIXED_SEATING_HIGHLIGHTS_BY_AREA[areaId] ?? []).flatMap((id) => {
-    const item = getFloorPlanArea(id);
-    return item ? [item] : [];
-  });
+export function seatingInventoryForArea(areaId: string) {
+  return AREAS.filter(
+    (item) => item.parentAreaId === areaId && item.capacity > 0 &&
+      item.isReservable && !item.canBeFoodTable &&
+      (item.type === "rectangle-table" || item.type === "square-table" ||
+        item.type === "seating-section"),
+  );
 }
 
 export function foodTablesNearArea(areaId: string) {

@@ -1,9 +1,8 @@
 import {
-  fixedSeatingHighlightsForArea,
   foodTablesNearArea,
   getFloorPlanArea,
   requiredFoodTableCount,
-  seatingTablesForArea,
+  seatingInventoryForArea,
 } from "./configuration/areas";
 import { timeRangesOverlap } from "./conflicts";
 import type {
@@ -48,41 +47,65 @@ export function seatingCapacity(tables: readonly FloorPlanArea[]) {
   return tables.reduce((total, table) => total + table.capacity, 0);
 }
 
+export function reservedSeatingCapacity(reservations: readonly FloorPlanReservation[]) {
+  const ids = new Set(reservations.flatMap((item) =>
+    item.reservationType === "seating" || item.reservationType === "room"
+      ? [item.areaId] : [],
+  ));
+  return seatingCapacity([...ids].flatMap((id) => {
+    const area = getFloorPlanArea(id);
+    return area && !area.canBeFoodTable ? [area] : [];
+  }));
+}
+
 export function selectSmallestTableCombination(
   tables: readonly FloorPlanArea[],
   guestCount: number,
+  reservedSeating: readonly FloorPlanArea[] = [],
 ) {
   if (!Number.isInteger(guestCount) || guestCount <= 0) return [];
   const candidates = tables.filter(
     (table) =>
       table.isReservable &&
       !table.canBeFoodTable &&
-      (table.type === "rectangle-table" || table.type === "square-table") &&
+      (table.type === "rectangle-table" || table.type === "square-table" ||
+        table.type === "seating-section") &&
       table.capacity > 0,
   );
+  if (seatingCapacity(candidates) < guestCount) return [];
   let best: FloorPlanArea[] | null = null;
-  let bestScore: [number, number, number] | null = null;
+  let bestScore: [number, number, number, number] | null = null;
   const combinations = 1 << candidates.length;
   for (let mask = 1; mask < combinations; mask += 1) {
     const selected = candidates.filter((_, index) => mask & (1 << index));
     const capacity = seatingCapacity(selected);
     if (capacity < guestCount) continue;
-    const score: [number, number, number] = [
-      connectedComponents(selected),
+    const proximity = selected.reduce((total, table, index) => {
+      const center = tableCenter(table);
+      const anchors = reservedSeating.length ? reservedSeating : selected.slice(0, index);
+      return total + anchors.reduce((distance, anchor) => {
+        const anchorCenter = tableCenter(anchor);
+        return distance + Math.hypot(center.x - anchorCenter.x, center.y - anchorCenter.y);
+      }, 0);
+    }, 0);
+    const score: [number, number, number, number] = [
       capacity - guestCount,
+      connectedComponents([...reservedSeating, ...selected]),
       selected.length,
+      proximity,
     ];
     if (
       !bestScore ||
       score[0] < bestScore[0] ||
       (score[0] === bestScore[0] && score[1] < bestScore[1]) ||
-      (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] < bestScore[2])
+      (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] < bestScore[2]) ||
+      (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] === bestScore[2] && score[3] < bestScore[3])
     ) {
       best = selected;
       bestScore = score;
     }
   }
-  return best ?? candidates;
+  return best ?? [];
 }
 
 function reservationId(event: FloorPlanEvent, areaId: string, type: string) {
@@ -147,7 +170,7 @@ function eventBaseReservations(
       ? contractedAreas.filter((areaId) => !onParBookingAreaIds.has(areaId))
       : contractedAreas;
   const primaryContractedArea = seatingContractedAreas.find(
-    (areaId) => seatingTablesForArea(areaId).length > 0,
+    (areaId) => seatingInventoryForArea(areaId).length > 0,
   ) ?? seatingContractedAreas[0] ?? null;
   const generated: FloorPlanReservation[] = [];
 
@@ -160,15 +183,6 @@ function eventBaseReservations(
       generated.push(reservation(event, contracted.id, "room", contracted.shortLabel));
     }
   }
-  for (const contractedArea of seatingContractedAreas) {
-    for (const fixture of fixedSeatingHighlightsForArea(contractedArea)) {
-      if (!unavailable.has(fixture.id)) {
-        generated.push(
-          reservation(event, fixture.id, "seating", fixture.shortLabel),
-        );
-      }
-    }
-  }
   if (vipOnly) {
     return generated;
   }
@@ -179,20 +193,39 @@ function eventBaseReservations(
         : [],
     ),
   );
-  const existingSeatingCapacity = seatingCapacity(
-    [...existingSeatingAreaIds].flatMap((areaId) => {
-      const item = getFloorPlanArea(areaId);
-      return item ? [item] : [];
-    }),
-  );
-  const availableTables = seatingContractedAreas.flatMap((areaId) =>
-    seatingTablesForArea(areaId).filter(
+  const existingEventReservations = [
+    ...existing.filter((item) => item.floorPlanEventId === event.id),
+    ...generated,
+  ];
+  const existingSeatingCapacity = reservedSeatingCapacity(existingEventReservations);
+  const reservedSeating = [...new Set(existingEventReservations.flatMap((item) =>
+    item.reservationType === "room" || item.reservationType === "seating" ? [item.areaId] : [],
+  ))].flatMap((id) => {
+    const area = getFloorPlanArea(id);
+    return area && area.capacity > 0 ? [area] : [];
+  });
+  const availableTables = [...new Set(seatingContractedAreas)].flatMap((areaId) =>
+    seatingInventoryForArea(areaId).filter(
       (table) =>
         !unavailable.has(table.id) && !existingSeatingAreaIds.has(table.id),
     ),
   );
   const remainingGuests = Math.max(0, event.guestCount - existingSeatingCapacity);
-  for (const table of selectSmallestTableCombination(availableTables, remainingGuests)) {
+  const conversationSeating = availableTables.filter((area) => area.type === "seating-section");
+  const selectedConversations = seatingCapacity(availableTables) < remainingGuests || remainingGuests === 0
+    ? []
+    : seatingCapacity(conversationSeating) < remainingGuests
+      ? conversationSeating
+      : selectSmallestTableCombination(conversationSeating, remainingGuests, reservedSeating);
+  const remainingTableGuests = remainingGuests - seatingCapacity(selectedConversations);
+  const selectedTables = seatingCapacity(availableTables) < remainingGuests
+    ? []
+    : selectSmallestTableCombination(
+      availableTables.filter((area) => area.type !== "seating-section"),
+      remainingTableGuests,
+      [...reservedSeating, ...selectedConversations],
+    );
+  for (const table of [...selectedConversations, ...selectedTables]) {
     generated.push(reservation(event, table.id, "seating", table.shortLabel));
   }
 
