@@ -445,15 +445,37 @@ describe("Wing Bar", () => {
     },
   );
 
-  it("uses one table through 75 and two mirrored tables above 75", () => {
-    expect(
-      generateKitchenChecklist(packageEvent("Wing Bar", 75))
-        .chafingDishes.bars,
-    ).toBe(1);
-    expect(
-      generateKitchenChecklist(packageEvent("Wing Bar", 76))
-        .chafingDishes.bars,
-    ).toBe(2);
+  it.each([
+    [99, 1],
+    [100, 1],
+    [101, 2],
+  ])("uses %i guests to select %i buffet tables without a resolved-rule warning", (guestCount, tables) => {
+    for (const bar of ["Wing Bar", "Taco Bar"] as const) {
+      const checklist = generateKitchenChecklist(packageEvent(bar, guestCount));
+      expect(checklist.chafingDishes.bars).toBe(tables);
+      expect(checklist.referenceConflicts.map((conflict) => conflict.code))
+        .not.toContain("MIRRORED_TABLE_TRIGGER");
+      expect(checklist.warnings.some((warning) => warning.conflictCode === "MIRRORED_TABLE_TRIGGER"))
+        .toBe(false);
+    }
+  });
+
+  it("does not guess a mirrored setup without attendance and still reviews contradictory notes", () => {
+    const missingAttendance = generateKitchenChecklist({
+      ...packageEvent("Wing Bar", 100),
+      guestCount: null,
+    });
+    expect(missingAttendance.chafingDishes.bars).toBeNull();
+    expect(warningCodes(missingAttendance)).toContain("MISSING_GUEST_COUNT");
+    expect(missingAttendance.needsReview).toBe(true);
+
+    const contradictoryNote = generateKitchenChecklist({
+      ...packageEvent("Wing Bar", 100),
+      specialNotes: ["Use two mirrored buffet tables for this party."],
+    });
+    expect(contradictoryNote.chafingDishes.bars).toBe(1);
+    expect(warningCodes(contradictoryNote)).toContain("SPECIAL_NOTE_REQUIRES_REVIEW");
+    expect(contradictoryNote.needsReview).toBe(true);
   });
 
   it("doubles the complete chafing setup only above 200 guests", () => {
@@ -509,7 +531,7 @@ describe("Wing Bar", () => {
           { name: "Wing Bar", isFood: true },
           { name: "Appetizer Bar", isFood: true },
         ],
-        { guestCount: 80 },
+        { guestCount: 101 },
       ),
     );
     expect(checklist.chafingDishes).toEqual({
@@ -1605,7 +1627,7 @@ describe("platter packing and chafing dishes", () => {
 
   it("adds approved platter chafing to mirrored bar chafing", () => {
     const checklist = generateKitchenChecklist(
-      packageEvent("Taco Bar", 80, [
+      packageEvent("Taco Bar", 101, [
         {
           name: "Wing Platter",
           quantity: 2,

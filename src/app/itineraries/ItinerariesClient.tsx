@@ -101,7 +101,6 @@ export function ItineraryDashboard({ event, online }: { event: ItineraryAsset; o
       </header>
 
       <div className="itinerary-revision-stamp" data-ready={event.revision?.ready === true && online}>
-        <strong>{event.revision?.ready && online ? "Readiness checks passed" : "REVIEW COPY — NOT READY FOR STAFF"}</strong>
         <span title={event.revision?.fingerprint}>{event.revision?.label ?? "Revision not verified"}</span>
         {event.revision ? <small>Snapshot {formatSourceNoteTimestamp(event.revision.generatedAt)} · Floor plan {event.revision.floorPlanVersion ? `v${event.revision.floorPlanVersion}` : "not verified"}</small> : null}
       </div>

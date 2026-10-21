@@ -9095,7 +9095,7 @@ a {
 .kitchen-operations-panel tr[data-review="true"] { background: #fff9ec; }
 .food-delivery-panel td:nth-last-child(2) { overflow-wrap: anywhere; max-width: 200px; }
 .itinerary-revision-stamp { display: flex; flex-direction: column; gap: 4px; padding: 12px 24px; border-bottom: 1px solid var(--portal-border); font-size: .75rem; line-height: 1.4; overflow-wrap: anywhere; }
-.itinerary-revision-stamp[data-ready="false"], .itinerary-source-alert { background: #fff6df; color: #654500; }
+.itinerary-source-alert { background: #fff6df; color: #654500; }
 .itinerary-source-alert { padding: 14px 18px; border: 1px solid #d9bd79; border-radius: 9px; margin: 12px 0; }
 .task-row > span > small { display: block; margin-top: .3rem; }
 .addon-delivery-status { padding: 18px; border: 1px solid var(--portal-border); border-radius: 10px; background: white; margin: 16px 0; }

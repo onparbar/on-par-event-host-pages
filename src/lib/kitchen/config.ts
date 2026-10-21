@@ -181,14 +181,6 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
     appliesTo: ["classification"],
   },
   {
-    code: "MIRRORED_TABLE_TRIGGER",
-    title: "Mirrored buffet-table trigger",
-    writtenRule: "Use two mirrored tables for each selected bar type above 75 guests.",
-    referenceRule: "Party Misc presents mirrored tables as a contract special-note example.",
-    currentResolution: "Use the written threshold and send contradictory special notes to review.",
-    appliesTo: ["chafing", "special-notes"],
-  },
-  {
     code: "MARINARA_EIGHT_OUNCES",
     title: "Mozzarella and Appetizer Bar sauce amount",
     writtenRule: "Every Appetizer Bar receives one bowl of marinara and one bowl of ranch; every Mozzarella Stick Platter receives one bowl of marinara.",
@@ -286,7 +278,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-08-14.1",
+  ruleVersion: "ope-kitchen-2026-10-21.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -343,7 +335,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
   },
   dessertGuestsPerPlatter: 35,
   barTables: {
-    doubleAboveGuestCount: 75,
+    doubleAboveGuestCount: 100,
     normalTablesPerBar: 1,
     mirroredTablesPerBar: 2,
   },
