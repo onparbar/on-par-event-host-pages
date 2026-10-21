@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  AREAS,
+  DISPLAY_AREAS,
   getFloorPlanArea,
 } from "@/lib/floor-plans/configuration/areas";
 import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
@@ -15,6 +15,7 @@ import {
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
+  primaryLocalFloorPlanReservation,
   visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
 import type { FloorPlanDayPayload } from "@/lib/floor-plans/types";
@@ -134,12 +135,8 @@ export function PublishedFloorPlanMapView({
               ) : null}
             </span>
           ))}
-          {AREAS.map((area) => {
-            const local = plan.reservations.find(
-              (reservation) =>
-                reservation.areaId === area.id &&
-                reservation.reservationType !== "custom",
-            ) ?? null;
+          {DISPLAY_AREAS.map((area) => {
+            const local = primaryLocalFloorPlanReservation(plan, area.id);
             const shared = area.entertainmentResourceId
               ? visibleEntertainment.find(
                   (reservation) =>

@@ -1,6 +1,7 @@
 import {
   foodTablesNearArea,
   getFloorPlanArea,
+  getPhysicalFloorPlanAreaId,
   requiredFoodTableCount,
   seatingInventoryForArea,
 } from "./configuration/areas";
@@ -48,13 +49,15 @@ export function seatingCapacity(tables: readonly FloorPlanArea[]) {
 }
 
 export function reservedSeatingCapacity(reservations: readonly FloorPlanReservation[]) {
+  const foodIds = new Set(reservations.filter((item) => item.reservationType === "food-table")
+    .map((item) => getPhysicalFloorPlanAreaId(item.areaId)));
   const ids = new Set(reservations.flatMap((item) =>
     item.reservationType === "seating" || item.reservationType === "room"
-      ? [item.areaId] : [],
+      ? [getPhysicalFloorPlanAreaId(item.areaId)] : [],
   ));
   return seatingCapacity([...ids].flatMap((id) => {
     const area = getFloorPlanArea(id);
-    return area && !area.canBeFoodTable ? [area] : [];
+    return area && !foodIds.has(id) ? [area] : [];
   }));
 }
 
@@ -68,7 +71,6 @@ export function selectSmallestTableCombination(
   const candidates = tables.filter(
     (table) =>
       table.isReservable &&
-      !table.canBeFoodTable &&
       (table.type === "rectangle-table" || table.type === "square-table" ||
         table.type === "seating-section") &&
       table.capacity > 0,
@@ -156,7 +158,7 @@ function unavailableAreaIds(
         candidate.startAt,
         candidate.endAt,
       )
-        ? [candidate.areaId]
+        ? [getPhysicalFloorPlanAreaId(candidate.areaId)]
         : [];
     }),
   );
@@ -206,28 +208,35 @@ function eventBaseReservations(
         : [],
     ),
   );
+  const foodPhysicalIds = new Set([...existingFoodAreaIds].map(getPhysicalFloorPlanAreaId));
+  const savedSeatingPhysicalIds = new Set(existing.filter((item) =>
+    item.floorPlanEventId === event.id && item.reservationType === "seating",
+  ).map((item) => getPhysicalFloorPlanAreaId(item.areaId)));
   const foodCandidates = primaryContractedArea
     ? foodTablesNearArea(primaryContractedArea)
     : foodTablesNearArea("main-dining");
   for (const foodCandidate of foodCandidates) {
-    if (existingFoodAreaIds.size >= foodTableCount) break;
+    if (foodPhysicalIds.size >= foodTableCount) break;
+    const physicalId = getPhysicalFloorPlanAreaId(foodCandidate.id);
     if (
-      unavailable.has(foodCandidate.id) ||
-      existingFoodAreaIds.has(foodCandidate.id)
+      unavailable.has(physicalId) ||
+      savedSeatingPhysicalIds.has(physicalId) ||
+      foodPhysicalIds.has(physicalId)
     ) {
       continue;
     }
     generated.push(reservation(event, foodCandidate.id, "food-table", "F"));
     existingFoodAreaIds.add(foodCandidate.id);
+    foodPhysicalIds.add(physicalId);
   }
   const foodTables = [...existingFoodAreaIds].flatMap((id) => {
     const area = getFloorPlanArea(id);
-    return area?.canBeFoodTable && area.isAda ? [area] : [];
+    return area?.canBeFoodTable ? [area] : [];
   });
   const existingSeatingAreaIds = new Set(
     existing.flatMap((item) =>
       item.floorPlanEventId === event.id && item.reservationType === "seating"
-        ? [item.areaId]
+        ? [getPhysicalFloorPlanAreaId(item.areaId)]
         : [],
     ),
   );
@@ -245,7 +254,9 @@ function eventBaseReservations(
   const availableTables = [...new Set(seatingContractedAreas)].flatMap((areaId) =>
     seatingInventoryForArea(areaId).filter(
       (table) =>
-        !unavailable.has(table.id) && !existingSeatingAreaIds.has(table.id),
+        !unavailable.has(getPhysicalFloorPlanAreaId(table.id)) &&
+        !existingSeatingAreaIds.has(getPhysicalFloorPlanAreaId(table.id)) &&
+        !foodPhysicalIds.has(getPhysicalFloorPlanAreaId(table.id)),
     ),
   );
   const remainingGuests = Math.max(0, event.guestCount - existingSeatingCapacity);

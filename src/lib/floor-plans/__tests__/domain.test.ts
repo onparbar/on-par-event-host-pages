@@ -6,6 +6,8 @@ import {
 } from "../configuration/aliases";
 import {
   getFloorPlanArea,
+  getPhysicalFloorPlanAreaId,
+  DISPLAY_AREAS,
   seatingTablesForArea,
 } from "../configuration/areas";
 import { selectEntertainmentResources } from "../configuration/adjacency";
@@ -162,6 +164,77 @@ function entertainmentReservation(
 }
 
 describe("floor-plan capacities and generation", () => {
+  it("keeps corrected highlights on tabletop bounds and renders food aliases once", () => {
+    expect(getFloorPlanArea("wat-table-1")).toMatchObject({ x: 919, y: 423, width: 56, height: 22 });
+    expect(getFloorPlanArea("vip1-extra-front-3")).toMatchObject({ x: 1050, y: 454, width: 19, height: 48 });
+    for (const [alias, canonical] of [["main-food-1", "main-rect-left-4"], ["main-food-2", "main-rect-right-3"], ["ge-food-table", "ge-table-3"]]) {
+      const surface = getFloorPlanArea(canonical)!;
+      expect(getPhysicalFloorPlanAreaId(alias)).toBe(canonical);
+      expect(getFloorPlanArea(alias)).toMatchObject({ x: surface.x, y: surface.y, width: surface.width, height: surface.height });
+      expect(DISPLAY_AREAS.some((area) => area.id === canonical)).toBe(true);
+      expect(DISPLAY_AREAS.some((area) => area.id === alias)).toBe(false);
+    }
+  });
+
+  it.each(["ge-table-1", "ge-table-2", "ge-table-3"])("allows %s to serve food without counting it as guest seating", (areaId) => {
+    expect(getFloorPlanArea(areaId)).toMatchObject({ capacity: 10, canBeFoodTable: true, isAda: false });
+    const event = floorPlanEvent({ contractedAreaIds: ["geg-tables"], guestCount: 20 });
+    const food: FloorPlanReservation = { ...reservation(event, areaId), reservationType: "food-table", label: "F" };
+    const document = plan([event], [food]);
+    document.reservations = generateFloorPlanReservations(document, "replace-generated");
+
+    expect(document.reservations).toContainEqual(food);
+    expect(document.reservations.filter((item) => item.reservationType === "food-table")).toEqual([food]);
+    expect(document.reservations.filter((item) => item.reservationType === "seating")).toHaveLength(2);
+    expect(document.reservations.some((item) => item.areaId === areaId && item.reservationType === "seating")).toBe(false);
+    expect(reservedSeatingCapacity(document.reservations)).toBe(20);
+    expect(validateFloorPlan(document, [], [], [])).toContainEqual(expect.objectContaining({ code: "FOOD_TABLE", status: "Passed" }));
+    expect(validateFloorPlan(document, [], [], [])).toContainEqual(expect.objectContaining({ code: "FOOD_TABLE_ADA", status: "Warning", blocking: false }));
+  });
+
+  it("does not count one physical table as both food and seating", () => {
+    const event = floorPlanEvent({ guestCount: 10 });
+    const document = plan([event], [
+      reservation(event, "main-rect-left-4"),
+      { ...reservation(event, "main-food-1"), reservationType: "food-table", label: "F" },
+    ]);
+
+    expect(reservedSeatingCapacity(document.reservations)).toBe(0);
+    expect(detectFloorPlanConflicts(document)).toContainEqual(expect.objectContaining({ areaId: "main-rect-left-4", blocking: true }));
+    expect(validateFloorPlan(document, [], detectFloorPlanConflicts(document), [])).toContainEqual(expect.objectContaining({ code: "SEATING_CAPACITY", status: "Failed" }));
+  });
+
+  it("does not use aliases of the same food table to satisfy a mirrored setup", () => {
+    const event = floorPlanEvent({ guestCount: 150 });
+    const document = plan([event], ["main-food-1", "main-rect-left-4"].map((areaId) => ({
+      ...reservation(event, areaId), reservationType: "food-table" as const, label: "F",
+    })));
+
+    expect(validateFloorPlan(document, [], [], [])).toContainEqual(expect.objectContaining({ code: "FOOD_TABLE", status: "Failed", message: expect.stringContaining("1 assigned") }));
+  });
+
+  it.each([true, false])("checks physical food/seating aliases across parties with overlap=%s", (overlap) => {
+    const first = floorPlanEvent({ guestCount: 10 });
+    const second = floorPlanEvent({ id: "second", tripleseatEventId: "second", guestCount: 10,
+      startAt: overlap ? START : END, endAt: "2026-08-07T04:00:00.000Z" });
+    const document = plan([first, second], [
+      { ...reservation(first, "main-food-1"), reservationType: "food-table", label: "F" },
+      reservation(second, "main-rect-left-4"),
+    ]);
+
+    expect(detectFloorPlanConflicts(document)).toHaveLength(overlap ? 1 : 0);
+  });
+
+  it("keeps a saved seating assignment and chooses a different physical food table", () => {
+    const event = floorPlanEvent({ guestCount: 10 });
+    const seat = reservation(event, "main-rect-left-4");
+    const generated = generateFloorPlanReservations(plan([event], [seat]), "replace-generated");
+
+    expect(generated).toContainEqual(seat);
+    expect(generated.filter((item) => item.reservationType === "food-table").map((item) => item.areaId)).toEqual(["main-food-2"]);
+    expect(reservedSeatingCapacity(generated)).toBe(10);
+  });
+
   it("counts venue rectangle tables as 10 seats", () => {
     expect(getFloorPlanArea("main-rect-left-1")?.capacity).toBe(10);
   });
@@ -233,7 +306,7 @@ describe("floor-plan capacities and generation", () => {
   it.each([1, 4, 5, 9, 10])("seats a Main Dining party of %i beside its food table", (guestCount) => {
     const generated = generateFloorPlanReservations(plan([floorPlanEvent({ guestCount })]), "fill-missing");
 
-    expect(generated.filter((item) => item.reservationType === "seating").map((item) => item.areaId)).toEqual(["main-rect-left-4"]);
+    expect(generated.filter((item) => item.reservationType === "seating").map((item) => item.areaId)).toEqual(["main-rect-left-3"]);
     expect(generated.filter((item) => item.reservationType === "food-table").map((item) => item.areaId)).toEqual(["main-food-1"]);
     expect(reservedSeatingCapacity(generated)).toBe(10);
   });
@@ -244,7 +317,7 @@ describe("floor-plan capacities and generation", () => {
     const generated = generateFloorPlanReservations(plan([event], [food]), "replace-generated");
 
     expect(generated).toContainEqual(food);
-    expect(generated.filter((item) => item.reservationType === "seating").map((item) => item.areaId)).toEqual(["main-rect-right-3"]);
+    expect(generated.filter((item) => item.reservationType === "seating").map((item) => item.areaId)).toEqual(["main-rect-right-2"]);
   });
 
   it.each([true, false])("uses the nearest available food-side table when another party overlaps=%s", (overlap) => {
@@ -253,14 +326,14 @@ describe("floor-plan capacities and generation", () => {
       id: "second", tripleseatEventId: "second", guestCount: 10,
       startAt: overlap ? START : END, endAt: "2026-08-07T04:00:00.000Z",
     });
-    const manualSeat = reservation(first, "main-rect-left-4");
+    const manualSeat = reservation(first, "main-rect-left-3");
     const manualFood: FloorPlanReservation = { ...reservation(first, "main-food-2"), reservationType: "food-table", label: "F" };
     const generated = generateFloorPlanReservations(plan([first, second], [manualSeat, manualFood]), "replace-generated");
 
     expect(generated).toContainEqual(manualSeat);
     expect(generated).toContainEqual(manualFood);
     expect(generated.filter((item) => item.floorPlanEventId === second.id && item.reservationType === "seating")
-      .map((item) => item.areaId)).toEqual([overlap ? "main-rect-left-3" : "main-rect-left-4"]);
+      .map((item) => item.areaId)).toEqual([overlap ? "main-rect-left-2" : "main-rect-left-3"]);
   });
 
   it("reserves no insufficient substitute when the mapped inventory is short", () => {
@@ -592,14 +665,14 @@ describe("floor-plan capacities and generation", () => {
     ]);
   });
 
-  it.each([[10, 1, 10], [11, 2, 20], [90, 9, 90], [91, 10, 94], [110, 11, 110], [122, 14, 122], [123, 0, 0]])(
+  it.each([[10, 1, 10], [11, 2, 20], [90, 9, 90], [91, 10, 94], [102, 12, 102], [103, 0, 0], [110, 0, 0], [122, 0, 0], [123, 0, 0]])(
     "uses sufficient Main Dining seating nearest food for %i guests",
     (guestCount, count, expectedCapacity) => {
       const generated = generateFloorPlanReservations(plan([floorPlanEvent({ guestCount })]), "fill-missing");
       const seating = generated.filter((item) => item.reservationType === "seating");
       expect(seating).toHaveLength(count);
       expect(reservedSeatingCapacity(generated)).toBe(expectedCapacity);
-      if (guestCount === 11) expect(seating.map((item) => item.areaId)).toEqual(["main-rect-left-3", "main-rect-left-4"]);
+      if (guestCount === 11) expect(seating.map((item) => item.areaId)).toEqual(["main-rect-left-2", "main-rect-left-3"]);
     },
   );
 
@@ -610,7 +683,7 @@ describe("floor-plan capacities and generation", () => {
     expect(reservedSeatingCapacity(generated)).toBe(30);
     expect(generated.filter((item) => item.reservationType === "seating")).toHaveLength(3);
     expect(generated.filter((item) => item.reservationType === "seating").map((item) => item.areaId))
-      .toEqual(["main-rect-left-2", "main-rect-left-3", "main-rect-left-4"]);
+      .toEqual(["main-rect-left-2", "main-rect-left-3", "main-convo-2"]);
   });
 
   it("keeps three saved Main Dining rectangle tables for 30 guests", () => {

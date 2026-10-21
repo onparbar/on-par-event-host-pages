@@ -976,6 +976,12 @@ function sanitizeReservations(
     ) {
       throw new Error("A floor-plan reservation is invalid.");
     }
+    if (
+      (reservationType === "food-table" && !area.canBeFoodTable) ||
+      (reservationType === "seating" && area.capacity <= 0)
+    ) {
+      throw new Error("Choose a seating table or an authorized food table for this assignment.");
+    }
     seen.add(id);
     const event = plan.events.find((candidate) => candidate.id === floorPlanEventId)!;
     return {

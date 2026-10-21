@@ -837,4 +837,43 @@ describe("individual event floor-plan view", () => {
     const sharedFirstOnly = payload.entertainmentReservations.filter((reservation) => reservation.id === "first-vip");
     expect(floorPlanLocalReservationOutlines(payload.plan, "", sharedFirstOnly)).toEqual(outlines);
   });
+
+  it("renders saved food aliases on one canonical physical surface", () => {
+    const event = interactivePlan.events[0];
+    const aliases = ["main-food-1", "main-food-2", "ge-food-table"];
+    const plan: FloorPlanDocument = {
+      ...interactivePlan,
+      reservations: aliases.map((areaId, index) => ({
+        ...interactivePlan.reservations[0],
+        id: `legacy-food-${index}`,
+        areaId,
+        reservationType: "food-table",
+        label: "F",
+      })),
+    };
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanMapView, {
+      payload: { ...interactivePayload, plan },
+      selectedEventId: null,
+      onSelectEvent: () => {},
+    }));
+    for (const name of ["Main Dining Table L4", "Main Dining Table R3", "GEG Table 3"]) {
+      expect(html.split(`aria-label="${name} assigned to ${event.name}"`)).toHaveLength(2);
+    }
+    expect(html.match(/<span>F<\/span>/g)).toHaveLength(3);
+    expect(html).not.toContain('aria-label="Main Dining ADA Food Table');
+    expect(html).not.toContain('aria-label="GEG ADA Food Table');
+  });
+
+  it("keeps reuse outlines grouped across legacy and canonical table IDs", () => {
+    const plan: FloorPlanDocument = {
+      ...payload.plan,
+      reservations: [
+        { ...interactivePlan.reservations[0], id: "first-food", floorPlanEventId: first.id, areaId: "main-food-1", reservationType: "food-table", label: "F", startAt: first.startAt, endAt: first.endAt },
+        { ...interactivePlan.reservations[0], id: "later-seat", floorPlanEventId: second.id, areaId: "main-rect-left-4", reservationType: "seating", startAt: second.startAt, endAt: second.endAt },
+      ],
+    };
+    expect(floorPlanLocalReservationOutlines(plan)).toEqual([
+      expect.objectContaining({ id: "later-seat", color: second.color, label: expect.stringContaining("Main Dining Table L4 also assigned to Later Party") }),
+    ]);
+  });
 });

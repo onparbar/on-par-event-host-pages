@@ -2,6 +2,7 @@ import {
   AREAS,
   getAreaForEntertainmentResource,
   getFloorPlanArea,
+  getPhysicalFloorPlanAreaId,
 } from "./configuration/areas";
 import { formatClock } from "@/lib/entertainment/time";
 import type {
@@ -54,6 +55,58 @@ export function floorPlanOverlayLabel(
     return area.shortLabel || local.label;
   }
   return "";
+}
+
+export function primaryLocalFloorPlanReservation(
+  plan: FloorPlanDocument,
+  areaId: string,
+  preferredEventId = "",
+) {
+  const physicalId = getPhysicalFloorPlanAreaId(areaId);
+  const candidates = plan.reservations.filter((reservation) =>
+    reservation.reservationType !== "custom" &&
+    getPhysicalFloorPlanAreaId(reservation.areaId) === physicalId,
+  );
+  const preferred = candidates.filter((reservation) =>
+    reservation.floorPlanEventId === preferredEventId,
+  );
+  const selected = preferred.length ? preferred : candidates.filter((reservation) =>
+    reservation.floorPlanEventId === candidates[0]?.floorPlanEventId,
+  );
+  return selected.find((reservation) => reservation.reservationType === "food-table") ??
+    selected[0] ?? null;
+}
+
+export function assignLocalFloorPlanArea(
+  plan: FloorPlanDocument,
+  event: FloorPlanEvent,
+  area: FloorPlanArea,
+  reservationType: Exclude<FloorPlanReservation["reservationType"], "custom">,
+) {
+  const physicalId = getPhysicalFloorPlanAreaId(area.id);
+  const existing = plan.reservations.filter((reservation) =>
+    reservation.floorPlanEventId === event.id &&
+    reservation.reservationType !== "custom" &&
+    getPhysicalFloorPlanAreaId(reservation.areaId) === physicalId,
+  );
+  const current = existing.find((reservation) => reservation.reservationType === reservationType) ?? existing[0];
+  if (existing.length === 1 && current.reservationType === reservationType) return plan;
+  const assignment: FloorPlanReservation = {
+    id: current?.id ?? `manual:${event.id}:${reservationType}:${physicalId}`,
+    floorPlanEventId: event.id,
+    areaId: current && reservationType === "food-table" ? current.areaId : physicalId,
+    reservationType,
+    startAt: current?.startAt ?? event.startAt,
+    endAt: current?.endAt ?? event.endAt,
+    label: reservationType === "food-table" ? "F" : area.shortLabel,
+    source: "manual",
+    lockedByUser: true,
+  };
+  const replacedIds = new Set(existing.map((reservation) => reservation.id));
+  return { ...plan, reservations: [
+    ...plan.reservations.filter((reservation) => !replacedIds.has(reservation.id)),
+    assignment,
+  ] };
 }
 
 function sameEntertainmentGroup(
@@ -391,12 +444,12 @@ export function localHighlightIdsForDeletion(
       ) ?? null
     : null;
   if (selected?.floorPlanEventId === eventId) return [selected.id];
-  const selectedAreas = new Set(areaIds);
+  const selectedAreas = new Set(areaIds.map(getPhysicalFloorPlanAreaId));
   return plan.reservations
     .filter(
       (reservation) =>
         reservation.floorPlanEventId === eventId &&
-        selectedAreas.has(reservation.areaId) &&
+        selectedAreas.has(getPhysicalFloorPlanAreaId(reservation.areaId)) &&
         reservation.reservationType !== "custom",
     )
     .map((reservation) => reservation.id);

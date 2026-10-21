@@ -35,7 +35,7 @@ export function withKitchenReservedAreas(
           continue;
         }
         const area = getFloorPlanArea(reservation.areaId);
-        if (!area || area.canBeFoodTable) continue;
+        if (!area || (area.canBeFoodTable && area.capacity === 0)) continue;
         const reservedArea = area.parentAreaId
           ? getFloorPlanArea(area.parentAreaId)
           : area;

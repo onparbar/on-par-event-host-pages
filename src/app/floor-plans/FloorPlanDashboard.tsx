@@ -14,8 +14,10 @@ import {
 } from "@/app/_components/PortalShell";
 import {
   AREAS,
+  DISPLAY_AREAS,
   getAreaForEntertainmentResource,
   getFloorPlanArea,
+  getPhysicalFloorPlanAreaId,
 } from "@/lib/floor-plans/configuration/areas";
 import {
   floorPlanEventColorsAreDistinct,
@@ -28,6 +30,7 @@ import { reservedSeatingCapacity } from "@/lib/floor-plans/generator";
 import { entertainmentReservationMatchesFloorPlanEvent } from "@/lib/floor-plans/identity";
 import {
   displayEventForFloorPlanArea,
+  assignLocalFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
   floorPlanEventFillColor,
@@ -36,6 +39,7 @@ import {
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
   localHighlightIdsForDeletion,
+  primaryLocalFloorPlanReservation,
   visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
 import type {
@@ -90,11 +94,8 @@ function reservationForAreaAndEvent(
   areaId: string,
   eventId: string,
 ) {
-  return plan.reservations.find(
-    (reservation) =>
-      reservation.areaId === areaId &&
-      reservation.floorPlanEventId === eventId,
-  ) ?? null;
+  const reservation = primaryLocalFloorPlanReservation(plan, areaId, eventId);
+  return reservation?.floorPlanEventId === eventId ? reservation : null;
 }
 
 function entertainmentForAreaAndEvent(
@@ -268,7 +269,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }, [activeEntertainmentReservation, activeEvent]);
 
   useEffect(() => {
-    setFoodTableMode(Boolean(selectedArea?.canBeFoodTable));
+    setFoodTableMode(activePlanReservation
+      ? activePlanReservation.reservationType === "food-table"
+      : Boolean(selectedArea?.canBeFoodTable && selectedArea.capacity === 0));
     setEntertainmentMode(
       Boolean(
         selectedArea?.entertainmentResourceId &&
@@ -276,7 +279,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           selectedArea.type !== "mini-golf",
       ),
     );
-  }, [selectedArea]);
+  }, [selectedArea, activePlanReservation?.reservationType, activeEventId]);
 
   useEffect(() => {
     if (!mapFocused) return;
@@ -475,7 +478,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (!payload || !plan || !activeEvent || selectedAreaIds.length === 0) return;
     setRequestState("saving");
     try {
-      const localAdditions: FloorPlanReservation[] = [];
+      let nextPlan = plan;
       for (const areaId of selectedAreaIds) {
         const area = getFloorPlanArea(areaId);
         if (!area || !area.isReservable) continue;
@@ -487,31 +490,17 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           await saveEntertainmentAssignment(area, activeEvent);
           if (area.type !== "room") continue;
         }
-        if (reservationForAreaAndEvent(plan, area.id, activeEvent.id)) continue;
         const reservationType = area.canBeFoodTable && foodTableMode
           ? "food-table"
           : area.type === "rectangle-table" || area.type === "square-table"
             ? "seating"
             : "room";
-        localAdditions.push({
-          id: `manual:${activeEvent.id}:${reservationType}:${area.id}`,
-          floorPlanEventId: activeEvent.id,
-          areaId: area.id,
-          reservationType,
-          startAt: activeEvent.startAt,
-          endAt: activeEvent.endAt,
-          label: reservationType === "food-table" ? "F" : area.shortLabel,
-          source: "manual",
-          lockedByUser: true,
-        });
+        nextPlan = assignLocalFloorPlanArea(nextPlan, activeEvent, area, reservationType);
       }
-      const nextPlan = localAdditions.length
-        ? { ...plan, reservations: [...plan.reservations, ...localAdditions] }
-        : plan;
-      if (localAdditions.length) commitPlan(nextPlan);
+      if (nextPlan !== plan) commitPlan(nextPlan);
       await refreshEntertainment(nextPlan);
       setRequestState("idle");
-      setMessage(localAdditions.length ? "Assignments added; save the plan to persist seating changes." : "Shared entertainment assignments saved.");
+      setMessage(nextPlan !== plan ? "Assignments updated; save the plan to persist seating changes." : "Shared entertainment assignments saved.");
     } catch (error) {
       setRequestState("error");
       setMessage(error instanceof Error ? error.message : "Unable to assign the selected objects.");
@@ -690,12 +679,11 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       }
     };
     const exportedLocalReservations = plan.reservations.filter((reservation) =>
-      reservation.reservationType === "custom" || plan.reservations.find((candidate) =>
-        candidate.areaId === reservation.areaId && candidate.reservationType !== "custom",
-      )?.id === reservation.id,
+      reservation.reservationType === "custom" ||
+        primaryLocalFloorPlanReservation(plan, reservation.areaId)?.id === reservation.id,
     );
     for (const reservation of exportedLocalReservations) {
-      const area = getFloorPlanArea(reservation.areaId);
+      const area = getFloorPlanArea(getPhysicalFloorPlanAreaId(reservation.areaId));
       const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
       if (!area || !event) continue;
       if (reservation.reservationType === "custom") {
@@ -914,8 +902,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                       {outline.timeLabel ? <small className="floor-plan-entertainment-outline-time">{outline.timeLabel}</small> : null}
                     </span>
                   ))}
-                  {AREAS.filter((area) => area.id !== "facility" || mapPlan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
-                    const local = mapPlan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom" && (reservation.floorPlanEventId === activeEventId || !activeEventId)) ?? mapPlan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom") ?? null;
+                  {DISPLAY_AREAS.filter((area) => area.id !== "facility" || mapPlan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
+                    const local = primaryLocalFloorPlanReservation(mapPlan, area.id, activeEventId);
                     const shared = area.entertainmentResourceId
                       ? visibleEntertainment.find((reservation) => reservation.resourceId === area.entertainmentResourceId) ?? null
                       : null;
@@ -935,7 +923,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                         shared,
                       ),
                     );
-                    const conflict = payload.floorPlanConflicts.some((item) => item.areaId === area.id && (!mapView.selectedEventId || item.eventIds.includes(mapView.selectedEventId))) || (shared ? payload.entertainmentConflicts.some((item) => item.reservationIds.includes(shared.id)) : false);
+                    const conflict = payload.floorPlanConflicts.some((item) => getPhysicalFloorPlanAreaId(item.areaId) === area.id && (!mapView.selectedEventId || item.eventIds.includes(mapView.selectedEventId))) || (shared ? payload.entertainmentConflicts.some((item) => item.reservationIds.includes(shared.id)) : false);
                     return (
                       <button
                         aria-label={`${area.name}${assignedEvent ? ` assigned to ${assignedEvent.name}` : ", unassigned"}`}
@@ -1008,9 +996,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />Mark as food table and label F</label> : null}
                 {activePlanReservation ? <div className="floor-plan-field-group"><label>Highlight label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label></div> : null}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}
-                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">Add highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
+                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">{activePlanReservation ? "Update" : "Add"} highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
                 {activePlanReservation?.reservationType === "custom" && activePlanReservation.customGeometry ? <div className="floor-plan-geometry-grid">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key}<input min={0} onChange={(event) => updateReservation({ customGeometry: { ...activePlanReservation.customGeometry!, [key]: Number(event.target.value) } })} type="number" value={activePlanReservation.customGeometry![key]} /></label>)}</div> : null}
-                <div className={`floor-plan-conflict-state${payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? " is-conflict" : ""}`}>{payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? "Blocking overlap: resolve this assignment before approval." : "No floor-plan overlap detected for this object."}</div>
+                <div className={`floor-plan-conflict-state${payload.floorPlanConflicts.some((item) => getPhysicalFloorPlanAreaId(item.areaId) === getPhysicalFloorPlanAreaId(selectedArea.id)) ? " is-conflict" : ""}`}>{payload.floorPlanConflicts.some((item) => getPhysicalFloorPlanAreaId(item.areaId) === getPhysicalFloorPlanAreaId(selectedArea.id)) ? "Blocking overlap: resolve this assignment before approval." : "No floor-plan overlap detected for this object."}</div>
               </div>
             ) : activeEvent ? (
               <div className="floor-plan-inspector-body">

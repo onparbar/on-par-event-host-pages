@@ -9,6 +9,7 @@ import { selectEntertainmentResources } from "./configuration/adjacency";
 import {
   getAreaForEntertainmentResource,
   getFloorPlanArea,
+  getPhysicalFloorPlanAreaId,
   requiredFoodTableCount,
 } from "./configuration/areas";
 import { floorPlanEventColorsAreDistinct } from "./configuration/colors";
@@ -70,13 +71,14 @@ export function validateFloorPlan(
         (reservation.reservationType === "room" &&
           (getFloorPlanArea(reservation.areaId)?.capacity ?? 0) > 0),
     );
-    const seatingCapacity = reservedSeatingCapacity(seating);
+    const seatingCapacity = reservedSeatingCapacity(reservations);
     const vipOnly = isVipOnlyFloorPlanEvent(event);
     const food = reservations.filter(
       (reservation) => reservation.reservationType === "food-table",
     );
     const foodTableCount = requiredFoodTableCount(event.guestCount);
-    const foodTableCountPasses = food.length >= foodTableCount;
+    const foodPhysicalCount = new Set(food.map((reservation) => getPhysicalFloorPlanAreaId(reservation.areaId))).size;
+    const foodTableCountPasses = foodPhysicalCount >= foodTableCount;
     const foodTableLabelsPass = food.every(
       (reservation) => reservation.label === "F",
     );
@@ -168,9 +170,9 @@ export function validateFloorPlan(
           : "Failed",
         vipOnly ? "VIP-only bookings reserve the VIP section without surrounding tables." : foodTableCountPasses
           ? foodTableLabelsPass
-            ? `${food.length} authorized food table${food.length === 1 ? " is" : "s are"} assigned and labeled F.`
+            ? `${foodPhysicalCount} authorized food table${foodPhysicalCount === 1 ? " is" : "s are"} assigned and labeled F.`
             : "Every food table must be labeled F."
-          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${food.length} assigned.`,
+          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${foodPhysicalCount} assigned.`,
         !vipOnly && !(foodTableCountPasses && foodTableLabelsPass),
       ),
     );
@@ -180,16 +182,21 @@ export function validateFloorPlan(
         const area = getFloorPlanArea(reservation.areaId);
         return area?.isAda && area.canBeFoodTable;
       });
+    const foodAuthorized = foodTableCountPasses && food.every((reservation) =>
+      getFloorPlanArea(reservation.areaId)?.canBeFoodTable,
+    );
     result.push(
       item(
         "FOOD_TABLE_ADA",
         event.id,
         "Food table uses designated ADA table",
-        vipOnly ? "Not Applicable" : foodIsAda ? "Passed" : "Failed",
+        vipOnly ? "Not Applicable" : foodIsAda ? "Passed" : foodAuthorized ? "Warning" : "Failed",
         vipOnly ? "No surrounding food table is assigned for a VIP-only booking." : foodIsAda
           ? "Every food table uses designated ADA inventory."
-          : "A food table is missing or is not assigned to designated ADA inventory.",
-        !vipOnly && !foodIsAda,
+          : foodAuthorized
+            ? "GEG tables are approved for food use; confirm accessible placement before approval. Their ADA designation has not been verified."
+            : "A food table is missing or is not assigned to authorized food inventory.",
+        !vipOnly && !foodAuthorized,
       ),
     );
 

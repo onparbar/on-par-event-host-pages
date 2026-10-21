@@ -1,4 +1,4 @@
-import { getFloorPlanArea } from "./configuration/areas";
+import { getFloorPlanArea, getPhysicalFloorPlanAreaId } from "./configuration/areas";
 import type {
   FloorPlanConflict,
   FloorPlanDocument,
@@ -53,14 +53,19 @@ export function detectFloorPlanConflicts(plan: FloorPlanDocument) {
     const left = reservations[leftIndex];
     for (let rightIndex = leftIndex + 1; rightIndex < reservations.length; rightIndex += 1) {
       const right = reservations[rightIndex];
+      const physicalId = getPhysicalFloorPlanAreaId(left.areaId);
+      const sameEvent = left.floorPlanEventId === right.floorPlanEventId;
+      const foodAndSeating =
+        (left.reservationType === "food-table" && right.reservationType === "seating") ||
+        (right.reservationType === "food-table" && left.reservationType === "seating");
       if (
-        left.floorPlanEventId === right.floorPlanEventId ||
-        left.areaId !== right.areaId ||
+        (sameEvent && !foodAndSeating) ||
+        physicalId !== getPhysicalFloorPlanAreaId(right.areaId) ||
         !timeRangesOverlap(left.startAt, left.endAt, right.startAt, right.endAt)
       ) {
         continue;
       }
-      result.push(conflict(left, right, plan, left.areaId));
+      result.push(conflict(left, right, plan, physicalId));
     }
   }
 

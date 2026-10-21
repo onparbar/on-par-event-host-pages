@@ -1,6 +1,6 @@
 import type { EntertainmentReservation } from "@/lib/entertainment/types";
-import { eventForFloorPlanEntertainment, primaryEntertainmentReservationForResource } from "./presentation";
-import { getFloorPlanArea } from "./configuration/areas";
+import { eventForFloorPlanEntertainment, primaryEntertainmentReservationForResource, primaryLocalFloorPlanReservation } from "./presentation";
+import { getFloorPlanArea, getPhysicalFloorPlanAreaId } from "./configuration/areas";
 import { formatClock } from "@/lib/entertainment/time";
 import type { FloorPlanDocument } from "./types";
 
@@ -36,15 +36,13 @@ export function floorPlanLocalReservationOutlines(
   entertainmentReservations: EntertainmentReservation[] = [],
 ) {
   return plan.reservations.flatMap((reservation) => {
-    const area = getFloorPlanArea(reservation.areaId);
+    const area = getFloorPlanArea(getPhysicalFloorPlanAreaId(reservation.areaId));
     if (!area || area.id === "facility" ||
       reservation.reservationType === "custom") return [];
     const candidates = plan.reservations.filter((candidate) =>
-      candidate.areaId === area.id && candidate.reservationType !== "custom",
+      getPhysicalFloorPlanAreaId(candidate.areaId) === area.id && candidate.reservationType !== "custom",
     );
-    const primaryLocal = candidates.find((candidate) =>
-      candidate.floorPlanEventId === preferredEventId,
-    ) ?? candidates[0];
+    const primaryLocal = primaryLocalFloorPlanReservation(plan, area.id, preferredEventId)!;
     const shared = area.entertainmentResourceId
       ? entertainmentReservations.filter((candidate) => candidate.active &&
         candidate.resourceId === area.entertainmentResourceId)
@@ -65,9 +63,7 @@ export function floorPlanLocalReservationOutlines(
     ])].filter((eventId) => eventId !== primaryEventId);
     const index = secondaryEventIds.indexOf(reservation.floorPlanEventId);
     const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
-    if (index < 0 || !event || candidates.find((candidate) =>
-      candidate.floorPlanEventId === event.id,
-    )?.id !== reservation.id) return [];
+    if (index < 0 || !event || primaryLocalFloorPlanReservation(plan, area.id, event.id)?.id !== reservation.id) return [];
     const padding = 3 + index * 4;
     const time = reservation.startAt && reservation.endAt
       ? `${formatClock(reservation.startAt)} – ${formatClock(reservation.endAt)}`

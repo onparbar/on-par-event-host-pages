@@ -3,13 +3,16 @@ import type { EntertainmentReservation } from "@/lib/entertainment/types";
 import { detectFloorPlanConflicts } from "../conflicts";
 import {
   displayEventForFloorPlanArea,
+  assignLocalFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   floorPlanEventFillColor,
   eventForFloorPlanEntertainment,
   localHighlightIdsForDeletion,
+  primaryLocalFloorPlanReservation,
   visibleEntertainmentReservations,
 } from "../presentation";
 import type { FloorPlanDocument, FloorPlanEvent } from "../types";
+import { getFloorPlanArea } from "../configuration/areas";
 
 const plan = {
   id: "floor-plan-redacted",
@@ -66,6 +69,42 @@ describe("floor-plan highlight editing", () => {
     expect(
       localHighlightIdsForDeletion(plan, "event-1", ["vip-1"], ""),
     ).toEqual(["room-highlight"]);
+  });
+
+  it("selects and deletes a saved food alias from its physical table", () => {
+    const legacy = { ...plan.reservations[0], id: "legacy-food", areaId: "main-food-1", reservationType: "food-table" as const, label: "F" };
+    const source: FloorPlanDocument = { ...plan, reservations: [legacy] };
+    expect(primaryLocalFloorPlanReservation(source, "main-rect-left-4")).toEqual(legacy);
+    expect(localHighlightIdsForDeletion(source, "event-1", ["main-rect-left-4"], "")).toEqual(["legacy-food"]);
+  });
+
+  it("changes a GEG seating table to food without leaving a second reservation", () => {
+    const event = floorPlanEvent("event-1", "101", "Training Party", "#297025");
+    const seating = { ...plan.reservations[0], id: "saved-geg-seat", areaId: "ge-table-1", reservationType: "seating" as const };
+    const source: FloorPlanDocument = { ...plan, events: [event], reservations: [seating] };
+    const updated = assignLocalFloorPlanArea(source, event, getFloorPlanArea("ge-table-1")!, "food-table");
+    expect(updated.reservations).toEqual([expect.objectContaining({ id: "saved-geg-seat", areaId: "ge-table-1", reservationType: "food-table", label: "F", source: "manual", lockedByUser: true })]);
+    const restored = assignLocalFloorPlanArea(updated, event, getFloorPlanArea("ge-table-1")!, "seating");
+    expect(restored.reservations).toEqual([expect.objectContaining({ id: "saved-geg-seat", areaId: "ge-table-1", reservationType: "seating", label: "GEG" })]);
+  });
+
+  it("converts a legacy food alias to canonical seating while retaining its saved record ID", () => {
+    const event = floorPlanEvent("event-1", "101", "Training Party", "#297025");
+    const legacy = { ...plan.reservations[0], id: "legacy-food", areaId: "ge-food-table", reservationType: "food-table" as const, label: "F" };
+    const source: FloorPlanDocument = { ...plan, events: [event], reservations: [legacy] };
+    const updated = assignLocalFloorPlanArea(source, event, getFloorPlanArea("ge-table-3")!, "seating");
+    expect(updated.reservations).toEqual([expect.objectContaining({ id: "legacy-food", areaId: "ge-table-3", reservationType: "seating" })]);
+  });
+
+  it("consolidates duplicate roles for the same physical table and preserves other parties", () => {
+    const event = floorPlanEvent("event-1", "101", "Training Party", "#297025");
+    const food = { ...plan.reservations[0], id: "legacy-food", areaId: "main-food-1", reservationType: "food-table" as const, label: "F" };
+    const seating = { ...food, id: "duplicate-seat", areaId: "main-rect-left-4", reservationType: "seating" as const };
+    const other = { ...seating, id: "other-party", floorPlanEventId: "event-2" };
+    const source: FloorPlanDocument = { ...plan, events: [event], reservations: [seating, food, other] };
+    const updated = assignLocalFloorPlanArea(source, event, getFloorPlanArea("main-rect-left-4")!, "food-table");
+    expect(updated.reservations).toEqual([other, expect.objectContaining({ id: "legacy-food", areaId: "main-food-1", reservationType: "food-table" })]);
+    expect(primaryLocalFloorPlanReservation(source, "main-rect-left-4", event.id)?.id).toBe("legacy-food");
   });
 });
 
