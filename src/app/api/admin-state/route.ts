@@ -8,6 +8,7 @@ import {
 } from "@/lib/admin-state";
 import { saveChecklist } from "@/lib/checklist-storage";
 import { StaleSaveError } from "@/lib/stale-save";
+import { normalizeItineraryEdits } from "@/lib/itineraries/edits";
 import {
   ADMIN_STATE_VERSION_HEADER,
   emptyAdminState,
@@ -36,6 +37,7 @@ function normalizeState(value: unknown): AdminState {
   return {
     archivedAssetKeys: Array.isArray(state.archivedAssetKeys) ? state.archivedAssetKeys.filter((item): item is string => typeof item === "string") : [],
     archivedEventIds: Array.isArray(state.archivedEventIds) ? state.archivedEventIds.map((item) => Number(item)).filter((item) => Number.isFinite(item)) : [],
+    itineraryEditsByEvent: normalizeItineraryEdits(state.itineraryEditsByEvent),
     overlaysByAsset:
       state.overlaysByAsset && typeof state.overlaysByAsset === "object"
         ? Object.fromEntries(
@@ -95,7 +97,12 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Invalid admin state payload." }, { status: 400 });
   }
 
-  const state = normalizeState(body.state);
+  let state: AdminState;
+  try {
+    state = normalizeState(body.state);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid itinerary edits." }, { status: 400, headers: PRIVATE_RESPONSE_HEADERS });
+  }
   if (body.expectedUpdatedAt !== null && (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt)))) {
     return NextResponse.json({ error: "Reload the Admin state before saving." }, { status: 400, headers: PRIVATE_RESPONSE_HEADERS });
   }

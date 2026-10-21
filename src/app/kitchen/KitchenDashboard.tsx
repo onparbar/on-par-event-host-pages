@@ -6,6 +6,7 @@ import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import { kitchenProgress } from "@/lib/kitchen/production";
 import { FoodDeliveryPanel, KitchenExpoPanel, KitchenProductionPanel } from "./KitchenOperationsPanel";
 import type { EventFoodDelivery } from "@/lib/gotab/delivery";
+import { KitchenSheetViewport } from "./KitchenSheetViewport";
 import {
   useCallback,
   useEffect,
@@ -635,6 +636,15 @@ export default function KitchenDashboard() {
     ? sortedEvents.find((event) => operationalKitchenEventId(event.event.eventId) === eventContext.preferredEventId) ?? null
     : null;
   const visibleKitchenEvents = eventContext.preferredEventId ? (focusedEvent ? [focusedEvent] : []) : sortedEvents;
+  const openedContextEventRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!eventContext.preferredEventId) {
+      openedContextEventRef.current = null;
+    } else if (focusedEvent && openedContextEventRef.current !== eventContext.preferredEventId) {
+      openedContextEventRef.current = eventContext.preferredEventId;
+      setSelectedEventId(focusedEvent.event.eventId);
+    }
+  }, [eventContext.preferredEventId, focusedEvent]);
   const retainedStaffDraftCount = Object.keys(staffDrafts).filter((eventId) =>
     dirtyStaffRef.current.has(eventId) && !sortedEvents.some((event) => String(event.event.eventId) === eventId),
   ).length;
@@ -1557,7 +1567,10 @@ export default function KitchenDashboard() {
                   checklist={checklist}
                   key={eventKey}
                   open={focusedEvent === checklist}
-                  onSelect={() => eventContext.selectEvent(eventSelection(checklist))}
+                  onSelect={() => {
+                    eventContext.selectEvent(eventSelection(checklist));
+                    setSelectedEventId(checklist.event.eventId);
+                  }}
                 >
                   <KitchenChecklistSheet
                     staffDraft={
@@ -1579,6 +1592,7 @@ export default function KitchenDashboard() {
                       updateStaffDraft(checklist, value);
                     }}
                     onOpenDescription={setDescriptionItem}
+                    onOpenSheet={() => setSelectedEventId(checklist.event.eventId)}
                     onPrint={() => printChecklist(checklist.event.eventId)}
                     onCompletedChange={(itemKey, completed) =>
                       void saveItemCompletion(
@@ -1741,6 +1755,7 @@ function ChecklistPanel({
   preppedPending?: ReadonlySet<string>;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [fitSheet, setFitSheet] = useState(true);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
@@ -1768,6 +1783,14 @@ function ChecklistPanel({
         <h2 id="kitchen-focus-view-title">Kitchen event view</h2>
         <div className="kitchen-checklist-toolbar-actions">
           <button
+            aria-pressed={fitSheet}
+            className="kitchen-secondary-button kitchen-fit-toggle"
+            onClick={() => setFitSheet((current) => !current)}
+            type="button"
+          >
+            {fitSheet ? "Fit entire sheet ✓" : "Fit entire sheet"}
+          </button>
+          <button
             className="kitchen-secondary-button"
             onClick={onClose}
             ref={closeButtonRef}
@@ -1781,11 +1804,13 @@ function ChecklistPanel({
         </div>
       </div>
 
+      <KitchenSheetViewport fit={fitSheet}>
       <KitchenChecklistSheet
         staffDraft={staffDraft}
         bwaOptions={bwaOptions}
         bwaSaveState={bwaSaveState}
         checklist={checklist}
+        fitToScreen={fitSheet}
         completionPending={completionPending}
         onStaffChange={onStaffChange}
         onCompletedChange={onCompletedChange}
@@ -1796,6 +1821,7 @@ function ChecklistPanel({
         readinessPending={readinessPending}
         preppedPending={preppedPending}
       />
+      </KitchenSheetViewport>
     </section>
   );
 }
@@ -1826,7 +1852,7 @@ export function KitchenEventAccordion({
       open={open}
     >
       <summary className="kitchen-event-accordion-summary" onClick={(event) => {
-        if (onSelect && !open) {
+        if (onSelect) {
           event.preventDefault();
           onSelect();
         }
@@ -1893,12 +1919,14 @@ export function KitchenChecklistSheet({
   bwaSaveState,
   checklist,
   completionPending = EMPTY_READINESS_KEYS,
+  fitToScreen = false,
   hideEventIdentity = false,
   inline = false,
   onStaffChange = () => {},
   onBwaChange: _legacyOnBwaChange,
   onCompletedChange,
   onOpenDescription,
+  onOpenSheet,
   onPrint,
   onPreppedChange,
   onReadyChange,
@@ -1913,12 +1941,14 @@ export function KitchenChecklistSheet({
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
+  fitToScreen?: boolean;
   hideEventIdentity?: boolean;
   inline?: boolean;
   onStaffChange?: (value: StaffAssignmentDraft) => void;
   onBwaChange?: (value: string) => void;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
+  onOpenSheet?: () => void;
   onPrint?: () => void;
   onPreppedChange?: (
     itemKey: string,
@@ -2023,6 +2053,11 @@ export function KitchenChecklistSheet({
             src="/brand/on-par-logo-black-on-white.jpg"
             width={432}
           />
+          {inline && onOpenSheet ? (
+            <button className="kitchen-card-button" onClick={onOpenSheet} type="button">
+              Open full sheet
+            </button>
+          ) : null}
           {inline && onPrint ? (
             <button
               aria-label={`Print checklist for ${checklist.event.name}`}
@@ -2040,7 +2075,7 @@ export function KitchenChecklistSheet({
         <div className="kitchen-checklist-bwa">
           <div className="kitchen-bwa-field">
             <StaffMultiSelect
-              className="kitchen-setup-select"
+              className="kitchen-staff-select kitchen-setup-select"
               label="Set Up"
               onChange={(setup) => onStaffChange({ ...staffDraft, setup })}
               options={availableBwaOptions}
@@ -2333,7 +2368,7 @@ export function KitchenChecklistSheet({
         </section>
         <details
           className={`kitchen-review-panel kitchen-safety-details${reviewMessages.length > 0 && checklist.needsReview ? " kitchen-review-panel-warning" : ""}`}
-          open={!inline && checklist.needsReview}
+          open={!inline && !fitToScreen && checklist.needsReview}
         >
           <summary>
             {reviewMessages.length

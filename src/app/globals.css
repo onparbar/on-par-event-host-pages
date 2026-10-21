@@ -7022,7 +7022,7 @@ a {
 
 .kitchen-checklist-wrap {
   position: fixed;
-  z-index: 50;
+  z-index: 80;
   inset: 0;
   display: grid;
   height: 100vh;
@@ -9104,6 +9104,93 @@ a {
 .addon-delivery-status small { display: block; overflow-wrap: anywhere; color: var(--portal-muted-text); }
 .addon-delivery-status li { margin: 10px 0; }
 .floor-plan-buffer-notice { font-size: .85rem; color: var(--portal-muted-text); }
+
+/* Keep an opened kitchen event together, using measured space rather than a scrolling food table. */
+.kitchen-sheet-viewport { min-width: 0; min-height: 0; overflow: auto; }
+.kitchen-sheet-canvas { width: 100%; transform-origin: top center; }
+.kitchen-fit-toggle[aria-pressed="true"] { background: var(--ope-forest); color: white; }
+
+@media screen {
+  .kitchen-checklist-table thead th:first-child,
+  .kitchen-checklist-table thead th:nth-child(2) { width: 11%; }
+  .kitchen-checklist-table thead th:nth-child(3) { width: 6%; }
+  .kitchen-checklist-table thead th:nth-child(4) { width: 36%; }
+  .kitchen-checklist-table thead th:nth-child(5) { width: 11%; }
+  .kitchen-checklist-table thead th:nth-child(6) { width: 9%; }
+  .kitchen-checklist-table thead th:nth-child(7) { width: 16%; }
+  .kitchen-checklist-table :is(.kitchen-ready-control, .kitchen-completed-control) { min-width: 32px; min-height: 32px; }
+  .kitchen-checklist-table :is(.kitchen-ready-control input, .kitchen-completed-control input) { width: 18px; height: 18px; }
+  .kitchen-checklist-table .kitchen-food-button { font-size: 1.25rem; font-weight: 900; line-height: 1.15; overflow-wrap: anywhere; }
+  .kitchen-sheet-canvas > .kitchen-checklist { display: block; overflow: visible; }
+  .kitchen-sheet-canvas .kitchen-table-scroll,
+  .kitchen-sheet-canvas .kitchen-review-area { overflow: visible; max-height: none; }
+  .kitchen-sheet-canvas .kitchen-checklist-table thead th { position: static; }
+  .kitchen-sheet-canvas .kitchen-checklist-table :is(th, td) { padding: 1px 8px; }
+  .kitchen-sheet-canvas .kitchen-checklist-table :is(.kitchen-ready-control, .kitchen-completed-control) { min-height: 24px; }
+  .kitchen-sheet-canvas .kitchen-category-heading th { padding-block: 3px; }
+  .kitchen-sheet-canvas .kitchen-checklist-heading { min-height: 60px; }
+  .kitchen-sheet-canvas .kitchen-checklist-schedule > div { padding: 5px 8px; }
+  .kitchen-sheet-canvas .kitchen-bwa-status:empty { display: none; }
+  .kitchen-sheet-canvas .kitchen-review-area { padding: 6px; gap: 6px; }
+  .kitchen-sheet-canvas .kitchen-review-panel { padding: 6px 8px; }
+  .kitchen-sheet-canvas .kitchen-drop-reminder { padding: 5px 10px; gap: 2px; }
+  .kitchen-drop-reminder { grid-area: drop; }
+}
+
+@media screen and (pointer: coarse) {
+  .kitchen-sheet-canvas .kitchen-checklist-table :is(.kitchen-ready-control, .kitchen-completed-control) { min-height: 32px; }
+}
+
+@media screen and (min-width: 721px) {
+  .kitchen-sheet-viewport[data-fit="true"] { overflow: hidden; }
+  .kitchen-sheet-viewport[data-fit="true"] .kitchen-sheet-canvas { transform: scale(var(--kitchen-sheet-scale, 1)); }
+  .kitchen-sheet-canvas .kitchen-bwa-field { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 5px; }
+  .kitchen-sheet-canvas .kitchen-staff-select summary { min-height: 40px; padding-block: 4px; }
+  .kitchen-sheet-canvas .kitchen-bwa-save { min-width: 64px; min-height: 40px; padding: 6px 10px; }
+}
+
+@media screen and (min-width: 1200px) and (orientation: landscape) {
+  .kitchen-dashboard-shell { display: flex; flex-direction: column; }
+  .kitchen-dashboard-shell > :is(.portal-header, .portal-event-context, .portal-connectivity-notice) { flex-shrink: 0; }
+  .kitchen-dashboard-main { height: auto; flex: 1 1 0; }
+  .kitchen-event-focus-banner { margin-block: 6px; padding: 5px 10px; }
+  .kitchen-view-switch { flex-shrink: 0; margin-block: 6px; }
+  .kitchen-view-switch button { min-height: 34px; padding: 5px 12px; }
+  .kitchen-dashboard-main > .food-delivery-panel { flex-shrink: 0; margin-block: 6px; padding: 6px 12px; }
+}
+
+@media screen and (max-width: 720px) {
+  .kitchen-fit-toggle { display: none; }
+  .kitchen-checklist-table thead th:nth-child(n) { width: auto; }
+}
+
+@media print {
+  .kitchen-sheet-viewport { display: block; overflow: visible; }
+  .kitchen-sheet-canvas { width: 100%; transform: none !important; }
+}
+
+.admin-itinerary-editor { display: grid; gap: 18px; }
+.admin-itinerary-selector { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.admin-itinerary-selector label { flex: 1; min-width: 220px; }
+.admin-itinerary-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.admin-itinerary-editor label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
+.admin-itinerary-editor input,
+.admin-itinerary-editor select,
+.admin-itinerary-editor textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--portal-border); border-radius: 8px; background: #fff; color: #000; box-sizing: border-box; }
+.admin-itinerary-editor textarea { resize: vertical; font-weight: 400; }
+.admin-itinerary-entertainment { padding: 16px; border: 1px solid var(--portal-border); border-radius: 8px; }
+.admin-itinerary-activity { display: grid; grid-template-columns: 2fr 1fr 1.5fr 1fr; gap: 10px; align-items: end; padding: 12px 0; border-bottom: 1px solid var(--portal-border); }
+.itinerary-admin-instructions { padding: 0 24px 20px; font-size: .9rem; }
+.itinerary-admin-instructions h3 { margin: 0 0 6px; }
+.itinerary-admin-instructions ul { margin: 0; padding-left: 18px; }
+@media print {
+  .itinerary-admin-instructions { padding: 0 .24in .14in; font-size: 7pt; line-height: 1.2; break-inside: avoid; }
+  .itinerary-admin-instructions h3 { font-size: 8pt; }
+}
+@media (max-width: 720px) {
+  .admin-itinerary-fields,
+  .admin-itinerary-activity { grid-template-columns: 1fr; }
+}
 @media (max-width: 720px) {
   .portal-event-context { padding: 10px 16px; align-items: start; }
   .event-command-heading { flex-direction: column; gap: 0; }
@@ -9113,7 +9200,8 @@ a {
 }
 @media print {
   .portal-event-context, .portal-connectivity-notice, .event-command-filters, .kitchen-view-switch, .kitchen-event-focus-banner, .food-delivery-panel { display: none !important; }
-  .itinerary-revision-stamp { display: flex !important; padding: .06in .24in; font-size: 7pt; color: black; background: white; border-color: black; }
+  .itinerary-revision-stamp[data-ready] { display: flex !important; padding: .06in .24in; font-size: 7pt; color: black; background: white; border-color: black; }
+  .itinerary-revision-stamp > strong, .itinerary-source-alert { display: none !important; }
   .kitchen-operations-scroll { max-height: none; overflow: visible; }
   .kitchen-operations-panel tr[data-review="true"] { background: white; }
 }

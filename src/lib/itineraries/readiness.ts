@@ -11,13 +11,14 @@ import {
   itineraryReservationMatchesPlan,
   itinerarySnapshotMatchesPlan,
 } from "./entertainment";
+import { itineraryDrinkLines } from "./presentation";
 
 // A readable copy remains available after this window; it cannot claim to be current.
 export const ITINERARY_SYNC_FRESHNESS_HOURS = 24;
 const MAX_SYNC_AGE_MS = ITINERARY_SYNC_FRESHNESS_HOURS * 60 * 60 * 1_000;
 
 type RevisionInput = {
-  plan: EventPlan;
+  plan: ItineraryAsset;
   sourcePlan?: EventPlan;
   candidatePlans?: readonly EventPlan[];
   sourceSync: EventPlanSyncState | null;
@@ -81,6 +82,11 @@ export function buildItineraryRevision(input: RevisionInput): NonNullable<Itiner
     .filter((item) => item.floorPlanEventId === floorEvent?.id)
     .sort((left, right) => left.id.localeCompare(right.id));
   const hasTimedEntertainment = (input.sourcePlan ?? plan).entertainment.some((item) => canonicalCategoryForText(item.name) !== "mini-golf");
+
+  if (plan.itinerary_edit) {
+    reasons.add("Admin display edits are present; review them against the contract and saved reservations.");
+    if (plan.itinerary_edit.sourceUpdatedAt !== (plan.source_updated_at ?? null)) reasons.add("The event source changed after the itinerary was edited. Review the saved display edits.");
+  }
 
   if (plan.needs_review || plan.review_reasons?.length) {
     reasons.add("Resolve the event's source review items before issuing a staff itinerary.");
@@ -163,7 +169,7 @@ export function buildItineraryRevision(input: RevisionInput): NonNullable<Itiner
 
   const sections = {
     event: fingerprint({ id: plan.id, bookingId: plan.tripleseat_booking_id, name: plan.name, date: plan.date, time: plan.time, guests: plan.guest_count, rooms: plan.rooms }),
-    food: fingerprint({ food: plan.food, drinks: plan.drink_options }),
+    food: fingerprint({ food: plan.food, drinks: itineraryDrinkLines(plan) }),
     entertainment: fingerprint({ displayed: plan.entertainment, reservations: reservations.map(reservationRevisionValue), sourceRevisions: snapshots.map((item) => [item.eventId, item.sourceUpdatedAt]).sort() }),
     seating: fingerprint({ planId: floorPlan?.id, version: floorPlan?.version, updatedAt: floorPlan?.updatedAt, status: floorPlan?.status, approvedAt: floorPlan?.approvedAt, event: floorEvent, reservations: floorReservations }),
     notes: fingerprint({ instructions: plan.special_instructions, notes: plan.operational_notes, reasons: plan.review_reasons }),

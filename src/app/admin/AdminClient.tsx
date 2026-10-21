@@ -379,6 +379,11 @@ export default function AdminClient({
             <strong>Event Add-Ons</strong>
             <span>Enter Food and Entertainment additions; only Food is mirrored live to Kitchen.</span>
           </Link>
+          <Link className="portal-operation-card" href="/admin/itineraries">
+            <span className="portal-module-kicker">Admin display edits</span>
+            <strong>Edit Itineraries</strong>
+            <span>Edit current or past itinerary details, save changes, or restore the source copy.</span>
+          </Link>
           <Link className="portal-operation-card" href="/admin/integrations/gotab">
             <span className="portal-module-kicker">Dry-run integration</span>
             <strong>GoTab Kitchen Dispatch</strong>

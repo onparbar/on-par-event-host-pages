@@ -108,6 +108,16 @@ describe("itinerary readiness and revision evidence", () => {
     expect(changedItinerarySections(original, changedSource)).toEqual(["Source revision / calculation rules"]);
   });
 
+  it("fingerprints displayed Admin edits and retains screen review reasons", () => {
+    const original = revision();
+    const edited = revision({ plan: { ...plan, itinerary_edit: { updatedAt: syncedAt, sourceUpdatedAt, fields: { drinkLines: ["Water station"] } } } });
+    expect(edited.ready).toBe(false);
+    expect(edited.reasons.join(" ")).toContain("Admin display edits");
+    expect(changedItinerarySections(original, edited)).toEqual(["Food / drinks"]);
+    const stale = revision({ plan: { ...plan, itinerary_edit: { updatedAt: syncedAt, sourceUpdatedAt: "2026-10-20T10:00:00Z", fields: { food: ["Dessert Platter: 1"] } } } });
+    expect(stale.reasons.join(" ")).toContain("source changed after the itinerary was edited");
+  });
+
   it("changes the revision when the saved floor-plan version changes", () => {
     const original = revision();
     const updated = revision({ floorPlan: { ...floorPlan, version: 6 } });

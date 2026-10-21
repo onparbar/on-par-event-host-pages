@@ -12,9 +12,8 @@ import {
 } from "@/app/_components/PortalShell";
 import { formatEventDate } from "@/lib/event-format";
 import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
-import { changedItinerarySections, itineraryEntertainmentGroups } from "@/lib/itineraries/presentation";
+import { changedItinerarySections, itineraryDrinkLines, itineraryEntertainmentGroups } from "@/lib/itineraries/presentation";
 import type {
-  EventPlan,
   EventPlanOperationalNote,
   ItineraryAsset,
 } from "@/lib/event-plans/types";
@@ -74,34 +73,7 @@ function operationalNoteProvenance(note: EventPlanOperationalNote) {
   return details.join(" · ");
 }
 
-function itineraryDrinkLines(event: EventPlan) {
-  const lines = ["Free soda and juice for all guests"];
-
-  event.drink_options.forEach((item) => {
-    if (
-      /back nine|food \+ beverage|drink card|soft drinks included|soft drinks free of charge/i.test(
-        item,
-      )
-    ) {
-      return;
-    }
-    lines.push(item);
-  });
-
-  const hasDrinkCards =
-    event.food.some((item) => /full course/i.test(item)) ||
-    event.drink_options.some((item) =>
-      /back nine|food \+ beverage|drink card/i.test(item),
-    );
-
-  if (hasDrinkCards) {
-    lines.push(`$20 prepaid drink cards for ${event.guest_count} guests`);
-  }
-
-  return lines;
-}
-
-function ItineraryDashboard({ event, online }: { event: ItineraryAsset; online: boolean }) {
+export function ItineraryDashboard({ event, online }: { event: ItineraryAsset; online: boolean }) {
   const entertainmentItems = itineraryEntertainmentGroups(event);
   const drinkItems = itineraryDrinkLines(event);
 
@@ -210,6 +182,7 @@ function ItineraryDashboard({ event, online }: { event: ItineraryAsset; online: 
           </ul>
         </section>
       </div>
+      {event.itinerary_edit?.fields.special_instructions?.length ? <section className="itinerary-admin-instructions"><h3>Event Instructions</h3><ul>{event.itinerary_edit.fields.special_instructions.map((item, index) => <li key={index}>{item}</li>)}</ul></section> : null}
     </article>
   );
 }
@@ -408,6 +381,7 @@ export default function ItinerariesClient({
           <ItineraryDashboard event={activeEvent} online={isOnline} />
 
           <aside className="itinerary-operations-card">
+            {activeEvent.itinerary_edit ? <p className="itinerary-source-alert">Admin-edited itinerary · {formatSourceNoteTimestamp(activeEvent.itinerary_edit.updatedAt)}. These display edits do not change the contract, reservations, kitchen prep, or KDS orders.</p> : null}
             <div className="itinerary-verification">
               <span>Readiness · {activeEvent.revision?.label ?? "Unverified revision"}</span>
               <strong>{activeEvent.revision?.ready ? "Verified source and approved floor plan" : "Review required before staff use"}</strong>

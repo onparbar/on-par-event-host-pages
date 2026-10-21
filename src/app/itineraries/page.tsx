@@ -7,11 +7,8 @@ import {
   findEventPlanById,
   loadEventPlanWindow,
 } from "@/lib/event-plans/sync";
-import { applyEntertainmentDayToItinerary, itineraryIdentityScope } from "@/lib/itineraries/entertainment";
-import { buildItineraryRevision } from "@/lib/itineraries/readiness";
+import { buildItineraryAsset } from "@/lib/itineraries/asset";
 import { getFloorPlanStorage } from "@/lib/floor-plans/storage";
-import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
-import { validateFloorPlan } from "@/lib/floor-plans/validator";
 import type { ItineraryAsset } from "@/lib/event-plans/types";
 
 export const metadata = {
@@ -69,31 +66,8 @@ export default async function ItinerariesPage({
   const currentItineraries: ItineraryAsset[] = sourceItineraries.map((plan) => {
       const day = entertainmentDays.get(plan.date);
       const floorPlan = savedFloorPlans.get(plan.date) ?? null;
-      const identityScope = itineraryIdentityScope(plan, floorPlan, floorPlanStorage.persistence === "database", sourceItineraries);
-      const current = day
-        ? applyEntertainmentDayToItinerary(plan, day, identityScope)
-        : plan;
       const savedPdf = savedPdfById.get(plan.id);
-      return {
-        ...current,
-        pdf: savedPdf?.pdf,
-        pdf_fingerprint: savedPdf?.pdf_fingerprint,
-        revision: buildItineraryRevision({
-          plan: current,
-          sourcePlan: plan,
-          candidatePlans: sourceItineraries,
-          sourceSync: eventPlanWindow.sync,
-          entertainmentDay: day ?? null,
-          floorPlan,
-          floorPlanPersisted: floorPlanStorage.persistence === "database",
-          floorPlanValidation: floorPlan && day
-            ? validateFloorPlan(floorPlan, day.reservations, detectFloorPlanConflicts(floorPlan), day.conflicts)
-            : [],
-          pdf: savedPdf?.pdf,
-          pdfFingerprint: savedPdf?.pdf_fingerprint,
-          now,
-        }),
-      };
+      return buildItineraryAsset({ plan, candidates: sourceItineraries, day: day ?? null, floorPlan, floorPlanPersisted: floorPlanStorage.persistence === "database", sourceSync: eventPlanWindow.sync, savedPdf, edit: adminState.itineraryEditsByEvent?.[String(plan.id)], now });
     });
   const activeItineraries = activeEvents(
     currentItineraries,

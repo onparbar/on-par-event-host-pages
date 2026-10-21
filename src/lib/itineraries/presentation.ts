@@ -1,5 +1,15 @@
 import type { EventPlan, ItineraryAsset } from "@/lib/event-plans/types";
 
+export function itineraryDrinkLines(event: ItineraryAsset) {
+  if (event.itinerary_edit?.fields.drinkLines) return event.itinerary_edit.fields.drinkLines;
+  const lines = ["Free soda and juice for all guests"];
+  event.drink_options.forEach((item) => {
+    if (!/back nine|food \+ beverage|drink card|soft drinks included|soft drinks free of charge/i.test(item)) lines.push(item);
+  });
+  if (event.food.some((item) => /full course/i.test(item)) || event.drink_options.some((item) => /back nine|food \+ beverage|drink card/i.test(item))) lines.push(`$20 prepaid drink cards for ${event.guest_count} guests`);
+  return lines;
+}
+
 export function itineraryEntertainmentGroups(event: Pick<EventPlan, "entertainment">) {
   if (!event.entertainment.length) {
     return [{ title: "No reserved entertainment", detail: "No entertainment reservation is listed for this event." }];

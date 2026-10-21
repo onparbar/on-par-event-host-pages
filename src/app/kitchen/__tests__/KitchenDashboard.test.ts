@@ -241,6 +241,23 @@ describe("kitchen checklist day layout", () => {
     expect(reviewIndex).toBeGreaterThan(tableIndex);
   });
 
+  it("offers a full-sheet view without removing the prep, timing or review details", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[2]);
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, {
+      checklist, bwaSaveState: "idle", inline: true, fitToScreen: true, onOpenSheet: noop,
+    }));
+    expect(html).toContain("Open full sheet");
+    expect(html).toContain("Appetizer drop reminder");
+    expect(html).toContain("Food contract notes");
+    expect(html).toContain("Needs review:");
+    expect(html).toContain("Employee responsible for prep");
+    expect(html).toContain("Employee responsible for verification");
+    expect(html.indexOf(">Prepped<")).toBeLessThan(html.indexOf(">Verified<"));
+    expect(html.indexOf(">Verified<")).toBeLessThan(html.indexOf(">Ready<"));
+    const review = html.slice(html.indexOf('class="kitchen-review-panel kitchen-safety-details'));
+    expect(review.slice(0, review.indexOf(">"))).not.toContain("open=");
+  });
+
   it("renders multiple events as independent checklist sheets", () => {
     const first = renderSheet(0);
     const second = renderSheet(1);
