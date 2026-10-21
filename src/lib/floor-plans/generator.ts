@@ -62,6 +62,7 @@ export function selectSmallestTableCombination(
   tables: readonly FloorPlanArea[],
   guestCount: number,
   reservedSeating: readonly FloorPlanArea[] = [],
+  foodTables: readonly FloorPlanArea[] = [],
 ) {
   if (!Number.isInteger(guestCount) || guestCount <= 0) return [];
   const candidates = tables.filter(
@@ -74,7 +75,14 @@ export function selectSmallestTableCombination(
   );
   if (seatingCapacity(candidates) < guestCount) return [];
   let best: FloorPlanArea[] | null = null;
-  let bestScore: [number, number, number, number] | null = null;
+  let bestScore: [number, number, number, number, number] | null = null;
+  const foodDistances = new Map(candidates.map((table) => {
+    const center = tableCenter(table);
+    return [table.id, foodTables.length ? Math.min(...foodTables.map((food) => {
+      const foodCenter = tableCenter(food);
+      return Math.hypot(center.x - foodCenter.x, center.y - foodCenter.y);
+    })) : 0];
+  }));
   const combinations = 1 << candidates.length;
   for (let mask = 1; mask < combinations; mask += 1) {
     const selected = candidates.filter((_, index) => mask & (1 << index));
@@ -88,7 +96,9 @@ export function selectSmallestTableCombination(
         return distance + Math.hypot(center.x - anchorCenter.x, center.y - anchorCenter.y);
       }, 0);
     }, 0);
-    const score: [number, number, number, number] = [
+    const score: [number, number, number, number, number] = [
+      // Keep even the farthest selected table close to an event food table.
+      Math.max(...selected.map((table) => foodDistances.get(table.id)!)),
       capacity - guestCount,
       connectedComponents([...reservedSeating, ...selected]),
       selected.length,
@@ -99,7 +109,8 @@ export function selectSmallestTableCombination(
       score[0] < bestScore[0] ||
       (score[0] === bestScore[0] && score[1] < bestScore[1]) ||
       (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] < bestScore[2]) ||
-      (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] === bestScore[2] && score[3] < bestScore[3])
+      (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] === bestScore[2] && score[3] < bestScore[3]) ||
+      (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] === bestScore[2] && score[3] === bestScore[3] && score[4] < bestScore[4])
     ) {
       best = selected;
       bestScore = score;
@@ -186,6 +197,33 @@ function eventBaseReservations(
   if (vipOnly) {
     return generated;
   }
+  const foodTableCount = requiredFoodTableCount(event.guestCount);
+  const existingFoodAreaIds = new Set(
+    existing.flatMap((item) =>
+      item.floorPlanEventId === event.id &&
+      item.reservationType === "food-table"
+        ? [item.areaId]
+        : [],
+    ),
+  );
+  const foodCandidates = primaryContractedArea
+    ? foodTablesNearArea(primaryContractedArea)
+    : foodTablesNearArea("main-dining");
+  for (const foodCandidate of foodCandidates) {
+    if (existingFoodAreaIds.size >= foodTableCount) break;
+    if (
+      unavailable.has(foodCandidate.id) ||
+      existingFoodAreaIds.has(foodCandidate.id)
+    ) {
+      continue;
+    }
+    generated.push(reservation(event, foodCandidate.id, "food-table", "F"));
+    existingFoodAreaIds.add(foodCandidate.id);
+  }
+  const foodTables = [...existingFoodAreaIds].flatMap((id) => {
+    const area = getFloorPlanArea(id);
+    return area?.canBeFoodTable && area.isAda ? [area] : [];
+  });
   const existingSeatingAreaIds = new Set(
     existing.flatMap((item) =>
       item.floorPlanEventId === event.id && item.reservationType === "seating"
@@ -211,46 +249,14 @@ function eventBaseReservations(
     ),
   );
   const remainingGuests = Math.max(0, event.guestCount - existingSeatingCapacity);
-  const conversationSeating = availableTables.filter((area) => area.type === "seating-section");
-  const selectedConversations = seatingCapacity(availableTables) < remainingGuests || remainingGuests === 0
-    ? []
-    : seatingCapacity(conversationSeating) < remainingGuests
-      ? conversationSeating
-      : selectSmallestTableCombination(conversationSeating, remainingGuests, reservedSeating);
-  const remainingTableGuests = remainingGuests - seatingCapacity(selectedConversations);
-  const selectedTables = seatingCapacity(availableTables) < remainingGuests
-    ? []
-    : selectSmallestTableCombination(
-      availableTables.filter((area) => area.type !== "seating-section"),
-      remainingTableGuests,
-      [...reservedSeating, ...selectedConversations],
-    );
-  for (const table of [...selectedConversations, ...selectedTables]) {
-    generated.push(reservation(event, table.id, "seating", table.shortLabel));
-  }
-
-  const foodTableCount = requiredFoodTableCount(event.guestCount);
-  const existingFoodAreaIds = new Set(
-    existing.flatMap((item) =>
-      item.floorPlanEventId === event.id &&
-      item.reservationType === "food-table"
-        ? [item.areaId]
-        : [],
-    ),
+  const selectedTables = selectSmallestTableCombination(
+    availableTables,
+    remainingGuests,
+    reservedSeating,
+    foodTables,
   );
-  const foodCandidates = primaryContractedArea
-    ? foodTablesNearArea(primaryContractedArea)
-    : foodTablesNearArea("main-dining");
-  for (const foodCandidate of foodCandidates) {
-    if (existingFoodAreaIds.size >= foodTableCount) break;
-    if (
-      unavailable.has(foodCandidate.id) ||
-      existingFoodAreaIds.has(foodCandidate.id)
-    ) {
-      continue;
-    }
-    generated.push(reservation(event, foodCandidate.id, "food-table", "F"));
-    existingFoodAreaIds.add(foodCandidate.id);
+  for (const table of selectedTables) {
+    generated.push(reservation(event, table.id, "seating", table.shortLabel));
   }
   return generated;
 }
