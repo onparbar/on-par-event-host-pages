@@ -7,7 +7,11 @@ import {
   findEventPlanById,
   loadEventPlanWindow,
 } from "@/lib/event-plans/sync";
-import { applyEntertainmentDayToItinerary } from "@/lib/itineraries/entertainment";
+import { applyEntertainmentDayToItinerary, itineraryIdentityScope } from "@/lib/itineraries/entertainment";
+import { buildItineraryRevision } from "@/lib/itineraries/readiness";
+import { getFloorPlanStorage } from "@/lib/floor-plans/storage";
+import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
+import { validateFloorPlan } from "@/lib/floor-plans/validator";
 import type { ItineraryAsset } from "@/lib/event-plans/types";
 
 export const metadata = {
@@ -33,44 +37,62 @@ export default async function ItinerariesPage({
     loadAdminState(),
     loadEventPlanWindow(),
   ]);
-  const approvedPdfById = new Map(
+  const savedPdfById = new Map(
     itineraries
       .filter((item) => item.pdf)
-      .map((item) => [item.id, item.pdf]),
+      .map((item) => [item.id, item]),
   );
   const itineraryDates = [
     ...eventPlanWindow.plans,
     ...(requestedEvent ? [requestedEvent] : []),
   ];
-  const entertainmentDays = new Map(
-    (await Promise.all(
-      [...new Set(itineraryDates.map((plan) => plan.date))].map(
-        async (date) => {
-          const day = await getEntertainmentDay(date).catch(() => null);
-          return day ? ([date, day] as const) : null;
-        },
-      ),
-    )).filter(
-      (entry): entry is readonly [string, Awaited<ReturnType<typeof getEntertainmentDay>>] =>
-        entry !== null,
-    ),
+  const now = new Date();
+  const floorPlanStorage = getFloorPlanStorage();
+  const operationalDays = await Promise.all(
+    [...new Set(itineraryDates.map((plan) => plan.date))].map(async (date) => {
+      const [floorPlan, day] = await Promise.all([
+        floorPlanStorage.get(date).catch(() => null),
+        getEntertainmentDay(date).catch(() => null),
+      ]);
+      return { date, floorPlan, day };
+    }),
   );
-  const currentItineraries: ItineraryAsset[] = [
+  const savedFloorPlans = new Map(operationalDays.map(({ date, floorPlan }) => [date, floorPlan]));
+  const entertainmentDays = new Map(operationalDays.map(({ date, day }) => [date, day]));
+  const sourceItineraries = [
     ...eventPlanWindow.plans,
     ...(requestedEvent &&
     !eventPlanWindow.plans.some((plan) => plan.id === requestedEvent.id)
       ? [requestedEvent]
       : []),
-  ].map((plan) => {
+  ];
+  const currentItineraries: ItineraryAsset[] = sourceItineraries.map((plan) => {
       const day = entertainmentDays.get(plan.date);
+      const floorPlan = savedFloorPlans.get(plan.date) ?? null;
+      const identityScope = itineraryIdentityScope(plan, floorPlan, floorPlanStorage.persistence === "database", sourceItineraries);
       const current = day
-        ? applyEntertainmentDayToItinerary(plan, day)
+        ? applyEntertainmentDayToItinerary(plan, day, identityScope)
         : plan;
+      const savedPdf = savedPdfById.get(plan.id);
       return {
         ...current,
-        ...(approvedPdfById.get(plan.id)
-          ? { pdf: approvedPdfById.get(plan.id) }
-          : {}),
+        pdf: savedPdf?.pdf,
+        pdf_fingerprint: savedPdf?.pdf_fingerprint,
+        revision: buildItineraryRevision({
+          plan: current,
+          sourcePlan: plan,
+          candidatePlans: sourceItineraries,
+          sourceSync: eventPlanWindow.sync,
+          entertainmentDay: day ?? null,
+          floorPlan,
+          floorPlanPersisted: floorPlanStorage.persistence === "database",
+          floorPlanValidation: floorPlan && day
+            ? validateFloorPlan(floorPlan, day.reservations, detectFloorPlanConflicts(floorPlan), day.conflicts)
+            : [],
+          pdf: savedPdf?.pdf,
+          pdfFingerprint: savedPdf?.pdf_fingerprint,
+          now,
+        }),
       };
     });
   const activeItineraries = activeEvents(

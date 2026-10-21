@@ -5,7 +5,8 @@ import {
   requiredFoodTableCount,
   seatingInventoryForArea,
 } from "./configuration/areas";
-import { timeRangesOverlap } from "./conflicts";
+import { reservationOccupancy } from "@/lib/operations/reservation-buffer";
+import { floorPlanAreaTimeOverlap } from "./conflicts";
 import type {
   FloorPlanArea,
   FloorPlanDocument,
@@ -152,7 +153,8 @@ function unavailableAreaIds(
   return new Set(
     reservations.flatMap((candidate) => {
       if (candidate.floorPlanEventId === event.id) return [];
-      return timeRangesOverlap(
+      return !reservationOccupancy(candidate.startAt, candidate.endAt) || floorPlanAreaTimeOverlap(
+        candidate.areaId,
         event.startAt,
         event.endAt,
         candidate.startAt,

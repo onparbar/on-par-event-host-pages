@@ -205,7 +205,7 @@ describe("GoTab server client", () => {
       quantity: 1,
       itemName: "Salsa Refill",
       itemNotes: {},
-    })).rejects.toThrow("did not send it to the KDS");
+    })).rejects.toThrow("did not confirm an accepted order. Review before retrying.");
   });
 
   it("uses a readable EVENT name within GoTab's 20-character KDS limit", async () => {
@@ -450,7 +450,7 @@ describe("GoTab server client", () => {
     });
     const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
 
-    await client.createEventFoodTab({
+    const attempt = client.createEventFoodTab({
       externalId: "event:ADDON:chicken-tenders:1:DISPATCH",
       ticketName: "Event Name",
       productUuid: "prd_chicken_tenders",
@@ -460,18 +460,27 @@ describe("GoTab server client", () => {
       serverName,
     });
 
-    const orderRequests = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).filter(
+    if (!expectedEmployeeId) {
+      await expect(attempt).rejects.toThrow("could not be uniquely matched to an active GoTab employee. No order was sent.");
+      const orderRequests = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).filter(
+        ([url]) => url.endsWith("/api/loc/location-2/tabs"),
+      );
+      expect(orderRequests).toHaveLength(0);
+      return;
+    }
+    await attempt;
+    const completedOrderRequests = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).filter(
       ([url]) => url.endsWith("/api/loc/location-2/tabs"),
     );
-    expect(orderRequests).toHaveLength(1);
-    const order = JSON.parse(String(orderRequests[0][1].body));
+    expect(completedOrderRequests).toHaveLength(1);
+    const order = JSON.parse(String(completedOrderRequests[0][1].body));
     expect(order.employeeId).toBe(expectedEmployeeId);
     expect(order.name).toBe("Event Name");
     expect(order.spotUuid).toBe(configuration.eventSpotUuid);
     expect(order.items).toMatchObject([{ quantity: 1 }]);
   });
 
-  it("does not guess the KDS Server when a POC name is ambiguous", async () => {
+  it("holds the order instead of guessing the KDS Server when the selected Food Runner is ambiguous", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.endsWith("/api/oauth/token")) {
         return json({ token: "server-token", expiresIn: 86400 });
@@ -514,7 +523,7 @@ describe("GoTab server client", () => {
     });
     const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
 
-    await client.createEventFoodTab({
+    await expect(client.createEventFoodTab({
       externalId: "event:ADDON:tater-kegs:2:DISPATCH",
       ticketName: "[FOOD ADD-ON] Event",
       productUuid: "prd_tater_kegs",
@@ -522,12 +531,63 @@ describe("GoTab server client", () => {
       itemName: "Tater Kegs",
       itemNotes: {},
       serverName: "Julio",
-    });
+    })).rejects.toThrow("could not be uniquely matched to an active GoTab employee. No order was sent.");
 
     const orderRequest = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(
       ([url]) => url.includes("/api/loc/location-2/tabs"),
     )?.[1];
-    expect(JSON.parse(String(orderRequest?.body))).not.toHaveProperty("employeeId");
+    expect(orderRequest).toBeUndefined();
+  });
+
+  it.each([
+    { scenario: "missing staff mapping", employees: [], serverName: "Unmapped Staff" },
+    { scenario: "ambiguous display name with a lower-priority full-name match", employees: [
+      { userId: "runner-1", name: "Ryan", displayName: "Ryan", archived: null },
+      { userId: "runner-2", name: "Ryan Other", displayName: "Ryan", archived: null },
+    ], serverName: "Ryan" },
+  ])("does not create an order for $scenario", async ({ employees, serverName }) => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) return json({ token: "server-token", expiresIn: 86400 });
+      if (url.endsWith("/api/loc")) return json([{ locationUuid: "location-2", locationId: 2, name: "On Par" }]);
+      return json({ data: { employeesList: employees } });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+    await expect(client.createEventFoodTab({ externalId: "event:runner:1", ticketName: "Training event", productUuid: "prd_wings", quantity: 1, itemName: "Wings", itemNotes: {}, serverName })).rejects.toThrow("No order was sent. Review the staff assignment.");
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).endsWith("/tabs"))).toHaveLength(0);
+  });
+
+  it("does not bypass a failed employee-directory read with a blank Server", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) return json({ token: "server-token", expiresIn: 86400 });
+      if (url.endsWith("/api/loc")) return json([{ locationUuid: "location-2", locationId: 2, name: "On Par" }]);
+      return json({ errors: [{ message: "Directory unavailable" }] });
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+    await expect(client.createEventFoodTab({ externalId: "event:runner:2", ticketName: "Training event", productUuid: "prd_wings", quantity: 1, itemName: "Wings", itemNotes: {}, serverName: "Selected Staff" })).rejects.toThrow("could not read the employee directory");
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).endsWith("/tabs"))).toHaveLength(0);
+  });
+
+  it.each([undefined, null, "", "   "])("leaves an unassigned Food Runner (%s) blank without guessing", async (serverName) => {
+    const fetchImpl = vi.fn(async (url: string) => url.endsWith("/api/oauth/token")
+      ? json({ token: "server-token", expiresIn: 86400 })
+      : json({ data: { tabUuid: "tab-unassigned", status: "OPEN", orders: [{ orderUuid: "order-unassigned" }] } }));
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+    await client.createEventFoodTab({ externalId: "event:runner:3", ticketName: "Training event", productUuid: "prd_wings", quantity: 1, itemName: "Wings", itemNotes: {}, serverName });
+    const request = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).find(([url]) => url.endsWith("/tabs"));
+    expect(JSON.parse(String(request?.[1].body))).not.toHaveProperty("employeeId");
+    expect(fetchImpl.mock.calls.some(([url]) => String(url).endsWith("/api/graph"))).toBe(false);
+  });
+
+  it("does not automatically replay a timed-out order POST that may have been accepted", async () => {
+    let orderAttempts = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/oauth/token")) return json({ token: "server-token", expiresIn: 86400 });
+      orderAttempts += 1;
+      throw new DOMException("Response lost after acceptance", "AbortError");
+    });
+    const client = new GoTabClient(configuration, fetchImpl as typeof fetch);
+    await expect(client.createEventFoodTab({ externalId: "event:uncertain:1", ticketName: "Training event", productUuid: "prd_wings", quantity: 1, itemName: "Wings", itemNotes: {} })).rejects.toThrow("delivery status is uncertain. Review the saved order before retrying.");
+    expect(orderAttempts).toBe(1);
   });
 
   it("accepts a closed-order response when GoTab omits the immediate item UUID", async () => {

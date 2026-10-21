@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { findOperationalFloorPlanEvent, operationalFloorPlanEventId } from "@/lib/operations/floor-plan-context";
 import {
   DISPLAY_AREAS,
   getFloorPlanArea,
@@ -29,14 +30,28 @@ export default function PublishedFloorPlanMap({
   payload: FloorPlanDayPayload;
   zoom?: number;
 }) {
-  const [selection, setSelection] = useState({ planId: "", eventId: null as string | null });
+  const context = useEventContext();
+  const selected = findOperationalFloorPlanEvent(payload.plan.events, context.preferredEventId);
+  const contextEvent = selected ? {
+    eventId: operationalFloorPlanEventId(selected), eventName: selected.name, date: payload.plan.eventDate,
+    area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: selected.guestCount,
+  } : null;
+  if (context.preferredEventId && !selected) return <p className="floor-plan-warning-copy" role="alert">The selected event cannot be uniquely matched to this saved floor plan. No other party was substituted. <button onClick={context.clearEvent} type="button">Show all events</button></p>;
   return (
+    <>
+    <EventSelectionBridge event={contextEvent} />
     <PublishedFloorPlanMapView
-      onSelectEvent={(eventId) => setSelection({ planId: payload.plan.id, eventId })}
+      onSelectEvent={(eventId) => {
+        const event = payload.plan.events.find((item) => item.id === eventId);
+        if (!event) { context.clearEvent(); return; }
+        context.selectEvent({ eventId: operationalFloorPlanEventId(event), eventName: event.name, date: payload.plan.eventDate,
+          area: event.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: event.guestCount });
+      }}
       payload={payload}
-      selectedEventId={selection.planId === payload.plan.id ? selection.eventId : null}
+      selectedEventId={selected?.id ?? null}
       zoom={zoom}
     />
+    </>
   );
 }
 

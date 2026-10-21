@@ -44,6 +44,22 @@ export type EventPlan = {
 
 export type ItineraryAsset = EventPlan & {
   pdf?: string;
+  /** Evidence recorded when a PDF is generated; an event ID alone is not evidence. */
+  pdf_fingerprint?: string;
+  revision?: {
+    fingerprint: string;
+    label: string;
+    generatedAt: string;
+    sourceUpdatedAt: string | null;
+    lastSourceSyncAt: string | null;
+    lastEntertainmentSyncAt: string | null;
+    floorPlanVersion: number | null;
+    floorPlanStatus: string | null;
+    ready: boolean;
+    reasons: string[];
+    sections: Record<"event" | "food" | "entertainment" | "seating" | "notes", string>;
+    savedPdfStatus: "none" | "unverified" | "outdated" | "matching";
+  };
 };
 
 export type TripleseatEventPlanSource = {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { updateKitchenManualAssignments } from "@/lib/kitchen/sync";
+import { KitchenStaffAssignmentConflictError } from "@/lib/kitchen/storage";
 import {
   isSameOriginOperationalRequest,
   operationalAccessDenied,
@@ -14,6 +15,7 @@ type ManualRequest = {
   preppedBy?: unknown;
   verifiedBy?: unknown;
   setup?: unknown;
+  expectedUpdatedAt?: unknown;
 };
 
 export async function PATCH(
@@ -34,6 +36,9 @@ export async function PATCH(
     );
   }
   if (
+    !body || typeof body !== "object" ||
+    !Object.hasOwn(body, "expectedUpdatedAt") ||
+    (body.expectedUpdatedAt !== null && typeof body.expectedUpdatedAt !== "string") ||
     !Array.isArray(body.foodRunners) ||
     !body.foodRunners.every((value) => typeof value === "string") ||
     !Array.isArray(body.pocs) ||
@@ -61,6 +66,7 @@ export async function PATCH(
         body.preppedBy,
         body.verifiedBy,
         body.setup ?? [],
+        body.expectedUpdatedAt as string | null,
       ),
     );
   } catch (error) {
@@ -68,6 +74,6 @@ export async function PATCH(
       error instanceof Error
         ? error.message
         : "Unable to save Food Runner and POC.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: error instanceof KitchenStaffAssignmentConflictError ? 409 : 400 });
   }
 }

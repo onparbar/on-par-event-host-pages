@@ -259,6 +259,7 @@ export type KitchenChecklist = {
   };
   /** Legacy single-value assignment retained while older snapshots migrate. */
   foodRunnerOrBwa: string;
+  assignmentUpdatedAt?: string | null;
   foodRunners?: string[];
   pocs?: string[];
   setup?: string[];

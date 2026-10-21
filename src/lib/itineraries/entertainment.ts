@@ -1,6 +1,7 @@
 import { formatClock, parseTimeRange } from "@/lib/entertainment/time";
 import { canonicalCategoryForText } from "@/lib/entertainment/resources";
-import { floorPlanSourceNamesMatch } from "@/lib/floor-plans/source-resolution";
+import { floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
+import type { FloorPlanDocument } from "@/lib/floor-plans/types";
 import type {
   EntertainmentDayPayload,
   EntertainmentEventSnapshot,
@@ -15,6 +16,11 @@ type EntertainmentDay = Pick<
   EntertainmentDayPayload,
   "date" | "events" | "reservations"
 >;
+
+type ItineraryIdentityScope = {
+  sourceEventIds?: readonly string[];
+  allowLegacyNameMatch?: boolean;
+};
 
 function normalizedEventName(value: string) {
   return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
@@ -35,63 +41,81 @@ function sourceWindowMatchesPlan(
   const planEnd = Date.parse(planWindow.endAt);
   return (
     [sourceStart, sourceEnd, planStart, planEnd].every(Number.isFinite) &&
+    sourceStart < sourceEnd &&
     sourceStart < planEnd &&
     sourceEnd > planStart
   );
 }
 
-function eventSnapshotMatchesPlan(
-  event: EntertainmentEventSnapshot,
+export function itineraryIdentityScope(
   plan: EventPlan,
-) {
-  const planId = String(plan.id);
-  const identities = [event.tripleseatEventId, event.localEventId].filter(
-    (value): value is string => Boolean(value),
-  );
-  if (identities.includes(planId)) return true;
-  if (
-    identities.length === 0 &&
-    normalizedEventName(event.eventName) === normalizedEventName(plan.name)
-  ) {
-    return true;
-  }
-  return (
-    floorPlanSourceNamesMatch(event.eventName, plan.name) &&
-    sourceWindowMatchesPlan(
-      event.operatingDate,
-      event.eventStartAt,
-      event.eventEndAt,
-      plan,
-    )
-  );
+  floorPlan: FloorPlanDocument | null,
+  floorPlanPersisted: boolean,
+  candidates?: readonly EventPlan[],
+): ItineraryIdentityScope {
+  const linkedEvents = floorPlanPersisted && floorPlan?.eventDate === plan.date
+    ? floorPlan.events.filter((event) => floorPlanEventSourceIds(event).has(String(plan.id)))
+    : [];
+  const planWindow = parseTimeRange(plan.time, plan.date);
+  const sameNameCandidates = candidates?.filter((candidate) => {
+    if (candidate.date !== plan.date || normalizedEventName(candidate.name) !== normalizedEventName(plan.name)) return false;
+    const window = parseTimeRange(candidate.time, candidate.date);
+    return !planWindow || !window || Date.parse(window.startAt) < Date.parse(planWindow.endAt) && Date.parse(window.endAt) > Date.parse(planWindow.startAt);
+  });
+  const candidateIds = new Set(sameNameCandidates?.map((candidate) => candidate.id));
+  return {
+    sourceEventIds: linkedEvents.length === 1 ? [...floorPlanEventSourceIds(linkedEvents[0])] : [],
+    allowLegacyNameMatch: Boolean(planWindow && candidates && candidateIds.size === 1 && candidateIds.has(plan.id)),
+  };
 }
 
-function reservationMatchesPlan(
+function sourceIdentityMatches(
+  identities: readonly string[],
+  eventName: string,
+  operatingDate: string,
+  startAt: string | null,
+  endAt: string | null,
+  plan: EventPlan,
+  scope: ItineraryIdentityScope,
+) {
+  const allowedIds = new Set([String(plan.id), ...(scope.sourceEventIds ?? [])]);
+  if (identities.some((id) => allowedIds.has(id))) return true;
+  return identities.length === 0 && scope.allowLegacyNameMatch === true &&
+    normalizedEventName(eventName) === normalizedEventName(plan.name) &&
+    sourceWindowMatchesPlan(operatingDate, startAt, endAt, plan);
+}
+
+export function itinerarySnapshotMatchesPlan(
+  event: EntertainmentEventSnapshot,
+  plan: EventPlan,
+  scope: ItineraryIdentityScope = {},
+) {
+  const identities = [event.tripleseatEventId, event.localEventId].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
+  return sourceIdentityMatches(identities, event.eventName, event.operatingDate, event.eventStartAt, event.eventEndAt, plan, scope);
+}
+
+export function itineraryReservationMatchesPlan(
   reservation: EntertainmentReservation,
   plan: EventPlan,
+  scope: ItineraryIdentityScope = {},
 ) {
-  const planId = String(plan.id);
   const identities = [
     reservation.tripleseatEventId,
     reservation.localEventId,
-  ].filter((value): value is string => Boolean(value));
-  if (identities.includes(planId)) return true;
-  if (
-    identities.length === 0 &&
-    normalizedEventName(reservation.eventName) ===
-      normalizedEventName(plan.name)
-  ) {
-    return true;
-  }
-  return (
-    floorPlanSourceNamesMatch(reservation.eventName, plan.name) &&
-    sourceWindowMatchesPlan(
-      reservation.operatingDate,
-      reservation.startAt,
-      reservation.endAt,
-      plan,
-    )
-  );
+  ].filter((value): value is string => Boolean(value?.trim()));
+  return sourceIdentityMatches(identities, reservation.eventName, reservation.operatingDate, reservation.startAt, reservation.endAt, plan, scope);
+}
+
+export function hasAmbiguousLegacyItineraryIdentity(day: EntertainmentDay, plan: EventPlan, scope: ItineraryIdentityScope) {
+  const unresolved = (eventName: string, date: string, startAt: string | null, endAt: string | null) => {
+    if (date !== plan.date || normalizedEventName(eventName) !== normalizedEventName(plan.name)) return false;
+    if (!startAt || !endAt || !Number.isFinite(Date.parse(startAt)) || !Number.isFinite(Date.parse(endAt)) || Date.parse(startAt) >= Date.parse(endAt)) return true;
+    return !scope.allowLegacyNameMatch && sourceWindowMatchesPlan(date, startAt, endAt, plan);
+  };
+  return day.events.some((event) => event.active && !event.tripleseatEventId?.trim() && !event.localEventId?.trim() && unresolved(event.eventName, event.operatingDate, event.eventStartAt, event.eventEndAt)) ||
+    day.reservations.some((reservation) => reservation.active && !reservation.tripleseatEventId?.trim() && !reservation.localEventId?.trim() && unresolved(reservation.eventName, reservation.operatingDate, reservation.startAt, reservation.endAt));
 }
 
 function durationLabel(startAt: string, endAt: string) {
@@ -226,13 +250,14 @@ export function itineraryEntertainmentFromReservations(
 export function applyEntertainmentDayToItinerary(
   plan: EventPlan,
   day: EntertainmentDay,
+  scope: ItineraryIdentityScope = {},
 ) {
   if (day.date !== plan.date) return plan;
   const reservations = day.reservations.filter((reservation) =>
-    reservationMatchesPlan(reservation, plan),
+    itineraryReservationMatchesPlan(reservation, plan, scope),
   );
   const eventExists = day.events.some((event) =>
-    eventSnapshotMatchesPlan(event, plan),
+    itinerarySnapshotMatchesPlan(event, plan, scope),
   );
   if (!eventExists && reservations.length === 0) return plan;
   return {

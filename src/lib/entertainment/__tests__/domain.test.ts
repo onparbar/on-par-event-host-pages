@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildEntertainmentSchedule,
+  conflictForCandidate,
   detectEntertainmentConflicts,
   findAdjacentAvailableResources,
   matchLocalEvent,
   mergeReservationsForSync,
+  validEntertainmentInterval,
   validateReservationTimes,
   type LocalEntertainmentEvent,
 } from "../domain";
@@ -532,6 +534,33 @@ describe("deterministic schedule construction", () => {
     );
   });
 
+  it.each([false, true])("keeps meaningful revision time through identical repeated syncs (manual override: %s)", (manualOverride) => {
+    const firstAt = "2026-07-28T10:00:00.000Z";
+    const original = reservation({ manualOverride, updatedAt: firstAt, lastTripleseatSyncAt: firstAt });
+    const first = mergeReservationsForSync([original], [reservation({ updatedAt: NOW, lastTripleseatSyncAt: NOW })], NOW);
+    const later = "2026-07-28T13:00:00.000Z";
+    const second = mergeReservationsForSync(first, [reservation({ updatedAt: later, lastTripleseatSyncAt: later })], later);
+    expect(first[0].updatedAt).toBe(firstAt);
+    expect(second[0].updatedAt).toBe(firstAt);
+    expect(second[0].lastTripleseatSyncAt).toBe(later);
+  });
+
+  it.each([
+    { resourceId: "bowling-2", resourceName: "Bowling Lane 2" },
+    { startAt: "2026-07-28T22:00:00.000Z", endAt: "2026-07-28T23:00:00.000Z" },
+    { eventColor: "#18332F" },
+    { sourceUpdatedAt: "2026-07-28T11:30:00.000Z" },
+    { active: false },
+  ])("advances the revision when meaningful synchronized content changes: %j", (change) => {
+    const original = reservation({ updatedAt: "2026-07-28T10:00:00.000Z" });
+    expect(mergeReservationsForSync([original], [reservation(change)], NOW)[0].updatedAt).toBe(NOW);
+  });
+
+  it("does not repeatedly revise a previously deactivated source reservation", () => {
+    const original = reservation({ active: false, updatedAt: "2026-07-28T10:00:00.000Z" });
+    expect(mergeReservationsForSync([original], [], NOW)[0].updatedAt).toBe(original.updatedAt);
+  });
+
   it("preserves a manual resource/time override across repeated syncs", () => {
     const original = reservation({
       manualOverride: true,
@@ -607,7 +636,7 @@ describe("deterministic schedule construction", () => {
     });
   });
 
-  it("detects true overlap but permits edge-adjacent reservations", () => {
+  it("detects true overlap but permits back-to-back reservations on the same lane", () => {
     const first = reservation();
     const overlap = reservation({
       id: "reservation-2",
@@ -624,5 +653,51 @@ describe("deterministic schedule construction", () => {
     });
     expect(detectEntertainmentConflicts([first, overlap])).toHaveLength(1);
     expect(detectEntertainmentConflicts([first, adjacent])).toHaveLength(0);
+  });
+
+  it.each([[-1, true], [0, false], [1, false], [30, false], [60, false]])("uses actual booked times at a %i-minute gap for conflict, editing, and autoassignment", (gap, conflicts) => {
+    const first = reservation();
+    const startAt = new Date(Date.parse(END) + gap * 60_000).toISOString();
+    const endAt = new Date(Date.parse(startAt) + 60 * 60_000).toISOString();
+    const next = reservation({ id: "later", startAt, endAt });
+    expect(detectEntertainmentConflicts([first, next])).toHaveLength(conflicts ? 1 : 0);
+    expect(conflictForCandidate(next, [first])).toHaveLength(conflicts ? 1 : 0);
+    expect(findAdjacentAvailableResources("bowling", 1, startAt, endAt, [first])[0]?.id)
+      .toBe(conflicts ? "bowling-2" : "bowling-1");
+    expect(first).toMatchObject({ startAt: START, endAt: END });
+    expect(next).toMatchObject({ startAt, endAt });
+  });
+
+  it.each(ENTERTAINMENT_SCHEDULE_CATEGORIES)("permits back-to-back %s entertainment reservations without seating buffers", (category) => {
+    const resource = resourcesForCategory(category)[0];
+    const first = reservation({ resourceId: resource.id, resourceCategory: category, resourceName: resource.canonicalName });
+    const next = reservation({ ...first, id: "next", startAt: END, endAt: "2026-07-28T23:00:00.000Z" });
+    expect(detectEntertainmentConflicts([first, next])).toEqual([]);
+    expect(conflictForCandidate(next, [first])).toEqual([]);
+    expect(findAdjacentAvailableResources(category, 1, next.startAt, next.endAt, [first])[0]?.id).toBe(resource.id);
+  });
+
+  it("requires explicit zoned positive-duration entertainment intervals", () => {
+    expect(validEntertainmentInterval(START, END)).toBe(true);
+    expect(validEntertainmentInterval("2026-07-28T17:00:00-04:00", "2026-07-28T18:00:00-04:00")).toBe(true);
+    expect(validEntertainmentInterval(END, START)).toBe(false);
+    expect(validEntertainmentInterval(START, START)).toBe(false);
+    expect(validEntertainmentInterval("invalid", END)).toBe(false);
+    expect(validEntertainmentInterval("2026-07-28T21:00:00", "2026-07-28T22:00:00")).toBe(false);
+  });
+
+  it("does not block different resources or inactive reservations", () => {
+    const first = reservation();
+    const other = reservation({ id: "other", resourceId: "bowling-2", startAt: END, endAt: "2026-07-28T23:00:00.000Z" });
+    expect(detectEntertainmentConflicts([first, other])).toEqual([]);
+    expect(conflictForCandidate(other, [first])).toEqual([]);
+    expect(findAdjacentAvailableResources("bowling", 1, START, END, [{ ...first, active: false }])[0]?.id).toBe("bowling-1");
+  });
+
+  it("does not autoassign invalid candidate times or consider invalid occupied times available", () => {
+    expect(findAdjacentAvailableResources("bowling", 1, "invalid", END, [])).toEqual([]);
+    expect(findAdjacentAvailableResources("bowling", 1, END, START, [])).toEqual([]);
+    expect(findAdjacentAvailableResources("bowling", 1, "2026-07-28T21:00:00", "2026-07-28T22:00:00", [])).toEqual([]);
+    expect(findAdjacentAvailableResources("bowling", 1, START, END, [reservation({ startAt: "invalid" })])[0]?.id).toBe("bowling-2");
   });
 });

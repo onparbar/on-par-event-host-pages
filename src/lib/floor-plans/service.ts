@@ -3,6 +3,7 @@ import {
   syncEntertainmentDay,
   updateEntertainmentReservation,
 } from "@/lib/entertainment/sync";
+import { validEntertainmentInterval } from "@/lib/entertainment/domain";
 import {
   deterministicEventColor,
   isHexColor,
@@ -58,7 +59,8 @@ import {
   reservationForCurrentFloorPlanEvent,
 } from "./generator";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
-import { getFloorPlanStorage, type FloorPlanStorage } from "./storage";
+import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
+import { StaleSaveError } from "@/lib/stale-save";
 import {
   FLOOR_PLAN_RULE_VERSION,
   type FloorPlanDayPayload,
@@ -316,7 +318,7 @@ function createPlan(date: string, events: FloorPlanEvent[]) {
     id,
     eventDate: date,
     status: "Draft" as const,
-    version: 1,
+    version: 0,
     ruleVersion: FLOOR_PLAN_RULE_VERSION,
     lastTripleseatSyncAt: null,
     createdAt: now,
@@ -659,7 +661,12 @@ export async function generateFloorPlan(
   date: string,
   mode: FloorPlanGenerationMode,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) {
+    storage = floorPlanStorageAtVersion(storage, expectedVersion);
+    await storage.get(date);
+  }
   await syncEventPlanWindow(
     { startDate: date, endDate: date },
     { legacyPlans: [] },
@@ -853,6 +860,10 @@ export async function alignGeneratedEntertainment(
     for (const group of groups.values()) {
       const category = group[0].resourceCategory;
       if (!supportsProximity(category)) continue;
+      if (!validEntertainmentInterval(group[0].startAt, group[0].endAt)) {
+        warnings.push(`${event.name}: entertainment times are missing or invalid; existing assignments were kept for review.`);
+        continue;
+      }
       const seatingAreaIds = event.contractedAreaIds.filter((areaId) => {
         const area = getFloorPlanArea(areaId);
         return areaId !== "facility" && area?.isReservable;
@@ -865,12 +876,12 @@ export async function alignGeneratedEntertainment(
         [...currentReservations.values()].flatMap((reservation) =>
           reservation.active &&
           !automaticIds.has(reservation.id) &&
-          timeRangesOverlap(
+          (!validEntertainmentInterval(reservation.startAt, reservation.endAt) || timeRangesOverlap(
             group[0].startAt,
             group[0].endAt,
             reservation.startAt,
             reservation.endAt,
-          )
+          ))
             ? [reservation.resourceId]
             : [],
         ),
@@ -1019,6 +1030,7 @@ export async function saveFloorPlanEdits(
     storage.get(date),
     reconciledPlan(date, storage),
   ]);
+  if (body.version !== (saved?.version ?? 0)) throw new StaleSaveError();
   const requestedEvents = Array.isArray(body.events) ? body.events : [];
   const requestedReservations = body.reservations;
   const requestedReservationRows = Array.isArray(requestedReservations)
@@ -1069,6 +1081,7 @@ export async function saveFloorPlanEdits(
   }
   const next = {
     ...plan,
+    version: Number(body.version),
     events,
     reservations: sanitizeReservations(plan, requestedReservations),
     status:
@@ -1123,7 +1136,9 @@ export async function saveFloorPlanEdits(
 export async function validateAndSaveFloorPlan(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const payload = await getFloorPlanDay(date, storage);
   const status: FloorPlanStatus =
     payload.floorPlanConflicts.length || payload.entertainmentConflicts.length
@@ -1139,7 +1154,9 @@ export async function approveFloorPlan(
   date: string,
   warningsAcknowledged = false,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const payload = await getFloorPlanDay(date, storage);
   if (hasBlockingValidationFailures(payload.validation)) {
     throw new Error("Resolve every blocking validation failure before approval.");
@@ -1168,7 +1185,9 @@ export async function approveFloorPlan(
 export async function refreshFloorPlanSources(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const savedBeforeRefresh = await storage.get(date);
   await syncEventPlanWindow(
     { startDate: date, endDate: date },

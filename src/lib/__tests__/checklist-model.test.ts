@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   foodAddOns,
+  checklistEventForSelection,
   foodUnitPrice,
   appetizerBarRefillAddOns,
   entertainmentAddOns,
@@ -19,6 +20,13 @@ const emptyFoodState: FoodState = {
 };
 
 describe("Event Host food add-ons", () => {
+  it("uses the remembered event before publishing the first tab default", () => {
+    const first = { id: 1, name: "Event A" };
+    const remembered = { id: 2, name: "Event B" };
+    expect(checklistEventForSelection([first, remembered], "2", 1)).toBe(remembered);
+    expect(checklistEventForSelection([first, remembered], null, 1)).toBe(first);
+    expect(checklistEventForSelection([first, remembered], "unavailable", 1)).toBeUndefined();
+  });
   it("prices each dessert platter at $120 even when an old draft has a manual price", () => {
     const dessert = foodAddOns.find((item) => item.key === "dessert-platter")!;
     expect(dessert.kind).toBe("fixed-price");

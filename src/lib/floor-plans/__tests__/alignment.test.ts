@@ -121,10 +121,14 @@ describe("floor-plan shared bowling alignment", () => {
     expect((await storage.getReservation("lane-a"))?.resourceId).toBe(preferred[1]);
   });
 
-  it("uses updated availability for later parties and permits reuse at non-overlapping times", async () => {
+  it.each([
+    ["2026-10-20T19:45:00-04:00", false],
+    [END, true],
+    ["2026-10-20T20:15:00-04:00", true],
+  ])("aligns entertainment using exact booked times (%s, lane reusable=%s)", async (startAt, reusable) => {
     const first = event("event-a");
     const second = event("event-b");
-    const later = { ...event("event-c"), startAt: END, endAt: "2026-10-20T22:00:00-04:00" };
+    const later = { ...event("event-c"), startAt, endAt: "2026-10-20T22:00:00-04:00" };
     const original = [
       lane("lane-a", first, 1), lane("lane-b", second, 2),
       lane("lane-c", later, 3, { startAt: later.startAt!, endAt: later.endAt! }),
@@ -136,7 +140,7 @@ describe("floor-plan shared bowling alignment", () => {
     const b = (await storage.getReservation("lane-b"))!;
     const c = (await storage.getReservation("lane-c"))!;
     expect(a.resourceId).not.toBe(b.resourceId);
-    expect(c.resourceId).toBe(a.resourceId);
+    expect(c.resourceId === a.resourceId).toBe(reusable);
   });
 
   it("preserves explicit/manual lane choices and their assignment mode when synchronizing color", async () => {

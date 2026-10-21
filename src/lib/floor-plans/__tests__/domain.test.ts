@@ -216,7 +216,7 @@ describe("floor-plan capacities and generation", () => {
   it.each([true, false])("checks physical food/seating aliases across parties with overlap=%s", (overlap) => {
     const first = floorPlanEvent({ guestCount: 10 });
     const second = floorPlanEvent({ id: "second", tripleseatEventId: "second", guestCount: 10,
-      startAt: overlap ? START : END, endAt: "2026-08-07T04:00:00.000Z" });
+      startAt: overlap ? START : "2026-08-07T02:30:00.000Z", endAt: "2026-08-07T04:00:00.000Z" });
     const document = plan([first, second], [
       { ...reservation(first, "main-food-1"), reservationType: "food-table", label: "F" },
       reservation(second, "main-rect-left-4"),
@@ -324,7 +324,7 @@ describe("floor-plan capacities and generation", () => {
     const first = floorPlanEvent({ guestCount: 10 });
     const second = floorPlanEvent({
       id: "second", tripleseatEventId: "second", guestCount: 10,
-      startAt: overlap ? START : END, endAt: "2026-08-07T04:00:00.000Z",
+      startAt: overlap ? START : "2026-08-07T02:30:00.000Z", endAt: "2026-08-07T04:00:00.000Z",
     });
     const manualSeat = reservation(first, "main-rect-left-3");
     const manualFood: FloorPlanReservation = { ...reservation(first, "main-food-2"), reservationType: "food-table", label: "F" };
@@ -386,7 +386,7 @@ describe("floor-plan capacities and generation", () => {
     const first = floorPlanEvent({ contractedAreaIds: ["geg-tables"] });
     const second = floorPlanEvent({
       id: "second", tripleseatEventId: "second", contractedAreaIds: ["geg-tables"],
-      startAt: overlap ? START : END, endAt: "2026-08-07T04:00:00.000Z",
+      startAt: overlap ? START : "2026-08-07T02:30:00.000Z", endAt: "2026-08-07T04:00:00.000Z",
     });
     const generated = generateFloorPlanReservations(plan([first, second]), "fill-missing");
     const secondTables = generated.filter((item) => item.floorPlanEventId === second.id && item.reservationType === "seating");
@@ -816,7 +816,7 @@ describe("time and buyout conflicts", () => {
     expect(conflicts).toHaveLength(1);
   });
 
-  it("reports only the interval where the reservations overlap", () => {
+  it("reports only the interval where setup/event/cleanup occupancy overlaps", () => {
     const first = floorPlanEvent();
     const second = floorPlanEvent({ id: "floor-plan-event-2", tripleseatEventId: "2", name: "Second", color: "#1D4ED8" });
     const conflicts = detectFloorPlanConflicts(
@@ -829,14 +829,14 @@ describe("time and buyout conflicts", () => {
       ),
     );
     expect(conflicts[0]).toMatchObject({
-      startAt: "2026-08-06T23:00:00.000Z",
-      endAt: "2026-08-07T00:00:00.000Z",
+      startAt: "2026-08-06T22:00:00.000Z",
+      endAt: "2026-08-07T00:30:00.000Z",
     });
   });
 
   it("allows non-overlapping events to reuse the same object", () => {
     const first = floorPlanEvent();
-    const second = floorPlanEvent({ id: "floor-plan-event-2", tripleseatEventId: "2", name: "Second", color: "#1D4ED8", startAt: "2026-08-07T01:00:00.000Z", endAt: "2026-08-07T03:00:00.000Z" });
+    const second = floorPlanEvent({ id: "floor-plan-event-2", tripleseatEventId: "2", name: "Second", color: "#1D4ED8", startAt: "2026-08-07T02:30:00.000Z", endAt: "2026-08-07T03:00:00.000Z" });
     expect(
       detectFloorPlanConflicts(
         plan([first, second], [reservation(first, "main-rect-left-1"), reservation(second, "main-rect-left-1")]),

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { hasAdminSession } from "@/lib/admin-auth";
 import { getChecklistRecord, saveChecklist } from "@/lib/checklist-storage";
+import { StaleSaveError } from "@/lib/stale-save";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,17 +43,20 @@ export async function POST(_request: Request, context: RouteContext) {
       eventName: existing.eventName,
       eventDate: existing.eventDate,
       poc: existing.poc,
+      expectedUpdatedAt: existing.updatedAt,
+      allowReopen: true,
       checklist: {
         bwa: existing.bwa,
         extrasAdded: existing.extrasAdded,
         remainingDrinkCardBalance: existing.remainingDrinkCardBalance,
         tasks: existing.tasks,
+        taskEvidence: existing.taskEvidence,
         entertainment: existing.entertainment,
         food: existing.food,
       },
     });
     return NextResponse.json({ record }, { headers: PRIVATE_HEADERS });
-  } catch {
-    return NextResponse.json({ error: "Unable to un-submit checklist." }, { status: 502, headers: PRIVATE_HEADERS });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof StaleSaveError ? error.message : "Unable to un-submit checklist." }, { status: error instanceof StaleSaveError ? 409 : 502, headers: PRIVATE_HEADERS });
   }
 }

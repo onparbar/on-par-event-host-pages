@@ -15,6 +15,7 @@ import {
 import { floorPlanEventColorsAreDistinct } from "./configuration/colors";
 import { entertainmentReservationMatchesFloorPlanEvent } from "./identity";
 import { timeRangesOverlap } from "./conflicts";
+import { reservationOccupancy } from "@/lib/operations/reservation-buffer";
 import { isVipOnlyFloorPlanEvent, reservedSeatingCapacity } from "./generator";
 import type {
   FloorPlanConflict,
@@ -95,8 +96,7 @@ export function validateFloorPlan(
       !event.source.reviewReasons.some((reason) =>
         /Guest count is missing or invalid|Guest count was filled from .*package/i.test(reason),
       ) &&
-      Boolean(event.startAt) &&
-      Boolean(event.endAt);
+      Boolean(reservationOccupancy(event.startAt, event.endAt));
     result.push(
       item(
         "EVENT_DETAILS",

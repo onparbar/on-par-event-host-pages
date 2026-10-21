@@ -226,6 +226,13 @@ export function getFloorPlanArea(areaId: string) {
   return AREA_BY_ID.get(areaId) ?? null;
 }
 
+/** These rooms are event seating even though they also have booking resources. */
+export function areaUsesSeatingBuffer(areaId: string) {
+  const area = getFloorPlanArea(areaId);
+  return Boolean(area && (!area.entertainmentResourceId ||
+    ["vip-1", "vip-2", "big-show-karaoke"].includes(area.id)));
+}
+
 export function getPhysicalFloorPlanAreaId(areaId: string) {
   return getFloorPlanArea(areaId)?.physicalAreaId ?? areaId;
 }

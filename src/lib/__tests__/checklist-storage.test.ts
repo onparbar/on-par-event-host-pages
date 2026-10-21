@@ -6,6 +6,7 @@ import {
   resetLocalChecklistStorageForTests,
   saveChecklist,
 } from "../checklist-storage";
+import { defaultChecklistState } from "../checklist-model";
 
 afterEach(() => {
   resetLocalChecklistStorageForTests();
@@ -25,6 +26,7 @@ describe("local legacy checklist preview", () => {
 
     const saved = await saveChecklist({
       action: "save",
+      expectedUpdatedAt: null,
       eventId: 1001,
       eventName: "Preview Event",
       eventDate: "2026-08-06",
@@ -52,6 +54,7 @@ describe("local legacy checklist preview", () => {
 
     const saved = await saveChecklist({
       action: "submit",
+      expectedUpdatedAt: null,
       eventId: 4321,
       eventName: "80th Birthday Party",
       eventDate: "2026-09-05",
@@ -87,7 +90,7 @@ describe("legacy Event Host checklist database authentication", () => {
   it("loads the saved event identity used by completed checklists", async () => {
     vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
     vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test_value");
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json([
         {
           event_id: 7002,
@@ -205,5 +208,50 @@ describe("targeted Event Host checklist reads", () => {
     );
     expect(requestUrl.searchParams.get("select")).toBe("updated_at");
     expect(requestUrl.searchParams.get("limit")).toBe("1");
+  });
+});
+
+describe("atomic checklist saves", () => {
+  function localInput() {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("SUPABASE_SECRET_KEY", "");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+    vi.stubEnv("SUPABASE_SECRET_KEYS", "");
+    return { action: "save" as const, eventId: 42, eventName: "Redacted safety fixture", eventDate: "2026-10-21", expectedUpdatedAt: null, checklist: defaultChecklistState("2026-10-21") };
+  }
+
+  it("rejects the second first-save rather than merging over a new record", async () => {
+    const input = localInput();
+    const results = await Promise.allSettled([saveChecklist(input), saveChecklist(input)]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect((results[1] as PromiseRejectedResult).reason).toMatchObject({ status: 409 });
+  });
+
+  it("preserves quantities and completion evidence when another tablet loses a stale save", async () => {
+    const input = localInput();
+    const initial = await saveChecklist(input);
+    const winner = { ...input, expectedUpdatedAt: initial.updatedAt, checklist: { ...input.checklist, food: { ...input.checklist.food, wings: { quantity: "2", manualPrice: "", panSize: "1/2" as const } }, taskEvidence: { "food-ready": { employeeName: "Staff-entered name", completedAt: "2026-10-21T17:00:00Z" } } } };
+    const results = await Promise.allSettled([saveChecklist(winner), saveChecklist({ ...input, expectedUpdatedAt: initial.updatedAt })]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect((results[1] as PromiseRejectedResult).reason).toMatchObject({ status: 409 });
+    await expect(getChecklistRecord(42)).resolves.toMatchObject({ food: { wings: { quantity: "2", panSize: "1/2" } }, taskEvidence: winner.checklist.taskEvidence });
+  });
+
+  it("does not reopen a submitted record without the Admin-only reopen flag", async () => {
+    const input = localInput();
+    const submitted = await saveChecklist({ ...input, action: "submit" });
+    await expect(saveChecklist({ ...input, expectedUpdatedAt: submitted.updatedAt })).rejects.toMatchObject({ status: 409 });
+    await expect(saveChecklist({ ...input, expectedUpdatedAt: submitted.updatedAt, allowReopen: true })).resolves.toMatchObject({ status: "draft", submittedAt: null });
+  });
+
+  it("sends the loaded revision to the atomic RPC and never falls back after a missing migration", async () => {
+    const input = localInput();
+    vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test");
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => Response.json({ code: "PGRST202" }, { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(saveChecklist(input)).rejects.toThrow("migration is not installed");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/rpc/save_event_host_checklist_checked");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ p_expected_updated_at: null, p_allow_reopen: false, p_record: { food: input.checklist.food, task_evidence: {} } });
   });
 });

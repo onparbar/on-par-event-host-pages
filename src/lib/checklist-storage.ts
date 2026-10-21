@@ -1,14 +1,16 @@
 import type { ChecklistRecord } from "@/lib/checklist-model";
+import { StaleSaveError } from "@/lib/stale-save";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const CHECKLIST_COLUMNS =
-  "event_id,event_name,event_date,poc,bwa,extras_added,remaining_drink_card_balance,tasks,entertainment,food,status,updated_at,submitted_at";
+  "event_id,event_name,event_date,poc,bwa,extras_added,remaining_drink_card_balance,tasks,task_evidence,entertainment,food,status,updated_at,submitted_at";
 
 type ChecklistPayload = {
   bwa?: string;
   extrasAdded?: string;
   remainingDrinkCardBalance?: string;
   tasks?: Record<string, unknown>;
+  taskEvidence?: ChecklistRecord["taskEvidence"];
   entertainment?: Record<string, unknown>;
   food?: Record<string, unknown>;
 };
@@ -20,6 +22,8 @@ export type SaveChecklistInput = {
   eventDate: string;
   poc?: string;
   checklist: ChecklistPayload;
+  expectedUpdatedAt: string | null;
+  allowReopen?: boolean;
 };
 
 type DatabaseRecord = {
@@ -31,6 +35,7 @@ type DatabaseRecord = {
   extras_added?: string | null;
   remaining_drink_card_balance?: string | null;
   tasks?: Record<string, unknown> | null;
+  task_evidence?: ChecklistRecord["taskEvidence"] | null;
   entertainment?: Record<string, unknown> | null;
   food?: Record<string, unknown> | null;
   status?: string | null;
@@ -106,8 +111,12 @@ async function databaseRequest<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Checklist database request failed.");
+    const error = await response.json().catch(() => null) as { code?: string } | null;
+    if (response.status === 409 || error?.code === "PT409") throw new StaleSaveError();
+    if (response.status === 404 || error?.code === "PGRST202" || error?.code === "42703") {
+      throw new Error("Checklist safety migration is not installed. No changes were saved; ask an administrator to finish the reviewed database update.");
+    }
+    throw new Error(`Checklist database request failed (${response.status}).`);
   }
 
   return response.json() as Promise<T>;
@@ -123,6 +132,7 @@ function toChecklistRecord(record: DatabaseRecord): ChecklistRecord {
     extrasAdded: record.extras_added ?? "",
     remainingDrinkCardBalance: record.remaining_drink_card_balance ?? "",
     tasks: (record.tasks ?? {}) as ChecklistRecord["tasks"],
+    taskEvidence: record.task_evidence ?? {},
     entertainment: (record.entertainment ?? {}) as ChecklistRecord["entertainment"],
     food: (record.food ?? {}) as ChecklistRecord["food"],
     status: record.status === "submitted" ? "submitted" : "draft",
@@ -173,7 +183,11 @@ export async function getChecklistRecordUpdatedAt(eventId: number) {
 }
 
 export async function saveChecklist(input: SaveChecklistInput) {
-  const now = new Date().toISOString();
+  if (input.expectedUpdatedAt !== null && (typeof input.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(input.expectedUpdatedAt)))) {
+    throw new Error("Load the saved checklist revision before saving.");
+  }
+  const previous = useLocalMemoryStorage() ? memoryRecords.get(input.eventId) : undefined;
+  const now = new Date(Math.max(Date.now(), Date.parse(previous?.updated_at ?? "") + 1 || 0)).toISOString();
   const row = {
     event_id: input.eventId,
     event_name: input.eventName,
@@ -183,6 +197,7 @@ export async function saveChecklist(input: SaveChecklistInput) {
     extras_added: input.checklist.extrasAdded ?? "",
     remaining_drink_card_balance: input.checklist.remainingDrinkCardBalance ?? "",
     tasks: input.checklist.tasks ?? {},
+    task_evidence: input.checklist.taskEvidence ?? {},
     entertainment: input.checklist.entertainment ?? {},
     food: input.checklist.food ?? {},
     status: input.action === "submit" ? "submitted" : "draft",
@@ -191,24 +206,25 @@ export async function saveChecklist(input: SaveChecklistInput) {
   };
 
   if (useLocalMemoryStorage()) {
+    if ((previous?.updated_at ?? null) !== input.expectedUpdatedAt) throw new StaleSaveError();
+    if (previous?.status === "submitted" && !input.allowReopen) throw new StaleSaveError("This checklist was submitted. Only Admin can reopen it; your draft has been kept.");
     memoryRecords.set(input.eventId, cloneRecord(row));
     return toChecklistRecord(cloneRecord(row));
   }
 
-  const records = await databaseRequest<DatabaseRecord[]>(
-    getDatabaseUrl(`?on_conflict=event_id&select=${CHECKLIST_COLUMNS}`),
+  const record = await databaseRequest<DatabaseRecord>(
+    getDatabaseUrl().replace(/\/event_host_checklists$/, "/rpc/save_event_host_checklist_checked"),
     {
       method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify(row),
+      body: JSON.stringify({ p_record: row, p_expected_updated_at: input.expectedUpdatedAt, p_allow_reopen: input.allowReopen === true }),
     },
   );
 
-  if (!records[0]) {
+  if (!record) {
     throw new Error("Checklist database did not return the saved record.");
   }
 
-  return toChecklistRecord(records[0]);
+  return toChecklistRecord(record);
 }
 
 export function resetLocalChecklistStorageForTests() {

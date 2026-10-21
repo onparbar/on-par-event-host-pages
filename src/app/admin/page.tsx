@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import AdminAccessGate from "./AdminAccessGate";
 import AdminClient from "./AdminClient";
 import { hasAdminSession } from "@/lib/admin-auth";
-import { loadAdminState, loadChecklistRecords } from "@/lib/admin-state";
+import { loadAdminStateSnapshot, loadChecklistRecords } from "@/lib/admin-state";
 import { emptyAdminState } from "@/lib/admin-types";
 import { checklistEvents } from "@/lib/checklist-events";
 import {
@@ -54,8 +54,8 @@ export default async function AdminPage() {
   }
 
   const today = easternToday();
-  const [initialState, records, operations, historicalEventPlans] = await Promise.all([
-    loadLocalPreviewFallback(loadAdminState, emptyAdminState()),
+  const [initialSnapshot, records, operations, historicalEventPlans] = await Promise.all([
+    loadLocalPreviewFallback(loadAdminStateSnapshot, { state: emptyAdminState(), updatedAt: null }),
     loadLocalPreviewFallback(loadChecklistRecords, []),
     loadAdminOperations(),
     loadHistoricalEventPlans(today),
@@ -81,7 +81,8 @@ export default async function AdminPage() {
       archivedItineraries={archivedItineraries}
       entertainmentSchedules={entertainmentSchedules}
       floorPlans={[...floorPlans, ...floorPlanSpecialPages]}
-      initialState={initialState}
+      initialState={initialSnapshot.state}
+      initialUpdatedAt={initialSnapshot.updatedAt}
       localPreview={process.env.NODE_ENV !== "production"}
       operations={operations}
       records={records}

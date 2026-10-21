@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import EditableAssetSection from "@/app/_components/EditableAssetSection";
 import AdminFloorPlanAssets from "./AdminFloorPlanAssets";
@@ -47,6 +47,7 @@ type AdminClientProps = {
   entertainmentSchedules: AdminDateAsset[];
   floorPlans: AdminDateAsset[];
   initialState: AdminState;
+  initialUpdatedAt?: string | null;
   localPreview: boolean;
   operations: AdminOperationsPayload;
   records: ChecklistRecord[];
@@ -126,6 +127,7 @@ export default function AdminClient({
   entertainmentSchedules,
   floorPlans,
   initialState,
+  initialUpdatedAt = null,
   localPreview,
   operations,
   records,
@@ -137,6 +139,10 @@ export default function AdminClient({
   >("floor-plans");
   const [adminState, setAdminState] = useState<AdminState>(initialState);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("");
+  const savedRevisionRef = useRef(initialUpdatedAt);
+  const saveQueueRef = useRef(Promise.resolve());
+  const saveBlockedRef = useRef(false);
   const [evidenceEventId, setEvidenceEventId] = useState<number | null>(null);
   const [evidence, setEvidence] = useState<AdminContractEvidence | null>(null);
   const [evidenceState, setEvidenceState] = useState<EvidenceState>("idle");
@@ -186,13 +192,14 @@ export default function AdminClient({
   }
 
   useEffect(() => {
-    if (adminState === initialState) {
+    if (adminState === initialState || saveBlockedRef.current) {
       return;
     }
 
     setSaveState("saving");
     const timeoutId = window.setTimeout(() => {
-      startTransition(async () => {
+      saveQueueRef.current = saveQueueRef.current.then(async () => {
+        if (saveBlockedRef.current) return;
         try {
           const response = await fetch("/api/admin-state", {
             method: "PUT",
@@ -201,16 +208,21 @@ export default function AdminClient({
             },
             body: JSON.stringify({
               state: adminState,
+              expectedUpdatedAt: savedRevisionRef.current,
             }),
           });
 
-          if (!response.ok) {
-            throw new Error("Unable to save admin changes.");
+          const payload = await response.json() as { error?: string; record?: ChecklistRecord };
+          if (!response.ok || !payload.record) {
+            if (response.status === 409) saveBlockedRef.current = true;
+            throw new Error(payload.error ?? "Unable to save admin changes. Local edits are retained.");
           }
+          savedRevisionRef.current = payload.record.updatedAt;
 
           setSaveState("saved");
           window.setTimeout(() => setSaveState("idle"), 1400);
-        } catch {
+        } catch (error) {
+          setSaveError(error instanceof Error ? error.message : "Save failed; local edits retained.");
           setSaveState("error");
         }
       });
@@ -333,6 +345,9 @@ export default function AdminClient({
         eyebrow="Protected operations"
         title="Admin Dashboard"
       />
+      {saveState === "error" ? <section className="checklist-meta-card" role="alert"><strong>{saveError}</strong><p>Your local edits have been retained. Review them before reloading.</p><button type="button" onClick={() => {
+        if (window.confirm("Discard unsaved Admin changes and reload the latest saved state?")) window.location.reload();
+      }}>Reload latest and review</button></section> : null}
 
         {localPreview ? (
           <section className="admin-local-preview-notice" role="status">

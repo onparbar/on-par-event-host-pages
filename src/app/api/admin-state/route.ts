@@ -7,6 +7,7 @@ import {
   loadAdminStateVersion,
 } from "@/lib/admin-state";
 import { saveChecklist } from "@/lib/checklist-storage";
+import { StaleSaveError } from "@/lib/stale-save";
 import {
   ADMIN_STATE_VERSION_HEADER,
   emptyAdminState,
@@ -87,17 +88,20 @@ export async function PUT(request: Request) {
     return unauthorized();
   }
 
-  let body: { state?: AdminState };
+  let body: { state?: AdminState; expectedUpdatedAt?: string | null };
   try {
-    body = (await request.json()) as { state?: AdminState };
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid admin state payload." }, { status: 400 });
   }
 
   const state = normalizeState(body.state);
+  if (body.expectedUpdatedAt !== null && (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt)))) {
+    return NextResponse.json({ error: "Reload the Admin state before saving." }, { status: 400, headers: PRIVATE_RESPONSE_HEADERS });
+  }
 
   try {
-    const record = await saveChecklist(buildAdminStateRequest(state));
+    const record = await saveChecklist({ ...buildAdminStateRequest(state), expectedUpdatedAt: body.expectedUpdatedAt });
 
     return NextResponse.json(
       { ok: true, record },
@@ -107,7 +111,7 @@ export async function PUT(request: Request) {
     const message = error instanceof Error ? error.message : "Unable to save admin state.";
     return NextResponse.json(
       { error: message },
-      { status: 502, headers: PRIVATE_RESPONSE_HEADERS },
+      { status: error instanceof StaleSaveError ? 409 : 502, headers: PRIVATE_RESPONSE_HEADERS },
     );
   }
 }

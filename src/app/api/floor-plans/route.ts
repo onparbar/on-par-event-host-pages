@@ -14,6 +14,7 @@ import {
   validateAndSaveFloorPlan,
 } from "@/lib/floor-plans/service";
 import type { FloorPlanGenerationMode } from "@/lib/floor-plans/types";
+import { StaleSaveError } from "@/lib/stale-save";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,7 +30,7 @@ function unauthorized() {
 function safeError(error: unknown) {
   const message =
     error instanceof Error ? error.message : "Unable to update the floor plan.";
-  return NextResponse.json({ error: message }, { status: 400 });
+  return NextResponse.json({ error: message }, { status: error instanceof StaleSaveError ? 409 : 400 });
 }
 
 export async function GET(request: Request) {
@@ -61,23 +62,25 @@ export async function POST(request: Request) {
     return unauthorized();
   }
   try {
-    if (action === "refresh") return NextResponse.json(await refreshFloorPlanSources(date));
+    const expectedVersion = typeof body.expectedVersion === "number" && Number.isInteger(body.expectedVersion) && body.expectedVersion >= 0 ? body.expectedVersion : undefined;
+    if (["generate", "validate", "approve"].includes(action) && expectedVersion === undefined) throw new Error("Load the reviewed floor-plan version before changing or approving it.");
+    if (action === "refresh") return NextResponse.json(await refreshFloorPlanSources(date, undefined, expectedVersion));
     if (action === "generate") {
       const mode = body.mode as FloorPlanGenerationMode;
       if (!["fill-missing", "replace-generated", "reset-event"].includes(mode)) {
         throw new Error("Choose how generated reservations should be replaced.");
       }
-      return NextResponse.json(await generateFloorPlan(date, mode));
+      return NextResponse.json(await generateFloorPlan(date, mode, undefined, expectedVersion));
     }
     if (action === "save") {
       return NextResponse.json(await saveFloorPlanEdits(date, body.plan));
     }
     if (action === "validate") {
-      return NextResponse.json(await validateAndSaveFloorPlan(date));
+      return NextResponse.json(await validateAndSaveFloorPlan(date, undefined, expectedVersion));
     }
     if (action === "approve") {
       return NextResponse.json(
-        await approveFloorPlan(date, body.acknowledgeWarnings === true),
+        await approveFloorPlan(date, body.acknowledgeWarnings === true, undefined, expectedVersion),
       );
     }
     throw new Error("Unknown floor-plan action.");

@@ -325,7 +325,7 @@ describe("event completeness", () => {
 });
 
 describe("admin conflict center", () => {
-  it("deduplicates the same room overlap across contract, floor plan, and entertainment", () => {
+  it("deduplicates equal seating overlaps but keeps the exact entertainment interval distinct", () => {
     const first = plan();
     const second = plan({ id: 1002, name: "Second Event", color: "#526D52" });
     const saved = floorPlan([first, second]);
@@ -354,13 +354,112 @@ describe("admin conflict center", () => {
       entertainmentReservations: reservations,
     });
 
-    expect(conflicts).toHaveLength(1);
+    expect(conflicts).toHaveLength(2);
     expect(conflicts[0]).toMatchObject({
       kind: "combined",
       resourceId: "vip-1",
-      startAt: "2026-08-06T14:00:00-04:00",
-      endAt: "2026-08-06T15:00:00-04:00",
+      startAt: "2026-08-06T17:00:00.000Z",
+      endAt: "2026-08-06T19:30:00.000Z",
     });
+    expect(conflicts[1]).toMatchObject({
+      kind: "entertainment",
+      resourceId: "vip-1",
+      startAt: "2026-08-06T18:00:00Z",
+      endAt: "2026-08-06T19:00:00Z",
+    });
+  });
+
+  it.each(["Prime Room", "Ocean Room"])("uses exact contracted times for %s entertainment", (room) => {
+    const first = plan({ rooms: [room] });
+    const second = plan({ id: 1002, name: "Next Event", rooms: [room] });
+    const nextSource = source(second, {
+      eventStartAt: "2026-08-06T15:00:00-04:00",
+      eventEndAt: "2026-08-06T17:00:00-04:00",
+    });
+    const input = {
+      date: first.date,
+      plans: [{ plan: first, source: source(first) }, { plan: second, source: nextSource }],
+      floorPlan: null,
+      entertainmentReservations: [],
+    };
+
+    expect(buildAdminConflictCenter(input)).toEqual([]);
+    nextSource.eventStartAt = "2026-08-06T14:59:00-04:00";
+    expect(buildAdminConflictCenter(input)).toEqual([
+      expect.objectContaining({
+        kind: "contracted-room",
+        startAt: "2026-08-06T18:59:00.000Z",
+        endAt: "2026-08-06T19:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it.each(["VIP 1", "VIP 2", "Big Show"])("retains setup and cleanup protection for %s seating", (room) => {
+    const first = plan({ rooms: [room] });
+    const second = plan({ id: 1002, name: "Next Event", rooms: [room] });
+    const nextSource = source(second, {
+      eventStartAt: "2026-08-06T15:00:00-04:00",
+      eventEndAt: "2026-08-06T18:30:00-04:00",
+    });
+    const input = {
+      date: first.date,
+      plans: [{ plan: first, source: source(first) }, { plan: second, source: nextSource }],
+      floorPlan: null,
+      entertainmentReservations: [],
+    };
+
+    expect(buildAdminConflictCenter(input)).toHaveLength(1);
+    nextSource.eventStartAt = "2026-08-06T16:29:00-04:00";
+    expect(buildAdminConflictCenter(input)).toHaveLength(1);
+    nextSource.eventStartAt = "2026-08-06T16:30:00-04:00";
+    expect(buildAdminConflictCenter(input)).toEqual([]);
+  });
+
+  it("evaluates shared seating and entertainment areas separately for the same event pair", () => {
+    const rooms = ["VIP 1", "Prime Room"];
+    const first = plan({ rooms });
+    const second = plan({ id: 1002, name: "Next Event", rooms });
+    const conflicts = buildAdminConflictCenter({
+      date: first.date,
+      plans: [
+        { plan: first, source: source(first) },
+        { plan: second, source: source(second, {
+          eventStartAt: "2026-08-06T15:00:00-04:00",
+          eventEndAt: "2026-08-06T17:00:00-04:00",
+        }) },
+      ],
+      floorPlan: null,
+      entertainmentReservations: [],
+    });
+
+    expect(conflicts).toEqual([
+      expect.objectContaining({ resourceId: "vip-1", kind: "contracted-room" }),
+    ]);
+  });
+
+  it.each([false, true])("does not extend a buyout into another event's entertainment time (buyout first=%s)", (buyoutFirst) => {
+    const first = plan({ id: 2001, rooms: [buyoutFirst ? "Full Facility Buyout" : "Prime Room"] });
+    const second = plan({ id: 2002, rooms: [buyoutFirst ? "Prime Room" : "Full Facility Buyout"] });
+    const nextSource = source(second, {
+      eventStartAt: "2026-08-06T15:00:00-04:00",
+      eventEndAt: "2026-08-06T17:00:00-04:00",
+    });
+    const input = {
+      date: first.date,
+      plans: [{ plan: first, source: source(first) }, { plan: second, source: nextSource }],
+      floorPlan: null,
+      entertainmentReservations: [],
+    };
+
+    expect(buildAdminConflictCenter(input)).toEqual([]);
+    nextSource.eventStartAt = "2026-08-06T14:59:00-04:00";
+    expect(buildAdminConflictCenter(input)).toEqual([
+      expect.objectContaining({
+        resourceId: "facility",
+        startAt: "2026-08-06T18:59:00.000Z",
+        endAt: "2026-08-06T19:00:00.000Z",
+      }),
+    ]);
   });
 
   it("treats a full-facility buyout as a conflict with every overlapping reserved room", () => {

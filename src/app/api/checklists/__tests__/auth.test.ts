@@ -9,6 +9,9 @@ import {
   saveChecklist,
 } from "@/lib/checklist-storage";
 import { synchronizeChecklistFoodAddOns } from "@/lib/gotab/sync-checklist-addons";
+import { checklistTaskRequirements } from "@/lib/checklist-readiness";
+import { findEventPlanById } from "@/lib/event-plans/sync";
+import { StaleSaveError } from "@/lib/stale-save";
 import { GET, PUT } from "../route";
 import { POST } from "../submit/route";
 
@@ -20,6 +23,7 @@ vi.mock("@/lib/checklist-storage", () => ({
 vi.mock("@/lib/gotab/sync-checklist-addons", () => ({
   synchronizeChecklistFoodAddOns: vi.fn(),
 }));
+vi.mock("@/lib/event-plans/sync", () => ({ findEventPlanById: vi.fn() }));
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -28,7 +32,14 @@ afterEach(() => {
 
 function checklistFixture() {
   const event = checklistEvents[0];
+  const verifiedEvent = { ...event, source_updated_at: "2026-10-21T14:00:00Z", drink_options: [] };
+  vi.mocked(findEventPlanById).mockResolvedValue(verifiedEvent);
   const checklist = defaultChecklistState(event.date);
+  checklist.bwa = "Staff-entered BWA";
+  for (const task of checklistTaskRequirements(verifiedEvent)) {
+    checklist.tasks[task.key] = true;
+    checklist.taskEvidence![task.key] = { employeeName: "Staff-entered actor", completedAt: "2026-10-21T17:00:00Z" };
+  }
   checklist.food.wings.quantity = "2";
   const record: ChecklistRecord = {
     ...checklist,
@@ -105,6 +116,11 @@ describe("Event Host checklist add-on routing", () => {
       queued: 1,
       exceptions: 0,
       sent: 1,
+      acceptedDeliveryCount: 1,
+      deliveryVerified: true,
+      noFoodRequired: false,
+      deliveries: [],
+      error: null,
     });
 
     const response = await PUT(
@@ -116,6 +132,7 @@ describe("Event Host checklist add-on routing", () => {
         },
         body: JSON.stringify({
           eventId: event.id,
+          expectedUpdatedAt: null,
           checklist,
           syncFoodAddOns: true,
         }),
@@ -145,6 +162,7 @@ describe("Event Host checklist add-on routing", () => {
         },
         body: JSON.stringify({
           eventId: event.id,
+          expectedUpdatedAt: null,
           checklist,
           syncFoodAddOns: false,
         }),
@@ -176,6 +194,7 @@ describe("Event Host checklist add-on routing", () => {
         },
         body: JSON.stringify({
           eventId: event.id,
+          expectedUpdatedAt: null,
           checklist,
         }),
       }),
@@ -186,5 +205,49 @@ describe("Event Host checklist add-on routing", () => {
       record: { status: "submitted" },
       kitchenSync: { status: "error" },
     });
+  });
+
+  it("returns409 and does not dispatch food when a stale save loses", async () => {
+    const { checklist, event } = checklistFixture();
+    vi.mocked(saveChecklist).mockRejectedValueOnce(new StaleSaveError());
+    const response = await PUT(new Request("https://example.test/api/checklists", { method: "PUT", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: "2026-10-21T17:00:00Z", syncFoodAddOns: true }) }));
+    expect(response.status).toBe(409);
+    expect(synchronizeChecklistFoodAddOns).not.toHaveBeenCalled();
+  });
+
+  it("enforces critical completion on the server before final submission", async () => {
+    const { checklist, event } = checklistFixture();
+    checklist.tasks["shift-lead-checkout"] = false;
+    const response = await POST(new Request("https://example.test/api/checklists/submit", { method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null }) }));
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ incompleteTasks: ["shift-lead-checkout"] });
+    expect(saveChecklist).not.toHaveBeenCalled();
+  });
+
+  it("does not call an incomplete final food delivery live", async () => {
+    const { checklist, event, record } = checklistFixture();
+    vi.mocked(saveChecklist).mockResolvedValue({ ...record, status: "submitted" });
+    vi.mocked(synchronizeChecklistFoodAddOns).mockResolvedValue({ saved: { eventId: String(event.id), food: {}, revision: 1, updatedAt: "2026-10-21T17:00:00Z" }, queued: 2, sent: 1, exceptions: 1, error: "Needs mapping review", deliveries: [], acceptedDeliveryCount: 1, deliveryVerified: false, noFoodRequired: false });
+    const response = await POST(new Request("https://example.test/api/checklists/submit", { method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null }) }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ record: { status: "submitted" }, kitchenSync: { status: "error", accepted: 1, error: "Needs mapping review" } });
+  });
+
+  it("does not infer acceptance from unchanged food with zero newly queued requests", async () => {
+    const { checklist, event, record } = checklistFixture();
+    vi.mocked(saveChecklist).mockResolvedValue({ ...record, status: "submitted" });
+    vi.mocked(synchronizeChecklistFoodAddOns).mockResolvedValue({ saved: { eventId: String(event.id), food: { wings: { quantity: 2 } }, revision: 1, updatedAt: "2026-10-21T17:00:00Z" }, queued: 0, sent: 0, exceptions: 1, error: "Prior delivery held", deliveries: [], acceptedDeliveryCount: 0, deliveryVerified: false, noFoodRequired: false });
+    const response = await POST(new Request("https://example.test/api/checklists/submit", { method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null }) }));
+    await expect(response.json()).resolves.toMatchObject({ kitchenSync: { status: "error", accepted: 0, error: "Prior delivery held" } });
+  });
+
+  it("uses a separate not-required state when no food needs a ticket", async () => {
+    const { checklist, event, record } = checklistFixture();
+    vi.mocked(saveChecklist).mockResolvedValue({ ...record, status: "submitted" });
+    vi.mocked(synchronizeChecklistFoodAddOns).mockResolvedValue({ saved: { eventId: String(event.id), food: {}, revision: 1, updatedAt: "2026-10-21T17:00:00Z" }, queued: 0, sent: 0, exceptions: 0, error: null, deliveries: [], acceptedDeliveryCount: 0, deliveryVerified: false, noFoodRequired: true });
+    const response = await POST(new Request("https://example.test/api/checklists/submit", { method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null }) }));
+    const payload = await response.json();
+    expect(payload.kitchenSync).toMatchObject({ status: "not-required", accepted: 0 });
+    expect(payload.kitchenSync.error).toBeUndefined();
   });
 });

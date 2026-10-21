@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { EventContextProvider } from "@/app/_components/EventContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +15,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Suspense fallback={<main className="page"><p>Loading Event Host workspace…</p></main>}>
+          <EventContextProvider>{children}</EventContextProvider>
+        </Suspense>
+      </body>
     </html>
   );
 }

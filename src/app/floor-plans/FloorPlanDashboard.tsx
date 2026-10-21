@@ -12,6 +12,8 @@ import {
   PortalState,
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import {
   AREAS,
   DISPLAY_AREAS,
@@ -27,7 +29,7 @@ import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
 import { floorPlanEventView, floorPlanLocalReservationOutlines } from "@/lib/floor-plans/event-view";
 import { reservedSeatingCapacity } from "@/lib/floor-plans/generator";
-import { entertainmentReservationMatchesFloorPlanEvent } from "@/lib/floor-plans/identity";
+import { entertainmentReservationMatchesFloorPlanEvent, floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
 import {
   displayEventForFloorPlanArea,
   assignLocalFloorPlanArea,
@@ -138,6 +140,8 @@ function isoFromDateTimeInput(value: string) {
   );
 }
 
+class FloorPlanSaveConflict extends Error {}
+
 async function floorPlanRequest(date: string, body?: Record<string, unknown>) {
   const response = await fetch(
     body ? "/api/floor-plans" : `/api/floor-plans?date=${encodeURIComponent(date)}`,
@@ -153,12 +157,14 @@ async function floorPlanRequest(date: string, body?: Record<string, unknown>) {
     | (FloorPlanDayPayload & { error?: string })
     | null;
   if (!response.ok || !result) {
+    if (response.status === 409) throw new FloorPlanSaveConflict(result?.error || "A newer floor plan exists. Your draft has been retained; reload and review before saving.");
     throw new Error(result?.error || "Unable to load the floor plan.");
   }
   return result;
 }
 
 export default function FloorPlanDashboard({ initialDate }: { initialDate: string }) {
+  const { ready: contextReady, preferredEventId, requestedDate, selectEvent, clearEvent } = useEventContext();
   const [date, setDate] = useState(initialDate);
   const [payload, setPayload] = useState<FloorPlanDayPayload | null>(null);
   const [activeEventId, setActiveEventId] = useState("");
@@ -172,6 +178,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   const [zoom, setZoom] = useState(1);
   const [mapFocused, setMapFocused] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [saveConflict, setSaveConflict] = useState(false);
   const [undoStack, setUndoStack] = useState<FloorPlanDocument[]>([]);
   const [redoStack, setRedoStack] = useState<FloorPlanDocument[]>([]);
   const [entStart, setEntStart] = useState("");
@@ -197,6 +204,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       setUndoStack([]);
       setRedoStack([]);
       setDirty(false);
+      setSaveConflict(false);
       setRequestState("idle");
       setMessage(
         next.persistence === "database"
@@ -212,6 +220,16 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   useEffect(() => {
     void loadDate(date);
   }, [date, loadDate]);
+
+  useEffect(() => {
+    if (contextReady && requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) setDate(requestedDate);
+  }, [contextReady, requestedDate]);
+
+  useEffect(() => {
+    if (!contextReady || !preferredEventId || !payload) return;
+    const requested = payload.plan.events.find((event) => [...floorPlanEventSourceIds(event)].some((id) => operationalKitchenEventId(id) === operationalKitchenEventId(preferredEventId)));
+    if (requested) { setActiveEventId(requested.id); setVisibleEventId(requested.id); }
+  }, [contextReady, preferredEventId, payload]);
 
   const plan = payload?.plan ?? null;
   const mapView = useMemo(
@@ -337,11 +355,14 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (dirty && !window.confirm("Discard unsaved floor-plan changes and open another date?")) {
       return;
     }
+    clearEvent();
     setDate(nextDate);
   }
 
   function selectEditingEvent(eventId: string) {
     setActiveEventId(eventId);
+    const selected = plan?.events.find((event) => event.id === eventId);
+    if (selected) selectEvent({ eventId: operationalKitchenEventId(selected.tripleseatEventId), eventName: selected.name, date, area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: selected.guestCount });
     if (visibleEventId) setVisibleEventId(eventId);
     setSelectedAreaIds([]);
     setSelectedReservationId("");
@@ -349,7 +370,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   function selectVisibleEvent(eventId: string | null) {
     setVisibleEventId(eventId);
-    if (eventId) setActiveEventId(eventId);
+    if (eventId) selectEditingEvent(eventId);
+    else clearEvent();
     setSelectedAreaIds([]);
     setSelectedReservationId("");
   }
@@ -358,6 +380,11 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     action: "refresh" | "generate" | "save" | "validate" | "approve",
   ) {
     if (!plan && action !== "refresh") return;
+    if (saveConflict) {
+      setMessage("Your draft is retained. Reload and review the newer saved version before making another save or sync.");
+      return;
+    }
+    if (dirty && action !== "save" && !window.confirm("Discard this unsaved draft before updating the saved plan?")) return;
     if (
       action === "generate" &&
       generationMode === "reset-event" &&
@@ -390,6 +417,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     try {
       const next = await floorPlanRequest(date, {
         action,
+        ...(plan ? { expectedVersion: plan.version } : {}),
         ...(action === "generate" ? { mode: generationMode } : {}),
         ...(action === "save" ? { plan } : {}),
         ...(action === "approve" ? { acknowledgeWarnings: warningCount > 0 } : {}),
@@ -417,6 +445,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
             : `Floor plan ${action === "generate" ? "generated" : `${action}d`} and saved as version ${next.plan.version}.`,
       );
     } catch (error) {
+      if (error instanceof FloorPlanSaveConflict) setSaveConflict(true);
       setRequestState("error");
       setMessage(error instanceof Error ? error.message : "Floor-plan action failed.");
     }
@@ -793,6 +822,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       sectionSubtitle="Live Tripleseat planning"
       sectionTitle="Admin Floor Plans"
     >
+      <EventSelectionBridge event={activeEvent ? { eventId: operationalKitchenEventId(activeEvent.tripleseatEventId), eventName: activeEvent.name, date, area: activeEvent.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: activeEvent.guestCount } : null} />
+      <fieldset disabled={requestState === "saving"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <section className="floor-plan-toolbar" aria-label="Floor plan controls">
         <div className="floor-plan-date-controls">
           <button onClick={() => changeDate(addCalendarDays(date, -1))} type="button" aria-label="Previous day">←</button>
@@ -809,7 +840,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
             <option value="reset-event">Reset the entire event plan</option>
           </select>
           <button disabled={!plan || requestState === "saving"} onClick={() => void runAction("generate")} type="button">Generate Floor Plan</button>
-          <button disabled={!dirty || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
+          <button disabled={!dirty || saveConflict || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
           {plan?.events.length && !dirty ? <a className="button-link" href="/floor-plans">View saved plan</a> : null}
@@ -818,6 +849,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         <div className={`floor-plan-save-state is-${requestState}`} role="status">
           <strong>{dirty ? "Unsaved" : requestState === "saving" ? "Working" : requestState === "error" ? "Needs attention" : "Saved"}</strong>
           <span>{message}</span>
+          {saveConflict ? <button type="button" onClick={() => {
+            if (window.confirm("Your unsaved draft will be discarded. Load the latest saved plan to review it?")) void loadDate(date);
+          }}>Reload latest and review</button> : null}
         </div>
       </section>
 
@@ -1014,6 +1048,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       ) : (
         <PortalState description={message} icon="!" title="Floor plan unavailable" />
       )}
+      </fieldset>
     </PortalShell>
   );
 }

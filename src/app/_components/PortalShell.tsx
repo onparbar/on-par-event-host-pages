@@ -9,6 +9,9 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { formatEventDate } from "@/lib/event-format";
+import { useEventContext } from "./EventContext";
+import { ConnectivityBanner } from "./ConnectivityBanner";
 
 const PORTAL_NAVIGATION = [
   { href: "/", label: "Home" },
@@ -45,6 +48,7 @@ function PortalNavigation({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const { eventHref } = useEventContext();
 
   return (
     <nav
@@ -57,7 +61,7 @@ function PortalNavigation({
           <Link
             aria-current={active ? "page" : undefined}
             className={active ? "is-active" : undefined}
-            href={item.href}
+            href={eventHref(item.href)}
             key={item.href}
             onClick={onNavigate}
           >
@@ -79,6 +83,8 @@ export function PortalHeader({
 }: PortalHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const pathname = usePathname();
+  const { selectedEvent, preferredEventId, ready, clearEvent } = useEventContext();
 
   useEffect(() => {
     function updateFullscreenState() {
@@ -102,6 +108,7 @@ export function PortalHeader({
   }
 
   return (
+    <>
     <header
       aria-hidden={blocked ? true : undefined}
       className="portal-header"
@@ -165,6 +172,19 @@ export function PortalHeader({
         </div>
       ) : null}
     </header>
+    {!blocked ? <ConnectivityBanner /> : null}
+    {!pathname.startsWith("/admin") && !blocked && ready && (selectedEvent || preferredEventId) ? (
+      <section aria-label="Selected event workspace" className="portal-event-context">
+        <div>
+          <span className="portal-event-context-label">Selected event</span>
+          <strong>{selectedEvent?.eventName ?? "Requested event is not available in this view"}</strong>
+          {selectedEvent ? <span>{formatEventDate(selectedEvent.date)}{selectedEvent.time ? ` · ${selectedEvent.time}` : ""} · {selectedEvent.area || "Reserved area needs review"}</span> : <span>Select the matching party before making changes. A different event has not been substituted.</span>}
+          {selectedEvent?.foodRunner || selectedEvent?.poc ? <span>Food Runner: {selectedEvent.foodRunner || "Not assigned"} · POC: {selectedEvent.poc || "Not assigned"}</span> : null}
+        </div>
+        <button className="secondary" onClick={clearEvent} type="button">Clear selection</button>
+      </section>
+    ) : null}
+    </>
   );
 }
 
