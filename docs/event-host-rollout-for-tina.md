@@ -31,8 +31,13 @@ read-only history export. It makes no database connection or repair and always
 requires review. Its report helps prepare the exact manifest; it does not
 establish schema equivalence or replace the source-only dry run.
 
-The source candidate now incorporates operations through `ef6e45f`, preserving
-the latest floor-plan, kitchen, itinerary and revision-safe staff workflow changes.
+The source candidate now incorporates operations through `1bcc612`, preserving
+the floor-plan, kitchen, itinerary and revision-safe staff workflow changes from
+`ef6e45f`, plus the October 22 platter calculations and contract-order replay guard.
+Tina acknowledged the source handoff and Waitlist diagnostic in
+[comment 6351700367](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6351700367).
+Her operations release does not resolve the source adoption manifest, source-only
+dry run or authorized Preview of this combined candidate; those remain required.
 The local inventory contains 20 migrations; export the full current remote history
 and compare all local files rather than assuming the older count is current.
 The October 22 public configuration-only release report also identifies `ef6e45f`
