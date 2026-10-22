@@ -8,7 +8,6 @@ export type PanCapacityKey =
   | "taterKegs"
   | "chickenTenders"
   | "mozzarellaSticks"
-  | "platterMozzarellaSticks"
   | "wings";
 
 export type PanCapacityRule = {
@@ -36,7 +35,7 @@ export type PlatterRule = {
   amountPerPlatter: number;
   unit: string;
   hot: boolean;
-  panCapacityKey?: PanCapacityKey;
+  pansPerPlatter?: Readonly<Record<PanSize, number | null>>;
   sauce?: {
     name: "marinara" | "ranch";
     bowlsPerPlatter: number | null;
@@ -166,7 +165,7 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
     code: "CHECKLIST_PAN_SIZE_OPTIONS",
     title: "Checklist pan-size columns",
     writtenRule:
-      "Pack hot platter items together. Use 1/2 pans when the number of distinct panned food items is even, or 1/3 pans when it is odd. A single hot platter uses three 1/3 pans.",
+      "Use 1/2 pans for an even number of distinct hot food items or 1/3 pans for an odd number. Multiply each platter by its approved item-specific pan count; fries normally use 1/2 pans.",
     referenceRule: "The checklist displays two unlabeled pan-size subcolumns and shows both 1/2 and 1/3 for several rows.",
     currentResolution:
       "Count Appetizer Bar's tater kegs, mozzarella sticks, and chicken tenders as three hot items. Two 1/2 pans or three 1/3 pans fill one chafing dish.",
@@ -260,17 +259,17 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
   "appetizer-chicken-tenders":
     "Appetizer Bar chicken tenders; pan size follows the combined hot-platter packing rule.",
   "platter-tater-kegs":
-    "Tater Keg Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
+    "Tater Keg Platters contain 64 each; use two 1/2 pans or three 1/3 pans per platter.",
   "platter-chicken-tenders":
-    "Chicken Tender Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
+    "Chicken Tender Platters contain 64 each; use two 1/2 pans or four 1/3 pans per platter.",
   "platter-mozzarella-sticks":
-    "Mozzarella Stick Platters contain 4 pounds; pan size follows the combined hot-platter packing rule.",
+    "Mozzarella Stick Platters contain 2 pounds; use one 1/2 pan or two 1/3 pans per platter.",
   "platter-wings":
-    "Wing Platters contain 64 each; pan size follows the combined hot-platter packing rule.",
+    "Bone-In Chicken Wing Platters contain 64 each; use two 1/2 pans or four 1/3 pans per platter.",
   "platter-veggie-tray":
     "Assorted fresh vegetables arranged on pretzel plates with ranch required.",
   "platter-fries":
-    "Fry Platters contain one bag of fries per ordered platter.",
+    "Fry Platters contain one 5 lb bag of fries in one 1/2 pan per ordered platter; 1/3 pans need kitchen review.",
   "sauce-marinara":
     "Marinara dipping sauce required by the selected mozzarella items or Appetizer Bar.",
   "sauce-ranch":
@@ -278,7 +277,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-10-21.1",
+  ruleVersion: "ope-kitchen-2026-10-22.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -324,10 +323,6 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
       amountPerPan: 3,
       panSize: "1/3",
     },
-    platterMozzarellaSticks: {
-      amountPerPan: 2,
-      panSize: "1/2",
-    },
     wings: {
       amountPerPan: 25,
       panSize: "1/3",
@@ -365,7 +360,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         amountPerPlatter: 64,
         unit: "each",
         hot: true,
-        panCapacityKey: "taterKegs",
+        pansPerPlatter: { "1/2": 2, "1/3": 3 },
       },
       "platter:chicken-tenders": {
         rowKey: "platter-chicken-tenders",
@@ -373,7 +368,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         amountPerPlatter: 64,
         unit: "each",
         hot: true,
-        panCapacityKey: "chickenTenders",
+        pansPerPlatter: { "1/2": 2, "1/3": 4 },
         sauce: {
           name: "ranch",
           bowlsPerPlatter: 1,
@@ -382,10 +377,10 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
       "platter:mozzarella-sticks": {
         rowKey: "platter-mozzarella-sticks",
         foodName: "Mozzarella Sticks",
-        amountPerPlatter: 4,
+        amountPerPlatter: 2,
         unit: "pounds",
         hot: true,
-        panCapacityKey: "platterMozzarellaSticks",
+        pansPerPlatter: { "1/2": 1, "1/3": 2 },
         sauce: {
           name: "marinara",
           bowlsPerPlatter: 1,
@@ -397,7 +392,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         amountPerPlatter: 64,
         unit: "each",
         hot: true,
-        panCapacityKey: "wings",
+        pansPerPlatter: { "1/2": 2, "1/3": 4 },
         sauce: {
           name: "ranch",
           bowlsPerPlatter: 1,
@@ -420,6 +415,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         amountPerPlatter: 1,
         unit: "bags",
         hot: true,
+        pansPerPlatter: { "1/2": 1, "1/3": null },
       },
     },
   },

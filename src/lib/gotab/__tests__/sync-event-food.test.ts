@@ -153,6 +153,7 @@ describe("Event Food synchronization", () => {
 
   it("stores unmapped rows as exceptions and does not enqueue them", async () => {
     const storage = {
+      listContractFoodRequests: vi.fn().mockResolvedValue([]),
       listMappings: vi.fn().mockResolvedValue([]),
       saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
       enqueueRequest: vi.fn(),
@@ -170,6 +171,7 @@ describe("Event Food synchronization", () => {
   it.each(["Carlos", null])("keeps the Food Runner (%s) separate from the POC in the preview", async (foodRunner) => {
     const assignedChecklist = { ...checklist, foodRunners: foodRunner ? [foodRunner] : [], pocs: ["Ryan", "Diana"] };
     const storage = {
+      listContractFoodRequests: vi.fn().mockResolvedValue([]),
       listMappings: vi.fn().mockResolvedValue([{
         id: "mapping-1",
         canonical_product_key: "platter-veggie-tray",

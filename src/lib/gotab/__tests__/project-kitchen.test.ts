@@ -286,4 +286,37 @@ describe("Tripleseat kitchen projection", () => {
       selectedPanSize: expectedSelectedPanSize,
     }));
   });
+
+  it("prepares one tender add-on in four third pans but sends only one platter to the KDS", () => {
+    const liveFoodAddOns = translateEventHostFoodAddOns({
+      "chicken-tenders": { quantity: 1 },
+    }, "2026-10-22T16:00:00.000Z");
+    const checklist = generateKitchenChecklist(
+      { ...sourceEvent, selections: [] }, undefined, liveFoodAddOns,
+    );
+    expect(checklist.liveFoodAddOns[0]).toMatchObject({
+      itemKey: "addon:chicken-tenders",
+      quantity: 64,
+      numberOfPans: 4,
+      panSize: "1/3",
+    });
+    const result = projectKitchenChecklist({ ...checklist, sections: [] }, [{
+      id: "mapping-tender-add-on",
+      canonicalProductKey: "addon:chicken-tenders",
+      displayName: "Chicken Tender Platter",
+      aliases: [],
+      panSize: "THIRD_PAN",
+      preparationStation: "FRYER",
+      gotabProductUuid: "prd_tenders",
+      verifiedAt: "2026-10-22T12:00:00.000Z",
+    }], { sourceVersion: 4, sourceType: "EVENT_HOST_ADDON" });
+    expect(result.exceptions).toEqual([]);
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({
+      sourceRecordId: "addon:chicken-tenders",
+      panSize: "THIRD_PAN",
+      quantity: 1,
+      selectedPanSize: null,
+    });
+  });
 });

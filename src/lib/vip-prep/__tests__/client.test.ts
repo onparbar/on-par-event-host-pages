@@ -87,9 +87,9 @@ describe("VIP Prep API client", () => {
     const rows = new Map(checklist.sections.flatMap((section) => section.rows)
       .map((row) => [row.key, row]));
 
-    expect(rows.get("platter-chicken-tenders")).toMatchObject({ quantity: 64, panSize: "1/3" });
-    expect(rows.get("platter-mozzarella-sticks")).toMatchObject({ quantity: 4, panSize: "1/3" });
-    expect(rows.get("platter-tater-kegs")).toMatchObject({ quantity: 64, panSize: "1/3" });
+    expect(rows.get("platter-chicken-tenders")).toMatchObject({ quantity: 64, numberOfPans: 4, panSize: "1/3" });
+    expect(rows.get("platter-mozzarella-sticks")).toMatchObject({ quantity: 2, numberOfPans: 2, panSize: "1/3" });
+    expect(rows.get("platter-tater-kegs")).toMatchObject({ quantity: 64, numberOfPans: 3, panSize: "1/3" });
     expect(checklist.warnings.map((warning) => warning.code)).not.toContain("UNKNOWN_FOOD_ITEM");
   });
 
