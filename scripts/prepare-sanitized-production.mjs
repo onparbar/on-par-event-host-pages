@@ -42,6 +42,7 @@ const allowlist = [
   "src/lib/admin-types.ts",
   "src/lib/checklist-events.ts",
   "src/lib/checklist-model.ts",
+  "src/lib/checklist-readiness.ts",
   "src/lib/checklist-storage.ts",
   "src/lib/confirmed-contract-events.ts",
   "src/lib/entertainment",
@@ -57,6 +58,8 @@ const allowlist = [
   "src/lib/vip-checkin",
   "src/lib/legacy-proxy.ts",
   "src/lib/operational-access.ts",
+  "src/lib/operations",
+  "src/lib/stale-save.ts",
   "src/proxy.ts",
 ];
 

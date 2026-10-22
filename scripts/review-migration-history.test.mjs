@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -141,7 +141,14 @@ describe('offline migration history review', () => {
     await writeFile(history, input);
     const cli = fileURLToPath(new URL('./review-migration-history.mjs', import.meta.url));
     const report = JSON.parse(execFileSync(process.execPath, [cli, history], { encoding: 'utf8' }));
-    expect(report.localFileCount).toBe(18);
+    const migrations = (await readdir(new URL('../supabase/migrations/', import.meta.url)))
+      .filter((name) => name.endsWith('.sql')).sort();
+    expect(report.localFileCount).toBe(migrations.length);
+    expect(report.comparisons.map((entry) => entry.filename).sort()).toEqual(migrations);
+    expect(migrations).toEqual(expect.arrayContaining([
+      '20261021183041_staff_workflow_revision_safety.sql',
+      '20261021183254_staff_workflow_write_cutover.sql',
+    ]));
     expect(report.mayApply).toBe(false);
     expect(await readFile(history, 'utf8')).toBe(input);
   });

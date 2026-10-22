@@ -1308,7 +1308,6 @@ export function generateKitchenChecklist(
         (bar) => bar !== "appetizer",
       );
       barChafingDishes = tablesPerBar * separatelyCountedBars.length;
-      activateConflict("MIRRORED_TABLE_TRIGGER", false);
     }
   }
 

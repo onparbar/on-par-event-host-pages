@@ -3,6 +3,7 @@ import {
   syncEntertainmentDay,
   updateEntertainmentReservation,
 } from "@/lib/entertainment/sync";
+import { validEntertainmentInterval } from "@/lib/entertainment/domain";
 import {
   deterministicEventColor,
   isHexColor,
@@ -58,7 +59,8 @@ import {
   reservationForCurrentFloorPlanEvent,
 } from "./generator";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
-import { getFloorPlanStorage, type FloorPlanStorage } from "./storage";
+import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
+import { StaleSaveError } from "@/lib/stale-save";
 import {
   FLOOR_PLAN_RULE_VERSION,
   type FloorPlanDayPayload,
@@ -316,7 +318,7 @@ function createPlan(date: string, events: FloorPlanEvent[]) {
     id,
     eventDate: date,
     status: "Draft" as const,
-    version: 1,
+    version: 0,
     ruleVersion: FLOOR_PLAN_RULE_VERSION,
     lastTripleseatSyncAt: null,
     createdAt: now,
@@ -516,7 +518,6 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   }) || saved.events.some((event) => !currentIds.has(event.id));
   return {
     ...saved,
-    ruleVersion: FLOOR_PLAN_RULE_VERSION,
     events: currentEvents,
     reservations: retainedReservations,
     status: floorPlanStatusAfterSourceChange(saved.status, changed),
@@ -532,6 +533,11 @@ export async function getFloorPlanDay(
   }
   const plan = await reconciledPlan(date, storage);
   const warnings: string[] = [];
+  if (plan.ruleVersion !== FLOOR_PLAN_RULE_VERSION) {
+    warnings.push(
+      "This saved floor plan uses an earlier seating rule version. Select ‘Replace generated only’, then ‘Generate Floor Plan’ to refresh seating highlights; manual and locked assignments are preserved.",
+    );
+  }
   let entertainment: {
     reservations: FloorPlanDayPayload["entertainmentReservations"];
     conflicts: FloorPlanDayPayload["entertainmentConflicts"];
@@ -633,7 +639,7 @@ async function generateFloorPlanFromStoredSources(
   }
   let alignmentWarning: string | null = null;
   try {
-    await alignGeneratedEntertainment(generated, sharedReservations);
+    alignmentWarning = await alignGeneratedEntertainment(generated, sharedReservations);
   } catch (error) {
     alignmentWarning = error instanceof Error
       ? error.message
@@ -655,7 +661,12 @@ export async function generateFloorPlan(
   date: string,
   mode: FloorPlanGenerationMode,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) {
+    storage = floorPlanStorageAtVersion(storage, expectedVersion);
+    await storage.get(date);
+  }
   await syncEventPlanWindow(
     { startDate: date, endDate: date },
     { legacyPlans: [] },
@@ -829,12 +840,14 @@ function supportsProximity(category: EntertainmentReservation["resourceCategory"
   return category !== "private-rooms" && category !== "mini-golf";
 }
 
-async function alignGeneratedEntertainment(
+export async function alignGeneratedEntertainment(
   plan: FloorPlanDocument,
   reservations: readonly EntertainmentReservation[],
 ) {
+  const currentReservations = new Map(reservations.map((item) => [item.id, item]));
+  const warnings: string[] = [];
   for (const event of plan.events) {
-    const eventReservations = reservations.filter(
+    const eventReservations = [...currentReservations.values()].filter(
       (reservation) => reservation.active && sharedReservationMatchesEvent(reservation, event),
     );
     const groups = new Map<string, EntertainmentReservation[]>();
@@ -847,43 +860,71 @@ async function alignGeneratedEntertainment(
     for (const group of groups.values()) {
       const category = group[0].resourceCategory;
       if (!supportsProximity(category)) continue;
-      const seatingAreaId = event.contractedAreaIds.find(
-        (areaId) => getFloorPlanArea(areaId)?.isReservable,
-      ) ?? "main-dining";
+      if (!validEntertainmentInterval(group[0].startAt, group[0].endAt)) {
+        warnings.push(`${event.name}: entertainment times are missing or invalid; existing assignments were kept for review.`);
+        continue;
+      }
+      const seatingAreaIds = event.contractedAreaIds.filter((areaId) => {
+        const area = getFloorPlanArea(areaId);
+        return areaId !== "facility" && area?.isReservable;
+      });
       const automatic = group.filter(
         (reservation) => reservation.autoAssigned && !reservation.manualOverride,
       );
       const automaticIds = new Set(automatic.map((reservation) => reservation.id));
       const unavailable = new Set(
-        reservations.flatMap((reservation) =>
+        [...currentReservations.values()].flatMap((reservation) =>
           reservation.active &&
           !automaticIds.has(reservation.id) &&
-          timeRangesOverlap(
+          (!validEntertainmentInterval(reservation.startAt, reservation.endAt) || timeRangesOverlap(
             group[0].startAt,
             group[0].endAt,
             reservation.startAt,
             reservation.endAt,
-          )
+          ))
             ? [reservation.resourceId]
             : [],
         ),
       );
       const selected = selectEntertainmentResources(
-        seatingAreaId,
+        seatingAreaIds,
         category,
         automatic.length,
         unavailable,
       );
-
-      for (const [index, reservation] of automatic.entries()) {
-        const resourceId = selected[index] ?? reservation.resourceId;
+      const canPlaceAutomatic = seatingAreaIds.length > 0 && selected.length === automatic.length;
+      if (automatic.length && !canPlaceAutomatic) {
+        warnings.push(`${event.name}: ${seatingAreaIds.length ? "not enough available entertainment inventory" : "no verified reserved seating area"}; existing assignments were kept.`);
+      }
+      // Retain reservations already in the chosen block. Only move the rest to
+      // unused destinations, so a shift (4/5 -> 5/6) never collides mid-update.
+      const remaining = new Set(selected);
+      const targets = new Map<string, string>();
+      for (const reservation of automatic) {
+        if (remaining.delete(reservation.resourceId)) {
+          targets.set(reservation.id, reservation.resourceId);
+        }
+      }
+      for (const reservation of automatic) {
+        if (!targets.has(reservation.id)) {
+          const resourceId = remaining.values().next().value;
+          if (resourceId) {
+            remaining.delete(resourceId);
+            targets.set(reservation.id, resourceId);
+          }
+        }
+      }
+      for (const reservation of automatic) {
+        const resourceId = canPlaceAutomatic
+          ? targets.get(reservation.id) ?? reservation.resourceId
+          : reservation.resourceId;
         if (
           resourceId === reservation.resourceId &&
           reservation.eventColor.toUpperCase() === event.color.toUpperCase()
         ) {
           continue;
         }
-        await updateEntertainmentReservation(reservation.id, {
+        const updated = await updateEntertainmentReservation(reservation.id, {
           operatingDate: reservation.operatingDate,
           eventId: event.tripleseatEventId,
           eventName: event.name,
@@ -895,12 +936,13 @@ async function alignGeneratedEntertainment(
           reason: "Placed from Event Host Floor Plans using configured seating proximity",
           needsReview: reservation.needsReview,
           forceConflict: false,
-        });
+        }, { preserveAssignmentMode: true });
+        currentReservations.set(updated.id, updated);
       }
 
       for (const reservation of group.filter((item) => !automaticIds.has(item.id))) {
         if (reservation.eventColor.toUpperCase() === event.color.toUpperCase()) continue;
-        await updateEntertainmentReservation(reservation.id, {
+        const updated = await updateEntertainmentReservation(reservation.id, {
           operatingDate: reservation.operatingDate,
           eventId: event.tripleseatEventId,
           eventName: event.name,
@@ -912,10 +954,12 @@ async function alignGeneratedEntertainment(
           reason: "Synchronized event color from Event Host Floor Plans",
           needsReview: reservation.needsReview,
           forceConflict: false,
-        });
+        }, { preserveAssignmentMode: true });
+        currentReservations.set(updated.id, updated);
       }
     }
   }
+  return warnings.length ? warnings.join(" ") : null;
 }
 
 function sanitizeReservations(
@@ -942,6 +986,12 @@ function sanitizeReservations(
       !["seating", "food-table", "room", "custom"].includes(reservationType)
     ) {
       throw new Error("A floor-plan reservation is invalid.");
+    }
+    if (
+      (reservationType === "food-table" && !area.canBeFoodTable) ||
+      (reservationType === "seating" && area.capacity <= 0)
+    ) {
+      throw new Error("Choose a seating table or an authorized food table for this assignment.");
     }
     seen.add(id);
     const event = plan.events.find((candidate) => candidate.id === floorPlanEventId)!;
@@ -980,6 +1030,7 @@ export async function saveFloorPlanEdits(
     storage.get(date),
     reconciledPlan(date, storage),
   ]);
+  if (body.version !== (saved?.version ?? 0)) throw new StaleSaveError();
   const requestedEvents = Array.isArray(body.events) ? body.events : [];
   const requestedReservations = body.reservations;
   const requestedReservationRows = Array.isArray(requestedReservations)
@@ -1030,6 +1081,7 @@ export async function saveFloorPlanEdits(
   }
   const next = {
     ...plan,
+    version: Number(body.version),
     events,
     reservations: sanitizeReservations(plan, requestedReservations),
     status:
@@ -1067,7 +1119,7 @@ export async function saveFloorPlanEdits(
           reason: "Synchronized event color from Event Host Floor Plans",
           needsReview: reservation.needsReview,
           forceConflict: true,
-        });
+        }, { preserveAssignmentMode: true });
       } catch {
         entertainmentWarnings.push(
           `The floor plan was saved, but the ${reservation.resourceName} entertainment overlay could not be updated.`,
@@ -1084,7 +1136,9 @@ export async function saveFloorPlanEdits(
 export async function validateAndSaveFloorPlan(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const payload = await getFloorPlanDay(date, storage);
   const status: FloorPlanStatus =
     payload.floorPlanConflicts.length || payload.entertainmentConflicts.length
@@ -1100,7 +1154,9 @@ export async function approveFloorPlan(
   date: string,
   warningsAcknowledged = false,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const payload = await getFloorPlanDay(date, storage);
   if (hasBlockingValidationFailures(payload.validation)) {
     throw new Error("Resolve every blocking validation failure before approval.");
@@ -1129,7 +1185,9 @@ export async function approveFloorPlan(
 export async function refreshFloorPlanSources(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  expectedVersion?: number,
 ) {
+  if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const savedBeforeRefresh = await storage.get(date);
   await syncEventPlanWindow(
     { startDate: date, endDate: date },
@@ -1158,7 +1216,6 @@ export async function refreshFloorPlanSources(
   await storage.save(
     {
       ...plan,
-      ruleVersion: FLOOR_PLAN_RULE_VERSION,
       lastTripleseatSyncAt: new Date().toISOString(),
     },
     "Synchronized live Tripleseat floor-plan fields.",

@@ -5,9 +5,13 @@ import type {
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
 import type { EventPlan } from "@/lib/event-plans/types";
+import type { FloorPlanDocument } from "@/lib/floor-plans/types";
 import {
   applyEntertainmentDayToItinerary,
   itineraryEntertainmentFromReservations,
+  itineraryIdentityScope,
+  itineraryReservationMatchesPlan,
+  itinerarySnapshotMatchesPlan,
 } from "../entertainment";
 
 const plan: EventPlan = {
@@ -183,7 +187,7 @@ describe("itinerary entertainment projection", () => {
     expect(applyEntertainmentDayToItinerary(plan, { ...day([]), events: [] })).toBe(plan);
   });
 
-  it("reconnects today's overlapping OEM Sales reservations saved under an older VIP ID", () => {
+  it("reconnects an older VIP ID only through an explicitly saved floor-plan source link", () => {
     const oemPlan: EventPlan = {
       ...plan,
       id: 62223662,
@@ -202,14 +206,18 @@ describe("itinerary entertainment projection", () => {
       endAt: "2026-09-16T00:30:00.000Z",
     });
 
+    const savedLink = {
+      eventDate: oemPlan.date,
+      events: [{ tripleseatEventId: String(oemPlan.id), source: { sourceEventIds: ["vip-older-local-id"] } }],
+    } as FloorPlanDocument;
+    const schedule = { ...day([staleVipReservation]), date: "2026-09-15", events: [] };
+    expect(applyEntertainmentDayToItinerary(oemPlan, schedule)).toBe(oemPlan);
+    expect(applyEntertainmentDayToItinerary(oemPlan, schedule, itineraryIdentityScope(oemPlan, savedLink, false))).toBe(oemPlan);
     expect(
       applyEntertainmentDayToItinerary(
         oemPlan,
-        {
-          ...day([staleVipReservation]),
-          date: "2026-09-15",
-          events: [],
-        },
+        schedule,
+        itineraryIdentityScope(oemPlan, savedLink, true),
       ).entertainment,
     ).toEqual([
       {
@@ -219,6 +227,30 @@ describe("itinerary entertainment projection", () => {
         duration: "2 hours",
       },
     ]);
+  });
+
+  it("never borrows entertainment from a distinct overlapping same-name event", () => {
+    const otherReservation = reservation({ localEventId: "88", tripleseatEventId: "88" });
+    const otherSnapshot = { ...eventSnapshot(), eventId: "88", localEventId: "88", tripleseatEventId: "88", eventStartAt: otherReservation.startAt, eventEndAt: otherReservation.endAt };
+    const scope = itineraryIdentityScope(plan, null, false, [plan, { ...plan, id: 88 }]);
+    expect(itineraryReservationMatchesPlan(otherReservation, plan, scope)).toBe(false);
+    expect(itinerarySnapshotMatchesPlan(otherSnapshot, plan, scope)).toBe(false);
+    expect(applyEntertainmentDayToItinerary(plan, { ...day([otherReservation]), events: [otherSnapshot] }, scope)).toBe(plan);
+  });
+
+  it("permits legacy no-ID exact names only with a unique overlapping source event", () => {
+    const legacy = reservation({ localEventId: null, tripleseatEventId: null });
+    expect(itineraryReservationMatchesPlan(legacy, plan)).toBe(false);
+    expect(itineraryReservationMatchesPlan(legacy, plan, itineraryIdentityScope(plan, null, false, [plan]))).toBe(true);
+    expect(itineraryReservationMatchesPlan(legacy, plan, itineraryIdentityScope(plan, null, false, [plan, { ...plan, id: 88 }]))).toBe(false);
+    expect(itineraryReservationMatchesPlan({ ...legacy, eventName: `${plan.name} VIP` }, plan, itineraryIdentityScope(plan, null, false, [plan]))).toBe(false);
+    expect(itineraryReservationMatchesPlan({ ...legacy, startAt: "2026-08-08T02:00:00.000Z", endAt: "2026-08-08T03:00:00.000Z" }, plan, itineraryIdentityScope(plan, null, false, [plan]))).toBe(false);
+  });
+
+  it("rejects ambiguous saved source links rather than picking a floor-plan event", () => {
+    const linkedEvent = { tripleseatEventId: String(plan.id), source: { sourceEventIds: ["older-source"] } };
+    const savedLink = { eventDate: plan.date, events: [linkedEvent, linkedEvent] } as FloorPlanDocument;
+    expect(itineraryIdentityScope(plan, savedLink, true).sourceEventIds).toEqual([]);
   });
 
   it("does not attach a same-name stale reservation outside the itinerary time", () => {

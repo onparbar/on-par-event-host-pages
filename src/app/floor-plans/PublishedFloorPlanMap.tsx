@@ -1,8 +1,13 @@
+"use client";
+
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { findOperationalFloorPlanEvent, operationalFloorPlanEventId } from "@/lib/operations/floor-plan-context";
 import {
-  AREAS,
+  DISPLAY_AREAS,
   getFloorPlanArea,
 } from "@/lib/floor-plans/configuration/areas";
 import { readableOverlayText } from "@/lib/floor-plans/configuration/colors";
+import { floorPlanEventView } from "@/lib/floor-plans/event-view";
 import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
@@ -11,16 +16,12 @@ import {
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
+  primaryLocalFloorPlanReservation,
   visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
 import type { FloorPlanDayPayload } from "@/lib/floor-plans/types";
-import { formatClock, formatFullDate } from "@/lib/entertainment/time";
-
-function eventTime(startAt: string | null, endAt: string | null) {
-  return startAt && endAt
-    ? `${formatClock(startAt)} – ${formatClock(endAt)}`
-    : "Time needs review";
-}
+import FloorPlanEventLegend from "./FloorPlanEventLegend";
+import FloorPlanLocalOutlines from "./FloorPlanLocalOutlines";
 
 export default function PublishedFloorPlanMap({
   payload,
@@ -29,21 +30,58 @@ export default function PublishedFloorPlanMap({
   payload: FloorPlanDayPayload;
   zoom?: number;
 }) {
-  const { plan } = payload;
+  const context = useEventContext();
+  const selected = findOperationalFloorPlanEvent(payload.plan.events, context.preferredEventId);
+  const contextEvent = selected ? {
+    eventId: operationalFloorPlanEventId(selected), eventName: selected.name, date: payload.plan.eventDate,
+    area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: selected.guestCount,
+  } : null;
+  if (context.preferredEventId && !selected) return <p className="floor-plan-warning-copy" role="alert">The selected event cannot be uniquely matched to this saved floor plan. No other party was substituted. <button onClick={context.clearEvent} type="button">Show all events</button></p>;
+  return (
+    <>
+    <EventSelectionBridge event={contextEvent} />
+    <PublishedFloorPlanMapView
+      onSelectEvent={(eventId) => {
+        const event = payload.plan.events.find((item) => item.id === eventId);
+        if (!event) { context.clearEvent(); return; }
+        context.selectEvent({ eventId: operationalFloorPlanEventId(event), eventName: event.name, date: payload.plan.eventDate,
+          area: event.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: event.guestCount });
+      }}
+      payload={payload}
+      selectedEventId={selected?.id ?? null}
+      zoom={zoom}
+    />
+    </>
+  );
+}
+
+export function PublishedFloorPlanMapView({
+  payload,
+  zoom = 100,
+  selectedEventId,
+  onSelectEvent,
+}: {
+  payload: FloorPlanDayPayload;
+  zoom?: number;
+  selectedEventId: string | null;
+  onSelectEvent: (eventId: string | null) => void;
+}) {
+  const view = floorPlanEventView(payload.plan, payload.entertainmentReservations, selectedEventId);
+  const { plan, entertainmentReservations } = view;
   const visibleEntertainment = visibleEntertainmentReservations(
     plan,
-    payload.entertainmentReservations,
+    entertainmentReservations,
   );
   const multipleReservationOutlines = entertainmentMultipleReservationOutlines(
     plan,
-    payload.entertainmentReservations,
+    entertainmentReservations,
   );
   const eventFillColors = new Map(
     plan.events.map((event) => [
       event.id,
       floorPlanEventFillColor(
         plan,
-        payload.entertainmentReservations,
+        entertainmentReservations,
         event,
       ),
     ]),
@@ -51,6 +89,11 @@ export default function PublishedFloorPlanMap({
 
   return (
     <div className="published-floor-plan-map">
+      {view.selectedEventId && (payload.floorPlanConflicts.length || payload.entertainmentConflicts.length) ? (
+        <p className="floor-plan-warning-copy" role="status">
+          Full-day conflicts: {payload.floorPlanConflicts.length + payload.entertainmentConflicts.length}. Showing one event does not remove conflicts with other parties.
+        </p>
+      ) : null}
       <div
         className="floor-plan-map-canvas"
         style={{
@@ -78,16 +121,13 @@ export default function PublishedFloorPlanMap({
               } as React.CSSProperties}
             />
           ))}
-        <div className="floor-plan-map-date" aria-hidden="true">
-          <strong>{formatFullDate(plan.eventDate)}</strong>
-          {plan.events.map((event) => (
-            <span key={event.id} style={{ color: event.color }}>
-              <b>{event.name} ({event.guestCount})</b>
-              <small>{eventTime(event.startAt, event.endAt)}</small>
-            </span>
-          ))}
-        </div>
+        <FloorPlanEventLegend
+          onSelectEvent={onSelectEvent}
+          plan={payload.plan}
+          selectedEventId={view.selectedEventId}
+        />
         <div className="floor-plan-area-layer published-floor-plan-area-layer">
+          <FloorPlanLocalOutlines plan={plan} entertainmentReservations={entertainmentReservations} />
           {multipleReservationOutlines.map((outline) => (
             <span
               aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}${outline.timeLabel ? `, ${outline.timeLabel}` : ""}`}
@@ -110,12 +150,8 @@ export default function PublishedFloorPlanMap({
               ) : null}
             </span>
           ))}
-          {AREAS.map((area) => {
-            const local = plan.reservations.find(
-              (reservation) =>
-                reservation.areaId === area.id &&
-                reservation.reservationType !== "custom",
-            ) ?? null;
+          {DISPLAY_AREAS.map((area) => {
+            const local = primaryLocalFloorPlanReservation(plan, area.id);
             const shared = area.entertainmentResourceId
               ? visibleEntertainment.find(
                   (reservation) =>

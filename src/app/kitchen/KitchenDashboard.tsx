@@ -1,6 +1,12 @@
 "use client";
 
 import Image from "next/image";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
+import { kitchenProgress } from "@/lib/kitchen/production";
+import { FoodDeliveryPanel, KitchenExpoPanel, KitchenProductionPanel } from "./KitchenOperationsPanel";
+import type { EventFoodDelivery } from "@/lib/gotab/delivery";
+import { KitchenSheetViewport } from "./KitchenSheetViewport";
 import {
   useCallback,
   useEffect,
@@ -57,6 +63,8 @@ type KitchenDayResponse = {
   syncError: string | null;
   warnings: string[];
   missingEnvironmentVariables: string[];
+  foodDelivery?: EventFoodDelivery[];
+  foodDeliveryError?: string | null;
 };
 
 export function printableEventChecklists(events: readonly KitchenChecklist[]) {
@@ -65,7 +73,7 @@ export function printableEventChecklists(events: readonly KitchenChecklist[]) {
 
 type LoadState = "loading" | "ready" | "error";
 type SyncState = "idle" | "syncing" | "error";
-type BwaSaveState = "idle" | "saving" | "saved" | "error";
+type BwaSaveState = "idle" | "saving" | "saved" | "error" | "conflict";
 type StaffAssignmentDraft = {
   setup: string[];
   foodRunners: string[];
@@ -357,7 +365,9 @@ function sourceModeLabel(mode: string) {
 }
 
 export default function KitchenDashboard() {
+  const eventContext = useEventContext();
   const [selectedDate, setSelectedDate] = useState(easternToday);
+  const [operationsView, setOperationsView] = useState<"events" | "production" | "expo">("events");
   const [day, setDay] = useState<KitchenDayResponse | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [syncState, setSyncState] = useState<SyncState>("idle");
@@ -365,10 +375,16 @@ export default function KitchenDashboard() {
   const [bookingSyncMessage, setBookingSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | number | null>(null);
+  const [expandedEventIds, setExpandedEventIds] = useState<string[]>([]);
   const [pendingPrintId, setPendingPrintId] = useState<string | number | null>(null);
   const [staffDrafts, setStaffDrafts] = useState<
     Record<string, StaffAssignmentDraft>
   >({});
+  const staffDraftsRef = useRef<Record<string, StaffAssignmentDraft>>({});
+  const dirtyStaffRef = useRef(new Set<string>());
+  const savingStaffRef = useRef(new Set<string>());
+  const staffRevisionRef = useRef<Record<string, string | null>>({});
+  const [staffConflicts, setStaffConflicts] = useState<string[]>([]);
   const [bwaSaveStates, setBwaSaveStates] = useState<Record<string, BwaSaveState>>({});
   const [readinessPending, setReadinessPending] = useState<Set<string>>(
     () => new Set(),
@@ -400,21 +416,36 @@ export default function KitchenDashboard() {
   const lastAlertCheckAtRef = useRef<string | null>(null);
   const selectedDateRef = useRef(selectedDate);
   const dayLoadGenerationRef = useRef(0);
+  const ignoredRequestedDateRef = useRef<string | null>(null);
   selectedDateRef.current = selectedDate;
 
-  const selectKitchenDate = useCallback((nextDate: string) => {
+  const selectKitchenDate = useCallback((nextDate: string, preserveContext = false) => {
+    if (!preserveContext) {
+      ignoredRequestedDateRef.current = eventContext.requestedDate ?? eventContext.selectedEvent?.date ?? null;
+      eventContext.clearEvent();
+    }
     if (!nextDate || nextDate === selectedDateRef.current) {
       return;
     }
     selectedDateRef.current = nextDate;
     dayLoadGenerationRef.current += 1;
     setAddOnAlertQueue([]);
+    setExpandedEventIds([]);
     setSelectedDate(nextDate);
     setSyncState("idle");
     setBookingSyncState("idle");
     setBookingSyncMessage("");
     setError("");
-  }, []);
+  }, [eventContext.clearEvent, eventContext.requestedDate, eventContext.selectedEvent?.date]);
+
+  useEffect(() => {
+    const preferredDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
+    if (!preferredDate) { ignoredRequestedDateRef.current = null; return; }
+    if (preferredDate === ignoredRequestedDateRef.current) return;
+    if (eventContext.ready && preferredDate && /^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) {
+      selectKitchenDate(preferredDate, true);
+    }
+  }, [eventContext.ready, eventContext.requestedDate, eventContext.selectedEvent?.date, selectKitchenDate]);
 
   const loadDay = useCallback(async (
     date: string,
@@ -478,13 +509,18 @@ export default function KitchenDashboard() {
       setDay(visiblePayload);
       setLiveRefreshHealthy(true);
       setLastLiveRefreshAt(new Date().toISOString());
-      setStaffDrafts((current) =>
-        Object.fromEntries(
+      setStaffDrafts((current) => {
+        const retained = Object.entries(current).filter(([eventId]) =>
+          dirtyStaffRef.current.has(eventId) || savingStaffRef.current.has(eventId),
+        );
+        const next = { ...Object.fromEntries(retained), ...Object.fromEntries(
           visiblePayload.events.map((checklist) => {
             const eventKey = String(checklist.event.eventId);
+            const keepDraft = dirtyStaffRef.current.has(eventKey) || savingStaffRef.current.has(eventKey);
+            if (!keepDraft) staffRevisionRef.current[eventKey] = checklist.assignmentUpdatedAt ?? null;
             return [
               eventKey,
-              background && Object.hasOwn(current, eventKey)
+              keepDraft && Object.hasOwn(current, eventKey)
                 ? current[eventKey]
                   : {
                     setup: checklist.setup ?? [],
@@ -499,8 +535,10 @@ export default function KitchenDashboard() {
                   },
             ];
           }),
-        ),
-      );
+        ) };
+        staffDraftsRef.current = next;
+        return next;
+      });
       if (!background) {
         setBwaSaveStates({});
       }
@@ -596,6 +634,30 @@ export default function KitchenDashboard() {
 
   const selectedChecklist =
     sortedEvents.find((checklist) => sameEventId(selectedEventId, checklist.event.eventId)) ?? null;
+  const focusedEvent = eventContext.preferredEventId
+    ? sortedEvents.find((event) => operationalKitchenEventId(event.event.eventId) === eventContext.preferredEventId) ?? null
+    : null;
+  const visibleKitchenEvents = operationsView === "events" || !eventContext.preferredEventId
+    ? sortedEvents : focusedEvent ? [focusedEvent] : [];
+  const openedContextEventRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!eventContext.preferredEventId) {
+      openedContextEventRef.current = null;
+    } else if (focusedEvent && openedContextEventRef.current !== eventContext.preferredEventId) {
+      openedContextEventRef.current = eventContext.preferredEventId;
+      const eventId = String(focusedEvent.event.eventId);
+      setExpandedEventIds((current) => current.includes(eventId) ? current : [...current, eventId]);
+    }
+  }, [eventContext.preferredEventId, focusedEvent]);
+  const retainedStaffDraftCount = Object.keys(staffDrafts).filter((eventId) =>
+    dirtyStaffRef.current.has(eventId) && !sortedEvents.some((event) => String(event.event.eventId) === eventId),
+  ).length;
+  const eventSelection = (checklist: KitchenChecklist) => ({
+    eventId: operationalKitchenEventId(checklist.event.eventId), eventName: checklist.event.name,
+    date: checklist.event.localDate, area: checklist.event.room ?? "", guestCount: checklist.event.guestCount ?? undefined,
+    foodRunner: checklist.foodRunners?.join(", ") || checklist.foodRunnerOrBwa,
+    poc: checklist.pocs?.join(", "),
+  });
   const warningCount = sortedEvents.reduce((sum, checklist) => sum + checklist.warnings.length, 0);
   const reviewCount = sortedEvents.filter((checklist) => checklist.needsReview).length;
   const timedAlerts = useMemo(
@@ -903,6 +965,7 @@ export default function KitchenDashboard() {
 
   async function saveStaffAssignments(checklist: KitchenChecklist) {
     const eventKey = String(checklist.event.eventId);
+    if (savingStaffRef.current.has(eventKey) || staffConflicts.includes(eventKey)) return;
     const assignments = staffDrafts[eventKey] ?? {
       setup: [],
       foodRunners: [],
@@ -910,6 +973,9 @@ export default function KitchenDashboard() {
       preppedBy: "",
       verifiedBy: "",
     };
+    const expectedUpdatedAt = Object.hasOwn(staffRevisionRef.current, eventKey) ? staffRevisionRef.current[eventKey] : checklist.assignmentUpdatedAt ?? null;
+    const submitted = JSON.stringify(assignments);
+    savingStaffRef.current.add(eventKey);
     setBwaSaveStates((current) => ({ ...current, [eventKey]: "saving" }));
 
     try {
@@ -918,12 +984,14 @@ export default function KitchenDashboard() {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify(assignments),
+        body: JSON.stringify({ ...assignments, expectedUpdatedAt }),
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as { error?: string; updatedAt?: string | null } | null;
       if (!response.ok) {
+        if (response.status === 409) setStaffConflicts((current) => [...new Set([...current, eventKey])]);
         throw new Error(payload?.error || "Unable to save staff assignments.");
       }
+      staffRevisionRef.current[eventKey] = payload?.updatedAt ?? null;
       setDay((current) =>
         current
           ? {
@@ -938,16 +1006,37 @@ export default function KitchenDashboard() {
                       pocs: assignments.pocs,
                       preppedBy: assignments.preppedBy,
                       verifiedBy: assignments.verifiedBy,
+                      assignmentUpdatedAt: payload?.updatedAt ?? null,
                     }
                   : eventChecklist,
               ),
             }
           : current,
       );
-      setBwaSaveStates((current) => ({ ...current, [eventKey]: "saved" }));
-    } catch {
+      const unchanged = JSON.stringify(staffDraftsRef.current[eventKey]) === submitted;
+      if (unchanged) dirtyStaffRef.current.delete(eventKey);
+      setBwaSaveStates((current) => ({ ...current, [eventKey]: unchanged ? "saved" : "idle" }));
+    } catch (saveError) {
       setBwaSaveStates((current) => ({ ...current, [eventKey]: "error" }));
+      setError(saveError instanceof Error ? saveError.message : "Staff save was not confirmed. Reload the latest assignments before retrying.");
+    } finally {
+      savingStaffRef.current.delete(eventKey);
     }
+  }
+
+  function updateStaffDraft(checklist: KitchenChecklist, value: StaffAssignmentDraft) {
+    const key = String(checklist.event.eventId);
+    if (!dirtyStaffRef.current.has(key)) staffRevisionRef.current[key] = checklist.assignmentUpdatedAt ?? null;
+    dirtyStaffRef.current.add(key);
+    staffDraftsRef.current = { ...staffDraftsRef.current, [key]: value };
+    setStaffDrafts(staffDraftsRef.current);
+    setBwaSaveStates((current) => ({ ...current, [key]: "idle" }));
+  }
+
+  async function reloadStaffConflicts() {
+    if (!window.confirm("Discard the conflicting staff-assignment drafts and reload the latest saved assignments?")) return;
+    for (const key of staffConflicts) dirtyStaffRef.current.delete(key);
+    if (await loadDay(selectedDate)) setStaffConflicts([]);
   }
 
   async function saveItemReadiness(
@@ -1219,6 +1308,7 @@ export default function KitchenDashboard() {
     <PortalFrame
       className={`kitchen-dashboard-shell${selectedChecklist ? " kitchen-dashboard-shell-focus" : ""}`}
     >
+      <EventSelectionBridge event={focusedEvent ? eventSelection(focusedEvent) : null} />
       <PortalHeader
         actions={
           <>
@@ -1458,17 +1548,44 @@ export default function KitchenDashboard() {
           />
         ) : null}
 
-        {loadState === "ready" && sortedEvents.length ? (
+        {loadState === "ready" && eventContext.preferredEventId ? <section className="kitchen-event-focus-banner" role="status">
+          <span>{focusedEvent
+            ? operationsView === "events" ? `Selected ${focusedEvent.event.name}. All parties for this date are listed below.` : `Showing ${focusedEvent.event.name}`
+            : "The selected event is not available on this kitchen date. No other party was substituted."}</span>
+          <button className="kitchen-secondary-button" onClick={eventContext.clearEvent} type="button">{operationsView === "events" ? "Clear event selection" : "Show all events"}</button>
+        </section> : null}
+        {retainedStaffDraftCount > 0 ? <p className="kitchen-event-focus-banner" role="status">{retainedStaffDraftCount} unsaved staff-assignment draft(s) are retained for events not shown on this date. Return to the original event to review and save. They have not been sent and will be lost if this page is closed.</p> : null}
+        {staffConflicts.length > 0 ? <section className="kitchen-event-focus-banner" role="alert"><span>Staff assignments changed on another tablet. Your drafts were kept and are blocked from overwriting the newer record.</span><button className="kitchen-secondary-button" onClick={() => void reloadStaffConflicts()} type="button">Reload latest staff assignments</button></section> : null}
+        {loadState === "ready" && sortedEvents.length ? <div className="kitchen-view-switch" aria-label="Kitchen work view">
+          {([ ["events", "Event sheets"], ["production", "Production totals"], ["expo", "Expo / Food Runner"] ] as const).map(([view, label]) => <button aria-pressed={operationsView === view} className={operationsView === view ? "is-active" : ""} key={view} onClick={() => setOperationsView(view)} type="button">{label}</button>)}
+        </div> : null}
+        {loadState === "ready" && operationsView === "production" ? <KitchenProductionPanel events={visibleKitchenEvents} /> : null}
+        {loadState === "ready" && operationsView === "expo" ? <KitchenExpoPanel events={visibleKitchenEvents} /> : null}
+        {loadState === "ready" && sortedEvents.length > 0 && operationsView === "events" ? (
+          <div className="kitchen-party-controls" aria-label="Party sheet controls">
+            <p>Click a party to open or close its sheet. Multiple parties can stay open.</p>
+            <div>
+              <button className="kitchen-secondary-button" disabled={sortedEvents.every((event) => expandedEventIds.includes(String(event.event.eventId)))} onClick={() => setExpandedEventIds(sortedEvents.map((event) => String(event.event.eventId)))} type="button">Expand all parties</button>
+              <button className="kitchen-secondary-button" disabled={!sortedEvents.some((event) => expandedEventIds.includes(String(event.event.eventId)))} onClick={() => setExpandedEventIds([])} type="button">Collapse all parties</button>
+            </div>
+          </div>
+        ) : null}
+        {loadState === "ready" && sortedEvents.length && operationsView === "events" ? (
           <section
             className="kitchen-event-grid kitchen-event-checklist-grid kitchen-event-accordion-list"
             aria-label="Event kitchen checklists"
           >
-            {sortedEvents.map((checklist) => {
+            {visibleKitchenEvents.map((checklist) => {
               const eventKey = String(checklist.event.eventId);
               return (
                 <KitchenEventAccordion
                   checklist={checklist}
                   key={eventKey}
+                  open={expandedEventIds.includes(eventKey)}
+                  onToggle={(open) => setExpandedEventIds((current) => {
+                    if (current.includes(eventKey) === open) return current;
+                    return open ? [...current, eventKey] : current.filter((id) => id !== eventKey);
+                  })}
                 >
                   <KitchenChecklistSheet
                     staffDraft={
@@ -1481,16 +1598,16 @@ export default function KitchenDashboard() {
                       }
                     }
                     bwaOptions={day?.bwaOptions ?? []}
-                    bwaSaveState={bwaSaveStates[eventKey] ?? "idle"}
+                    bwaSaveState={staffConflicts.includes(eventKey) ? "conflict" : bwaSaveStates[eventKey] ?? "idle"}
                     checklist={checklist}
                     completionPending={completionPending}
                     hideEventIdentity
                     inline
                     onStaffChange={(value) => {
-                      setStaffDrafts((current) => ({ ...current, [eventKey]: value }));
-                      setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
+                      updateStaffDraft(checklist, value);
                     }}
                     onOpenDescription={setDescriptionItem}
+                    onOpenSheet={() => setSelectedEventId(checklist.event.eventId)}
                     onPrint={() => printChecklist(checklist.event.eventId)}
                     onCompletedChange={(itemKey, completed) =>
                       void saveItemCompletion(
@@ -1519,6 +1636,11 @@ export default function KitchenDashboard() {
             })}
           </section>
         ) : null}
+        {loadState === "ready" && sortedEvents.length ? <FoodDeliveryPanel
+          events={visibleKitchenEvents}
+          items={(day?.foodDelivery ?? []).filter((item) => visibleKitchenEvents.some((event) => String(event.event.eventId) === item.eventId))}
+          error={day?.foodDeliveryError}
+        /> : null}
       </main>
 
       {selectedChecklist && !activeAlert ? (
@@ -1533,13 +1655,11 @@ export default function KitchenDashboard() {
             }
           }
           bwaOptions={day?.bwaOptions ?? []}
-          bwaSaveState={bwaSaveStates[String(selectedChecklist.event.eventId)] ?? "idle"}
+          bwaSaveState={staffConflicts.includes(String(selectedChecklist.event.eventId)) ? "conflict" : bwaSaveStates[String(selectedChecklist.event.eventId)] ?? "idle"}
           checklist={selectedChecklist}
           completionPending={completionPending}
           onStaffChange={(value) => {
-            const eventKey = String(selectedChecklist.event.eventId);
-            setStaffDrafts((current) => ({ ...current, [eventKey]: value }));
-            setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
+            updateStaffDraft(selectedChecklist, value);
           }}
           onClose={closeChecklist}
           onCompletedChange={(itemKey, completed) =>
@@ -1650,6 +1770,7 @@ function ChecklistPanel({
   preppedPending?: ReadonlySet<string>;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [fitSheet, setFitSheet] = useState(true);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
@@ -1677,6 +1798,14 @@ function ChecklistPanel({
         <h2 id="kitchen-focus-view-title">Kitchen event view</h2>
         <div className="kitchen-checklist-toolbar-actions">
           <button
+            aria-pressed={fitSheet}
+            className="kitchen-secondary-button kitchen-fit-toggle"
+            onClick={() => setFitSheet((current) => !current)}
+            type="button"
+          >
+            {fitSheet ? "Fit entire sheet ✓" : "Fit entire sheet"}
+          </button>
+          <button
             className="kitchen-secondary-button"
             onClick={onClose}
             ref={closeButtonRef}
@@ -1690,11 +1819,13 @@ function ChecklistPanel({
         </div>
       </div>
 
+      <KitchenSheetViewport fit={fitSheet}>
       <KitchenChecklistSheet
         staffDraft={staffDraft}
         bwaOptions={bwaOptions}
         bwaSaveState={bwaSaveState}
         checklist={checklist}
+        fitToScreen={fitSheet}
         completionPending={completionPending}
         onStaffChange={onStaffChange}
         onCompletedChange={onCompletedChange}
@@ -1705,6 +1836,7 @@ function ChecklistPanel({
         readinessPending={readinessPending}
         preppedPending={preppedPending}
       />
+      </KitchenSheetViewport>
     </section>
   );
 }
@@ -1712,10 +1844,15 @@ function ChecklistPanel({
 export function KitchenEventAccordion({
   checklist,
   children,
+  open,
+  onToggle,
 }: {
   checklist: KitchenChecklist;
   children?: ReactNode;
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
 }) {
+  const progress = kitchenProgress(checklist);
   const startTime = formatTime(
     checklist.timing.startTime ?? checklist.event.startTime,
   );
@@ -1727,11 +1864,16 @@ export function KitchenEventAccordion({
     <details
       className="kitchen-event-accordion"
       data-kitchen-event-accordion={String(checklist.event.eventId)}
+      open={open}
+      onToggle={(event) => {
+        if (event.target === event.currentTarget) onToggle?.(event.currentTarget.open);
+      }}
     >
       <summary className="kitchen-event-accordion-summary">
         <span className="kitchen-event-accordion-identity">
           <strong>{checklist.event.name}</strong>
           <span className="kitchen-event-area">Area reserved: {checklist.event.room || "Area not listed"}</span>
+          <span className="kitchen-event-readiness">Prepped {progress.prepped}/{progress.total} · Ready {progress.ready}/{progress.total}{checklist.needsReview ? " · Needs review" : ""}{!(checklist.foodRunners?.length || checklist.foodRunnerOrBwa) ? " · Food Runner unassigned" : ""}</span>
         </span>
         <span className="kitchen-event-accordion-time">{eventTime}</span>
       </summary>
@@ -1790,12 +1932,14 @@ export function KitchenChecklistSheet({
   bwaSaveState,
   checklist,
   completionPending = EMPTY_READINESS_KEYS,
+  fitToScreen = false,
   hideEventIdentity = false,
   inline = false,
   onStaffChange = () => {},
   onBwaChange: _legacyOnBwaChange,
   onCompletedChange,
   onOpenDescription,
+  onOpenSheet,
   onPrint,
   onPreppedChange,
   onReadyChange,
@@ -1810,12 +1954,14 @@ export function KitchenChecklistSheet({
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
+  fitToScreen?: boolean;
   hideEventIdentity?: boolean;
   inline?: boolean;
   onStaffChange?: (value: StaffAssignmentDraft) => void;
   onBwaChange?: (value: string) => void;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
+  onOpenSheet?: () => void;
   onPrint?: () => void;
   onPreppedChange?: (
     itemKey: string,
@@ -1920,6 +2066,11 @@ export function KitchenChecklistSheet({
             src="/brand/on-par-logo-black-on-white.jpg"
             width={432}
           />
+          {inline && onOpenSheet ? (
+            <button className="kitchen-card-button" onClick={onOpenSheet} type="button">
+              Open full sheet
+            </button>
+          ) : null}
           {inline && onPrint ? (
             <button
               aria-label={`Print checklist for ${checklist.event.name}`}
@@ -1937,7 +2088,7 @@ export function KitchenChecklistSheet({
         <div className="kitchen-checklist-bwa">
           <div className="kitchen-bwa-field">
             <StaffMultiSelect
-              className="kitchen-setup-select"
+              className="kitchen-staff-select kitchen-setup-select"
               label="Set Up"
               onChange={(setup) => onStaffChange({ ...staffDraft, setup })}
               options={availableBwaOptions}
@@ -1959,17 +2110,19 @@ export function KitchenChecklistSheet({
             />
             <button
               className="kitchen-primary-button kitchen-bwa-save"
-              disabled={!bwaChanged || bwaSaveState === "saving"}
+              disabled={!bwaChanged || bwaSaveState === "saving" || bwaSaveState === "conflict"}
               onClick={onSaveStaff}
               type="button"
             >
-              {bwaSaveState === "saving" ? "Saving…" : "Save"}
+              {bwaSaveState === "saving" ? "Saving…" : bwaSaveState === "conflict" ? "Reload required" : "Save"}
             </button>
           </div>
           <span className="kitchen-bwa-status" role="status">
             {bwaSaveState === "saved"
               ? "Staff assignments saved separately from Tripleseat."
-              : bwaSaveState === "error"
+              : bwaSaveState === "conflict"
+                ? "Draft kept. Reload and review the newer staff assignments before saving."
+                : bwaSaveState === "error"
                 ? "Save failed. Try again."
                 : bwaChanged
                   ? "Unsaved staff changes"
@@ -2228,7 +2381,7 @@ export function KitchenChecklistSheet({
         </section>
         <details
           className={`kitchen-review-panel kitchen-safety-details${reviewMessages.length > 0 && checklist.needsReview ? " kitchen-review-panel-warning" : ""}`}
-          open={!inline && checklist.needsReview}
+          open={!inline && !fitToScreen && checklist.needsReview}
         >
           <summary>
             {reviewMessages.length

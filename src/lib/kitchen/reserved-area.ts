@@ -27,18 +27,23 @@ export function withKitchenReservedAreas(
     if (event.fullBuyout) {
       areas.add("Entire Facility");
     } else {
-      for (const reservation of plan.reservations) {
-        if (
-          reservation.floorPlanEventId !== event.id ||
-          reservation.reservationType === "food-table"
-        ) {
-          continue;
-        }
+      const seating = plan.reservations.filter((reservation) =>
+        reservation.floorPlanEventId === event.id &&
+        (reservation.reservationType === "room" || reservation.reservationType === "seating"),
+      );
+      const reservedRoomIds = new Set(seating.flatMap((reservation) => {
         const area = getFloorPlanArea(reservation.areaId);
-        if (!area || area.canBeFoodTable) continue;
+        return area?.type === "room" ? [area.id] : [];
+      }));
+      for (const reservation of seating) {
+        const area = getFloorPlanArea(reservation.areaId);
+        if (!area || (area.canBeFoodTable && area.capacity === 0)) continue;
         const reservedArea = area.parentAreaId
           ? getFloorPlanArea(area.parentAreaId)
           : area;
+        // Ancillary tables do not reserve a second VIP room beside an assigned room.
+        if (area.parentAreaId && reservedArea?.type === "room" &&
+          reservedRoomIds.size > 0 && !reservedRoomIds.has(reservedArea.id)) continue;
         if (
           reservedArea &&
           (reservedArea.type === "room" ||

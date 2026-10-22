@@ -64,10 +64,48 @@ describe("kitchen reserved areas", () => {
     expect(checklist.event.room).toBe("VIP 1");
   });
 
+  it.each([["ge-table-1", "GEG Tables"], ["ge-table-2", "GEG Tables"], ["ge-table-3", "GEG Tables"], ["main-rect-left-4", "Main Dining"], ["main-rect-right-3", "Main Dining"]])(
+    "includes food-capable %s when it is used for seating",
+    (areaId, expectedRoom) => {
+      const plan = floorPlan([areaId]);
+      expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBe(expectedRoom);
+      plan.reservations[0].reservationType = "food-table";
+      expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBeNull();
+    },
+  );
+
   it("matches corporate kitchen prep through exact aliases on a merged VIP floor-plan event", () => {
     const plan = floorPlan();
     plan.events[0].tripleseatEventId = "vip-booking";
     plan.events[0].source.sourceEventIds = ["vip-booking", String(source.eventId)];
+    expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBe("VIP 2");
+  });
+
+  it("does not label ancillary conversation seating as a second reserved VIP room", () => {
+    // Redacted shape shared by the October 23 and 24 saved plans.
+    const plan = floorPlan(["vip-2", "vip1-extra-convo"]);
+    plan.events[0].contractedAreaIds = ["vip-2"];
+    plan.events[0].source.rooms = ["VIP 2"];
+    plan.reservations.forEach((reservation) => { reservation.reservationType = "room"; });
+    const before = structuredClone(plan);
+    expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBe("VIP 2");
+    expect(plan).toEqual(before);
+    expect(checklist.event.room).toBe("VIP 1");
+  });
+
+  it("still lists both VIP rooms when both main rooms are assigned", () => {
+    const plan = floorPlan(["vip-1", "vip-2", "vip1-extra-convo"]);
+    expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBe("VIP 1, VIP 2");
+  });
+
+  it("retains separately assigned dining seating beside a reserved VIP room", () => {
+    const plan = floorPlan(["vip-2", "vip1-extra-convo", "main-rect-left-1"]);
+    expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBe("Main Dining, VIP 2");
+  });
+
+  it("ignores custom notes anchored to another VIP room", () => {
+    const plan = floorPlan(["vip-2", "vip-1"]);
+    plan.reservations[1].reservationType = "custom";
     expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBe("VIP 2");
   });
 

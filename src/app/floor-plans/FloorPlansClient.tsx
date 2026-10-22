@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEventContext } from "@/app/_components/EventContext";
 import AssetImageWithOverlays from "@/app/_components/AssetImageWithOverlays";
 import {
   PortalCard,
@@ -306,6 +307,11 @@ export function FloorPlanCard({
               </>
             )}
             <div className="floor-plan-image-frame">
+              {!asset.specialPage ? (
+                <p className="floor-plan-special-note">
+                  This static image shows the whole day. Individual-event filtering is available on saved editable Event Host plans.
+                </p>
+              ) : null}
               <div
                 className="floor-plan-zoom-stage"
                 style={{ width: `${zoom}%` }}
@@ -502,6 +508,7 @@ export default function FloorPlansClient({
   today: string;
 }) {
   const router = useRouter();
+  const eventContext = useEventContext();
   const organized = useMemo(
     () =>
       organizeFloorPlanAssets(
@@ -538,6 +545,12 @@ export default function FloorPlansClient({
     message: string;
   }>({ status: "idle", message: "" });
   const [planZoom, setPlanZoom] = useState(100);
+
+  useEffect(() => {
+    const date = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
+    if (!eventContext.ready || !date) return;
+    setOpenAssetKey(upcoming.find((entry) => entry.date === date)?.key ?? organized.archived.find((asset) => asset.date === date)?.image ?? null);
+  }, [eventContext.ready, eventContext.requestedDate, eventContext.selectedEvent?.date, upcoming, organized.archived]);
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -608,11 +621,13 @@ export default function FloorPlansClient({
         isOpen={openAssetKey === asset.image}
         key={`${asset.specialPage ? "special" : "plan"}-${asset.image}`}
         liveState={liveByDate[asset.date]}
-        onOpenChange={(open) =>
+        onOpenChange={(open) => {
+          const preferredDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
+          if (open && preferredDate && preferredDate !== asset.date) eventContext.clearEvent();
           setOpenAssetKey((current) =>
             open ? asset.image : current === asset.image ? null : current,
-          )
-        }
+          );
+        }}
         onSync={() => void handleLiveSync(asset.date)}
         overlays={initialState.overlaysByAsset[asset.image] ?? []}
         zoom={planZoom}
@@ -626,11 +641,13 @@ export default function FloorPlansClient({
         isOpen={openAssetKey === entry.key}
         key={entry.key}
         liveState={liveByDate[entry.date]}
-        onOpenChange={(open) =>
+        onOpenChange={(open) => {
+          const preferredDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
+          if (open && preferredDate && preferredDate !== entry.date) eventContext.clearEvent();
           setOpenAssetKey((current) =>
             open ? entry.key : current === entry.key ? null : current,
-          )
-        }
+          );
+        }}
         onSync={() => void handleLiveSync(entry.date)}
         publication={entry.publication}
         zoom={planZoom}
@@ -696,6 +713,7 @@ export default function FloorPlansClient({
       />
 
       <section aria-labelledby="upcoming-floor-plans" className="floor-plan-group">
+        <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 30 minutes after the event. Entertainment uses its booked times only, with no buffer. Displayed event times stay unchanged.</p>
         <div className="floor-plan-group-heading">
           <div>
             <span className="portal-eyebrow">Current workspace</span>

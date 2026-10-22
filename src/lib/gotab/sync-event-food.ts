@@ -99,6 +99,7 @@ export async function synchronizeKitchenChecklistToEventFood(
     requestCount: projection.requests.length,
     exceptionCount: projection.exceptions.length,
     duplicateCount: results.filter((result) => result.duplicate).length,
+    requestIds: results.map((result) => result.request_id),
   };
 }
 

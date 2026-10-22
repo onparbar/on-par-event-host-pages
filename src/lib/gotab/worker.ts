@@ -183,21 +183,19 @@ export async function processGoTabDispatches(options?: {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "GoTab dispatch failed.";
       const temporary = error instanceof GoTabApiError && error.kind === "temporary";
-      const exhausted = dispatch.attempt_count >= 5;
-      await storage.finishDispatch(dispatch.id, {
-        status: temporary && !vipDispatch ? "FAILED" : "HELD",
-        nextAttemptAt: temporary && !vipDispatch && !exhausted
-          ? new Date(Date.now() + Math.min(60_000 * 2 ** Math.max(0, dispatch.attempt_count - 1), 15 * 60_000)).toISOString()
-          : undefined,
-        lastError: vipDispatch && temporary
+      // A timeout or server error after the POST can hide an accepted order.
+      // External-ID deduplication is not verified, so never blindly replay it.
+      const lastError = temporary
+        ? vipDispatch
           ? "VIP delivery status is uncertain. Review before retrying."
-          : errorMessage,
-      });
-      summary.lastError = vipDispatch && temporary
-        ? "VIP delivery status is uncertain. Review before retrying."
+          : "Food order delivery status is uncertain. Review before retrying."
         : errorMessage;
-      if (temporary && !vipDispatch) summary.failed += 1;
-      else summary.held += 1;
+      await storage.finishDispatch(dispatch.id, {
+        status: "HELD",
+        lastError,
+      });
+      summary.lastError = lastError;
+      summary.held += 1;
     }
   }
 

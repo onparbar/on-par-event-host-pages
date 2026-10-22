@@ -195,6 +195,29 @@ describe("kitchen checklist day layout", () => {
     expect(html.indexOf("Expanded prep list")).toBeGreaterThan(summaryEnd);
   });
 
+  it("uses a native party toggle without intercepting its heading click", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const onToggle = vi.fn();
+    const element = KitchenEventAccordion({ checklist, onToggle });
+    const details = { open: true };
+    expect(element.props.children[0].props.onClick).toBeUndefined();
+    element.props.onToggle({ target: details, currentTarget: details });
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith(true);
+    element.props.onToggle({ target: { open: true }, currentTarget: details });
+    expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it("allows more than one party accordion to be open without a shared exclusive group", () => {
+    const html = renderToStaticMarkup(createElement("section", null,
+      ...MOCK_KITCHEN_EVENTS.slice(0, 2).map((source) => createElement(KitchenEventAccordion, {
+        key: source.eventId, checklist: generateKitchenChecklist(source), open: true,
+      })),
+    ));
+    expect(html.match(/data-kitchen-event-accordion=/g)).toHaveLength(2);
+    expect(html.match(/open=""/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<details[^>]* name=/);
+  });
+
   it("does not repeat event identity inside expanded accordion content", () => {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     const html = renderToStaticMarkup(
@@ -239,6 +262,23 @@ describe("kitchen checklist day layout", () => {
     expect(headerIndex).toBeGreaterThanOrEqual(0);
     expect(headerIndex).toBeLessThan(tableIndex);
     expect(reviewIndex).toBeGreaterThan(tableIndex);
+  });
+
+  it("offers a full-sheet view without removing the prep, timing or review details", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[2]);
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, {
+      checklist, bwaSaveState: "idle", inline: true, fitToScreen: true, onOpenSheet: noop,
+    }));
+    expect(html).toContain("Open full sheet");
+    expect(html).toContain("Appetizer drop reminder");
+    expect(html).toContain("Food contract notes");
+    expect(html).toContain("Needs review:");
+    expect(html).toContain("Employee responsible for prep");
+    expect(html).toContain("Employee responsible for verification");
+    expect(html.indexOf(">Prepped<")).toBeLessThan(html.indexOf(">Verified<"));
+    expect(html.indexOf(">Verified<")).toBeLessThan(html.indexOf(">Ready<"));
+    const review = html.slice(html.indexOf('class="kitchen-review-panel kitchen-safety-details'));
+    expect(review.slice(0, review.indexOf(">"))).not.toContain("open=");
   });
 
   it("renders multiple events as independent checklist sheets", () => {

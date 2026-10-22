@@ -1,11 +1,11 @@
 # Event Host: Tina's access and migration steps
 
-Updated October 20, 2026. Carlos selected the GitHub workflow with **no additional
+Updated October 22, 2026. Carlos selected the GitHub workflow with **no additional
 paid Vercel seat**. This document covers the source evidence change in
 [PR #3](https://github.com/onparbar/on-par-event-host-pages/pull/3).
 It does not activate shared reservation protection or change a reservation.
 
-## Current hold points — October 20
+## Current hold points — October 22
 
 Both Carlos accounts now have Vercel Viewer access. Database access remains an
 owner decision; the owner-operated path is available. The combined candidate's
@@ -17,8 +17,9 @@ Tina's authenticated CLI
 inspection reports six passing preflight rows, but substantial historical
 migration/version drift. **Do not run the apply step below until the exact
 canonical history/adoption manifest has been reviewed and owner-authorized and
-a fresh dry run lists only the source migration.** Preserve all 15 remote
-history records, the current Mini Golf constraint extension and current Food
+a fresh dry run lists only the source migration.** Preserve the original 15 remote
+history records plus the two October 21 staff-workflow records
+(`20261021183041` and `20261021183254`), the current Mini Golf constraint extension and current Food
 Runner assignments. Current effects of unrecorded operational files do not
 prove past execution. Do not replay mapping upserts or superseded backfills,
 blanket-mark versions applied, or conceal drift with a reduced manifest.
@@ -30,8 +31,13 @@ read-only history export. It makes no database connection or repair and always
 requires review. Its report helps prepare the exact manifest; it does not
 establish schema equivalence or replace the source-only dry run.
 
-The source candidate now incorporates operations through `8598f39`, preserving
-all five newer operations fixes. Vercel Production tracks `main`; PR #3 targets
+The source candidate now incorporates operations through `ef6e45f`, preserving
+the latest floor-plan, kitchen, itinerary and revision-safe staff workflow changes.
+The local inventory contains 20 migrations; export the full current remote history
+and compare all local files rather than assuming the older count is current.
+The October 22 public configuration-only release report also identifies `ef6e45f`
+as production, the intended database target, and live Tripleseat/GoTab modes.
+This is configuration evidence, not source-migration or live-data acceptance. Vercel Production tracks `main`; PR #3 targets
 `codex/event-host-dashboard-deploy`, which has diverged from `main`. A reviewed
 release path and explicit production approval are still required. Do not
 retarget the PR, change branch tracking or promote an older preview as a shortcut.
@@ -49,6 +55,11 @@ uncapped entertainment item, separate from the 29 finite reservable resources.
 This does not change the existing whole-venue buyout rules. No capacity-policy
 decision is outstanding for Mini Golf and no source-only migration change is
 needed for this clarification.
+
+Carlos approved Tina’s seating-only buffers on October 22. Entertainment, including
+karaoke and VIP rooms, allows back-to-back bookings; actual overlaps remain blocked.
+Seating retains 60-minute setup and 30-minute cleanup. The separate shared authority
+PR carries this policy in a new migration and remains disabled until acceptance.
 
 ## 1. Give Carlos free Vercel visibility
 

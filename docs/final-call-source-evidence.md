@@ -57,7 +57,7 @@ paginated HTTP reads are not one atomic database snapshot.
 1. Verify a deployed response against its actual upstream sync record, including
    an upstream failure that leaves the saved schedule visible.
 2. Deploy and verify version 2 proof of interval-overlap coverage, including events
-   starting before the requested interval and the required buffers. Current
+   starting before the requested interval. Current
    version 1 syncs search by event start date; merely adding adjacent dates does not prove
    arbitrary multi-day coverage.
 3. Resynchronize and verify every Tentative event after deploying the new
@@ -78,8 +78,11 @@ legacy saved-day response remains the default. Apply migration
 
 Version 2 reads Tripleseat with the documented `date_range_start` and
 `date_range_end` overlap filters. It retains events whose start precedes the
-requested dates, searches the neighboring calendar dates for protection
-windows, and includes one hour on each side of the requested Eastern interval.
+requested dates and conservatively searches the neighboring calendar dates,
+including one hour on each side of the requested Eastern interval. This extra
+read coverage does not impose a reservation buffer. Carlos approved seating-only
+buffers on October 22: entertainment (including karaoke and VIP) may run
+back-to-back; seating retains its 60-minute setup and 30-minute cleanup.
 Calendar boundaries account for 23-hour and 25-hour DST days. Missing or invalid
 event times remain visible as review issues; every Tentative event remains a
 venue buyout, including those without saved allocations.

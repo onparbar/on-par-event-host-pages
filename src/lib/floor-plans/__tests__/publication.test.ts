@@ -14,7 +14,7 @@ function plan(
     id: `floor-plan-${eventDate}`,
     eventDate,
     status,
-    version: 1,
+    version: 0,
     ruleVersion: "floor-plan-v1.2.0",
     lastTripleseatSyncAt: "2026-08-04T16:00:00.000Z",
     createdAt: "2026-08-04T16:00:00.000Z",

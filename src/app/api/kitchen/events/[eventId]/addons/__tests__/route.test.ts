@@ -10,7 +10,11 @@ const syncMocks = vi.hoisted(() => ({
 const gotabMocks = vi.hoisted(() => ({
   synchronizeKitchenLiveAddOnsToEventFood: vi.fn(),
   processGoTabDispatches: vi.fn(),
+  listEventFoodDelivery: vi.fn(),
 }));
+vi.mock("@/lib/gotab/storage", () => ({ GoTabIntegrationStorage: class {
+  listEventFoodDelivery = gotabMocks.listEventFoodDelivery;
+} }));
 vi.mock("@/lib/kitchen/sync", () => syncMocks);
 vi.mock("@/lib/gotab/sync-event-food", () => ({
   synchronizeKitchenLiveAddOnsToEventFood:
@@ -84,11 +88,13 @@ describe("kitchen event add-on API", () => {
       requestCount: 1,
       exceptionCount: 0,
       duplicateCount: 0,
+      requestIds: ["request-1"],
     });
     gotabMocks.processGoTabDispatches.mockResolvedValue({
       claimed: 1,
-      sent: 1,
+      sent: 30,
     });
+    gotabMocks.listEventFoodDelivery.mockResolvedValue([{ requestId: "request-1", status: "FAILED", error: "Delivery failed" }]);
     const context = {
       params: Promise.resolve({ eventId: "preview-alpha" }),
     };
@@ -138,7 +144,9 @@ describe("kitchen event add-on API", () => {
         exceptions: 0,
         duplicates: 0,
         changedSourceKeys: ["wings", "ranch"],
-        dispatch: { claimed: 1, sent: 1 },
+        dispatch: { sent: 0 },
+        deliveries: [{ requestId: "request-1", status: "FAILED", error: "Delivery failed" }],
+        warning: "Delivery failed",
       },
     });
     expect(syncMocks.updateKitchenEventFoodAddOns).toHaveBeenCalledWith(
@@ -158,6 +166,7 @@ describe("kitchen event add-on API", () => {
       },
     );
     expect(gotabMocks.processGoTabDispatches).toHaveBeenCalledOnce();
+    expect(gotabMocks.listEventFoodDelivery).toHaveBeenCalledWith(["preview-alpha"], ["request-1"]);
   });
 
   it("returns the current revision when another staff session wins the write", async () => {

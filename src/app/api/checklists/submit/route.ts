@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { checklistEventsForPlans } from "../../../../lib/checklist-events";
-import type { EventChecklistState } from "../../../../lib/checklist-model";
+import { hydrateChecklistState, type EventChecklistState } from "../../../../lib/checklist-model";
+import { checklistReadiness } from "../../../../lib/checklist-readiness";
+import { StaleSaveError } from "../../../../lib/stale-save";
 import { saveChecklist } from "../../../../lib/checklist-storage";
 import { findEventPlanById } from "../../../../lib/event-plans/sync";
 import { rollingEventPlanHorizon } from "../../../../lib/event-plans/horizon";
@@ -20,6 +22,7 @@ export const dynamic = "force-dynamic";
 type SubmitChecklistRequest = {
   eventId?: number;
   checklist?: EventChecklistState;
+  expectedUpdatedAt?: string | null;
 };
 
 function badRequest(message: string) {
@@ -42,6 +45,9 @@ export async function POST(request: Request) {
   if (typeof body.eventId !== "number" || !body.checklist) {
     return badRequest("Missing eventId or checklist.");
   }
+  if (body.expectedUpdatedAt !== null && (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt)))) {
+    return badRequest("Load the saved checklist revision before submitting.");
+  }
 
   let plan = await findEventPlanById(body.eventId);
   let kitchenEventId = String(body.eventId);
@@ -61,6 +67,15 @@ export async function POST(request: Request) {
     return badRequest("Unknown event.");
   }
   const [event] = checklistEventsForPlans([plan]);
+  const state = hydrateChecklistState(event.date, body.checklist);
+  const readiness = checklistReadiness(event, state);
+  if (!readiness.canSubmit) {
+    return NextResponse.json({
+      error: "Complete critical tasks with an employee name and timestamp, resolve contract review items, and enter the BWA before closing this event. Only Admin can reopen a submitted checklist.",
+      incompleteTasks: readiness.missing.map((task) => task.key),
+      reviewTasks: readiness.review.map((task) => task.key),
+    }, { status: 422 });
+  }
 
   try {
     const record = await saveChecklist({
@@ -69,7 +84,8 @@ export async function POST(request: Request) {
       eventName: event.name,
       eventDate: event.date,
       poc: event.poc,
-      checklist: body.checklist,
+      checklist: state,
+      expectedUpdatedAt: body.expectedUpdatedAt,
     });
 
     try {
@@ -77,14 +93,18 @@ export async function POST(request: Request) {
         kitchenEventId,
         body.checklist.food,
       );
+      const accepted = kitchenSync.exceptions === 0 && kitchenSync.deliveryVerified === true;
       return NextResponse.json({
         record,
         kitchenSync: {
-          status: "live",
+          status: accepted ? "live" : kitchenSync.noFoodRequired ? "not-required" : "error",
           updatedAt: kitchenSync.saved.updatedAt,
           queued: kitchenSync.queued,
           exceptions: kitchenSync.exceptions,
           sent: kitchenSync.sent,
+          accepted: kitchenSync.acceptedDeliveryCount,
+          deliveries: kitchenSync.deliveries ?? [],
+          ...(!accepted && !kitchenSync.noFoodRequired ? { error: kitchenSync.error ?? "Final record submitted to Admin, but GoTab acceptance was not verified for every food item. Review delivery status before retrying." } : {}),
         },
       });
     } catch {
@@ -99,6 +119,6 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to submit checklist.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: error instanceof StaleSaveError ? 409 : 502 });
   }
 }

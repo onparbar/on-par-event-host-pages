@@ -541,6 +541,7 @@ export async function updateKitchenManualAssignments(
   preppedBy = "",
   verifiedBy = "",
   setup: readonly string[] = [],
+  expectedUpdatedAt?: string | null,
 ) {
   const normalizedEventId = eventId.trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalizedEventId)) {
@@ -586,13 +587,14 @@ export async function updateKitchenManualAssignments(
   const normalizedVerifiedBy = normalizeSingleName(verifiedBy, "Verified by");
   const normalizedSetup = normalizeNames(setup, "Set Up");
 
-  await (options.storage ?? getKitchenStorage()).saveManualAssignments(
+  const updatedAt = await (options.storage ?? getKitchenStorage()).saveManualAssignments(
     normalizedEventId,
     normalizedFoodRunners,
     normalizedPocs,
     normalizedPreppedBy,
     normalizedVerifiedBy,
     normalizedSetup,
+    expectedUpdatedAt,
   );
   return {
     eventId: normalizedEventId,
@@ -601,6 +603,7 @@ export async function updateKitchenManualAssignments(
     preppedBy: normalizedPreppedBy,
     verifiedBy: normalizedVerifiedBy,
     setup: normalizedSetup,
+    updatedAt: updatedAt ?? null,
   };
 }
 

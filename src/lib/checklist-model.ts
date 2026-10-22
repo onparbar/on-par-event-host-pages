@@ -46,6 +46,7 @@ export type EventChecklistState = {
   extrasAdded: string;
   remainingDrinkCardBalance: string;
   tasks: Record<string, boolean>;
+  taskEvidence?: Record<string, { employeeName: string; completedAt: string }>;
   entertainment: Record<string, EntertainmentState>;
   food: Record<string, FoodState>;
 };
@@ -61,6 +62,12 @@ export type ChecklistRecord = EventChecklistState & {
   updatedAt: string | null;
   submittedAt: string | null;
 };
+
+/** Resolve the navigation preference before rendering or publishing a default. */
+export function checklistEventForSelection<T extends { id: number }>(events: readonly T[], preferredEventId: string | null, activeEventId: number) {
+  if (preferredEventId) return events.find((event) => String(event.id) === preferredEventId);
+  return events.find((event) => event.id === activeEventId) ?? events[0];
+}
 
 export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
   {
@@ -375,6 +382,7 @@ export function defaultChecklistState(dateValue: string): EventChecklistState {
     extrasAdded: "",
     remainingDrinkCardBalance: "",
     tasks,
+    taskEvidence: {},
     entertainment,
     food,
   };
@@ -390,6 +398,7 @@ export function hydrateChecklistState(dateValue: string, savedState?: Partial<Ev
       ...base.tasks,
       ...(savedState?.tasks ?? {}),
     },
+    taskEvidence: { ...(savedState?.taskEvidence ?? {}) },
     entertainment: Object.fromEntries(
       entertainmentAddOns.map((item) => [
         item.key,

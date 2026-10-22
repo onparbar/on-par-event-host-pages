@@ -5,20 +5,22 @@ import {
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
 import { loadAdminState } from "@/lib/admin-state";
-import { entertainmentSchedules } from "@/lib/events";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
 import { activeEvents } from "@/lib/event-lifecycle";
 import { loadEventPlanWindow } from "@/lib/event-plans/sync";
+import { listChecklistRecords } from "@/lib/checklist-storage";
+import { buildOperationalEventSummaries } from "@/lib/operations/command-center";
+import { EventCommandCenter } from "@/app/_components/EventCommandCenter";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [adminState, eventPlanWindow] = await Promise.all([
+  const [adminState, eventPlanWindow, checklistRecords] = await Promise.all([
     loadAdminState(),
     loadEventPlanWindow(),
+    listChecklistRecords().catch(() => null),
   ]);
   const now = new Date();
-  const visibleSchedules = entertainmentSchedules.filter((schedule) => !adminState.archivedAssetKeys.includes(schedule.image));
   const visibleEvents = activeEvents(
     eventPlanWindow.plans,
     adminState.archivedEventIds,
@@ -30,6 +32,11 @@ export default async function HomePage() {
     checklistEvents,
     adminState.archivedEventIds,
     now,
+  );
+  const operationalEvents = buildOperationalEventSummaries(
+    eventPlanWindow.plans.filter((event) => !adminState.archivedEventIds.includes(event.id)),
+    checklistRecords,
+    eventPlanWindow.sync,
   );
 
   return (
@@ -52,10 +59,12 @@ export default async function HomePage() {
             </PortalStatusBadge>
           </div>
         }
-        description={`${visibleSchedules.length} published schedule dates plus live Tripleseat-backed entertainment and kitchen operations.`}
+        description="Choose an event, review what needs attention, and continue into seating, entertainment, kitchen, setup, and add-ons."
         eyebrow="On Par operations"
         title="Event Host Portal"
       />
+      <EventCommandCenter events={operationalEvents} initialNow={now.toISOString()} />
+      <h2 className="portal-modules-title">All operations</h2>
       <nav className="link-grid portal-module-grid" aria-label="Event host sections">
           <Link className="home-link portal-module-card" href="/floor-plans">
             <span className="portal-module-kicker">Venue maps</span>

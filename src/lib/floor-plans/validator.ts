@@ -5,14 +5,18 @@ import type {
   EntertainmentConflict,
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
-import { preferredInventory } from "./configuration/adjacency";
+import { selectEntertainmentResources } from "./configuration/adjacency";
 import {
   getAreaForEntertainmentResource,
   getFloorPlanArea,
+  getPhysicalFloorPlanAreaId,
   requiredFoodTableCount,
 } from "./configuration/areas";
 import { floorPlanEventColorsAreDistinct } from "./configuration/colors";
 import { entertainmentReservationMatchesFloorPlanEvent } from "./identity";
+import { timeRangesOverlap } from "./conflicts";
+import { reservationOccupancy } from "@/lib/operations/reservation-buffer";
+import { isVipOnlyFloorPlanEvent, reservedSeatingCapacity } from "./generator";
 import type {
   FloorPlanConflict,
   FloorPlanDocument,
@@ -64,18 +68,18 @@ export function validateFloorPlan(
       (reservation) => reservation.floorPlanEventId === event.id,
     );
     const seating = reservations.filter(
-      (reservation) => reservation.reservationType === "seating",
+      (reservation) => reservation.reservationType === "seating" ||
+        (reservation.reservationType === "room" &&
+          (getFloorPlanArea(reservation.areaId)?.capacity ?? 0) > 0),
     );
-    const seatingCapacity = seating.reduce(
-      (total, reservation) =>
-        total + (getFloorPlanArea(reservation.areaId)?.capacity ?? 0),
-      0,
-    );
+    const seatingCapacity = reservedSeatingCapacity(reservations);
+    const vipOnly = isVipOnlyFloorPlanEvent(event);
     const food = reservations.filter(
       (reservation) => reservation.reservationType === "food-table",
     );
     const foodTableCount = requiredFoodTableCount(event.guestCount);
-    const foodTableCountPasses = food.length >= foodTableCount;
+    const foodPhysicalCount = new Set(food.map((reservation) => getPhysicalFloorPlanAreaId(reservation.areaId))).size;
+    const foodTableCountPasses = foodPhysicalCount >= foodTableCount;
     const foodTableLabelsPass = food.every(
       (reservation) => reservation.label === "F",
     );
@@ -89,8 +93,10 @@ export function validateFloorPlan(
     const detailsComplete =
       Boolean(event.name) &&
       event.guestCount > 0 &&
-      Boolean(event.startAt) &&
-      Boolean(event.endAt);
+      !event.source.reviewReasons.some((reason) =>
+        /Guest count is missing or invalid|Guest count was filled from .*package/i.test(reason),
+      ) &&
+      Boolean(reservationOccupancy(event.startAt, event.endAt));
     result.push(
       item(
         "EVENT_DETAILS",
@@ -99,7 +105,7 @@ export function validateFloorPlan(
         detailsComplete ? "Passed" : "Failed",
         detailsComplete
           ? "Event name, guest count, and time are present."
-          : "Event name, guest count, or time is missing.",
+          : "A verified BEO event name, guest count, or time is missing.",
       ),
     );
 
@@ -126,7 +132,7 @@ export function validateFloorPlan(
         event.id,
         "Seating capacity",
         seatingPasses ? "Passed" : "Failed",
-        `${seatingCapacity} reserved seats for ${event.guestCount} guests.`,
+        `${seatingCapacity} verified reserved seats for ${event.guestCount} guests.${seatingPasses ? "" : " Confirm the contracted seating inventory; unknown-capacity areas are not counted."}`,
       ),
     );
     const seatingInsideContract = seating.every((reservation) => {
@@ -147,10 +153,10 @@ export function validateFloorPlan(
         "Seating stays inside contract",
         seating.length === 0 ? "Failed" : seatingInsideContract ? "Passed" : "Failed",
         seating.length === 0
-          ? "No seating tables are reserved."
+          ? "No verified seating inventory is reserved."
           : seatingInsideContract
-            ? "All seating tables are inside a contracted section."
-            : "One or more seating tables are outside the contracted section.",
+            ? "All reserved seating is inside a contracted section."
+            : "One or more seating assignments are outside the contracted section.",
       ),
     );
 
@@ -159,14 +165,15 @@ export function validateFloorPlan(
         "FOOD_TABLE",
         event.id,
         "Food table assigned",
-        foodTableCountPasses && foodTableLabelsPass
+        vipOnly ? "Not Applicable" : foodTableCountPasses && foodTableLabelsPass
           ? "Passed"
           : "Failed",
-        foodTableCountPasses
+        vipOnly ? "VIP-only bookings reserve the VIP section without surrounding tables." : foodTableCountPasses
           ? foodTableLabelsPass
-            ? `${food.length} authorized food table${food.length === 1 ? " is" : "s are"} assigned and labeled F.`
+            ? `${foodPhysicalCount} authorized food table${foodPhysicalCount === 1 ? " is" : "s are"} assigned and labeled F.`
             : "Every food table must be labeled F."
-          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${food.length} assigned.`,
+          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${foodPhysicalCount} assigned.`,
+        !vipOnly && !(foodTableCountPasses && foodTableLabelsPass),
       ),
     );
     const foodIsAda =
@@ -175,15 +182,21 @@ export function validateFloorPlan(
         const area = getFloorPlanArea(reservation.areaId);
         return area?.isAda && area.canBeFoodTable;
       });
+    const foodAuthorized = foodTableCountPasses && food.every((reservation) =>
+      getFloorPlanArea(reservation.areaId)?.canBeFoodTable,
+    );
     result.push(
       item(
         "FOOD_TABLE_ADA",
         event.id,
         "Food table uses designated ADA table",
-        foodIsAda ? "Passed" : "Failed",
-        foodIsAda
+        vipOnly ? "Not Applicable" : foodIsAda ? "Passed" : foodAuthorized ? "Warning" : "Failed",
+        vipOnly ? "No surrounding food table is assigned for a VIP-only booking." : foodIsAda
           ? "Every food table uses designated ADA inventory."
-          : "A food table is missing or is not assigned to designated ADA inventory.",
+          : foodAuthorized
+            ? "GEG tables are approved for food use; confirm accessible placement before approval. Their ADA designation has not been verified."
+            : "A food table is missing or is not assigned to authorized food inventory.",
+        !vipOnly && !foodAuthorized,
       ),
     );
 
@@ -252,28 +265,32 @@ export function validateFloorPlan(
           : "No shared entertainment resource overlaps another event.",
       ),
     );
-    const placementWarnings = eventEntertainment.flatMap((reservation) => {
-      if (reservation.resourceCategory === "private-rooms") return [];
-      const category = reservation.resourceCategory;
-      const seatingArea = event.contractedAreaIds.find(
-        (areaId) => preferredInventory(areaId, category).length > 0,
-      );
-      if (!seatingArea) return [];
-      const preferenceIndex = preferredInventory(
-        seatingArea,
-        category,
-      ).indexOf(reservation.resourceId);
-      return preferenceIndex < 0
-        ? [`${reservation.resourceName} has no configured proximity relationship.`]
-        : [];
-    });
+    const placementWarnings: string[] = [];
+    const bowlingGroups = new Map<string, EntertainmentReservation[]>();
+    for (const reservation of eventEntertainment) {
+      if (reservation.resourceCategory !== "bowling") continue;
+      const key = `${reservation.startAt}:${reservation.endAt}`;
+      bowlingGroups.set(key, [...(bowlingGroups.get(key) ?? []), reservation]);
+    }
+    for (const group of bowlingGroups.values()) {
+      const groupIds = new Set(group.map((reservation) => reservation.id));
+      const unavailable = new Set(entertainmentReservations.flatMap((reservation) =>
+        reservation.active && !groupIds.has(reservation.id) &&
+          timeRangesOverlap(group[0].startAt, group[0].endAt, reservation.startAt, reservation.endAt)
+          ? [reservation.resourceId] : [],
+      ));
+      const closest = selectEntertainmentResources(event.contractedAreaIds, "bowling", group.length, unavailable);
+      if (closest.length !== group.length || group.some((reservation) => !closest.includes(reservation.resourceId))) {
+        placementWarnings.push("Bowling is not the closest available lane group to the contracted seating. Review any deliberate manual placement.");
+      }
+    }
     result.push(
       item(
         "ENTERTAINMENT_PLACEMENT",
         event.id,
         "Entertainment placement",
         placementWarnings.length ? "Warning" : "Passed",
-        placementWarnings.join(" ") || "Shared entertainment uses the configured seating-proximity inventory.",
+        placementWarnings.join(" ") || "Bowling uses the closest available consecutive lane group when possible; shared entertainment placement is preserved.",
         false,
       ),
     );
