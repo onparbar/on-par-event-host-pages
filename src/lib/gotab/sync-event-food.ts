@@ -10,7 +10,7 @@ import { KITCHEN_ROW_KEY_BY_VIP_CODE } from "@/lib/vip-prep/client";
 
 type EventFoodSyncStorage = Pick<
   GoTabIntegrationStorage,
-  "listMappings" | "saveProjectionExceptions" | "enqueueRequest"
+  "listMappings" | "saveProjectionExceptions" | "enqueueRequest" | "listContractFoodRequests"
 >;
 type VipBookingFoodSyncStorage = EventFoodSyncStorage & Pick<
   GoTabIntegrationStorage,
@@ -43,6 +43,13 @@ export async function synchronizeKitchenChecklistToEventFood(
   const storage = options.storage ?? new GoTabIntegrationStorage();
   const configuration = getGoTabConfigurationStatus(options.env);
   const sourceType = options.sourceType ?? (String(checklist.event.eventId).startsWith("vip-") ? "VIP_ADDON" : "TRIPLESEAT_CONTRACT");
+  const isContract = sourceType === "TRIPLESEAT_CONTRACT";
+  // A prep-rule revision is not another order. Keep new contract identities
+  // stable and recognize previously queued legacy versions before enqueueing.
+  const sourceVersion = isContract ? 1 : options.sourceVersion;
+  const previous = isContract
+    ? await storage.listContractFoodRequests(String(checklist.event.eventId))
+    : [];
   const storedMappings = await storage.listMappings();
   const mappings: EventFoodProductMapping[] = storedMappings
     .filter((mapping) => mapping.mapping_status === "VERIFIED" && mapping.gotab_product_uuid)
@@ -56,19 +63,32 @@ export async function synchronizeKitchenChecklistToEventFood(
       gotabProductUuid: mapping.gotab_product_uuid,
       verifiedAt: mapping.verified_at,
     }));
-  const projection = projectKitchenChecklist(checklist, mappings, {
+  const projection = projectKitchenChecklist(isContract ? { ...checklist, liveFoodAddOns: [] } : checklist, mappings, {
     sourceType,
-    sourceVersion: options.sourceVersion,
+    sourceVersion,
     requesterName:
       checklist.foodRunners?.find((name) => name.trim()) ??
       (checklist.foodRunnerOrBwa?.trim() || null),
     defaultPrepLeadMinutes: configuration.defaultPrepLeadMinutes ?? 60,
     bookedFoodQuantities: options.bookedFoodQuantities,
   });
+  const requests = projection.requests.filter((request) => {
+    const existing = previous.filter((item) => item.source_record_id === request.sourceRecordId);
+    if (existing.length === 0) return true;
+    if (existing.some((item) => item.quantity !== request.quantity || item.pan_size !== request.panSize)) {
+      projection.exceptions.push({
+        eventId: request.eventId,
+        itemKey: request.sourceRecordId,
+        foodName: request.originalSourceName,
+        reason: "Contract prep changed after its GoTab order was queued. Review the existing order; do not submit a second full order.",
+      });
+    }
+    return false;
+  });
   await storage.saveProjectionExceptions({
     eventId: String(checklist.event.eventId),
     sourceType,
-    sourceVersion: options.sourceVersion,
+    sourceVersion,
     exceptions: projection.exceptions.map((item) => ({
       itemKey: item.itemKey,
       foodName: item.foodName,
@@ -76,7 +96,7 @@ export async function synchronizeKitchenChecklistToEventFood(
     })),
   });
   const results = [];
-  for (const request of projection.requests) {
+  for (const request of requests) {
     const preview = buildGoTabKdsPreview(request, checklist.event.name, {
       enabled: configuration.enabled,
       dryRun: configuration.dryRun,
@@ -96,9 +116,9 @@ export async function synchronizeKitchenChecklistToEventFood(
   }
   return {
     eventId: String(checklist.event.eventId),
-    requestCount: projection.requests.length,
+    requestCount: requests.length,
     exceptionCount: projection.exceptions.length,
-    duplicateCount: results.filter((result) => result.duplicate).length,
+    duplicateCount: projection.requests.length - requests.length + results.filter((result) => result.duplicate).length,
     requestIds: results.map((result) => result.request_id),
   };
 }

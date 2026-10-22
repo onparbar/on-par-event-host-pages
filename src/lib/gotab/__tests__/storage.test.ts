@@ -56,3 +56,50 @@ describe("scoped food-order delivery", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+describe("contract food history", () => {
+  it("reads only the selected event's contract rows across all rule versions without writing", async () => {
+    const contract = {
+      id: "legacy-contract-request", source_record_id: "platter-wings",
+      quantity: 1, pan_size: "THIRD_PAN", dispatch_status: "SENT_TO_GOTAB",
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json([
+      contract,
+      { ...contract, id: "legacy-misclassified-add-on", source_record_id: "addon:wings" },
+    ]));
+    const storage = new GoTabIntegrationStorage({
+      NODE_ENV: "test", SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SECRET_KEY: "test-secret",
+    }, fetchImpl);
+
+    expect(await storage.listContractFoodRequests("event-123")).toEqual([contract]);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const [url, init] = fetchImpl.mock.calls[0];
+    const requestUrl = new URL(url);
+    expect(requestUrl.pathname).toBe("/rest/v1/event_food_requests");
+    expect(Object.fromEntries(requestUrl.searchParams)).toEqual({
+      select: "id,source_record_id,quantity,pan_size,dispatch_status",
+      event_id: "eq.event-123", source_type: "eq.TRIPLESEAT_CONTRACT", limit: "1000",
+    });
+    expect(requestUrl.searchParams.has("source_version")).toBe(false);
+    expect(init).toMatchObject({ method: "GET", cache: "no-store" });
+    expect(init.body).toBeUndefined();
+  });
+
+  it("does not treat failed contract-history reads as an event with no prior food orders", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
+    const storage = new GoTabIntegrationStorage({ NODE_ENV: "test", SUPABASE_SECRET_KEY: "test-secret" }, fetchImpl);
+    await expect(storage.listContractFoodRequests("event-123")).rejects.toThrow("database request failed (503)");
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed if contract history may be truncated by the database row limit", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json(Array.from({ length: 1000 }, (_, index) => ({
+      id: `request-${index}`, source_record_id: "platter-wings",
+      quantity: 1, pan_size: "THIRD_PAN", dispatch_status: "SENT_TO_GOTAB",
+    }))));
+    const storage = new GoTabIntegrationStorage({ NODE_ENV: "test", SUPABASE_SECRET_KEY: "test-secret" }, fetchImpl);
+    await expect(storage.listContractFoodRequests("event-123")).rejects.toThrow("too large to verify completely");
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+});

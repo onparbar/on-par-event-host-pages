@@ -197,13 +197,13 @@ describe("translateEventHostFoodAddOns", () => {
       {
         quantity: 128,
         unit: "each",
-        numberOfPans: 6,
+        numberOfPans: 8,
         panSize: "1/3",
       },
       {
-        quantity: 8,
+        quantity: 4,
         unit: "pounds",
-        numberOfPans: 3,
+        numberOfPans: 4,
         panSize: "1/3",
       },
       {
@@ -215,13 +215,13 @@ describe("translateEventHostFoodAddOns", () => {
       {
         quantity: 2,
         unit: "bags",
-        numberOfPans: null,
-        panSize: null,
+        numberOfPans: 2,
+        panSize: "1/2",
       },
       {
         quantity: 128,
         unit: "each",
-        numberOfPans: 6,
+        numberOfPans: 8,
         panSize: "1/3",
       },
       {
@@ -296,6 +296,60 @@ describe("translateEventHostFoodAddOns", () => {
       },
     );
     expect(addOn).not.toHaveProperty("selectedPanSize");
+  });
+
+  const platterFormulaCases = [
+    { key: "tater-kegs", amount: 64, unit: "each", halfPans: 2, thirdPans: 3 },
+    { key: "mozzarella-sticks", amount: 2, unit: "pounds", halfPans: 1, thirdPans: 2 },
+    { key: "chicken-tenders", amount: 64, unit: "each", halfPans: 2, thirdPans: 4 },
+    { key: "wings", amount: 64, unit: "each", halfPans: 2, thirdPans: 4 },
+    { key: "fry-platters", amount: 1, unit: "bags", halfPans: 1, thirdPans: null },
+  ] as const;
+
+  it.each(platterFormulaCases.flatMap((formula) => [1, 2, 10].flatMap((count) =>
+    (["1/2", "1/3"] as const).map((panSize) => ({ ...formula, count, panSize })),
+  )))("uses exact $panSize pans for $count $key add-on platter(s)", ({
+    key, amount, unit, halfPans, thirdPans, count, panSize,
+  }) => {
+    const [addOn] = translateEventHostFoodAddOns({
+      [key]: { quantity: count, panSize },
+    }, null);
+    const pansPerPlatter = panSize === "1/2" ? halfPans : thirdPans;
+    expect(addOn).toMatchObject({
+      quantity: amount * count,
+      unit,
+      numberOfPans: pansPerPlatter === null ? null : pansPerPlatter * count,
+      panSize,
+      selectedPanSize: panSize,
+    });
+    expect(resolveKitchenLiveFoodAddOns([addOn])[0].sourceQuantity).toBe(count);
+  });
+
+  it.each(platterFormulaCases.flatMap((formula) => [1, 2, 10].map((count) => ({
+    ...formula, count,
+  }))))("keeps automatic $key platter packing approved at quantity $count", ({
+    key, amount, thirdPans, halfPans, count,
+  }) => {
+    const [addOn] = translateEventHostFoodAddOns({ [key]: { quantity: count } }, null);
+    expect(addOn).toMatchObject({
+      quantity: amount * count,
+      numberOfPans: count * (thirdPans ?? halfPans),
+      panSize: thirdPans === null ? "1/2" : "1/3",
+    });
+    expect(addOn).not.toHaveProperty("selectedPanSize");
+  });
+
+  it("keeps bar food refills as requested units rather than inventing platter conversions", () => {
+    const addOns = translateEventHostFoodAddOns({
+      "appetizer-refill-tater-kegs": { quantity: 2 },
+      "appetizer-refill-mozzarella-sticks": { quantity: 2 },
+      "appetizer-refill-chicken-tenders": { quantity: 2 },
+      "wing-refill-wings": { quantity: 2 },
+      "wing-refill-fries": { quantity: 2 },
+    }, null);
+    expect(addOns).toHaveLength(5);
+    expect(addOns.every((item) => item.quantity === 2 &&
+      item.unit === "requested units" && item.numberOfPans === null && item.panSize === null)).toBe(true);
   });
 
   it("accepts positive whole number values and ignores invalid or unknown entries", () => {

@@ -676,7 +676,7 @@ describe("Tripleseat adapter security and normalization", () => {
       expect.objectContaining({ name: "Fries", quantity: 4 }),
     ]);
     expect(rows.get("platter-mozzarella-sticks")).toMatchObject({
-      quantity: 12,
+      quantity: 6,
       unit: "pounds",
       numberOfPans: 3,
       panSize: "1/2",
@@ -684,13 +684,13 @@ describe("Tripleseat adapter security and normalization", () => {
     expect(rows.get("platter-wings")).toMatchObject({
       quantity: 128,
       unit: "each",
-      numberOfPans: 2,
+      numberOfPans: 4,
       panSize: "1/2",
     });
     expect(rows.get("platter-chicken-tenders")).toMatchObject({
       quantity: 128,
       unit: "each",
-      numberOfPans: 2,
+      numberOfPans: 4,
       panSize: "1/2",
     });
     expect(rows.get("platter-fries")).toMatchObject({
@@ -709,8 +709,8 @@ describe("Tripleseat adapter security and normalization", () => {
     });
     expect(checklist.chafingDishes).toEqual({
       bars: 0,
-      hotPlatters: 6,
-      total: 6,
+      hotPlatters: 8,
+      total: 8,
     });
     expect(event.specialNotes).toEqual([
       "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.",

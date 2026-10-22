@@ -317,7 +317,7 @@ describe("Supabase kitchen storage authentication", () => {
     const wingsReadinessKey = quantityAwareReadinessKey({
       itemKey: "addon:wings",
       quantity: 128,
-      numberOfPans: 6,
+      numberOfPans: 8,
       panSize: "1/3",
       unit: "each",
       ruleVersion: checklist("12345").ruleVersion,
@@ -430,8 +430,8 @@ describe("Supabase kitchen storage authentication", () => {
     });
     expect(numericEvent?.chafingDishes).toEqual({
       bars: 1,
-      hotPlatters: 1,
-      total: 2,
+      hotPlatters: 3,
+      total: 4,
     });
     expect(
       numericEvent?.sections
@@ -445,7 +445,7 @@ describe("Supabase kitchen storage authentication", () => {
       expect.objectContaining({
         itemKey: "addon:wings",
         quantity: 128,
-        numberOfPans: 6,
+        numberOfPans: 8,
         panSize: "1/3",
         sourceUpdatedAt: "2026-07-29T13:30:00Z",
       }),
@@ -560,8 +560,8 @@ describe("Supabase kitchen storage authentication", () => {
     ]);
     expect(day.events[0].chafingDishes).toEqual({
       bars: 1,
-      hotPlatters: 1,
-      total: 2,
+      hotPlatters: 3,
+      total: 4,
     });
     expect(
       day.events[0].sections
