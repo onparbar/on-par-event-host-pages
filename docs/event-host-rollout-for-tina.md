@@ -40,7 +40,9 @@ Her operations release does not resolve the source adoption manifest, source-onl
 dry run or authorized Preview of this combined candidate; those remain required.
 The local inventory contains 20 migrations; export the full current remote history
 and compare all local files rather than assuming the older count is current.
-The October 22 public configuration-only release report also identifies `ef6e45f`
+Tina reported the operations promotion in
+[comment 6351756414](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6351756414).
+An independent October 22 configuration-only release check confirms `1bcc612`
 as production, the intended database target, and live Tripleseat/GoTab modes.
 This is configuration evidence, not source-migration or live-data acceptance. Vercel Production tracks `main`; PR #3 targets
 `codex/event-host-dashboard-deploy`, which has diverged from `main`. A reviewed
