@@ -359,6 +359,22 @@ export class GoTabIntegrationStorage {
     return rows.filter((row) => !row.source_record_id.startsWith("addon:"));
   }
 
+  async listContractFoodRequests(eventId: string) {
+    const response = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "id,source_record_id,quantity,pan_size,dispatch_status",
+        event_id: `eq.${eventId}`,
+        source_type: "eq.TRIPLESEAT_CONTRACT",
+        limit: "1000",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipBookingFoodRequest[];
+    if (rows.length >= 1000) throw new Error("Contract food history is too large to verify completely.");
+    return rows.filter((row) => !row.source_record_id.startsWith("addon:"));
+  }
+
   async listVipCheckinsForDate(date: string) {
     const response = await this.request(
       "vip_checkins",

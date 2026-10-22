@@ -62,10 +62,15 @@ export async function POST(request: Request) {
                 );
               }
             } else {
-              await integration.synchronizeKitchenChecklistToEventFood(checklist, {
+              const result = await integration.synchronizeKitchenChecklistToEventFood(checklist, {
                 sourceVersion: integration.eventFoodSourceVersion(checklist),
                 actor: "TRIPLESEAT_SYNC",
               });
+              if (result.exceptionCount > 0) {
+                payload.warnings.push(
+                  `${checklist.event.name}: Contract food needs GoTab review; check the existing order before resubmitting.`,
+                );
+              }
             }
           }
         }

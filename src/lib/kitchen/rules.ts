@@ -5,6 +5,7 @@ import {
   type PlatterRule,
 } from "./config";
 import { resolveKitchenLiveFoodAddOns } from "./addons";
+import { getPlatterPanAllocation } from "./platter-pans";
 import { normalizeKitchenText, normalizeKitchenSelections } from "./normalize";
 import {
   KITCHEN_TIME_ZONE,
@@ -377,6 +378,7 @@ export function getRequiredPanCount(
 
 export function packHotPlatters(
   items: readonly PlatterPackingItem[],
+  config: KitchenRuleConfig = KITCHEN_RULE_CONFIG,
 ): PlatterPackingResult {
   const totalHotPlatters = items.reduce(
     (sum, item) => sum + item.platterCount,
@@ -394,17 +396,36 @@ export function packHotPlatters(
     };
   }
 
-  const panSize = distinctPannedItemCount % 2 === 0 ? "1/2" : "1/3";
-  const panCount = totalHotPlatters === 1 ? 3 : totalHotPlatters;
-  const pansPerChafingDish = panSize === "1/2" ? 2 : 3;
+  const panSize =
+    items.every((item) => item.key === "platter-fries") || distinctPannedItemCount % 2 === 0
+      ? "1/2"
+      : "1/3";
+  const pans = { "1/2": 0, "1/3": 0 };
+  for (const item of items) {
+    const allocation = packingItemAllocation(item, panSize, config);
+    if (allocation.panSize !== null) {
+      pans[allocation.panSize] += allocation.numberOfPans ?? 0;
+    }
+  }
 
   return {
     status: "approved",
     totalHotPlatters,
-    panCount,
+    panCount: pans["1/2"] + pans["1/3"],
     panSize,
-    chafingDishes: Math.ceil(panCount / pansPerChafingDish),
+    chafingDishes: Math.ceil(pans["1/2"] / 2) + Math.ceil(pans["1/3"] / 3),
   };
+}
+
+function packingItemAllocation(
+  item: PlatterPackingItem,
+  panSize: "1/2" | "1/3",
+  config: KitchenRuleConfig,
+) {
+  const rule = Object.values(config.platter.rules).find((rule) => rule.rowKey === item.key);
+  return rule
+    ? getPlatterPanAllocation(rule, item.platterCount, item.panSize ?? panSize)
+    : { numberOfPans: item.platterCount, panSize: item.panSize ?? panSize };
 }
 
 function selectionsWithKind(
@@ -1094,21 +1115,13 @@ export function generateKitchenChecklist(
 
     const rule = config.platter.rules[kind];
     const quantity = rule.amountPerPlatter * platterCount;
-    const panCapacity =
-      rule.panCapacityKey == null
-        ? null
-        : config.panCapacities[rule.panCapacityKey];
     addRow({
       key: rule.rowKey,
       category: "platters",
       foodName: rule.foodName,
       quantity,
       unit: rule.unit,
-      numberOfPans:
-        panCapacity == null
-          ? null
-          : getRequiredPanCount(quantity, panCapacity.amountPerPan),
-      panSize: panCapacity?.panSize ?? null,
+      ...getPlatterPanAllocation(rule, platterCount, "1/3"),
       prepTiming: prepForPlatter(rule, config),
     });
 
@@ -1135,6 +1148,8 @@ export function generateKitchenChecklist(
     }
   }
 
+  const basePackingItems = [...packingItems];
+  let unresolvedPlatterPacking = false;
   for (const effect of liveAddOnEffects) {
     if (effect.calculation.kind === "display-only") {
       continue;
@@ -1189,10 +1204,20 @@ export function generateKitchenChecklist(
       foodName: effect.item.foodName,
       prepTiming: prepForPlatter(rule, config),
     });
-    if (rule.hot) {
+    if (rule.pansPerPlatter?.["1/3"] === null && effect.item.selectedPanSize === "1/3") {
+      unresolvedPlatterPacking = true;
+      addWarning(warnings, warningKeys, {
+        code: "UNAPPROVED_PLATTER_PACKING",
+        message: `${rule.foodName} uses one 1/2 pan per platter. The requested 1/3-pan conversion needs kitchen review.`,
+        requiresReview: true,
+        scope: "item",
+        itemKey: effect.item.itemKey,
+      });
+    } else if (rule.hot) {
       packingItems.push({
         key: rule.rowKey as PlatterPackingItem["key"],
         platterCount: effect.sourceQuantity,
+        ...(effect.item.panSize ? { panSize: effect.item.panSize } : {}),
       });
     }
     if (rule.sauce) {
@@ -1214,24 +1239,16 @@ export function generateKitchenChecklist(
     }
   }
 
-  const platterPacking = packHotPlatters(packingItems);
+  const platterPacking = packHotPlatters(packingItems, config);
   if (platterPacking.panSize != null) {
-    const packedCounts = new Map<KitchenFoodKey, number>();
-    for (const item of packingItems) {
-      packedCounts.set(
-        item.key,
-        (packedCounts.get(item.key) ?? 0) + item.platterCount,
-      );
-    }
+    const packedItems = new Map(basePackingItems.map((item) => [item.key, item]));
     for (const rows of rowsByCategory.values()) {
       for (const row of rows) {
-        const packedCount = packedCounts.get(row.key);
-        if (packedCount == null) {
+        const packedItem = packedItems.get(row.key as PlatterPackingItem["key"]);
+        if (packedItem == null) {
           continue;
         }
-        row.numberOfPans =
-          platterPacking.totalHotPlatters === 1 ? 3 : packedCount;
-        row.panSize = platterPacking.panSize;
+        Object.assign(row, packingItemAllocation(packedItem, platterPacking.panSize, config));
       }
     }
   }
@@ -1320,7 +1337,7 @@ export function generateKitchenChecklist(
     barChafingDishes *= chafingSetupMultiplier;
   }
   const hotPlatterChafingDishes =
-    platterPacking.chafingDishes * chafingSetupMultiplier;
+    unresolvedPlatterPacking ? null : platterPacking.chafingDishes * chafingSetupMultiplier;
   const totalChafingDishes =
     barChafingDishes == null || hotPlatterChafingDishes == null
       ? null

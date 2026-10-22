@@ -226,6 +226,7 @@ export type PlatterPackingItem = {
     | "platter-fries"
   >;
   platterCount: number;
+  panSize?: PanSize;
 };
 
 export type PlatterPackingResult = {
