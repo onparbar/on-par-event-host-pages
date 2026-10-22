@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   foodAddOns,
+  checklistEventForSelection,
   foodUnitPrice,
   appetizerBarRefillAddOns,
   entertainmentAddOns,
   entertainmentUnitPrice,
+  numeric,
   standardFoodAddOns,
   tacoBarRefillAddOns,
   wingBarRefillAddOns,
@@ -18,6 +20,13 @@ const emptyFoodState: FoodState = {
 };
 
 describe("Event Host food add-ons", () => {
+  it("uses the remembered event before publishing the first tab default", () => {
+    const first = { id: 1, name: "Event A" };
+    const remembered = { id: 2, name: "Event B" };
+    expect(checklistEventForSelection([first, remembered], "2", 1)).toBe(remembered);
+    expect(checklistEventForSelection([first, remembered], null, 1)).toBe(first);
+    expect(checklistEventForSelection([first, remembered], "unavailable", 1)).toBeUndefined();
+  });
   it("prices each dessert platter at $120 even when an old draft has a manual price", () => {
     const dessert = foodAddOns.find((item) => item.key === "dessert-platter")!;
     expect(dessert.kind).toBe("fixed-price");
@@ -46,6 +55,11 @@ describe("Event Host food add-ons", () => {
       selectedRateKey: "fri-sat",
       manualPrice: "",
     })).toBe(18);
+    expect(entertainmentUnitPrice(pool, {
+      quantity: "5",
+      selectedRateKey: "fri-sat",
+      manualPrice: "",
+    }) * numeric("5")).toBe(90);
   });
 
   it("uses the same food keys as the Kitchen live add-on rules", () => {
@@ -70,7 +84,7 @@ describe("Event Host food add-ons", () => {
     expect(tacoBarRefillAddOns).toHaveLength(11);
     expect(tacoBarRefillAddOns.every((item) => item.key.startsWith("taco-"))).toBe(true);
     expect(standardFoodAddOns.every((item) => !item.key.startsWith("taco-"))).toBe(true);
-    expect(appetizerBarRefillAddOns).toHaveLength(5);
+    expect(appetizerBarRefillAddOns).toHaveLength(6);
     expect(wingBarRefillAddOns).toHaveLength(6);
     expect([
       ...standardFoodAddOns,
@@ -80,5 +94,11 @@ describe("Event Host food add-ons", () => {
     ].map((item) => item.key).sort()).toEqual(
       foodAddOns.map((item) => item.key).sort(),
     );
+  });
+
+  it("offers BBQ sauce once in Food and in both bar refill lists", () => {
+    for (const options of [standardFoodAddOns, appetizerBarRefillAddOns, wingBarRefillAddOns]) {
+      expect(options.filter((item) => item.label === "BBQ Sauce")).toHaveLength(1);
+    }
   });
 });

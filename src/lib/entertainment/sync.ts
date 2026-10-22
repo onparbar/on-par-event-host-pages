@@ -988,7 +988,9 @@ export async function createManualEntertainmentReservation(
 export async function updateEntertainmentReservation(
   reservationId: string,
   input: ReservationMutationInput,
-  options: Pick<EntertainmentDependencies, "storage"> = {},
+  options: Pick<EntertainmentDependencies, "storage"> & {
+    preserveAssignmentMode?: boolean;
+  } = {},
 ) {
   const normalizedId = normalizedReservationId(reservationId);
   const values = mutationFields(input);
@@ -998,7 +1000,7 @@ export async function updateEntertainmentReservation(
     throw new Error("Entertainment reservation not found.");
   }
   const now = new Date().toISOString();
-  const reviewIssues = [
+  const reviewIssues = options.preserveAssignmentMode ? existing.reviewIssues : [
     ...existing.reviewIssues.filter(
       (issue) => issue.code === "SOURCE_HAS_NEWER_INFORMATION",
     ),
@@ -1020,14 +1022,16 @@ export async function updateEntertainmentReservation(
     startAt: values.startAt,
     endAt: values.endAt,
     eventColor: values.eventColor,
-    colorSource: "manual",
-    manualOverride: true,
+    colorSource: options.preserveAssignmentMode ? existing.colorSource : "manual",
+    manualOverride: options.preserveAssignmentMode ? existing.manualOverride : true,
     needsReview: reviewIssues.length > 0,
     reviewIssues,
     notes: values.notes,
     active: true,
     updatedAt: now,
-    updatedBy: "authenticated-event-host-staff",
+    updatedBy: options.preserveAssignmentMode
+      ? "event-host-floor-plan-alignment"
+      : "authenticated-event-host-staff",
   };
   const intentionalConflict = await assertNoUnconfirmedConflict(
     reservation,
@@ -1045,6 +1049,7 @@ export async function updateEntertainmentReservation(
     ),
   );
   if (
+    !options.preserveAssignmentMode &&
     values.eventId &&
     (existing.eventColor !== reservation.eventColor ||
       existing.colorSource !== "manual")

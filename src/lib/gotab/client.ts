@@ -389,19 +389,26 @@ export class GoTabClient {
       throw error;
     }
     const requestedName = normalizedPersonName(serverName);
+    // Owner-confirmed staff identity: Event Host's Lex is GoTab's Alexis Younker.
+    // Require a unique active full-name match; never fall back to another Lex.
+    if (requestedName === "lex") {
+      return uniqueEmployeeId(employees.filter(
+        (employee) =>
+          employee.fullName != null &&
+          normalizedPersonName(employee.fullName) === "alexis younker",
+      ));
+    }
     const displayMatches = employees.filter(
       (employee) => normalizedPersonName(employee.displayName) === requestedName,
     );
-    const displayEmployeeId = uniqueEmployeeId(displayMatches);
-    if (displayEmployeeId) return displayEmployeeId;
+    if (displayMatches.length) return uniqueEmployeeId(displayMatches);
 
     const fullNameMatches = employees.filter(
       (employee) =>
         employee.fullName != null &&
         normalizedPersonName(employee.fullName) === requestedName,
     );
-    const fullNameEmployeeId = uniqueEmployeeId(fullNameMatches);
-    if (fullNameEmployeeId) return fullNameEmployeeId;
+    if (fullNameMatches.length) return uniqueEmployeeId(fullNameMatches);
 
     const firstNameMatches = employees.filter(
       (employee) => {
@@ -435,8 +442,14 @@ export class GoTabClient {
       throw new GoTabApiError("response", "The Event Food quantity is invalid.");
     }
     const employeeId = input.serverName?.trim()
-      ? await this.resolveEventFoodEmployeeId(input.serverName).catch(() => null)
+      ? await this.resolveEventFoodEmployeeId(input.serverName)
       : null;
+    if (input.serverName?.trim() && !employeeId) {
+      throw new GoTabApiError(
+        "response",
+        "The selected Kitchen Food Runner could not be uniquely matched to an active GoTab employee. No order was sent. Review the staff assignment.",
+      );
+    }
     const payload = {
       externalId: input.externalId,
       openTab: true,
@@ -468,7 +481,7 @@ export class GoTabClient {
         },
       );
     } catch {
-      throw new GoTabApiError("temporary", "GoTab ordering is temporarily unavailable.");
+      throw new GoTabApiError("temporary", "GoTab order delivery status is uncertain. Review the saved order before retrying.");
     }
     if (!response.ok) {
       const responseBody = await response.text().catch(() => "");
@@ -529,7 +542,7 @@ export class GoTabClient {
     if (!identifiers.orderUuid || tabStatus === "PENDING") {
       throw new GoTabApiError(
         "response",
-        "GoTab accepted the Event Food request but did not send it to the KDS.",
+        "GoTab accepted the Event Food request but did not confirm an accepted order. Review before retrying.",
       );
     }
     return identifiers;

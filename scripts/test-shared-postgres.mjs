@@ -54,6 +54,7 @@ try {
     "20260729152402_entertainment_schedule.sql",
     "20261013182233_shared_reservation_authority.sql",
     "20261020175405_shared_reservation_lifecycle.sql",
+    "20261022171353_shared_entertainment_seating_only_buffers.sql",
   ]) await admin.query(await readFile(path.join(root, "supabase/migrations", name), "utf8"));
 
   const waitForLock = async (...waiting) => {
@@ -191,6 +192,23 @@ try {
         await assert.rejects(rpc(second, action, "browser-call", mutation()), { code: "42501" });
       }
     }
+  });
+  await scenario("actual room intervals permit back-to-back bookings across apps and midnight", async () => {
+    const room = { group: "vip", resourceIds: ["private-room-vip-1"], kind: "room-booking", eventId: null,
+      startsAt: "2026-10-21T23:00Z", endsAt: "2026-10-22T00:00Z" };
+    assert.equal((await rpc(first, "claim", "before-midnight", request(room), "rexreplace")).status, "secured");
+    assert.equal((await rpc(second, "claim", "actual-overlap", request({ ...room, expectedRevision: 1,
+      kind: "walk-in", startsAt: "2026-10-21T23:59Z", endsAt: "2026-10-22T01:00Z" }), "waitlist")).status, "conflict");
+    assert.equal((await rpc(second, "claim", "at-midnight", request({ ...room, expectedRevision: 1,
+      kind: "event", eventId: "later-event", startsAt: "2026-10-21T20:00-04:00", endsAt: "2026-10-22T01:00Z" }), "event-host")).status, "secured");
+  });
+  await scenario("buyouts protect their actual interval while allowing adjacent entertainment", async () => {
+    assert.equal((await rpc(first, "claim", "whole-buyout", request({ group: "buyout", resourceIds: [] }), "event-host")).status, "secured");
+    assert.equal((await rpc(second, "claim", "overlapping-buyout", request({ expectedRevision: 1,
+      group: "pool", resourceIds: ["pool-1"], kind: "walk-in", eventId: null }), "waitlist")).status, "conflict");
+    assert.equal((await rpc(second, "claim", "after-buyout", request({ expectedRevision: 1,
+      group: "pool", resourceIds: ["pool-1"], kind: "walk-in", eventId: null,
+      startsAt: group.endsAt, endsAt: "2026-10-21T22:00Z" }), "waitlist")).status, "secured");
   });
   console.log(`${passed} real PostgreSQL scenarios passed. No external database used.`);
 } catch (error) {

@@ -1833,13 +1833,19 @@ function mockRequested(env: NodeJS.ProcessEnv) {
 export function createTripleseatAdapter(options: LiveAdapterOptions = {}) {
   const env = options.env ?? process.env;
   const missing = getMissingTripleseatEnvironmentVariables(env);
-  if (mockRequested(env) || missing.length > 0) {
+  if (tripleseatSourceMode(env) === "mock") {
     return new MockTripleseatAdapter({
       missingEnvironmentVariables: missing,
       locationId: env.TRIPLESEAT_LOCATION_ID?.trim() || DEFAULT_LOCATION_ID,
     });
   }
   return new LiveTripleseatAdapter(options);
+}
+
+/** Configuration-only selection, also used by the real adapter factory. No I/O. */
+export function tripleseatSourceMode(env: NodeJS.ProcessEnv = process.env): "live" | "mock" {
+  return mockRequested(env) || getMissingTripleseatEnvironmentVariables(env).length > 0
+    ? "mock" : "live";
 }
 
 export function getTripleseatAdapter() {

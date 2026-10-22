@@ -10,7 +10,7 @@ describe("shared inventory SQL authority", () => {
     db = new PGlite();
     await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
       alter default privileges grant all on tables to service_role;`);
-    for (const file of ['20260729152402_entertainment_schedule.sql','20261013182233_shared_reservation_authority.sql']) {
+    for (const file of ['20260729152402_entertainment_schedule.sql','20261013182233_shared_reservation_authority.sql','20261020175405_shared_reservation_lifecycle.sql','20261022171353_shared_entertainment_seating_only_buffers.sql']) {
       await db.exec(await readFile(path.join(process.cwd(),'supabase/migrations',file),'utf8'));
     }
   });
@@ -21,7 +21,7 @@ describe("shared inventory SQL authority", () => {
       update shared_inventory.writers set enabled=true;
       insert into shared_inventory.checkpoints(source,revision,complete,checked_at,covers_from,covers_to)
       select s,'r1',true,clock_timestamp(),'2026-10-01','2026-11-01' from unnest(array['event-host','rexreplace','waitlist']) s
-      on conflict(source) do update set checked_at=excluded.checked_at,complete=true,revision='r1';`);
+      on conflict(source) do update set checked_at=excluded.checked_at,complete=true,revision='r1',covers_from=excluded.covers_from,covers_to=excluded.covers_to;`);
   });
   function request(overrides: Record<string, unknown> = {}) {
     return { ownerReference:'fictional-event-1',eventId:'event-1',kind:'event',approvalReference:'verified-staff-decision-1',
@@ -78,13 +78,33 @@ describe("shared inventory SQL authority", () => {
     expect(buyout.resourceIds).toHaveLength(29);
     expect(await claim('pool-second',request({group:'pool',resourceIds:['pool-2'],kind:'walk-in',eventId:null,expectedRevision:1}),'waitlist')).toMatchObject({status:'conflict'});
   });
-  it('enforces one-hour event protection and a separate twenty-minute room cleaning gap',async () => {
-    await claim('room-first',request({group:'karaoke',resourceIds:['private-room-gem'],kind:'room-booking',eventId:null}),'rexreplace');
-    const second={group:'karaoke',resourceIds:['private-room-gem'],ownerReference:'second',kind:'room-booking',eventId:null,expectedRevision:1};
-    expect(await claim('room-nineteen',request({...second,startsAt:'2026-10-20T21:19Z',endsAt:'2026-10-20T22:00Z'}),'rexreplace')).toMatchObject({status:'conflict'});
-    expect(await claim('room-twenty',request({...second,startsAt:'2026-10-20T21:20Z',endsAt:'2026-10-20T22:00Z'}),'rexreplace')).toMatchObject({status:'secured'});
-    expect(await claim('event-fiftynine',request({group:'karaoke',resourceIds:['private-room-gem'],expectedRevision:2,startsAt:'2026-10-20T22:59Z',endsAt:'2026-10-20T23:59Z'}))).toMatchObject({status:'conflict'});
-    expect(await claim('event-sixty',request({group:'karaoke',resourceIds:['private-room-gem'],expectedRevision:2,startsAt:'2026-10-20T23:00Z',endsAt:'2026-10-21T00:00Z'}))).toMatchObject({status:'secured'});
+  it.each([
+    ['bowling', 'bowling-3'], ['darts', 'darts-2'], ['pool', 'pool-1'],
+    ['shuffleboard', 'shuffleboard-1'], ['karaoke', 'private-room-gem'], ['vip', 'private-room-vip-1'],
+  ])('%s allows back-to-back entertainment and rejects actual overlaps', async (group, resource) => {
+    const common = { group, resourceIds: [resource] };
+    await claim('first-booking', request(common));
+    expect(await claim('one-minute-overlap', request({ ...common, expectedRevision: 1,
+      kind: 'walk-in', eventId: null, startsAt: '2026-10-20T20:59Z', endsAt: '2026-10-20T22:00Z' }), 'waitlist'))
+      .toMatchObject({ status: 'conflict' });
+    expect(await claim('back-to-back-booking', request({ ...common, expectedRevision: 1,
+      kind: 'room-booking', eventId: null, startsAt: '2026-10-20T21:00Z', endsAt: '2026-10-20T22:00Z' }), 'rexreplace'))
+      .toMatchObject({ status: 'secured' });
+    expect(await claim('event-before-booking', request({ ...common, expectedRevision: 2,
+      startsAt: '2026-10-20T19:00Z', endsAt: '2026-10-20T20:00Z' })))
+      .toMatchObject({ status: 'secured' });
+  });
+  it('accepts exact interval evidence but rejects any coverage gap', async () => {
+    await db.query('update shared_inventory.checkpoints set covers_from=$1,covers_to=$2', [startsAt, endsAt]);
+    expect(await claim('exact-coverage')).toMatchObject({ status: 'secured' });
+    await db.exec("update shared_inventory.checkpoints set covers_from=covers_from+interval '1 second' where source='waitlist'");
+    expect(await claim('missing-coverage', request({ expectedRevision: 1 })))
+      .toMatchObject({ status: 'unknown', reason: 'source_evidence_incomplete' });
+  });
+  it('refuses to change buffer policy after authority cutover', async () => {
+    await expect(db.exec(await readFile('supabase/migrations/20261022171353_shared_entertainment_seating_only_buffers.sql','utf8')))
+      .rejects.toThrow(/buffer_policy_requires_disabled_authority/);
+    await db.exec('rollback');
   });
   it('replaces only an owned exact claim and invalidates read-back of its old operation',async () => {
     const old=await claim('original-claim');

@@ -175,6 +175,58 @@ describe("Tripleseat kitchen projection", () => {
   });
 
   it.each([
+    { panSize: undefined, mappedPanSize: "NOT_APPLICABLE" as const },
+    { panSize: "1/3" as const, mappedPanSize: "THIRD_PAN" as const },
+    { panSize: "1/2" as const, mappedPanSize: "HALF_PAN" as const },
+  ])("reuses the BBQ refill product for both bars with $mappedPanSize", ({ panSize, mappedPanSize }) => {
+    const liveFoodAddOns = translateEventHostFoodAddOns({
+      "appetizer-refill-bbq": { quantity: 10, panSize },
+      "wing-refill-bbq": { quantity: 1, panSize },
+    }, "2026-08-15T16:00:00.000Z");
+    const checklist = generateKitchenChecklist(
+      { ...sourceEvent, selections: [] }, undefined, liveFoodAddOns,
+    );
+    const result = projectKitchenChecklist(checklist, [{
+      id: "mapping-bbq-refill",
+      canonicalProductKey: "addon:wing-refill-bbq",
+      displayName: "BBQ",
+      aliases: [],
+      panSize: mappedPanSize,
+      preparationStation: "COLD_PREP",
+      gotabProductUuid: "prd_a7f6Zpe_0WsCxf_yftoeP1pA",
+      verifiedAt: "2026-08-11T12:00:00.000Z",
+    }], { sourceVersion: 2, sourceType: "REFILL" });
+
+    expect(result.exceptions).toEqual([]);
+    expect(result.requests).toHaveLength(2);
+    expect(result.requests.map((request) => ({
+      sourceRecordId: request.sourceRecordId,
+      quantity: request.quantity,
+      product: request.gotabProductUuid,
+    }))).toEqual([
+      { sourceRecordId: "addon:appetizer-refill-bbq", quantity: 10, product: "prd_a7f6Zpe_0WsCxf_yftoeP1pA" },
+      { sourceRecordId: "addon:wing-refill-bbq", quantity: 1, product: "prd_a7f6Zpe_0WsCxf_yftoeP1pA" },
+    ]);
+    expect(result.requests[0].idempotencyKey).not.toBe(result.requests[1].idempotencyKey);
+  });
+
+  it("holds an Appetizer BBQ refill when no BBQ product mapping is available", () => {
+    const liveFoodAddOns = translateEventHostFoodAddOns({
+      "appetizer-refill-bbq": { quantity: 1 },
+    }, "2026-08-15T16:00:00.000Z");
+    const checklist = generateKitchenChecklist(
+      { ...sourceEvent, selections: [] }, undefined, liveFoodAddOns,
+    );
+    const result = projectKitchenChecklist(checklist, [], { sourceVersion: 2, sourceType: "REFILL" });
+
+    expect(result.requests).toEqual([]);
+    expect(result.exceptions).toEqual([expect.objectContaining({
+      itemKey: "addon:appetizer-refill-bbq",
+      reason: "A verified GoTab product mapping is required.",
+    })]);
+  });
+
+  it.each([
     {
       label: "one platter in 1/3 pans",
       food: { "tater-kegs": { quantity: 1 } },

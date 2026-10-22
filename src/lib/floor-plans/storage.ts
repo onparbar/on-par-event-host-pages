@@ -1,4 +1,5 @@
 import { getSupabaseSecret } from "@/lib/kitchen/storage";
+import { StaleSaveError } from "@/lib/stale-save";
 import type {
   FloorPlanDocument,
   FloorPlanRevision,
@@ -19,6 +20,26 @@ export interface FloorPlanStorage {
     description: string,
   ): Promise<FloorPlanDocument>;
   revisions(planId: string): Promise<FloorPlanRevision[]>;
+}
+
+/** Bind every read/write in a reviewed action to the version the tablet saw. */
+export function floorPlanStorageAtVersion(storage: FloorPlanStorage, expectedVersion: number): FloorPlanStorage {
+  let version = expectedVersion;
+  return {
+    persistence: storage.persistence,
+    async get(date) {
+      const plan = await storage.get(date);
+      if ((plan?.version ?? 0) !== version) throw new StaleSaveError();
+      return plan;
+    },
+    async save(plan, description) {
+      if (plan.version !== version) throw new StaleSaveError();
+      const saved = await storage.save(plan, description);
+      version = saved.version;
+      return saved;
+    },
+    revisions: (planId) => storage.revisions(planId),
+  };
 }
 
 function clone<T>(value: T): T {
@@ -52,6 +73,9 @@ export class SupabaseFloorPlanStorage implements FloorPlanStorage {
       cache: "no-store",
     });
     if (!response.ok) {
+      const error = await response.json().catch(() => null) as { code?: string } | null;
+      if (response.status === 409 || error?.code === "PT409") throw new StaleSaveError();
+      if (error?.code === "PGRST202" || response.status === 404) throw new Error("Floor-plan safety migration is not installed. No edits were saved; ask an administrator to finish the reviewed database update.");
       throw new Error(`Floor-plan database request failed (${response.status}).`);
     }
     return response.json() as Promise<T>;
@@ -64,7 +88,7 @@ export class SupabaseFloorPlanStorage implements FloorPlanStorage {
   }
 
   async save(plan: FloorPlanDocument, description: string) {
-    return this.rpc<FloorPlanDocument>("save_event_host_floor_plan", {
+    return this.rpc<FloorPlanDocument>("save_event_host_floor_plan_checked", {
       p_document: plan,
       p_changed_by: "authenticated-event-host-staff",
       p_description: description.slice(0, 500),
@@ -89,10 +113,11 @@ export class MemoryFloorPlanStorage implements FloorPlanStorage {
 
   async save(requested: FloorPlanDocument, description: string) {
     const previous = this.plans.get(requested.eventDate) ?? null;
+    if (requested.version !== (previous?.version ?? 0)) throw new StaleSaveError();
     const now = new Date().toISOString();
     const plan = {
       ...clone(requested),
-      version: previous ? previous.version + 1 : Math.max(1, requested.version),
+      version: (previous?.version ?? 0) + 1,
       createdAt: previous?.createdAt ?? requested.createdAt ?? now,
       updatedAt: now,
     };
@@ -124,6 +149,7 @@ export function getFloorPlanStorage(
 ): FloorPlanStorage {
   const env = options.env ?? process.env;
   if (getSupabaseSecret(env)) return new SupabaseFloorPlanStorage(options);
+  if (env.NODE_ENV === "production") throw new Error("Floor-plan database access is not configured. Production saves require durable database storage.");
   memoryStorage ??= new MemoryFloorPlanStorage();
   return memoryStorage;
 }

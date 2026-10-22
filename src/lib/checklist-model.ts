@@ -46,6 +46,7 @@ export type EventChecklistState = {
   extrasAdded: string;
   remainingDrinkCardBalance: string;
   tasks: Record<string, boolean>;
+  taskEvidence?: Record<string, { employeeName: string; completedAt: string }>;
   entertainment: Record<string, EntertainmentState>;
   food: Record<string, FoodState>;
 };
@@ -61,6 +62,12 @@ export type ChecklistRecord = EventChecklistState & {
   updatedAt: string | null;
   submittedAt: string | null;
 };
+
+/** Resolve the navigation preference before rendering or publishing a default. */
+export function checklistEventForSelection<T extends { id: number }>(events: readonly T[], preferredEventId: string | null, activeEventId: number) {
+  if (preferredEventId) return events.find((event) => String(event.id) === preferredEventId);
+  return events.find((event) => event.id === activeEventId) ?? events[0];
+}
 
 export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
   {
@@ -196,10 +203,11 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "appetizer-refill-chicken-tenders", label: "Chicken Tenders", kind: "quantity-only" },
   { key: "appetizer-refill-marinara", label: "Marinara", kind: "quantity-only" },
   { key: "appetizer-refill-ranch", label: "Ranch", kind: "quantity-only" },
+  { key: "appetizer-refill-bbq", label: "BBQ Sauce", kind: "quantity-only" },
   { key: "wing-refill-wings", label: "Wings", kind: "quantity-only" },
   { key: "wing-refill-fries", label: "Fries", kind: "quantity-only" },
   { key: "wing-refill-ranch", label: "Ranch", kind: "quantity-only" },
-  { key: "wing-refill-bbq", label: "BBQ", kind: "quantity-only" },
+  { key: "wing-refill-bbq", label: "BBQ Sauce", kind: "quantity-only" },
   { key: "wing-refill-garlic-parm", label: "Garlic Parm", kind: "quantity-only" },
   { key: "wing-refill-buffalo", label: "Buffalo Sauce", kind: "quantity-only" },
 ];
@@ -374,6 +382,7 @@ export function defaultChecklistState(dateValue: string): EventChecklistState {
     extrasAdded: "",
     remainingDrinkCardBalance: "",
     tasks,
+    taskEvidence: {},
     entertainment,
     food,
   };
@@ -389,6 +398,7 @@ export function hydrateChecklistState(dateValue: string, savedState?: Partial<Ev
       ...base.tasks,
       ...(savedState?.tasks ?? {}),
     },
+    taskEvidence: { ...(savedState?.taskEvidence ?? {}) },
     entertainment: Object.fromEntries(
       entertainmentAddOns.map((item) => [
         item.key,

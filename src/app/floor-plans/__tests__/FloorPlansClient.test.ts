@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { PortalZoomControls } from "@/app/_components/PortalShell";
@@ -14,7 +14,9 @@ import {
   syncFloorPlanFromTripleseat,
   syncFloorPlanWindowFromTripleseat,
 } from "../FloorPlansClient";
-import PublishedFloorPlanMap from "../PublishedFloorPlanMap";
+import PublishedFloorPlanMap, { PublishedFloorPlanMapView } from "../PublishedFloorPlanMap";
+import FloorPlanEventLegend from "../FloorPlanEventLegend";
+import { floorPlanEventView, floorPlanLocalReservationOutlines } from "@/lib/floor-plans/event-view";
 import type {
   FloorPlanDayPayload,
   FloorPlanDocument,
@@ -640,5 +642,238 @@ describe("floor-plan dashboard organization", () => {
       /aria-label="VIP 2 assigned to No Host Social VIP"[^>]+--event-color:#7C3AED/,
     );
     expect(html).not.toContain("also reserved by No Host Social VIP");
+  });
+});
+
+describe("individual event floor-plan view", () => {
+  const first = {
+    ...interactivePlan.events[0],
+    id: "event-first",
+    tripleseatEventId: "source-first",
+    name: "Earlier Party",
+    startAt: "2026-08-05T13:00:00-04:00",
+    endAt: "2026-08-05T15:00:00-04:00",
+    color: "#B45309",
+    fullBuyout: true,
+  };
+  const second = {
+    ...interactivePlan.events[0],
+    id: "event-second",
+    tripleseatEventId: "source-second",
+    name: "Later Party",
+    color: "#1D4ED8",
+    source: {
+      ...interactivePlan.events[0].source,
+      sourceEventIds: ["source-second", "vip-second"],
+    },
+  };
+  const payload: FloorPlanDayPayload = {
+    ...interactivePayload,
+    plan: {
+      ...interactivePlan,
+      events: [first, second],
+      reservations: [first, second].flatMap((event) => [
+        {
+          ...interactivePlan.reservations[0],
+          id: `${event.id}:vip`,
+          floorPlanEventId: event.id,
+          startAt: event.startAt,
+          endAt: event.endAt,
+        },
+        {
+          ...interactivePlan.reservations[0],
+          id: `${event.id}:custom`,
+          floorPlanEventId: event.id,
+          reservationType: "custom" as const,
+          label: `${event.name} note`,
+          customGeometry: { x: 1200, y: 500, width: 100, height: 40 },
+        },
+      ]),
+    },
+    entertainmentReservations: [
+      sharedVipReservation("first-vip", first),
+      sharedVipReservation("second-vip", second),
+      {
+        ...sharedVipReservation("second-vip-2", second),
+        tripleseatEventId: "vip-second",
+        localEventId: null,
+        resourceId: "private-room-vip-2",
+        resourceName: "VIP 2",
+      },
+    ],
+    floorPlanConflicts: [{
+      id: "day-conflict",
+      areaId: "vip-1",
+      eventIds: [first.id, second.id],
+      eventNames: [first.name, second.name],
+      startAt: second.startAt!,
+      endAt: second.endAt!,
+      blocking: true,
+    }],
+  };
+
+  it("shows the complete day by default and never mutates saved assignments or conflicts", () => {
+    const original = structuredClone(payload);
+    const all = floorPlanEventView(payload.plan, payload.entertainmentReservations, null);
+    const filtered = floorPlanEventView(payload.plan, payload.entertainmentReservations, second.id);
+    const stale = floorPlanEventView(payload.plan, payload.entertainmentReservations, "deleted-event");
+
+    expect(all.plan).toBe(payload.plan);
+    expect(all.entertainmentReservations).toBe(payload.entertainmentReservations);
+    expect(filtered.plan.events.map((event) => event.id)).toEqual([second.id]);
+    expect(filtered.plan.reservations.map((reservation) => reservation.id)).toEqual([
+      `${second.id}:vip`, `${second.id}:custom`,
+    ]);
+    expect(filtered.entertainmentReservations.map((reservation) => reservation.id)).toEqual([
+      "second-vip", "second-vip-2",
+    ]);
+    expect(stale.plan).toBe(payload.plan);
+    expect(stale.selectedEventId).toBeNull();
+    expect(payload).toEqual(original);
+  });
+
+  it("isolates the later event's own color, times, source aliases, and custom highlights", () => {
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanMapView, {
+      payload,
+      selectedEventId: second.id,
+      onSelectEvent: () => {},
+    }));
+
+    expect(html).toMatch(/aria-label="VIP 1 assigned to Later Party"[^>]+background-color:#1D4ED880/);
+    expect(html).toContain('aria-label="VIP 2 assigned to Later Party"');
+    expect(html).toContain('aria-label="Custom highlight: Later Party note"');
+    expect(html).toContain("3:30 PM – 5:30 PM</small>");
+    expect(html).not.toContain('aria-label="VIP 1 assigned to Earlier Party"');
+    expect(html).not.toContain('aria-label="Custom highlight: Earlier Party note"');
+    expect(html).not.toContain('class="floor-plan-full-buyout-overlay"');
+    expect(html).not.toContain("also reserved by Earlier Party");
+    expect(html).not.toContain("background-color:#B4530980");
+    expect(html).toContain("Full-day conflicts: 1");
+    expect(html).toContain("Showing one event does not remove conflicts with other parties.");
+    expect(html).toContain('aria-label="Show only Earlier Party on the floor plan"');
+  });
+
+  it("restores both parties, shared-resource outlines and buyouts when the filter is cleared", () => {
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanMapView, {
+      payload,
+      selectedEventId: null,
+      onSelectEvent: () => {},
+    }));
+    expect(html).toContain('aria-label="VIP 1 assigned to Earlier Party"');
+    expect(html).toContain("also reserved by Later Party");
+    expect(html).toContain('aria-label="Full facility buyout: Earlier Party"');
+    expect(html).toContain('aria-label="Custom highlight: Earlier Party note"');
+    expect(html).toContain('aria-label="Custom highlight: Later Party note"');
+    expect(html).toContain("Showing all events");
+  });
+
+  it("provides native keyboard/touch buttons, repeat-click deselection, and Show all", () => {
+    const onSelectEvent = vi.fn();
+    const buttons = (node: ReactNode): Array<Record<string, unknown>> => {
+      const result: Array<Record<string, unknown>> = [];
+      Children.forEach(node, (child) => {
+        if (!isValidElement<{ children?: ReactNode }>(child)) return;
+        if (child.type === "button") result.push(child.props);
+        result.push(...buttons(child.props.children));
+      });
+      return result;
+    };
+    const allButtons = buttons(FloorPlanEventLegend({ plan: payload.plan, selectedEventId: null, onSelectEvent }));
+    const eventButton = allButtons.find((button) => button["aria-label"] === `Show only ${second.name} on the floor plan`)!;
+    expect(eventButton.type).toBe("button");
+    expect(eventButton["aria-pressed"]).toBe(false);
+    (eventButton.onClick as () => void)();
+    expect(onSelectEvent).toHaveBeenLastCalledWith(second.id);
+
+    const selectedButtons = buttons(FloorPlanEventLegend({ plan: payload.plan, selectedEventId: second.id, onSelectEvent }));
+    const selectedButton = selectedButtons.find((button) => button["aria-label"] === eventButton["aria-label"])!;
+    expect(selectedButton["aria-pressed"]).toBe(true);
+    (selectedButton.onClick as () => void)();
+    expect(onSelectEvent).toHaveBeenLastCalledWith(null);
+    (selectedButtons[0].onClick as () => void)();
+    expect(onSelectEvent).toHaveBeenLastCalledWith(null);
+  });
+
+  it("keeps both parties visible when a dining table is reused, without duplicate VIP outlines", () => {
+    const plan: FloorPlanDocument = {
+      ...payload.plan,
+      reservations: [
+        ...payload.plan.reservations,
+        ...[first, second].map((event) => ({
+          ...interactivePlan.reservations[0],
+          id: `${event.id}:table`,
+          floorPlanEventId: event.id,
+          areaId: "main-rect-left-1",
+          reservationType: "seating" as const,
+          startAt: event.startAt,
+          endAt: event.endAt,
+        })),
+      ],
+    };
+    const outlines = floorPlanLocalReservationOutlines(plan, "", payload.entertainmentReservations);
+    expect(outlines).toHaveLength(1);
+    expect(outlines[0]).toMatchObject({
+      color: second.color,
+      label: "Main Dining Table L1 also assigned to Later Party, 3:30 PM – 5:30 PM",
+    });
+    const editorOutlines = floorPlanLocalReservationOutlines(plan, second.id, payload.entertainmentReservations);
+    expect(editorOutlines[0].color).toBe(first.color);
+    const filtered = floorPlanEventView(plan, payload.entertainmentReservations, second.id);
+    expect(floorPlanLocalReservationOutlines(filtered.plan)).toEqual([]);
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanMapView, {
+      payload: { ...payload, plan },
+      selectedEventId: null,
+      onSelectEvent: () => {},
+    }));
+    expect(html).toContain('aria-label="Main Dining Table L1 assigned to Earlier Party"');
+    expect(html).toContain(`aria-label="${outlines[0].label}"`);
+    expect(html).toContain("border-color:#1D4ED8");
+  });
+
+  it("shows local-only VIP reuse when no shared reservation supplies an outline", () => {
+    const outlines = floorPlanLocalReservationOutlines(payload.plan);
+    expect(outlines).toHaveLength(1);
+    expect(outlines[0].label).toBe("VIP 1 also assigned to Later Party, 3:30 PM – 5:30 PM");
+    const sharedFirstOnly = payload.entertainmentReservations.filter((reservation) => reservation.id === "first-vip");
+    expect(floorPlanLocalReservationOutlines(payload.plan, "", sharedFirstOnly)).toEqual(outlines);
+  });
+
+  it("renders saved food aliases on one canonical physical surface", () => {
+    const event = interactivePlan.events[0];
+    const aliases = ["main-food-1", "main-food-2", "ge-food-table"];
+    const plan: FloorPlanDocument = {
+      ...interactivePlan,
+      reservations: aliases.map((areaId, index) => ({
+        ...interactivePlan.reservations[0],
+        id: `legacy-food-${index}`,
+        areaId,
+        reservationType: "food-table",
+        label: "F",
+      })),
+    };
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanMapView, {
+      payload: { ...interactivePayload, plan },
+      selectedEventId: null,
+      onSelectEvent: () => {},
+    }));
+    for (const name of ["Main Dining Table L4", "Main Dining Table R3", "GEG Table 3"]) {
+      expect(html.split(`aria-label="${name} assigned to ${event.name}"`)).toHaveLength(2);
+    }
+    expect(html.match(/<span>F<\/span>/g)).toHaveLength(3);
+    expect(html).not.toContain('aria-label="Main Dining ADA Food Table');
+    expect(html).not.toContain('aria-label="GEG ADA Food Table');
+  });
+
+  it("keeps reuse outlines grouped across legacy and canonical table IDs", () => {
+    const plan: FloorPlanDocument = {
+      ...payload.plan,
+      reservations: [
+        { ...interactivePlan.reservations[0], id: "first-food", floorPlanEventId: first.id, areaId: "main-food-1", reservationType: "food-table", label: "F", startAt: first.startAt, endAt: first.endAt },
+        { ...interactivePlan.reservations[0], id: "later-seat", floorPlanEventId: second.id, areaId: "main-rect-left-4", reservationType: "seating", startAt: second.startAt, endAt: second.endAt },
+      ],
+    };
+    expect(floorPlanLocalReservationOutlines(plan)).toEqual([
+      expect.objectContaining({ id: "later-seat", color: second.color, label: expect.stringContaining("Main Dining Table L4 also assigned to Later Party") }),
+    ]);
   });
 });

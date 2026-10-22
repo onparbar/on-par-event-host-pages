@@ -1,8 +1,9 @@
 import "server-only";
 
-import { getSupabaseSecret } from "@/lib/kitchen/storage";
+import { getSupabaseSecret, KITCHEN_ROLE_METADATA_PREFIX } from "@/lib/kitchen/storage";
 import type { GoTabCapabilityCheck } from "./client";
 import type { NormalizedEventFoodItem } from "./event-food";
+import type { EventFoodDelivery } from "./delivery";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 
@@ -294,6 +295,56 @@ export class GoTabIntegrationStorage {
     return response.json() as Promise<StoredEventFoodActivity[]>;
   }
 
+  async listEventFoodDelivery(eventIds: readonly string[], requestIds?: readonly string[]): Promise<EventFoodDelivery[]> {
+    const ids = [...new Set(eventIds)];
+    if (!ids.length) return [];
+    if (ids.length > 100 || ids.some((id) => !/^[A-Za-z0-9:_-]{1,160}$/.test(id))) {
+      throw new Error("Invalid food-delivery event scope.");
+    }
+    if (requestIds && (!requestIds.length || requestIds.some((id) => !/^[A-Za-z0-9-]{1,160}$/.test(id)))) {
+      return [];
+    }
+    const params = new URLSearchParams({
+      event_id: `in.(${ids.join(",")})`,
+      select: "id,event_id,source_record_id,display_name,quantity,pan_size,dispatch_status",
+      order: "created_at.desc",
+      limit: "1000",
+      ...(requestIds ? { id: `in.(${[...new Set(requestIds)].join(",")})` } : {}),
+    });
+    const response = await this.request("event_food_requests", params, { method: "GET" });
+    const requests = await response.json() as Array<{
+      id: string; event_id: string; source_record_id: string; display_name: string;
+      quantity: number; pan_size: string; dispatch_status: string;
+    }>;
+    if (requests.length >= 1000) throw new Error("Food-delivery history is too large to verify completely.");
+    const result: EventFoodDelivery[] = [];
+    for (let offset = 0; offset < requests.length; offset += 100) {
+      const batch = requests.slice(offset, offset + 100);
+      const dispatchResponse = await this.request("event_food_dispatches", new URLSearchParams({
+        request_id: `in.(${batch.map((request) => request.id).join(",")})`,
+        select: "request_id,status,gotab_order_uuid,sent_at,last_error,updated_at",
+        order: "updated_at.desc",
+        limit: "1000",
+      }), { method: "GET" });
+      const dispatches = await dispatchResponse.json() as Array<{
+        request_id: string; status: string; gotab_order_uuid: string | null;
+        sent_at: string | null; last_error: string | null; updated_at: string;
+      }>;
+      if (dispatches.length >= 1000) throw new Error("Food-dispatch history is incomplete.");
+      for (const request of batch) {
+        const latest = dispatches.find((dispatch) => dispatch.request_id === request.id);
+        result.push({
+          requestId: request.id, eventId: request.event_id, sourceKey: request.source_record_id,
+          foodName: request.display_name, quantity: request.quantity, panSize: request.pan_size,
+          status: latest?.status ?? "UNKNOWN", orderReference: latest?.gotab_order_uuid ?? null,
+          acceptedAt: latest?.sent_at ?? null, updatedAt: latest?.updated_at ?? "",
+          error: latest?.last_error ? "This order needs review. Check the saved order before retrying." : null,
+        });
+      }
+    }
+    return result;
+  }
+
   async listVipBookingFoodRequests(eventId: string) {
     const response = await this.request(
       "event_food_requests",
@@ -414,6 +465,22 @@ export class GoTabIntegrationStorage {
       food_service_time: string;
     }>;
     return rows[0] ?? null;
+  }
+
+  async getKitchenFoodRunner(eventId: string) {
+    const response = await this.request(
+      "kitchen_manual_assignments",
+      new URLSearchParams({
+        select: "bwa,food_runners",
+        event_id: `eq.${eventId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as Array<{ bwa: string | null; food_runners: string[] | null }>;
+    const legacy = rows[0]?.bwa?.trim();
+    return rows[0]?.food_runners?.find((name) => name.trim())?.trim() ??
+      (legacy && !legacy.startsWith(KITCHEN_ROLE_METADATA_PREFIX) ? legacy : null);
   }
 
   async listExceptions(limit = 100) {

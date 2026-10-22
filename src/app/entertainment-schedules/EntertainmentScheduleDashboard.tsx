@@ -12,6 +12,8 @@ import {
   PortalHeader,
   PortalZoomControls,
 } from "@/app/_components/PortalShell";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import {
   ENTERTAINMENT_CATEGORY_LABELS,
   ENTERTAINMENT_RESOURCES,
@@ -743,6 +745,7 @@ export default function EntertainmentScheduleDashboard({
   initialDate: string;
   initialPayload?: EntertainmentDayPayload | null;
 }) {
+  const eventContext = useEventContext();
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [payload, setPayload] = useState<EntertainmentDayPayload | null>(
     initialPayload,
@@ -770,7 +773,36 @@ export default function EntertainmentScheduleDashboard({
   const autoSyncDates = useRef(new Set<string>());
   const scheduleScrollRef = useRef<HTMLDivElement>(null);
   const previousFitZoomRef = useRef(ENTERTAINMENT_ZOOM_DEFAULT);
+  const ignoredRequestedDateRef = useRef<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const preferredEvent = payload?.events.find((event) =>
+    operationalKitchenEventId(eventKey(event)) === eventContext.preferredEventId,
+  ) ?? null;
+  const selectedContextEvent = preferredEvent ?? payload?.events.find((event) => eventKey(event) === selectedEvent) ?? null;
+  const contextForEvent = (event: EntertainmentEventSnapshot) => ({
+    eventId: operationalKitchenEventId(eventKey(event)), eventName: event.eventName,
+    date: event.operatingDate, area: event.sourceSnapshot.rooms.map((room) => room.name).join(" · "),
+  });
+
+  useEffect(() => {
+    const date = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
+    if (!date) { ignoredRequestedDateRef.current = null; return; }
+    if (date === ignoredRequestedDateRef.current) return;
+    if (eventContext.ready && !isEditing && !modal && date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
+  }, [eventContext.ready, eventContext.requestedDate, eventContext.selectedEvent?.date, isEditing, modal]);
+
+  useEffect(() => {
+    if (!eventContext.ready || !payload || payload.date !== selectedDate || isEditing) return;
+    if (eventContext.preferredEventId) setSelectedEvent(preferredEvent ? eventKey(preferredEvent) : null);
+  }, [eventContext.ready, eventContext.preferredEventId, preferredEvent, payload, selectedDate, isEditing]);
+
+  function chooseScheduleDate(date: string) {
+    if (isEditing || modal) { setNotice("Save or close the current edit before changing dates."); return; }
+    ignoredRequestedDateRef.current = eventContext.requestedDate ?? eventContext.selectedEvent?.date ?? null;
+    eventContext.clearEvent();
+    setSelectedEvent(null);
+    setSelectedDate(date);
+  }
 
   const weekStart = startOfWeek(selectedDate);
   const weekDates = Array.from({ length: 7 }, (_, index) =>
@@ -1048,7 +1080,7 @@ export default function EntertainmentScheduleDashboard({
   function draftForRange(resourceId: string, startMinute: number, endMinute: number) {
     const event =
       payload?.events.find((item) => eventKey(item) === selectedEvent) ??
-      payload?.events[0] ??
+      (eventContext.preferredEventId ? null : payload?.events[0]) ??
       null;
     setModal({
       reservation: null,
@@ -1709,6 +1741,7 @@ export default function EntertainmentScheduleDashboard({
 
   return (
     <PortalFrame className="entertainment-dashboard-shell">
+      <EventSelectionBridge event={selectedContextEvent ? contextForEvent(selectedContextEvent) : null} />
       <PortalHeader
         actions={
           <PortalZoomControls
@@ -1737,14 +1770,14 @@ export default function EntertainmentScheduleDashboard({
             <button
               aria-label="Previous week"
               onClick={() =>
-                setSelectedDate(addCalendarDays(selectedDate, -7))
+                chooseScheduleDate(addCalendarDays(selectedDate, -7))
               }
               type="button"
             >
               ‹
             </button>
             <button
-              onClick={() => setSelectedDate(todayInEntertainmentTimeZone())}
+              onClick={() => chooseScheduleDate(todayInEntertainmentTimeZone())}
               type="button"
             >
               Today
@@ -1752,7 +1785,7 @@ export default function EntertainmentScheduleDashboard({
             <button
               aria-label="Next week"
               onClick={() =>
-                setSelectedDate(addCalendarDays(selectedDate, 7))
+                chooseScheduleDate(addCalendarDays(selectedDate, 7))
               }
               type="button"
             >
@@ -1772,7 +1805,7 @@ export default function EntertainmentScheduleDashboard({
                   aria-selected={selectedDate === date}
                   className={selectedDate === date ? "is-selected" : ""}
                   key={date}
-                  onClick={() => setSelectedDate(date)}
+                  onClick={() => chooseScheduleDate(date)}
                   role="tab"
                   type="button"
                 >
@@ -1937,10 +1970,12 @@ export default function EntertainmentScheduleDashboard({
               </span>
             </summary>
             <div className="entertainment-event-panel-body">
+            <p>Entertainment is reserved for its booked times only, with no setup or cleanup buffer.</p>
+            {eventContext.preferredEventId && payload && !preferredEvent ? <p role="alert">The selected event is not in this saved schedule. No other party was selected. Choose an event below or clear the selection.</p> : null}
             {selectedEvent ? (
               <button
                 className="entertainment-clear-filter"
-                onClick={() => setSelectedEvent(null)}
+                onClick={() => { setSelectedEvent(null); eventContext.clearEvent(); }}
                 type="button"
               >
                 Clear event highlight
@@ -1979,11 +2014,10 @@ export default function EntertainmentScheduleDashboard({
                     >
                       <button
                         className="entertainment-event-chip"
-                        onClick={() =>
-                          setSelectedEvent((current) =>
-                            current === key ? null : key,
-                          )
-                        }
+                        onClick={() => {
+                          if (selectedEvent === key) { setSelectedEvent(null); eventContext.clearEvent(); }
+                          else { setSelectedEvent(key); eventContext.selectEvent(contextForEvent(event)); }
+                        }}
                         style={{
                           backgroundColor: event.eventColor,
                           color: textColorForBackground(event.eventColor),

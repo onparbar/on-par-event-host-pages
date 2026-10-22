@@ -4,6 +4,11 @@ import {
 } from "./addons";
 import { activeKitchenChecklists } from "./lifecycle";
 import { generateKitchenChecklist } from "./rules";
+import { withKitchenReservedAreas } from "./reserved-area";
+import {
+  getFloorPlanStorage,
+  type FloorPlanStorage,
+} from "../floor-plans/storage";
 import {
   getKitchenStorage,
   getMissingSupabaseEnvironmentVariables,
@@ -56,6 +61,7 @@ export type KitchenSyncDependencies = {
   storage?: KitchenStorage;
   now?: Date;
   vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
+  floorPlanStorage?: Pick<FloorPlanStorage, "get">;
 };
 
 export class KitchenSyncError extends Error {
@@ -231,7 +237,7 @@ export async function getKitchenDay(
   assertKitchenDate(date);
   const { adapter, storage } = dependencies(options);
   const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
-  const [initialStored, diagnostics, liveVipResult] = await Promise.all([
+  const [initialStored, diagnostics, liveVipResult, floorPlanResult] = await Promise.all([
     storage.getDay(date),
     Promise.resolve(adapter.getDiagnostics()),
     vipPrepClient.configured
@@ -240,6 +246,13 @@ export async function getKitchenDay(
           () => ({ events: [], error: "VIP Prep could not be refreshed; the last saved VIP checklist remains visible.", refreshed: false }),
         )
       : Promise.resolve({ events: [], error: null, refreshed: false }),
+    (options.floorPlanStorage ?? getFloorPlanStorage()).get(date).then(
+      (plan) => ({ plan, error: null }),
+      () => ({
+        plan: null,
+        error: "Saved floor-plan areas could not be loaded; booking areas are shown.",
+      }),
+    ),
   ]);
   let stored = initialStored;
   let contractPersistenceWarning: string | null = null;
@@ -356,9 +369,12 @@ export async function getKitchenDay(
     ...storedAndVipEvents,
     ...confirmedContractEvents,
   ]);
-  const events = activeKitchenChecklists(
-    eventsWithSourceStatus,
-    options.now ?? new Date(),
+  const events = withKitchenReservedAreas(
+    activeKitchenChecklists(
+      eventsWithSourceStatus,
+      options.now ?? new Date(),
+    ),
+    floorPlanResult.plan,
   );
   const activeEventIds = new Set(
     events.map((event) => String(event.event.eventId)),
@@ -385,6 +401,7 @@ export async function getKitchenDay(
       ...(liveVipResult.error ? [liveVipResult.error] : []),
       ...(contractPersistenceWarning ? [contractPersistenceWarning] : []),
       ...(vipPersistenceWarning ? [vipPersistenceWarning] : []),
+      ...(floorPlanResult.error ? [floorPlanResult.error] : []),
     ]),
     missingEnvironmentVariables: unique([
       ...diagnostics.missingEnvironmentVariables,
@@ -524,6 +541,7 @@ export async function updateKitchenManualAssignments(
   preppedBy = "",
   verifiedBy = "",
   setup: readonly string[] = [],
+  expectedUpdatedAt?: string | null,
 ) {
   const normalizedEventId = eventId.trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalizedEventId)) {
@@ -569,13 +587,14 @@ export async function updateKitchenManualAssignments(
   const normalizedVerifiedBy = normalizeSingleName(verifiedBy, "Verified by");
   const normalizedSetup = normalizeNames(setup, "Set Up");
 
-  await (options.storage ?? getKitchenStorage()).saveManualAssignments(
+  const updatedAt = await (options.storage ?? getKitchenStorage()).saveManualAssignments(
     normalizedEventId,
     normalizedFoodRunners,
     normalizedPocs,
     normalizedPreppedBy,
     normalizedVerifiedBy,
     normalizedSetup,
+    expectedUpdatedAt,
   );
   return {
     eventId: normalizedEventId,
@@ -584,6 +603,7 @@ export async function updateKitchenManualAssignments(
     preppedBy: normalizedPreppedBy,
     verifiedBy: normalizedVerifiedBy,
     setup: normalizedSetup,
+    updatedAt: updatedAt ?? null,
   };
 }
 

@@ -5,6 +5,8 @@ node_modules/
 .next/
 out/
 .vercel/
+supabase/.temp/
+.private-migration-audit/
 *.tsbuildinfo
 *.log
 supabase/.temp/

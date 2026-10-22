@@ -12,7 +12,7 @@ import {
   getAreaForEntertainmentResource,
   getFloorPlanArea,
 } from "@/lib/floor-plans/configuration/areas";
-import { detectFloorPlanConflicts, timeRangesOverlap } from "@/lib/floor-plans/conflicts";
+import { detectFloorPlanConflicts, floorPlanAreaTimeOverlap } from "@/lib/floor-plans/conflicts";
 import type { FloorPlanDocument } from "@/lib/floor-plans/types";
 import type { KitchenChecklist, KitchenWarningCode } from "@/lib/kitchen/types";
 
@@ -306,18 +306,6 @@ export function evaluateEventCompleteness({
   };
 }
 
-function intersection(
-  leftStart: string,
-  leftEnd: string,
-  rightStart: string,
-  rightEnd: string,
-) {
-  return {
-    startAt: Date.parse(leftStart) >= Date.parse(rightStart) ? leftStart : rightStart,
-    endAt: Date.parse(leftEnd) <= Date.parse(rightEnd) ? leftEnd : rightEnd,
-  };
-}
-
 function conflictKey(conflict: AdminOperationsConflict) {
   const normalizedStart = Date.parse(conflict.startAt);
   const normalizedEnd = Date.parse(conflict.endAt);
@@ -376,7 +364,7 @@ export function buildAdminConflictCenter({
     for (let rightIndex = leftIndex + 1; rightIndex < plans.length; rightIndex += 1) {
       const right = plans[rightIndex];
       const rightRange = eventRange(right.plan, right.source);
-      if (!rightRange || !timeRangesOverlap(leftRange.startAt, leftRange.endAt, rightRange.startAt, rightRange.endAt)) continue;
+      if (!rightRange) continue;
       const rightAreas = new Set(
         (right.source?.rooms ?? right.plan.rooms)
           .map(resolveAreaAlias)
@@ -385,15 +373,17 @@ export function buildAdminConflictCenter({
             return area?.type === "room" || area?.type === "seating-section";
           }),
       );
-      const sharedAreaIds = leftAreas.has("facility") && rightAreas.size > 0
-        ? ["facility"]
+      const sharedAreas = leftAreas.has("facility") && rightAreas.size > 0
+        ? [...rightAreas].map((timingAreaId) => ({ areaId: "facility", timingAreaId }))
         : rightAreas.has("facility") && leftAreas.size > 0
-          ? ["facility"]
-          : [...leftAreas].filter((areaId) => rightAreas.has(areaId));
-      for (const areaId of sharedAreaIds) {
-        const overlap = intersection(leftRange.startAt, leftRange.endAt, rightRange.startAt, rightRange.endAt);
+          ? [...leftAreas].map((timingAreaId) => ({ areaId: "facility", timingAreaId }))
+          : [...leftAreas].filter((areaId) => rightAreas.has(areaId))
+            .map((areaId) => ({ areaId, timingAreaId: areaId }));
+      for (const { areaId, timingAreaId } of sharedAreas) {
+        const overlap = floorPlanAreaTimeOverlap(timingAreaId, leftRange.startAt, leftRange.endAt, rightRange.startAt, rightRange.endAt);
+        if (!overlap) continue;
         conflicts.push({
-          id: `contracted:${date}:${areaId}:${left.plan.id}:${right.plan.id}`,
+          id: `contracted:${date}:${areaId}:${timingAreaId}:${left.plan.id}:${right.plan.id}`,
           date,
           kind: "contracted-room",
           resourceId: areaId,

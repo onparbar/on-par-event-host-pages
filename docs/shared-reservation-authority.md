@@ -9,7 +9,13 @@ false. Keep them false until the cutover below is implemented and verified.
 Migration `20261020175405_shared_reservation_lifecycle.sql` adds atomic multi-group
 replacement, owned release and exact checkout-hold conversion. It also leaves
 every gate disabled. These are separate from Tina's **source-only** migration
-handoff; do not include either shared migration in the source rollout.
+handoff; do not include any shared migration in the source rollout.
+
+Migration `20261022171353_shared_entertainment_seating_only_buffers.sql` applies
+Carlos’s October 22 decision without changing historical migration files. It
+requires disabled authority/baseline/writer flags, leaves them disabled, and
+changes only entertainment overlap and required source coverage. Seating keeps
+60-minute setup/30-minute cleanup in Event Host floor plans.
 
 ## Transaction behavior
 
@@ -17,12 +23,12 @@ handoff; do not include either shared migration in the source rollout.
 row in a READ COMMITTED transaction. It verifies the expected ledger revision,
 fresh complete checkpoints for Event Host/REX/Waitlist, all writer cutover flags,
 the exact final physical resource set, and the ownership of any replaced claims.
-Source coverage must include the requested interval plus an hour on each side.
+Source coverage must include the actual requested interval.
 Checkpoints expire after two minutes; they are not automatically created here.
 
 The transaction enforces bowling/dart adjacency, five-room Big Show expansion,
-29-unit buyout expansion, one-hour event pre-protection, and a separate 20-minute
-room-cleaning constraint. Synthetic Big Show and open-play mini golf are not
+29-unit buyout expansion and actual interval overlap checks. Back-to-back
+entertainment bookings, including karaoke and VIP, are allowed. Synthetic Big Show and open-play mini golf are not
 additional finite units. Checkout holds use database-clock expiry; ordinary
 bookings never expire automatically. Event requests require an approval reference;
 the trusted caller remains responsible for verifying the real staff decision.
@@ -148,10 +154,11 @@ does not accept a database URL or read production credentials. Pinned developmen
 dependencies include the native binary; pnpm allows its symlink setup on macOS
 ARM64 and Linux x64. Other platforms may require `pnpm approve-builds`.
 
-Ten real PostgreSQL scenarios prove lock contention, same-key concurrency,
+Twelve real PostgreSQL scenarios prove lock contention, same-key concurrency,
 timeout rollback, lost-response recovery, uncommitted invisibility, expiry and
 freshness after lock wait, conversion-versus-cancellation, batch rollback and
-browser/service privileges. These are local authority tests, **not** proof that
+browser/service privileges, back-to-back bookings across midnight and buyout
+interval boundaries. These are local authority tests, **not** proof that
 the deployed applications use it or that Tina's schema matches the fixture.
 No production migration, baseline import, real reservation or writer cutover has
 been performed.

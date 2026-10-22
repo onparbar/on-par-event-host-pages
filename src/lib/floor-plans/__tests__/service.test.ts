@@ -20,6 +20,7 @@ import {
   getFloorPlanDay,
   refreshFloorPlanSources,
   reservationsForReconciledFloorPlanEvents,
+  saveFloorPlanEdits,
 } from "../service";
 import { floorPlanEventColorsAreDistinct } from "../configuration/colors";
 import { MemoryFloorPlanStorage } from "../storage";
@@ -102,6 +103,42 @@ afterEach(() => {
 });
 
 describe("Floor Plan Tripleseat source enforcement", () => {
+  it("saves and reopens a GEG table converted from seating to food", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source({ rooms: ["GEG Tables"], guestCount: 20 })]));
+    const initial = await generateFloorPlan("2026-08-06", "fill-missing", storage);
+    const event = initial.plan.events[0];
+    const requested = { ...initial.plan, reservations: ["ge-table-1", "ge-table-2", "ge-table-3"].map((areaId, index): FloorPlanReservation => ({
+      id: `manual:${areaId}`, floorPlanEventId: event.id, areaId,
+      reservationType: index === 0 ? "food-table" : "seating",
+      startAt: event.startAt, endAt: event.endAt, label: index === 0 ? "F" : "",
+      source: "manual", lockedByUser: true,
+    })) };
+
+    await saveFloorPlanEdits("2026-08-06", requested, storage);
+    const reopened = await getFloorPlanDay("2026-08-06", storage);
+
+    expect(reopened.plan.reservations).toEqual(requested.reservations);
+    expect(reopened.validation).toContainEqual(expect.objectContaining({ code: "SEATING_CAPACITY", status: "Passed" }));
+    expect(reopened.validation).toContainEqual(expect.objectContaining({ code: "FOOD_TABLE", status: "Passed" }));
+  });
+
+  it.each([["wat-table-1", "food-table"], ["main-food-1", "seating"]] as const)("rejects %s assigned as unsupported %s", async (areaId, reservationType) => {
+    const storage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source()]));
+    const initial = await generateFloorPlan("2026-08-06", "fill-missing", storage);
+    const event = initial.plan.events[0];
+
+    await expect(saveFloorPlanEdits("2026-08-06", { ...initial.plan, reservations: [{
+      id: "invalid-role", floorPlanEventId: event.id, areaId, reservationType,
+      startAt: event.startAt, endAt: event.endAt, label: "F", source: "manual", lockedByUser: true,
+    }] }, storage)).rejects.toThrow("authorized food table");
+  });
+
   it("migrates three saved source highlights onto one merged floor-plan event", () => {
     const event = (
       id: string,
@@ -603,6 +640,48 @@ describe("Floor Plan Tripleseat source enforcement", () => {
       eventDate: "2026-08-06",
       lastTripleseatSyncAt: payload.plan.lastTripleseatSyncAt,
     });
+  });
+
+  it.each(["read", "source refresh"] as const)(
+    "preserves the generation rule version and saved highlights during %s",
+    async (operation) => {
+      const floorPlanStorage = new MemoryFloorPlanStorage();
+      setEventPlanStorageForTests(createMemoryEventPlanStorage());
+      setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+      setTripleseatAdapterForTests(adapter(async () => [source()]));
+      const initial = await generateFloorPlan("2026-08-06", "fill-missing", floorPlanStorage);
+      const previous = await floorPlanStorage.save(
+        { ...initial.plan, ruleVersion: "floor-plan-v1.3.3" },
+        "Saved earlier seating rules.",
+      );
+
+      const payload = operation === "read"
+        ? await getFloorPlanDay("2026-08-06", floorPlanStorage)
+        : await refreshFloorPlanSources("2026-08-06", floorPlanStorage);
+
+      expect(payload.plan.ruleVersion).toBe(previous.ruleVersion);
+      expect(payload.plan.reservations).toEqual(previous.reservations);
+      expect((await floorPlanStorage.get("2026-08-06"))?.ruleVersion).toBe(previous.ruleVersion);
+      expect(payload.warnings).toContainEqual(expect.stringContaining("Replace generated only"));
+    },
+  );
+
+  it("records current seating rules only after regenerating saved suggestions", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source()]));
+    const initial = await generateFloorPlan("2026-08-06", "fill-missing", floorPlanStorage);
+    await floorPlanStorage.save(
+      { ...initial.plan, ruleVersion: "floor-plan-v1.3.3" },
+      "Saved earlier seating rules.",
+    );
+
+    const payload = await generateFloorPlan("2026-08-06", "replace-generated", floorPlanStorage);
+
+    expect(payload.plan.ruleVersion).toBe(FLOOR_PLAN_RULE_VERSION);
+    expect((await floorPlanStorage.get("2026-08-06"))?.ruleVersion).toBe(FLOOR_PLAN_RULE_VERSION);
+    expect(payload.warnings.some((warning) => warning.includes("earlier seating rule version"))).toBe(false);
   });
 
   it("excludes PROSPECT and LOST events from operational floor plans", async () => {

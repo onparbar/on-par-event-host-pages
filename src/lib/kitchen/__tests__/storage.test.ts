@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateKitchenChecklist } from "../rules";
+import { KITCHEN_RULE_CONFIG } from "../config";
 import { quantityAwareReadinessKey } from "../readiness";
 import {
   createMemoryKitchenStorage,
@@ -762,7 +763,7 @@ describe("Supabase kitchen storage authentication", () => {
       .flatMap((section) => section.rows)
       .find((item) => item.key === "taco-chicken");
 
-    expect(day.events[0].ruleVersion).toBe("ope-kitchen-2026-08-14.1");
+    expect(day.events[0].ruleVersion).toBe(KITCHEN_RULE_CONFIG.ruleVersion);
     expect(currentChicken).toMatchObject({
       quantity: 5,
       numberOfPans: 2,

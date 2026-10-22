@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PortalPageHeader, PortalShell } from "@/app/_components/PortalShell";
-import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { isValidEntertainmentDate, todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import type { VipCheckinRow, VipFoodStatus } from "@/lib/vip-checkin/service";
+import { vipCheckinNavigationRows } from "@/lib/vip-checkin/navigation";
 
 const EMPLOYEE_STORAGE_KEY = "event-host-vip-check-in-employee";
 const statusLabels: Record<VipFoodStatus, string> = {
@@ -34,8 +36,14 @@ function easternTime(value: string) {
 }
 
 export default function VipCheckInClient() {
-  const [date, setDate] = useState(todayInEntertainmentTimeZone);
+  const eventContext = useEventContext();
+  const [manualDate, setManualDate] = useState(todayInEntertainmentTimeZone);
+  const [dateTransition, setDateTransition] = useState(false);
+  const preferredDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
+  const date = !dateTransition && eventContext.ready && preferredDate && isValidEntertainmentDate(preferredDate) ? preferredDate : manualDate;
+  const preferredEventId = dateTransition ? null : eventContext.preferredEventId;
   const [rows, setRows] = useState<VipCheckinRow[]>([]);
+  const [loadedDate, setLoadedDate] = useState("");
   const [employees, setEmployees] = useState<string[]>([]);
   const [employeeName, setEmployeeName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -62,6 +70,7 @@ export default function VipCheckInClient() {
       }
       if (selectedDate !== dateRef.current || sequence !== refreshSeq.current) return;
       setRows(payload.reservations);
+      setLoadedDate(selectedDate);
       setEmployees(payload.employees ?? []);
       setError("");
     } catch (loadError) {
@@ -82,11 +91,16 @@ export default function VipCheckInClient() {
   }, []);
 
   useEffect(() => {
+    if (dateTransition && !eventContext.requestedDate && !eventContext.preferredEventId) setDateTransition(false);
+  }, [dateTransition, eventContext.requestedDate, eventContext.preferredEventId]);
+
+  useEffect(() => {
+    if (!eventContext.ready) return;
     setLoading(true);
     void refresh(date);
     const interval = window.setInterval(() => void refresh(date), 10_000);
     return () => window.clearInterval(interval);
-  }, [date, refresh]);
+  }, [date, refresh, eventContext.ready]);
 
   async function confirmCheckIn(reservationId: string) {
     if (pendingRef.current || !employeeName) return;
@@ -128,12 +142,31 @@ export default function VipCheckInClient() {
     }
   }
 
+  function selectDate(value: string) {
+    if (pendingRef.current || !isValidEntertainmentDate(value)) return;
+    // Ignore the old URL preference while router.replace clears it; never let
+    // the old day's reservations remain actionable during that transition.
+    setDateTransition(true);
+    setManualDate(value);
+    if (value !== date) {
+      setRows([]);
+      setLoadedDate("");
+      setLoading(true);
+      refreshSeq.current += 1;
+    }
+    eventContext.clearEvent();
+  }
+
+  const visibleRows = loadedDate === date ? vipCheckinNavigationRows(rows, preferredEventId, date) : [];
+  const selectedVip = preferredEventId && visibleRows.length === 1 ? visibleRows[0] : null;
+
   return (
     <PortalShell
       mainClassName="page vip-checkin-page"
       sectionSubtitle="Arrival and kitchen release"
       sectionTitle="VIP CHECK-IN"
     >
+      <EventSelectionBridge event={selectedVip ? { eventId: preferredEventId!, eventName: selectedVip.vipName, date: selectedVip.reservationDate, area: selectedVip.vipArea, time: easternTime(selectedVip.reservationTime) } : null} />
       <PortalPageHeader
         eyebrow="Staff operations"
         title="VIP CHECK-IN"
@@ -143,9 +176,10 @@ export default function VipCheckInClient() {
       <div className="vip-checkin-controls">
         <label>
           Reservation date
-          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          <input type="date" disabled={pendingId !== null} value={date} onChange={(event) => selectDate(event.target.value)} />
         </label>
-        <button type="button" onClick={() => setDate(todayInEntertainmentTimeZone())}>Today</button>
+        <button type="button" disabled={pendingId !== null} onClick={() => selectDate(todayInEntertainmentTimeZone())}>Today</button>
+        {preferredEventId ? <button type="button" disabled={pendingId !== null} onClick={() => selectDate(date)}>Show all VIPs</button> : null}
         <label>
           Your name
           <select value={employeeName} onChange={(event) => selectEmployee(event.target.value)}>
@@ -158,12 +192,12 @@ export default function VipCheckInClient() {
 
       {error ? <p className="vip-checkin-error" role="alert">{error}</p> : null}
       {loading ? <p className="vip-checkin-empty">Loading VIP reservations…</p> : null}
-      {!loading && !rows.length ? (
-        <p className="vip-checkin-empty">No active VIP reservations found for {easternDate(date)}.</p>
+      {!loading && !visibleRows.length ? (
+        <p className="vip-checkin-empty">{preferredEventId ? "The selected event has no matching VIP reservation on this date. No other party has been substituted. Use Show all VIPs to see this day’s reservations." : `No active VIP reservations found for ${easternDate(date)}.`}</p>
       ) : null}
 
       <div className="vip-checkin-list">
-        {rows.map((row) => (
+        {visibleRows.map((row) => (
           <article className="vip-checkin-card" key={row.reservationId}>
             <div className="vip-checkin-card-main">
               <h2>{row.vipName}</h2>

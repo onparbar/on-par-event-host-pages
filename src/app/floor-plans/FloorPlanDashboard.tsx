@@ -12,10 +12,14 @@ import {
   PortalState,
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import {
   AREAS,
+  DISPLAY_AREAS,
   getAreaForEntertainmentResource,
   getFloorPlanArea,
+  getPhysicalFloorPlanAreaId,
 } from "@/lib/floor-plans/configuration/areas";
 import {
   floorPlanEventColorsAreDistinct,
@@ -23,9 +27,12 @@ import {
 } from "@/lib/floor-plans/configuration/colors";
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
-import { entertainmentReservationMatchesFloorPlanEvent } from "@/lib/floor-plans/identity";
+import { floorPlanEventView, floorPlanLocalReservationOutlines } from "@/lib/floor-plans/event-view";
+import { reservedSeatingCapacity } from "@/lib/floor-plans/generator";
+import { entertainmentReservationMatchesFloorPlanEvent, floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
 import {
   displayEventForFloorPlanArea,
+  assignLocalFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
   floorPlanEventFillColor,
@@ -34,6 +41,7 @@ import {
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
   localHighlightIdsForDeletion,
+  primaryLocalFloorPlanReservation,
   visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
 import type {
@@ -56,6 +64,8 @@ import type {
   EntertainmentDayPayload,
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
+import FloorPlanEventLegend from "./FloorPlanEventLegend";
+import FloorPlanLocalOutlines from "./FloorPlanLocalOutlines";
 
 type RequestState = "idle" | "loading" | "saving" | "error";
 
@@ -86,11 +96,8 @@ function reservationForAreaAndEvent(
   areaId: string,
   eventId: string,
 ) {
-  return plan.reservations.find(
-    (reservation) =>
-      reservation.areaId === areaId &&
-      reservation.floorPlanEventId === eventId,
-  ) ?? null;
+  const reservation = primaryLocalFloorPlanReservation(plan, areaId, eventId);
+  return reservation?.floorPlanEventId === eventId ? reservation : null;
 }
 
 function entertainmentForAreaAndEvent(
@@ -133,6 +140,8 @@ function isoFromDateTimeInput(value: string) {
   );
 }
 
+class FloorPlanSaveConflict extends Error {}
+
 async function floorPlanRequest(date: string, body?: Record<string, unknown>) {
   const response = await fetch(
     body ? "/api/floor-plans" : `/api/floor-plans?date=${encodeURIComponent(date)}`,
@@ -148,15 +157,18 @@ async function floorPlanRequest(date: string, body?: Record<string, unknown>) {
     | (FloorPlanDayPayload & { error?: string })
     | null;
   if (!response.ok || !result) {
+    if (response.status === 409) throw new FloorPlanSaveConflict(result?.error || "A newer floor plan exists. Your draft has been retained; reload and review before saving.");
     throw new Error(result?.error || "Unable to load the floor plan.");
   }
   return result;
 }
 
 export default function FloorPlanDashboard({ initialDate }: { initialDate: string }) {
+  const { ready: contextReady, preferredEventId, requestedDate, selectEvent, clearEvent } = useEventContext();
   const [date, setDate] = useState(initialDate);
   const [payload, setPayload] = useState<FloorPlanDayPayload | null>(null);
   const [activeEventId, setActiveEventId] = useState("");
+  const [visibleEventId, setVisibleEventId] = useState<string | null>(null);
   const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
   const [selectedReservationId, setSelectedReservationId] = useState("");
   const [requestState, setRequestState] = useState<RequestState>("loading");
@@ -166,6 +178,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   const [zoom, setZoom] = useState(1);
   const [mapFocused, setMapFocused] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [saveConflict, setSaveConflict] = useState(false);
   const [undoStack, setUndoStack] = useState<FloorPlanDocument[]>([]);
   const [redoStack, setRedoStack] = useState<FloorPlanDocument[]>([]);
   const [entStart, setEntStart] = useState("");
@@ -180,6 +193,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     try {
       const next = await floorPlanRequest(nextDate);
       setPayload(next);
+      setVisibleEventId(null);
       setActiveEventId((current) =>
         next.plan.events.some((event) => event.id === current)
           ? current
@@ -190,6 +204,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       setUndoStack([]);
       setRedoStack([]);
       setDirty(false);
+      setSaveConflict(false);
       setRequestState("idle");
       setMessage(
         next.persistence === "database"
@@ -206,28 +221,45 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     void loadDate(date);
   }, [date, loadDate]);
 
+  useEffect(() => {
+    if (contextReady && requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) setDate(requestedDate);
+  }, [contextReady, requestedDate]);
+
+  useEffect(() => {
+    if (!contextReady || !preferredEventId || !payload) return;
+    const requested = payload.plan.events.find((event) => [...floorPlanEventSourceIds(event)].some((id) => operationalKitchenEventId(id) === operationalKitchenEventId(preferredEventId)));
+    if (requested) { setActiveEventId(requested.id); setVisibleEventId(requested.id); }
+  }, [contextReady, preferredEventId, payload]);
+
   const plan = payload?.plan ?? null;
+  const mapView = useMemo(
+    () => plan && payload
+      ? floorPlanEventView(plan, payload.entertainmentReservations, visibleEventId)
+      : null,
+    [payload, plan, visibleEventId],
+  );
+  const mapPlan = mapView?.plan ?? null;
   const visibleEntertainment = useMemo(
     () =>
-      plan && payload
+      mapView
         ? visibleEntertainmentReservations(
-            plan,
-            payload.entertainmentReservations,
+            mapView.plan,
+            mapView.entertainmentReservations,
             activeEventId,
           )
         : [],
-    [activeEventId, payload, plan],
+    [activeEventId, mapView],
   );
   const multipleReservationOutlines = useMemo(
     () =>
-      plan && payload
+      mapView
         ? entertainmentMultipleReservationOutlines(
-            plan,
-            payload.entertainmentReservations,
+            mapView.plan,
+            mapView.entertainmentReservations,
             activeEventId,
           )
         : [],
-    [activeEventId, payload, plan],
+    [activeEventId, mapView],
   );
   const activeEvent =
     plan?.events.find((event) => event.id === activeEventId) ?? null;
@@ -236,7 +268,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   const activePlanReservation =
     plan && activeEvent && selectedArea
       ? plan.reservations.find(
-          (reservation) => reservation.id === selectedReservationId,
+          (reservation) => reservation.id === selectedReservationId &&
+            reservation.floorPlanEventId === activeEvent.id,
         ) ?? reservationForAreaAndEvent(plan, selectedArea.id, activeEvent.id)
       : null;
   const activeEntertainmentReservation =
@@ -254,7 +287,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }, [activeEntertainmentReservation, activeEvent]);
 
   useEffect(() => {
-    setFoodTableMode(Boolean(selectedArea?.canBeFoodTable));
+    setFoodTableMode(activePlanReservation
+      ? activePlanReservation.reservationType === "food-table"
+      : Boolean(selectedArea?.canBeFoodTable && selectedArea.capacity === 0));
     setEntertainmentMode(
       Boolean(
         selectedArea?.entertainmentResourceId &&
@@ -262,7 +297,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           selectedArea.type !== "mini-golf",
       ),
     );
-  }, [selectedArea]);
+  }, [selectedArea, activePlanReservation?.reservationType, activeEventId]);
 
   useEffect(() => {
     if (!mapFocused) return;
@@ -320,13 +355,36 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (dirty && !window.confirm("Discard unsaved floor-plan changes and open another date?")) {
       return;
     }
+    clearEvent();
     setDate(nextDate);
+  }
+
+  function selectEditingEvent(eventId: string) {
+    setActiveEventId(eventId);
+    const selected = plan?.events.find((event) => event.id === eventId);
+    if (selected) selectEvent({ eventId: operationalKitchenEventId(selected.tripleseatEventId), eventName: selected.name, date, area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: selected.guestCount });
+    if (visibleEventId) setVisibleEventId(eventId);
+    setSelectedAreaIds([]);
+    setSelectedReservationId("");
+  }
+
+  function selectVisibleEvent(eventId: string | null) {
+    setVisibleEventId(eventId);
+    if (eventId) selectEditingEvent(eventId);
+    else clearEvent();
+    setSelectedAreaIds([]);
+    setSelectedReservationId("");
   }
 
   async function runAction(
     action: "refresh" | "generate" | "save" | "validate" | "approve",
   ) {
     if (!plan && action !== "refresh") return;
+    if (saveConflict) {
+      setMessage("Your draft is retained. Reload and review the newer saved version before making another save or sync.");
+      return;
+    }
+    if (dirty && action !== "save" && !window.confirm("Discard this unsaved draft before updating the saved plan?")) return;
     if (
       action === "generate" &&
       generationMode === "reset-event" &&
@@ -359,6 +417,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     try {
       const next = await floorPlanRequest(date, {
         action,
+        ...(plan ? { expectedVersion: plan.version } : {}),
         ...(action === "generate" ? { mode: generationMode } : {}),
         ...(action === "save" ? { plan } : {}),
         ...(action === "approve" ? { acknowledgeWarnings: warningCount > 0 } : {}),
@@ -386,6 +445,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
             : `Floor plan ${action === "generate" ? "generated" : `${action}d`} and saved as version ${next.plan.version}.`,
       );
     } catch (error) {
+      if (error instanceof FloorPlanSaveConflict) setSaveConflict(true);
       setRequestState("error");
       setMessage(error instanceof Error ? error.message : "Floor-plan action failed.");
     }
@@ -447,7 +507,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (!payload || !plan || !activeEvent || selectedAreaIds.length === 0) return;
     setRequestState("saving");
     try {
-      const localAdditions: FloorPlanReservation[] = [];
+      let nextPlan = plan;
       for (const areaId of selectedAreaIds) {
         const area = getFloorPlanArea(areaId);
         if (!area || !area.isReservable) continue;
@@ -459,31 +519,17 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           await saveEntertainmentAssignment(area, activeEvent);
           if (area.type !== "room") continue;
         }
-        if (reservationForAreaAndEvent(plan, area.id, activeEvent.id)) continue;
         const reservationType = area.canBeFoodTable && foodTableMode
           ? "food-table"
           : area.type === "rectangle-table" || area.type === "square-table"
             ? "seating"
             : "room";
-        localAdditions.push({
-          id: `manual:${activeEvent.id}:${reservationType}:${area.id}`,
-          floorPlanEventId: activeEvent.id,
-          areaId: area.id,
-          reservationType,
-          startAt: activeEvent.startAt,
-          endAt: activeEvent.endAt,
-          label: reservationType === "food-table" ? "F" : area.shortLabel,
-          source: "manual",
-          lockedByUser: true,
-        });
+        nextPlan = assignLocalFloorPlanArea(nextPlan, activeEvent, area, reservationType);
       }
-      const nextPlan = localAdditions.length
-        ? { ...plan, reservations: [...plan.reservations, ...localAdditions] }
-        : plan;
-      if (localAdditions.length) commitPlan(nextPlan);
+      if (nextPlan !== plan) commitPlan(nextPlan);
       await refreshEntertainment(nextPlan);
       setRequestState("idle");
-      setMessage(localAdditions.length ? "Assignments added; save the plan to persist seating changes." : "Shared entertainment assignments saved.");
+      setMessage(nextPlan !== plan ? "Assignments updated; save the plan to persist seating changes." : "Shared entertainment assignments saved.");
     } catch (error) {
       setRequestState("error");
       setMessage(error instanceof Error ? error.message : "Unable to assign the selected objects.");
@@ -598,22 +644,23 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }
 
   async function exportPng() {
-    if (!plan || !payload || !mapImageRef.current || plan.status !== "Approved") return;
+    const plan = mapView?.plan;
+    if (!plan || !mapView || dirty || !mapImageRef.current || plan.status !== "Approved") return;
     const exportedVisibleEntertainment = visibleEntertainmentReservations(
       plan,
-      payload.entertainmentReservations,
+      mapView.entertainmentReservations,
     );
     const exportedMultipleReservationOutlines =
       entertainmentMultipleReservationOutlines(
         plan,
-        payload.entertainmentReservations,
+        mapView.entertainmentReservations,
       );
     const exportedEventFillColors = new Map(
       plan.events.map((event) => [
         event.id,
         floorPlanEventFillColor(
           plan,
-          payload.entertainmentReservations,
+          mapView.entertainmentReservations,
           event,
         ),
       ]),
@@ -626,7 +673,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     context.drawImage(mapImageRef.current, 0, 0, 1920, 1080);
     const exportModel = buildFloorPlanExportModel(
       plan,
-      payload.entertainmentReservations,
+      mapView.entertainmentReservations,
     );
     for (const event of plan.events.filter((candidate) => candidate.fullBuyout)) {
       context.globalAlpha = 0.14;
@@ -660,8 +707,12 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         context.fillText(label, area.x + 4, area.y + Math.min(area.height - 4, 18));
       }
     };
-    for (const reservation of plan.reservations) {
-      const area = getFloorPlanArea(reservation.areaId);
+    const exportedLocalReservations = plan.reservations.filter((reservation) =>
+      reservation.reservationType === "custom" ||
+        primaryLocalFloorPlanReservation(plan, reservation.areaId)?.id === reservation.id,
+    );
+    for (const reservation of exportedLocalReservations) {
+      const area = getFloorPlanArea(getPhysicalFloorPlanAreaId(reservation.areaId));
       const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
       if (!area || !event) continue;
       if (reservation.reservationType === "custom") {
@@ -741,8 +792,13 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         context.fillText(outline.timeLabel, x + 11, y + 19);
       }
     }
+    for (const outline of floorPlanLocalReservationOutlines(plan, "", mapView.entertainmentReservations)) {
+      context.strokeStyle = outline.color;
+      context.lineWidth = 3;
+      context.strokeRect(outline.x, outline.y, outline.width, outline.height);
+    }
     const link = document.createElement("a");
-    link.download = `${date}-event-host-floor-plan.png`;
+    link.download = `${date}-event-host-floor-plan${mapView.selectedEventId ? "-selected-event" : ""}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   }
@@ -753,13 +809,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   );
   const reservedSeats = useMemo(() => {
     if (!plan || !activeEvent) return 0;
-    return plan.reservations
-      .filter(
-        (reservation) =>
-          reservation.floorPlanEventId === activeEvent.id &&
-          reservation.reservationType === "seating",
-      )
-      .reduce((total, reservation) => total + (getFloorPlanArea(reservation.areaId)?.capacity ?? 0), 0);
+    return reservedSeatingCapacity(plan.reservations.filter(
+      (reservation) => reservation.floorPlanEventId === activeEvent.id,
+    ));
   }, [activeEvent, plan]);
 
   return (
@@ -770,6 +822,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       sectionSubtitle="Live Tripleseat planning"
       sectionTitle="Admin Floor Plans"
     >
+      <EventSelectionBridge event={activeEvent ? { eventId: operationalKitchenEventId(activeEvent.tripleseatEventId), eventName: activeEvent.name, date, area: activeEvent.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: activeEvent.guestCount } : null} />
+      <fieldset disabled={requestState === "saving"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <section className="floor-plan-toolbar" aria-label="Floor plan controls">
         <div className="floor-plan-date-controls">
           <button onClick={() => changeDate(addCalendarDays(date, -1))} type="button" aria-label="Previous day">←</button>
@@ -786,21 +840,24 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
             <option value="reset-event">Reset the entire event plan</option>
           </select>
           <button disabled={!plan || requestState === "saving"} onClick={() => void runAction("generate")} type="button">Generate Floor Plan</button>
-          <button disabled={!dirty || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
+          <button disabled={!dirty || saveConflict || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
           {plan?.events.length && !dirty ? <a className="button-link" href="/floor-plans">View saved plan</a> : null}
-          {plan?.status === "Approved" ? <><button onClick={() => void exportPng()} type="button">Export PNG</button><button onClick={() => window.print()} type="button">Print / PDF</button></> : null}
+          {plan?.status === "Approved" ? <><button disabled={dirty} onClick={() => void exportPng()} type="button">{mapView?.selectedEventId ? "Export selected event PNG" : "Export PNG"}</button><button disabled={dirty} onClick={() => window.print()} type="button">{mapView?.selectedEventId ? "Print selected event / PDF" : "Print / PDF"}</button></> : null}
         </div>
         <div className={`floor-plan-save-state is-${requestState}`} role="status">
           <strong>{dirty ? "Unsaved" : requestState === "saving" ? "Working" : requestState === "error" ? "Needs attention" : "Saved"}</strong>
           <span>{message}</span>
+          {saveConflict ? <button type="button" onClick={() => {
+            if (window.confirm("Your unsaved draft will be discarded. Load the latest saved plan to review it?")) void loadDate(date);
+          }}>Reload latest and review</button> : null}
         </div>
       </section>
 
       {requestState === "loading" && !plan ? (
         <PortalState description="Loading the selected date from Event Host." icon="…" title="Loading floor plan" />
-      ) : plan && payload ? (
+      ) : plan && payload && mapPlan && mapView ? (
         <div className="floor-plan-editor-grid">
           <aside className="floor-plan-events-panel" aria-label="Events on selected date">
             <div className="floor-plan-panel-heading">
@@ -817,7 +874,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                   <button
                     className={`floor-plan-event-card${event.id === activeEventId ? " is-active" : ""}`}
                     key={event.id}
-                    onClick={() => setActiveEventId(event.id)}
+                    aria-pressed={event.id === activeEventId}
+                    onClick={() => selectEditingEvent(event.id)}
                     style={{ "--event-color": event.color } as React.CSSProperties}
                     type="button"
                   >
@@ -842,7 +900,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
               <div className="floor-plan-map-canvas" style={{ width: `${zoom * 100}%` }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img alt="On Par Entertainment floor map" draggable={false} ref={mapImageRef} src="/floor-plans/blank-floor-map.png" />
-                {plan.events.filter((event) => event.fullBuyout).map((event) => (
+                {mapPlan.events.filter((event) => event.fullBuyout).map((event) => (
                   <span
                     aria-label={`Full facility buyout: ${event.name}`}
                     className="floor-plan-full-buyout-overlay"
@@ -854,8 +912,13 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                     } as React.CSSProperties}
                   />
                 ))}
-                <div className="floor-plan-map-date" aria-hidden="true"><strong>{formatFullDate(date)}</strong>{plan.events.map((event) => <span key={event.id} style={{ color: event.color }}><b>{event.name} ({event.guestCount})</b><small>{eventTime(event)}</small></span>)}</div>
+                <FloorPlanEventLegend
+                  onSelectEvent={selectVisibleEvent}
+                  plan={plan}
+                  selectedEventId={mapView.selectedEventId}
+                />
                 <div className="floor-plan-area-layer">
+                  <FloorPlanLocalOutlines plan={mapPlan} preferredEventId={activeEventId} entertainmentReservations={mapView.entertainmentReservations} />
                   {multipleReservationOutlines.map((outline) => (
                     <span
                       aria-label={`${outline.resourceNames.join(", ")} also reserved by ${outline.eventName}${outline.timeLabel ? `, ${outline.timeLabel}` : ""}`}
@@ -873,13 +936,13 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                       {outline.timeLabel ? <small className="floor-plan-entertainment-outline-time">{outline.timeLabel}</small> : null}
                     </span>
                   ))}
-                  {AREAS.filter((area) => area.id !== "facility" || plan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
-                    const local = plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom" && (reservation.floorPlanEventId === activeEventId || !activeEventId)) ?? plan.reservations.find((reservation) => reservation.areaId === area.id && reservation.reservationType !== "custom") ?? null;
+                  {DISPLAY_AREAS.filter((area) => area.id !== "facility" || mapPlan.reservations.some((reservation) => reservation.areaId === "facility")).map((area) => {
+                    const local = primaryLocalFloorPlanReservation(mapPlan, area.id, activeEventId);
                     const shared = area.entertainmentResourceId
                       ? visibleEntertainment.find((reservation) => reservation.resourceId === area.entertainmentResourceId) ?? null
                       : null;
                     const assignedEvent = displayEventForFloorPlanArea(
-                      plan,
+                      mapPlan,
                       local,
                       shared,
                     );
@@ -894,7 +957,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                         shared,
                       ),
                     );
-                    const conflict = payload.floorPlanConflicts.some((item) => item.areaId === area.id) || (shared ? payload.entertainmentConflicts.some((item) => item.reservationIds.includes(shared.id)) : false);
+                    const conflict = payload.floorPlanConflicts.some((item) => getPhysicalFloorPlanAreaId(item.areaId) === area.id && (!mapView.selectedEventId || item.eventIds.includes(mapView.selectedEventId))) || (shared ? payload.entertainmentConflicts.some((item) => item.reservationIds.includes(shared.id)) : false);
                     return (
                       <button
                         aria-label={`${area.name}${assignedEvent ? ` assigned to ${assignedEvent.name}` : ", unassigned"}`}
@@ -924,7 +987,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                       </button>
                     );
                   })}
-                  {plan.reservations.filter((reservation) => reservation.reservationType === "custom").map((reservation) => {
+                  {mapPlan.reservations.filter((reservation) => reservation.reservationType === "custom").map((reservation) => {
                     const area = getFloorPlanArea(reservation.areaId);
                     const event = plan.events.find((candidate) => candidate.id === reservation.floorPlanEventId);
                     if (!area || !event) return null;
@@ -934,7 +997,12 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 </div>
               </div>
             </div>
-            <p className="floor-plan-map-help">Select one or more map objects, then use Add highlight or Delete highlight in the inspector. Custom highlights can be renamed and resized directly there.</p>
+            {mapView.selectedEventId && (payload.floorPlanConflicts.length || payload.entertainmentConflicts.length) ? (
+              <p className="floor-plan-warning-copy" role="status">
+                Full-day conflicts: {payload.floorPlanConflicts.length + payload.entertainmentConflicts.length}. Other parties are hidden from this view, but all reservations are still checked before saving and approval.
+              </p>
+            ) : null}
+            <p className="floor-plan-map-help">Click an event name under the date to show only that party; Show all events restores the full day. Editing: <strong>{activeEvent?.name ?? "Select an event"}</strong>. Select map objects, then use Add highlight or Delete highlight in the inspector. Filtering never changes saved assignments or conflict checks.</p>
           </section>
 
           <aside className="floor-plan-inspector" aria-label="Floor plan inspector">
@@ -962,9 +1030,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />Mark as food table and label F</label> : null}
                 {activePlanReservation ? <div className="floor-plan-field-group"><label>Highlight label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label></div> : null}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}
-                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">Add highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
+                <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">{activePlanReservation ? "Update" : "Add"} highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
                 {activePlanReservation?.reservationType === "custom" && activePlanReservation.customGeometry ? <div className="floor-plan-geometry-grid">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key}<input min={0} onChange={(event) => updateReservation({ customGeometry: { ...activePlanReservation.customGeometry!, [key]: Number(event.target.value) } })} type="number" value={activePlanReservation.customGeometry![key]} /></label>)}</div> : null}
-                <div className={`floor-plan-conflict-state${payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? " is-conflict" : ""}`}>{payload.floorPlanConflicts.some((item) => item.areaId === selectedArea.id) ? "Blocking overlap: resolve this assignment before approval." : "No floor-plan overlap detected for this object."}</div>
+                <div className={`floor-plan-conflict-state${payload.floorPlanConflicts.some((item) => getPhysicalFloorPlanAreaId(item.areaId) === getPhysicalFloorPlanAreaId(selectedArea.id)) ? " is-conflict" : ""}`}>{payload.floorPlanConflicts.some((item) => getPhysicalFloorPlanAreaId(item.areaId) === getPhysicalFloorPlanAreaId(selectedArea.id)) ? "Blocking overlap: resolve this assignment before approval." : "No floor-plan overlap detected for this object."}</div>
               </div>
             ) : activeEvent ? (
               <div className="floor-plan-inspector-body">
@@ -980,6 +1048,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       ) : (
         <PortalState description={message} icon="!" title="Floor plan unavailable" />
       )}
+      </fieldset>
     </PortalShell>
   );
 }

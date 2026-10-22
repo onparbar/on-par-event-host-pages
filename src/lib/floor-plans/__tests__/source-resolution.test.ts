@@ -71,6 +71,41 @@ function vipRow(
 }
 
 describe("floor-plan source resolution", () => {
+  it("uses the BEO attendance instead of a larger matching VIP block", () => {
+    const [resolved] = resolveFloorPlanSourceRows([
+      row("60526047", plan({ guest_count: 25 }), "tripleseat"),
+      vipRow("vip-room", 2, "VIP 1", { guest_count: 60 }),
+    ]);
+
+    expect(resolved.plan.guest_count).toBe(25);
+    expect(resolved.plan.review_reasons).toContain(
+      "VIP booking guest count differs from the BEO; floor-plan seating uses the BEO guest count.",
+    );
+    expect(resolved.source?.onParBookingRooms).toEqual(["VIP 1"]);
+  });
+
+  it("does not fill a missing BEO attendance from a duplicate VIP booking", () => {
+    const [resolved] = resolveFloorPlanSourceRows([
+      row("60526047", plan({
+        guest_count: 0,
+        needs_review: true,
+        review_reasons: ["Guest count is missing or invalid."],
+      }), "tripleseat"),
+      vipRow("vip-room", 2, "VIP 1", { guest_count: 20 }),
+    ]);
+
+    expect(resolved.plan.guest_count).toBe(0);
+    expect(resolved.plan.needs_review).toBe(true);
+    expect(resolved.plan.review_reasons).toContain("Guest count is missing or invalid.");
+  });
+
+  it("retains OnPar attendance for VIP-only reservations without a matching BEO", () => {
+    const [resolved] = resolveFloorPlanSourceRows([
+      vipRow("vip-room", 2, "VIP 1", { guest_count: 18 }),
+    ]);
+    expect(resolved.plan.guest_count).toBe(18);
+  });
+
   it("recognizes a Tripleseat event-type prefix and OnPar VIP suffix", () => {
     expect(
       floorPlanSourceNamesMatch(

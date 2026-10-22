@@ -1,5 +1,6 @@
 import type { EntertainmentSourceItem } from "@/lib/entertainment/types";
 import type { KitchenSourceSelection } from "@/lib/kitchen/types";
+import type { ItineraryEdit } from "@/lib/itineraries/edits";
 
 export const EVENT_PLAN_TIME_ZONE = "America/New_York" as const;
 export const EVENT_PLAN_RULE_VERSION = "event-plan-v1.0.2" as const;
@@ -43,7 +44,24 @@ export type EventPlan = {
 };
 
 export type ItineraryAsset = EventPlan & {
+  itinerary_edit?: ItineraryEdit;
   pdf?: string;
+  /** Evidence recorded when a PDF is generated; an event ID alone is not evidence. */
+  pdf_fingerprint?: string;
+  revision?: {
+    fingerprint: string;
+    label: string;
+    generatedAt: string;
+    sourceUpdatedAt: string | null;
+    lastSourceSyncAt: string | null;
+    lastEntertainmentSyncAt: string | null;
+    floorPlanVersion: number | null;
+    floorPlanStatus: string | null;
+    ready: boolean;
+    reasons: string[];
+    sections: Record<"event" | "food" | "entertainment" | "seating" | "notes", string>;
+    savedPdfStatus: "none" | "unverified" | "outdated" | "matching";
+  };
 };
 
 export type TripleseatEventPlanSource = {

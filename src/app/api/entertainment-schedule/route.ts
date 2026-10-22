@@ -1,5 +1,5 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { entertainmentServiceAuthorized } from "@/lib/entertainment/service-auth";
 
 import { getEntertainmentDay } from "@/lib/entertainment/sync";
 import { entertainmentServiceEvidence } from "@/lib/entertainment/service-evidence";
@@ -11,26 +11,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MAX_RANGE_DAYS = 31;
-
-function safeSecretEqual(left: string, right: string) {
-  const leftHash = createHash("sha256").update(left).digest();
-  const rightHash = createHash("sha256").update(right).digest();
-  return timingSafeEqual(leftHash, rightHash);
-}
-
-function authorized(request: Request) {
-  const configuredToken =
-    process.env.ENTERTAINMENT_SCHEDULE_API_TOKEN?.trim() ?? "";
-  const match = request.headers
-    .get("authorization")
-    ?.match(/^Bearer\s+(.+)$/i);
-  const requestToken = match?.[1].trim() ?? "";
-  return (
-    configuredToken.length > 0 &&
-    requestToken.length > 0 &&
-    safeSecretEqual(requestToken, configuredToken)
-  );
-}
 
 function unauthorized() {
   return NextResponse.json(
@@ -71,7 +51,7 @@ function requestedDates(from: string, to: string) {
 }
 
 export async function GET(request: Request) {
-  if (!authorized(request)) {
+  if (!entertainmentServiceAuthorized(request)) {
     return unauthorized();
   }
 

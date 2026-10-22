@@ -239,6 +239,7 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     ["appetizer-refill-chicken-tenders", "Chicken Tenders"],
     ["appetizer-refill-marinara", "Marinara"],
     ["appetizer-refill-ranch", "Ranch"],
+    ["appetizer-refill-bbq", "BBQ Sauce"],
   ].map(([sourceKey, foodName]) => ({
     sourceKey,
     foodName,
@@ -254,7 +255,7 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     ["wing-refill-wings", "Wings"],
     ["wing-refill-fries", "Fries"],
     ["wing-refill-ranch", "Ranch"],
-    ["wing-refill-bbq", "BBQ"],
+    ["wing-refill-bbq", "BBQ Sauce"],
     ["wing-refill-garlic-parm", "Garlic Parm"],
     ["wing-refill-buffalo", "Buffalo Sauce"],
   ].map(([sourceKey, foodName]) => ({

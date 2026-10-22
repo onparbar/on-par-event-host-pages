@@ -1,6 +1,8 @@
 import type { EntertainmentSourceEvent } from "@/lib/entertainment/types";
 import type { EventPlan } from "@/lib/event-plans/types";
 import type { KitchenSourceEvent } from "@/lib/kitchen/types";
+import { numericVipEventId, vipPrepExternalId } from "./identity";
+export { numericVipEventId, vipPrepExternalId } from "./identity";
 
 const DEFAULT_VIP_PREP_API_URL = "https://onparbookings.com/api/vip-prep";
 const KITCHEN_SELECTION_NAME_BY_VIP_CODE: Readonly<Record<string, string>> = {
@@ -212,18 +214,6 @@ export function getMissingVipPrepEnvironmentVariables(env = process.env) {
   return env.VIP_PREP_API_TOKEN?.trim() ? [] : ["VIP_PREP_API_TOKEN"];
 }
 
-export function vipPrepExternalId(reservation: Pick<VipPrepReservation, "id">) {
-  return `vip-${reservation.id}`;
-}
-
-export function numericVipEventId(value: string) {
-  let hash = 2166136261;
-  for (const character of value) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) || 1;
-}
 
 function vipClock(value: string) {
   return new Intl.DateTimeFormat("en-US", {

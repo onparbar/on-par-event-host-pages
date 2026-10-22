@@ -103,6 +103,21 @@ export class KitchenFoodAddOnConflictError extends Error {
   }
 }
 
+export class KitchenStaffAssignmentConflictError extends Error {
+  constructor() {
+    super("Another employee changed these staff assignments. Your draft was kept; reload and review the latest assignments before saving.");
+    this.name = "KitchenStaffAssignmentConflictError";
+  }
+}
+
+function assignmentTimestamp(expected?: string | null) {
+  if (expected !== undefined && expected !== null &&
+      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(expected) || !Number.isFinite(Date.parse(expected)))) {
+    throw new Error("Invalid staff-assignment revision.");
+  }
+  return new Date(Math.max(Date.now(), expected ? Date.parse(expected) + 1 : 0)).toISOString();
+}
+
 export interface KitchenStorage {
   readonly persistence: "database" | "memory";
   getDay(date: string): Promise<StoredKitchenDay>;
@@ -116,7 +131,8 @@ export interface KitchenStorage {
     preppedBy?: string,
     verifiedBy?: string,
     setup?: readonly string[],
-  ): Promise<void>;
+    expectedUpdatedAt?: string | null,
+  ): Promise<string | void>;
   saveManualBwa(eventId: string, bwa: string): Promise<void>;
   saveItemReadiness(
     eventId: string,
@@ -186,6 +202,7 @@ type ManualRow = {
   bwa: string | null;
   food_runners: string[] | null;
   pocs: string[] | null;
+  updated_at?: string;
 };
 
 type ItemReadinessRow = {
@@ -232,7 +249,7 @@ function savedBwaOptions() {
   );
 }
 
-const KITCHEN_ROLE_METADATA_PREFIX = "__kitchen_roles__:";
+export const KITCHEN_ROLE_METADATA_PREFIX = "__kitchen_roles__:";
 
 function manualRoleMetadata(value: string | null) {
   if (!value?.startsWith(KITCHEN_ROLE_METADATA_PREFIX)) {
@@ -521,7 +538,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
       >("kitchen_event_snapshots", snapshotParams),
       this.jsonRequest<ManualRow[]>(
         "kitchen_manual_assignments",
-        new URLSearchParams({ select: "event_id,bwa,food_runners,pocs" }),
+        new URLSearchParams({ select: "event_id,bwa,food_runners,pocs,updated_at" }),
       ),
       this.jsonRequest<SyncRow[]>("kitchen_sync_runs", syncParams),
     ]);
@@ -569,6 +586,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
                 ? [legacy]
                 : [],
             pocs: row.pocs ?? [],
+            updatedAt: row.updated_at ?? null,
             ...roleMetadata,
           },
         ] as const;
@@ -644,6 +662,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
         foodRunners: manualByEvent.get(row.event_id)?.foodRunners ?? [],
         pocs: manualByEvent.get(row.event_id)?.pocs ?? [],
         setup: manualByEvent.get(row.event_id)?.setup ?? [],
+        assignmentUpdatedAt: manualByEvent.get(row.event_id)?.updatedAt ?? null,
         preppedBy: manualByEvent.get(row.event_id)?.preppedBy ?? "",
         verifiedBy: manualByEvent.get(row.event_id)?.verifiedBy ?? "",
         completedItemKeys: (
@@ -820,7 +839,27 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     preppedBy = "",
     verifiedBy = "",
     setup: readonly string[] = [],
+    expectedUpdatedAt?: string | null,
   ) {
+    const updatedAt = assignmentTimestamp(expectedUpdatedAt);
+    const row = {
+      event_id: eventId,
+      bwa: `${KITCHEN_ROLE_METADATA_PREFIX}${JSON.stringify({ preppedBy, verifiedBy, setup })}`,
+      food_runners: foodRunners, pocs, updated_at: updatedAt,
+    };
+    if (expectedUpdatedAt !== undefined) {
+      const rows = await this.jsonRequest<ManualRow[]>("kitchen_manual_assignments",
+        expectedUpdatedAt === null
+          ? new URLSearchParams({ on_conflict: "event_id", select: "updated_at" })
+          : new URLSearchParams({ event_id: `eq.${eventId}`, updated_at: `eq.${expectedUpdatedAt}`, select: "updated_at" }),
+        {
+          method: expectedUpdatedAt === null ? "POST" : "PATCH",
+          headers: { Prefer: expectedUpdatedAt === null ? "resolution=ignore-duplicates,return=representation" : "return=representation" },
+          body: JSON.stringify(row),
+        });
+      if (!rows[0]?.updated_at) throw new KitchenStaffAssignmentConflictError();
+      return rows[0].updated_at;
+    }
     await this.emptyRequest(
       "kitchen_manual_assignments",
       new URLSearchParams({ on_conflict: "event_id" }),
@@ -829,19 +868,10 @@ export class SupabaseKitchenStorage implements KitchenStorage {
         headers: {
           Prefer: "resolution=merge-duplicates,return=minimal",
         },
-        body: JSON.stringify({
-          event_id: eventId,
-          bwa: `${KITCHEN_ROLE_METADATA_PREFIX}${JSON.stringify({
-            preppedBy,
-            verifiedBy,
-            setup,
-          })}`,
-          food_runners: foodRunners,
-          pocs,
-          updated_at: new Date().toISOString(),
-        }),
+        body: JSON.stringify(row),
       },
     );
+    return updatedAt;
   }
 
   async saveManualBwa(eventId: string, bwa: string) {
@@ -1184,6 +1214,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
       preppedBy: string;
       verifiedBy: string;
       setup: string[];
+      updatedAt: string;
     }
   >();
   private readonly itemReadiness = new Map<
@@ -1235,6 +1266,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
         preppedBy: this.manualAssignments.get(eventId)?.preppedBy ?? "",
         verifiedBy: this.manualAssignments.get(eventId)?.verifiedBy ?? "",
         setup: this.manualAssignments.get(eventId)?.setup ?? [],
+        assignmentUpdatedAt: this.manualAssignments.get(eventId)?.updatedAt ?? null,
         completedItemKeys: [
           ...(this.itemReadiness.get(eventId)?.entries() ?? []),
         ]
@@ -1366,14 +1398,21 @@ export class MemoryKitchenStorage implements KitchenStorage {
     preppedBy = "",
     verifiedBy = "",
     setup: readonly string[] = [],
+    expectedUpdatedAt?: string | null,
   ) {
+    const updatedAt = assignmentTimestamp(expectedUpdatedAt);
+    if (expectedUpdatedAt !== undefined && (this.manualAssignments.get(eventId)?.updatedAt ?? null) !== expectedUpdatedAt) {
+      throw new KitchenStaffAssignmentConflictError();
+    }
     this.manualAssignments.set(eventId, {
       foodRunners: [...foodRunners],
       pocs: [...pocs],
       preppedBy,
       verifiedBy,
       setup: [...setup],
+      updatedAt,
     });
+    return updatedAt;
   }
 
   async saveManualBwa(eventId: string, bwa: string) {

@@ -43,9 +43,11 @@ export async function processGoTabDispatches(options?: {
 
   for (const dispatch of dispatches) {
     let vipDispatch = false;
+    let eventId: string;
     try {
       const context = await storage.getDispatchRequestContext(dispatch.request_id);
       if (!context) throw new Error("The saved food request was not found.");
+      eventId = context.event_id;
       vipDispatch = context.event_id.startsWith("vip-");
       if (vipDispatch) {
         const checkin = await storage.getVipCheckin(context.event_id);
@@ -132,7 +134,6 @@ export async function processGoTabDispatches(options?: {
     const productUuid = typeof payload?.gotabProductUuid === "string" ? payload.gotabProductUuid : "";
     const product = typeof payload?.product === "string" ? payload.product : "";
     const quantity = typeof payload?.quantity === "number" ? payload.quantity : 0;
-    const requesterName = typeof payload?.requesterName === "string" ? payload.requesterName : null;
     const selectedPanSize = payload?.selectedPanSize === "1/3" || payload?.selectedPanSize === "1/2"
       ? payload.selectedPanSize
       : null;
@@ -140,6 +141,22 @@ export async function processGoTabDispatches(options?: {
     if (!ticketName || !productUuid || !product || !Number.isSafeInteger(quantity) || quantity < 1) {
       await storage.finishDispatch(dispatch.id, { status: "HELD", lastError: "The saved Event Food payload is incomplete." });
       summary.held += 1;
+      continue;
+    }
+    let foodRunner: string | null;
+    try {
+      // Staff may be assigned after this order was queued. Never use a stale POC
+      // or requester snapshot as the Food Runner on the ticket.
+      foodRunner = await storage.getKitchenFoodRunner(eventId);
+    } catch {
+      const lastError = "The current Kitchen Food Runner could not be read. No order was sent.";
+      await storage.finishDispatch(dispatch.id, {
+        status: "FAILED",
+        nextAttemptAt: new Date(Date.now() + 60_000).toISOString(),
+        lastError,
+      });
+      summary.failed += 1;
+      summary.lastError = lastError;
       continue;
     }
     try {
@@ -151,7 +168,7 @@ export async function processGoTabDispatches(options?: {
         quantity,
         itemName: product,
         itemNotes: payload,
-        serverName: requesterName,
+        serverName: foodRunner,
         selectedPanSize,
         sourceType: sourceType as "EVENT_HOST_ADDON" | "REFILL" | "VIP_ADDON" | "TRIPLESEAT_CONTRACT" | "CORRECTION" | "CANCELLATION" | undefined,
       });
@@ -166,21 +183,19 @@ export async function processGoTabDispatches(options?: {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "GoTab dispatch failed.";
       const temporary = error instanceof GoTabApiError && error.kind === "temporary";
-      const exhausted = dispatch.attempt_count >= 5;
-      await storage.finishDispatch(dispatch.id, {
-        status: temporary && !vipDispatch ? "FAILED" : "HELD",
-        nextAttemptAt: temporary && !vipDispatch && !exhausted
-          ? new Date(Date.now() + Math.min(60_000 * 2 ** Math.max(0, dispatch.attempt_count - 1), 15 * 60_000)).toISOString()
-          : undefined,
-        lastError: vipDispatch && temporary
+      // A timeout or server error after the POST can hide an accepted order.
+      // External-ID deduplication is not verified, so never blindly replay it.
+      const lastError = temporary
+        ? vipDispatch
           ? "VIP delivery status is uncertain. Review before retrying."
-          : errorMessage,
-      });
-      summary.lastError = vipDispatch && temporary
-        ? "VIP delivery status is uncertain. Review before retrying."
+          : "Food order delivery status is uncertain. Review before retrying."
         : errorMessage;
-      if (temporary && !vipDispatch) summary.failed += 1;
-      else summary.held += 1;
+      await storage.finishDispatch(dispatch.id, {
+        status: "HELD",
+        lastError,
+      });
+      summary.lastError = lastError;
+      summary.held += 1;
     }
   }
 

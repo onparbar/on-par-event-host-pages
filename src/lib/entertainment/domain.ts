@@ -23,6 +23,8 @@ import type {
   EntertainmentSourceEvent,
   EntertainmentSourceItem,
 } from "./types";
+import { resolveAreaAlias } from "../floor-plans/configuration/aliases";
+import { selectEntertainmentResources } from "../floor-plans/configuration/adjacency";
 
 export type LocalEntertainmentItem = {
   name: string;
@@ -117,16 +119,23 @@ function sourceReservationId(syncKey: string) {
   return `ent-sync-${simpleHash(syncKey)}`;
 }
 
-function overlaps(
+export function validEntertainmentInterval(startAt: string, endAt: string) {
+  if (![startAt, endAt].every((value) => /(?:Z|[+-]\d{2}:\d{2})$/i.test(value))) return false;
+  const start = Date.parse(startAt);
+  const end = Date.parse(endAt);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start;
+}
+
+function reservationOverlap(
   startAt: string,
   endAt: string,
   otherStartAt: string,
   otherEndAt: string,
 ) {
-  return (
-    Date.parse(startAt) < Date.parse(otherEndAt) &&
-    Date.parse(endAt) > Date.parse(otherStartAt)
-  );
+  if (!validEntertainmentInterval(startAt, endAt) || !validEntertainmentInterval(otherStartAt, otherEndAt)) return null;
+  const overlapStart = Date.parse(startAt) >= Date.parse(otherStartAt) ? startAt : otherStartAt;
+  const overlapEnd = Date.parse(endAt) <= Date.parse(otherEndAt) ? endAt : otherEndAt;
+  return Date.parse(overlapStart) < Date.parse(overlapEnd) ? { startAt: overlapStart, endAt: overlapEnd } : null;
 }
 
 function resourceIsAvailable(
@@ -138,11 +147,13 @@ function resourceIsAvailable(
     "resourceId" | "startAt" | "endAt" | "active"
   >[],
 ) {
+  if (!validEntertainmentInterval(startAt, endAt)) return false;
   return !reservations.some(
     (reservation) =>
       reservation.active &&
       reservation.resourceId === resourceId &&
-      overlaps(startAt, endAt, reservation.startAt, reservation.endAt),
+      (!validEntertainmentInterval(reservation.startAt, reservation.endAt) ||
+        reservationOverlap(startAt, endAt, reservation.startAt, reservation.endAt)),
   );
 }
 
@@ -156,6 +167,7 @@ export function findAdjacentAvailableResources(
     "resourceId" | "startAt" | "endAt" | "active"
   >[],
   excludedResourceIds: readonly string[] = [],
+  seatingAreaIds: readonly string[] = [],
 ) {
   const excluded = new Set(excludedResourceIds);
   const available = resourcesForCategory(category).filter(
@@ -170,6 +182,16 @@ export function findAdjacentAvailableResources(
   );
   if (quantity <= 0) {
     return [];
+  }
+  if (category === "bowling" && seatingAreaIds.length > 0) {
+    const availableIds = new Set(available.map((resource) => resource.id));
+    const unavailable = new Set(
+      resourcesForCategory(category)
+        .filter((resource) => !availableIds.has(resource.id))
+        .map((resource) => resource.id),
+    );
+    return selectEntertainmentResources(seatingAreaIds, category, quantity, unavailable)
+      .flatMap((id) => getEntertainmentResource(id) ?? []);
   }
   for (let index = 0; index <= available.length - quantity; index += 1) {
     const candidate = available.slice(index, index + quantity);
@@ -351,6 +373,11 @@ export function buildEntertainmentSchedule({
     const isContractEvidence = source.sourceSystem === "contract-evidence";
     const match = matchLocalEvent(source, localEvents);
     const localEvent = match?.event ?? null;
+    const seatingAreaIds = (source.rooms.length
+      ? source.rooms.map((room) => room.name)
+      : localEvent?.rooms ?? []
+    ).flatMap((room) => resolveAreaAlias(room) ?? [])
+      .filter((areaId) => areaId !== "facility");
     const eventIssues: EntertainmentReviewIssue[] = [];
     if (isContractEvidence) {
       eventIssues.push({
@@ -530,6 +557,7 @@ export function buildEntertainmentSchedule({
           timing.endAt,
           occupied,
           chosenIds,
+          seatingAreaIds,
         );
         chosenIds.push(...autoAssigned.map((resource) => resource.id));
         if (autoAssigned.length > 0) {
@@ -684,6 +712,22 @@ function reservationSourceChanged(
   );
 }
 
+function syncedReservationRevision(
+  existing: EntertainmentReservation,
+  incoming: EntertainmentReservation,
+  now: string,
+) {
+  // A successful source observation is not a new operational revision. Keep
+  // approval timestamps meaningful while still recording lastTripleseatSyncAt.
+  const content = (reservation: EntertainmentReservation) => {
+    const { createdAt: _createdAt, updatedAt: _updatedAt, updatedBy: _updatedBy, lastTripleseatSyncAt: _lastTripleseatSyncAt, ...value } = reservation;
+    return JSON.stringify(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)));
+  };
+  return content(existing) === content(incoming)
+    ? { ...incoming, updatedAt: existing.updatedAt, updatedBy: existing.updatedBy }
+    : { ...incoming, updatedAt: now };
+}
+
 export function mergeReservationsForSync(
   existingReservations: readonly EntertainmentReservation[],
   incomingReservations: readonly EntertainmentReservation[],
@@ -707,12 +751,11 @@ export function mergeReservationsForSync(
       return incoming;
     }
     if (!existing.manualOverride) {
-      return {
+      return syncedReservationRevision(existing, {
         ...incoming,
         id: existing.id,
         createdAt: existing.createdAt,
-        updatedAt: now,
-      };
+      }, now);
     }
     const sourceChanged =
       reservationSourceChanged(existing, incoming) &&
@@ -732,7 +775,7 @@ export function mergeReservationsForSync(
           ]
         : []),
     ]);
-    return {
+    return syncedReservationRevision(existing, {
       ...incoming,
       id: existing.id,
       resourceId: existing.resourceId,
@@ -750,9 +793,8 @@ export function mergeReservationsForSync(
       notes: existing.notes,
       active: existing.active,
       createdAt: existing.createdAt,
-      updatedAt: now,
       updatedBy: existing.updatedBy,
-    } satisfies EntertainmentReservation;
+    }, now);
   });
 
   for (const existing of existingReservations) {
@@ -761,12 +803,11 @@ export function mergeReservationsForSync(
       continue;
     }
     if (!incomingKeys.has(existing.syncKey)) {
-      merged.push({
+      merged.push(syncedReservationRevision(existing, {
         ...existing,
         active: false,
-        updatedAt: now,
         updatedBy: "tripleseat-sync",
-      });
+      }, now));
     }
   }
   return merged;
@@ -795,26 +836,16 @@ export function detectEntertainmentConflicts(
       if (right.resourceId !== left.resourceId) {
         break;
       }
-      if (Date.parse(right.startAt) >= Date.parse(left.endAt)) {
-        break;
-      }
-      if (!overlaps(left.startAt, left.endAt, right.startAt, right.endAt)) {
+      const overlap = reservationOverlap(left.startAt, left.endAt, right.startAt, right.endAt);
+      if (!overlap) {
         continue;
       }
-      const startAt =
-        Date.parse(left.startAt) >= Date.parse(right.startAt)
-          ? left.startAt
-          : right.startAt;
-      const endAt =
-        Date.parse(left.endAt) <= Date.parse(right.endAt)
-          ? left.endAt
-          : right.endAt;
       conflicts.push({
         id: `conflict-${simpleHash([left.id, right.id].sort().join(":"))}`,
         resourceId: left.resourceId,
         resourceName: left.resourceName,
-        startAt,
-        endAt,
+        startAt: overlap.startAt,
+        endAt: overlap.endAt,
         reservationIds: [left.id, right.id],
         eventNames: [left.eventName, right.eventName],
       });
@@ -835,12 +866,12 @@ export function conflictForCandidate(
       reservation.active &&
       reservation.id !== candidate.id &&
       reservation.resourceId === candidate.resourceId &&
-      overlaps(
+      (!validEntertainmentInterval(reservation.startAt, reservation.endAt) || reservationOverlap(
         candidate.startAt,
         candidate.endAt,
         reservation.startAt,
         reservation.endAt,
-      ),
+      )),
   );
 }
 

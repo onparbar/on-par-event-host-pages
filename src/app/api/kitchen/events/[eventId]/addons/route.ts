@@ -5,6 +5,8 @@ import {
   updateKitchenEventFoodAddOns,
 } from "@/lib/kitchen/sync";
 import { KitchenFoodAddOnConflictError } from "@/lib/kitchen/storage";
+import { GoTabIntegrationStorage } from "@/lib/gotab/storage";
+import { summarizeEventFoodDelivery } from "@/lib/gotab/delivery";
 import {
   isSameOriginOperationalRequest,
   operationalAccessDenied,
@@ -101,12 +103,17 @@ export async function PUT(
             changedSourceKeys,
           },
         );
-        const dispatch = await processGoTabDispatches();
+        await processGoTabDispatches();
+        const requestIds = synchronization.requestIds ?? [];
+        const deliveries = await new GoTabIntegrationStorage().listEventFoodDelivery([eventId], requestIds);
+        const delivery = summarizeEventFoodDelivery(deliveries, requestIds);
         kds = {
           queued: synchronization.requestCount,
           exceptions: synchronization.exceptionCount,
           duplicates: synchronization.duplicateCount,
-          dispatch,
+          dispatch: { sent: delivery.sent },
+          deliveries: delivery.deliveries,
+          warning: delivery.error,
           changedSourceKeys,
         };
       } catch {

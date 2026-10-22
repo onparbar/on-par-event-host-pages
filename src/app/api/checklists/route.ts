@@ -13,6 +13,7 @@ import {
   saveChecklist,
 } from "../../../lib/checklist-storage";
 import { synchronizeChecklistFoodAddOns } from "../../../lib/gotab/sync-checklist-addons";
+import { StaleSaveError } from "../../../lib/stale-save";
 import {
   isSameOriginOperationalRequest,
   operationalAccessDenied,
@@ -26,6 +27,7 @@ type SaveChecklistRequest = {
   syncFoodAddOns?: boolean;
   syncFoodAddOnKeys?: string[];
   sourceType?: string;
+  expectedUpdatedAt?: string | null;
 };
 
 function badRequest(message: string) {
@@ -58,6 +60,9 @@ export async function PUT(request: Request) {
   if (typeof body.eventId !== "number" || !body.checklist) {
     return badRequest("Missing eventId or checklist.");
   }
+  if (body.expectedUpdatedAt !== null && (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt)))) {
+    return badRequest("Load the saved checklist revision before saving.");
+  }
 
   let plan = await findEventPlanById(body.eventId);
   let kitchenEventId = String(body.eventId);
@@ -86,6 +91,7 @@ export async function PUT(request: Request) {
       eventDate: event.date,
       poc: event.poc,
       checklist: body.checklist,
+      expectedUpdatedAt: body.expectedUpdatedAt,
     });
 
     if (!body.syncFoodAddOns) {
@@ -119,24 +125,25 @@ export async function PUT(request: Request) {
               body.checklist.food,
             );
       const dispatchedToKds =
-        kitchenSync.queued > 0 &&
         kitchenSync.exceptions === 0 &&
-        kitchenSync.sent === kitchenSync.queued;
+        kitchenSync.deliveryVerified === true;
       return NextResponse.json({
         record,
         kitchenSync: {
-          status: dispatchedToKds ? "live" : "error",
+          status: dispatchedToKds ? "live" : kitchenSync.noFoodRequired ? "not-required" : "error",
           updatedAt: kitchenSync.saved.updatedAt,
           queued: kitchenSync.queued,
           exceptions: kitchenSync.exceptions,
           sent: kitchenSync.sent,
-          error: dispatchedToKds
+          accepted: kitchenSync.acceptedDeliveryCount,
+          deliveries: kitchenSync.deliveries ?? [],
+          error: dispatchedToKds || kitchenSync.noFoodRequired
             ? undefined
             : kitchenSync.error ?? (kitchenSync.exceptions > 0
               ? "This food item is not fully mapped to a verified GoTab Event Food product."
               : kitchenSync.queued === 0
                 ? "No new food quantity change was available to send to the KDS."
-                : "GoTab did not confirm that the complete order reached the KDS."),
+                : "This item is saved, but GoTab acceptance has not been verified. Review delivery status before retrying."),
         },
       });
     } catch {
@@ -151,6 +158,6 @@ export async function PUT(request: Request) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save checklist.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: error instanceof StaleSaveError ? 409 : 502 });
   }
 }

@@ -31,6 +31,7 @@ describe("shared inventory lifecycle transactions", () => {
       "20260729152402_entertainment_schedule.sql",
       "20261013182233_shared_reservation_authority.sql",
       "20261020175405_shared_reservation_lifecycle.sql",
+    "20261022171353_shared_entertainment_seating_only_buffers.sql",
     ]) await db.exec(await readFile(`supabase/migrations/${name}`, "utf8"));
     expect((await db.query("select enabled, baseline_ready from shared_inventory.control")).rows)
       .toEqual([{ enabled: false, baseline_ready: false }]);

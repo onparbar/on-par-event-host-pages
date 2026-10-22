@@ -190,8 +190,32 @@ describe("kitchen checklist day layout", () => {
     );
     expect(html).not.toContain('open=""');
     expect(html.slice(0, summaryEnd)).toContain("Redacted Taco Package");
+    expect(html.slice(0, summaryEnd)).toContain("Area reserved: Mock Room A");
     expect(html.slice(0, summaryEnd)).toContain("11:30 AM–1:30 PM");
     expect(html.indexOf("Expanded prep list")).toBeGreaterThan(summaryEnd);
+  });
+
+  it("uses a native party toggle without intercepting its heading click", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const onToggle = vi.fn();
+    const element = KitchenEventAccordion({ checklist, onToggle });
+    const details = { open: true };
+    expect(element.props.children[0].props.onClick).toBeUndefined();
+    element.props.onToggle({ target: details, currentTarget: details });
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith(true);
+    element.props.onToggle({ target: { open: true }, currentTarget: details });
+    expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it("allows more than one party accordion to be open without a shared exclusive group", () => {
+    const html = renderToStaticMarkup(createElement("section", null,
+      ...MOCK_KITCHEN_EVENTS.slice(0, 2).map((source) => createElement(KitchenEventAccordion, {
+        key: source.eventId, checklist: generateKitchenChecklist(source), open: true,
+      })),
+    ));
+    expect(html.match(/data-kitchen-event-accordion=/g)).toHaveLength(2);
+    expect(html.match(/open=""/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<details[^>]* name=/);
   });
 
   it("does not repeat event identity inside expanded accordion content", () => {
@@ -216,6 +240,8 @@ describe("kitchen checklist day layout", () => {
     expect(header).not.toContain('class="kitchen-checklist-event-name"');
     expect(header).toContain("Number of guests");
     expect(header).toContain("Chafing dishes");
+    expect(header).toContain("Area reserved");
+    expect(header).toContain("Mock Room A");
   });
 
   it("puts event identity and kitchen counts above the food table", () => {
@@ -236,6 +262,23 @@ describe("kitchen checklist day layout", () => {
     expect(headerIndex).toBeGreaterThanOrEqual(0);
     expect(headerIndex).toBeLessThan(tableIndex);
     expect(reviewIndex).toBeGreaterThan(tableIndex);
+  });
+
+  it("offers a full-sheet view without removing the prep, timing or review details", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[2]);
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, {
+      checklist, bwaSaveState: "idle", inline: true, fitToScreen: true, onOpenSheet: noop,
+    }));
+    expect(html).toContain("Open full sheet");
+    expect(html).toContain("Appetizer drop reminder");
+    expect(html).toContain("Food contract notes");
+    expect(html).toContain("Needs review:");
+    expect(html).toContain("Employee responsible for prep");
+    expect(html).toContain("Employee responsible for verification");
+    expect(html.indexOf(">Prepped<")).toBeLessThan(html.indexOf(">Verified<"));
+    expect(html.indexOf(">Verified<")).toBeLessThan(html.indexOf(">Ready<"));
+    const review = html.slice(html.indexOf('class="kitchen-review-panel kitchen-safety-details'));
+    expect(review.slice(0, review.indexOf(">"))).not.toContain("open=");
   });
 
   it("renders multiple events as independent checklist sheets", () => {
@@ -274,7 +317,7 @@ describe("kitchen checklist day layout", () => {
     expect(html).not.toContain('placeholder="Enter employee name"');
   });
 
-  it("renders independent Ready and verification controls after Quantity", () => {
+  it("renders independent Prepped, Verified and Ready controls in workflow order", () => {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     const beef = checklist.sections
       .flatMap((section) => section.rows)
@@ -331,6 +374,7 @@ describe("kitchen checklist day layout", () => {
     const preppedHeader = html.indexOf(
       '<span class="kitchen-verified-heading">Prepped</span>',
     );
+    const readyHeader = html.indexOf('<th scope="col">Ready</th>');
     const beefReadyInput = html.match(
       /<input aria-label="Mark Beef ready"[^>]*>/,
     )?.[0];
@@ -346,7 +390,11 @@ describe("kitchen checklist day layout", () => {
 
     expect(html).toContain("<th scope=\"col\">Ready</th>");
     expect(quantityHeader).toBeGreaterThanOrEqual(0);
-    expect(completedHeader).toBeGreaterThan(quantityHeader);
+    expect(completedHeader).toBeGreaterThan(preppedHeader);
+    expect(readyHeader).toBeGreaterThan(completedHeader);
+    expect(quantityHeader).toBeGreaterThan(readyHeader);
+    expect(html.indexOf('data-label="Prepped"')).toBeLessThan(html.indexOf('data-label="Verified (different person)"'));
+    expect(html.indexOf('data-label="Verified (different person)"')).toBeLessThan(html.indexOf('data-label="Ready"'));
     expect(preppedHeader).toBeGreaterThanOrEqual(0);
     expect(html).toContain('aria-label="Employee responsible for prep"');
     expect(html).toContain('aria-label="Employee responsible for verification"');
@@ -363,6 +411,29 @@ describe("kitchen checklist day layout", () => {
     );
     expect(html.match(/kitchen-item-complete/g)).toHaveLength(2);
     expect(html).toContain("Needs review:");
+  });
+
+  it("shows the appetizer drop time above the food table without altering ready time", () => {
+    const html = renderSheet(2);
+    expect(html).toContain("Drop appetizers at 2:00 PM");
+    expect(html).toContain("30 minutes before the event.");
+    expect(html).toContain("2:15 PM");
+    expect(html.indexOf('aria-label="Appetizer drop reminder"')).toBeLessThan(html.indexOf("<table"));
+    expect(renderSheet(0)).not.toContain('aria-label="Appetizer drop reminder"');
+  });
+
+  it("labels ambiguous contract food timing for review without a guessed reminder", () => {
+    const checklist = generateKitchenChecklist({
+      ...MOCK_KITCHEN_EVENTS[2],
+      specialNotes: ["Serve appetizers at 3:00 PM"],
+    });
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, {
+      checklist,
+      bwaSaveState: "idle",
+    }));
+    expect(html).toContain("Appetizer drop time needs review");
+    expect(html).toContain("Serve appetizers at 3:00 PM");
+    expect(html).not.toContain("Drop appetizers at 2:00 PM");
   });
 
   it("renders the exact employee and Eastern timestamp for each checked Prepped item", () => {

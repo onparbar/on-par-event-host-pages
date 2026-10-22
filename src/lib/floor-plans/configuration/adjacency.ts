@@ -1,3 +1,5 @@
+import { getAreaForEntertainmentResource, getFloorPlanArea } from "./areas";
+
 export type AreaPreference = {
   seatingAreaId: string;
   entertainmentType:
@@ -33,40 +35,77 @@ const DEFAULT_INVENTORY: Record<AreaPreference["entertainmentType"], string[]> =
 };
 
 export function preferredInventory(
-  seatingAreaId: string,
+  seatingAreaId: string | readonly string[],
   entertainmentType: AreaPreference["entertainmentType"],
 ) {
-  const preference = AREA_PREFERENCES.find(
+  const seatingAreaIds = typeof seatingAreaId === "string" ? [seatingAreaId] : seatingAreaId;
+  const preferences = AREA_PREFERENCES.filter(
     (item) =>
-      item.seatingAreaId === seatingAreaId &&
+      seatingAreaIds.includes(item.seatingAreaId) &&
       item.entertainmentType === entertainmentType,
   );
-  const flattened = preference?.preferredInventoryIds.flat() ?? [];
-  return [...new Set([...flattened, ...DEFAULT_INVENTORY[entertainmentType]])];
+  const flattened = preferences.flatMap((item) => item.preferredInventoryIds.flat());
+  const inventory = [...new Set([...flattened, ...DEFAULT_INVENTORY[entertainmentType]])];
+  if (entertainmentType !== "bowling") return inventory;
+  return inventory.sort((left, right) =>
+    distanceToSeating(left, seatingAreaIds) - distanceToSeating(right, seatingAreaIds) ||
+    inventoryNumber(left) - inventoryNumber(right),
+  );
+}
+
+function inventoryNumber(id: string) {
+  return Number(id.match(/(\d+)$/)?.[1]);
+}
+
+function distanceToSeating(resourceId: string, seatingAreaIds: readonly string[]) {
+  const resource = getAreaForEntertainmentResource(resourceId);
+  const areas = seatingAreaIds.flatMap((id) => {
+    const area = getFloorPlanArea(id);
+    return area && area.id !== "facility" ? [area] : [];
+  });
+  if (!resource || areas.length === 0) return Number.POSITIVE_INFINITY;
+  return Math.min(...areas.map((area) => Math.hypot(
+    resource.x + resource.width / 2 - (area.x + area.width / 2),
+    resource.y + resource.height / 2 - (area.y + area.height / 2),
+  )));
 }
 
 export function selectEntertainmentResources(
-  seatingAreaId: string,
+  seatingAreaId: string | readonly string[],
   entertainmentType: AreaPreference["entertainmentType"],
   quantity: number,
   unavailableIds: ReadonlySet<string> = new Set(),
 ) {
   if (!Number.isInteger(quantity) || quantity <= 0) return [];
+  const seatingAreaIds = typeof seatingAreaId === "string" ? [seatingAreaId] : seatingAreaId;
+  if (entertainmentType === "bowling" && !seatingAreaIds.some((id) =>
+    id !== "facility" && getFloorPlanArea(id),
+  )) return [];
   const ordered = preferredInventory(seatingAreaId, entertainmentType).filter(
     (id) => !unavailableIds.has(id),
   );
   if (entertainmentType === "mini-golf") {
     return ordered.slice(0, Math.min(quantity, ordered.length));
   }
+  if (ordered.length < quantity) return [];
 
   const numeric = ordered
-    .map((id) => ({ id, number: Number(id.match(/(\d+)$/)?.[1]) }))
-    .filter((item) => Number.isFinite(item.number));
+    .map((id) => ({ id, number: inventoryNumber(id) }))
+    .filter((item) => Number.isFinite(item.number))
+    .sort((left, right) => left.number - right.number);
+  const consecutive: string[][] = [];
   for (let start = 0; start <= numeric.length - quantity; start += 1) {
     const candidate = numeric.slice(start, start + quantity);
     if (candidate.every((item, index) => index === 0 || item.number === candidate[index - 1].number + 1)) {
-      return candidate.map((item) => item.id);
+      consecutive.push(candidate.map((item) => item.id));
     }
   }
+  const score = (ids: readonly string[]) => ids.reduce((total, id) =>
+    total + (entertainmentType === "bowling"
+      ? distanceToSeating(id, seatingAreaIds)
+      : ordered.indexOf(id)), 0);
+  consecutive.sort((left, right) => score(left) - score(right) ||
+    inventoryNumber(left[0]) - inventoryNumber(right[0]));
+  if (consecutive.length > 0) return consecutive[0];
   return ordered.slice(0, quantity);
 }
