@@ -195,6 +195,29 @@ describe("kitchen checklist day layout", () => {
     expect(html.indexOf("Expanded prep list")).toBeGreaterThan(summaryEnd);
   });
 
+  it("uses a native party toggle without intercepting its heading click", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const onToggle = vi.fn();
+    const element = KitchenEventAccordion({ checklist, onToggle });
+    const details = { open: true };
+    expect(element.props.children[0].props.onClick).toBeUndefined();
+    element.props.onToggle({ target: details, currentTarget: details });
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith(true);
+    element.props.onToggle({ target: { open: true }, currentTarget: details });
+    expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it("allows more than one party accordion to be open without a shared exclusive group", () => {
+    const html = renderToStaticMarkup(createElement("section", null,
+      ...MOCK_KITCHEN_EVENTS.slice(0, 2).map((source) => createElement(KitchenEventAccordion, {
+        key: source.eventId, checklist: generateKitchenChecklist(source), open: true,
+      })),
+    ));
+    expect(html.match(/data-kitchen-event-accordion=/g)).toHaveLength(2);
+    expect(html.match(/open=""/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<details[^>]* name=/);
+  });
+
   it("does not repeat event identity inside expanded accordion content", () => {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     const html = renderToStaticMarkup(
