@@ -227,6 +227,36 @@ describe("atomic checklist saves", () => {
     expect((results[1] as PromiseRejectedResult).reason).toMatchObject({ status: 409 });
   });
 
+  it("preserves manually entered POC and workspace evidence when an older client omits them", async () => {
+    const input = localInput();
+    const first = await saveChecklist({ ...input, checklist: { ...input.checklist, poc: "Staff POC", tasks: { "workspace:activity:bowling:started": true }, taskEvidence: { "workspace:activity:bowling:started": { employeeName: "Carlos", completedAt: "2026-10-23T17:00:00Z" } } } });
+    const legacy = { ...input.checklist };
+    delete legacy.poc;
+    const second = await saveChecklist({ ...input, expectedUpdatedAt: first.updatedAt, checklist: legacy });
+    expect(second.poc).toBe("Staff POC");
+    expect(second.tasks["workspace:activity:bowling:started"]).toBe(true);
+    expect(second.taskEvidence?.["workspace:activity:bowling:started"]).toMatchObject({ employeeName: "Carlos" });
+    const third = await saveChecklist({ ...input, expectedUpdatedAt: second.updatedAt, checklist: { ...legacy, poc: "Contact omitted from preview" } });
+    expect(third.poc).toBe("Staff POC");
+    const cleared = await saveChecklist({ ...input, expectedUpdatedAt: third.updatedAt, checklist: { ...legacy, poc: "" } });
+    expect(cleared.poc).toBe("");
+  });
+
+  it("merges the current POC on hosted CAS saves without making a schema change", async () => {
+    const input = localInput();
+    vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test");
+    const prior = { event_id: input.eventId, poc: "Staff POC", updated_at: "2026-10-23T17:00:00Z", tasks: { "workspace:reminder:food:ack": true }, task_evidence: { "workspace:reminder:food:ack": { employeeName: "Brooke", completedAt: "2026-10-23T17:00:00Z" } } };
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => init?.method === "POST" ? Response.json({ ...prior, ...JSON.parse(String(init.body)).p_record }) : Response.json([prior]));
+    vi.stubGlobal("fetch", fetchMock);
+    const legacy = { ...input.checklist };
+    delete legacy.poc;
+    const saved = await saveChecklist({ ...input, expectedUpdatedAt: prior.updated_at, checklist: legacy });
+    expect(saved.poc).toBe("Staff POC");
+    expect(saved.tasks["workspace:reminder:food:ack"]).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ p_expected_updated_at: prior.updated_at, p_record: { poc: "Staff POC" } });
+  });
+
   it("preserves quantities and completion evidence when another tablet loses a stale save", async () => {
     const input = localInput();
     const initial = await saveChecklist(input);

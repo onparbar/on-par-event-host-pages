@@ -3,6 +3,8 @@ import { checklistEventsForPlans } from "../../../../lib/checklist-events";
 import { hydrateChecklistState, type EventChecklistState } from "../../../../lib/checklist-model";
 import { checklistReadiness } from "../../../../lib/checklist-readiness";
 import { StaleSaveError } from "../../../../lib/stale-save";
+import { reconcileChecklistSetup } from "../../../../lib/operations/setup";
+import { normalizeKitchenOrderNotes } from "../../../../lib/kitchen/addons";
 import { saveChecklist } from "../../../../lib/checklist-storage";
 import { findEventPlanById } from "../../../../lib/event-plans/sync";
 import { rollingEventPlanHorizon } from "../../../../lib/event-plans/horizon";
@@ -23,6 +25,7 @@ type SubmitChecklistRequest = {
   eventId?: number;
   checklist?: EventChecklistState;
   expectedUpdatedAt?: string | null;
+  requesterName?: string;
 };
 
 function badRequest(message: string) {
@@ -45,6 +48,11 @@ export async function POST(request: Request) {
   if (typeof body.eventId !== "number" || !body.checklist) {
     return badRequest("Missing eventId or checklist.");
   }
+  if (body.requesterName !== undefined && (typeof body.requesterName !== "string" || body.requesterName.trim().length > 120 || /[\r\n\x00-\x1f\x7f]/.test(body.requesterName))) return badRequest("Requester name must be a single line of up to 120 characters.");
+  const requesterName = body.requesterName?.trim();
+  try {
+    for (const item of Object.values(body.checklist.food ?? {})) normalizeKitchenOrderNotes(item?.notes);
+  } catch (error) { return badRequest(error instanceof Error ? error.message : "Invalid food request notes."); }
   if (body.expectedUpdatedAt !== null && (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt)))) {
     return badRequest("Load the saved checklist revision before submitting.");
   }
@@ -67,7 +75,8 @@ export async function POST(request: Request) {
     return badRequest("Unknown event.");
   }
   const [event] = checklistEventsForPlans([plan]);
-  const state = hydrateChecklistState(event.date, body.checklist);
+  const state = reconcileChecklistSetup(event, hydrateChecklistState(event.date, body.checklist));
+  if (!Object.prototype.hasOwnProperty.call(body.checklist, "poc")) delete state.poc;
   const readiness = checklistReadiness(event, state);
   if (!readiness.canSubmit) {
     return NextResponse.json({
@@ -83,13 +92,12 @@ export async function POST(request: Request) {
       eventId: event.id,
       eventName: event.name,
       eventDate: event.date,
-      poc: event.poc,
       checklist: state,
       expectedUpdatedAt: body.expectedUpdatedAt,
     });
 
     try {
-      const kitchenSync = await synchronizeChecklistFoodAddOns(
+      const kitchenSync = requesterName ? await synchronizeChecklistFoodAddOns(kitchenEventId, body.checklist.food, undefined, "EVENT_HOST_ADDON", { requesterName }) : await synchronizeChecklistFoodAddOns(
         kitchenEventId,
         body.checklist.food,
       );

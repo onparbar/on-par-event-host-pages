@@ -10,10 +10,13 @@ import {
 } from "../../../lib/vip-prep/client";
 import {
   listChecklistRecords,
+  getChecklistRecord,
   saveChecklist,
 } from "../../../lib/checklist-storage";
 import { synchronizeChecklistFoodAddOns } from "../../../lib/gotab/sync-checklist-addons";
 import { StaleSaveError } from "../../../lib/stale-save";
+import { reconcileChecklistSetup } from "../../../lib/operations/setup";
+import { normalizeKitchenOrderNotes } from "../../../lib/kitchen/addons";
 import {
   isSameOriginOperationalRequest,
   operationalAccessDenied,
@@ -28,14 +31,21 @@ type SaveChecklistRequest = {
   syncFoodAddOnKeys?: string[];
   sourceType?: string;
   expectedUpdatedAt?: string | null;
+  requesterName?: string;
 };
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const eventId = new URL(request.url).searchParams.get("eventId");
+    if (eventId !== null) {
+      if (!/^\d+$/.test(eventId) || !Number.isSafeInteger(Number(eventId)) || Number(eventId) <= 0) return badRequest("Invalid eventId.");
+      const record = await getChecklistRecord(Number(eventId));
+      return NextResponse.json({ records: record ? [record] : [] });
+    }
     const records = await listChecklistRecords();
     return NextResponse.json({ records });
   } catch (error) {
@@ -60,6 +70,11 @@ export async function PUT(request: Request) {
   if (typeof body.eventId !== "number" || !body.checklist) {
     return badRequest("Missing eventId or checklist.");
   }
+  if (body.requesterName !== undefined && (typeof body.requesterName !== "string" || body.requesterName.trim().length > 120 || /[\r\n\x00-\x1f\x7f]/.test(body.requesterName))) return badRequest("Requester name must be a single line of up to 120 characters.");
+  const requesterName = body.requesterName?.trim();
+  try {
+    for (const item of Object.values(body.checklist.food ?? {})) normalizeKitchenOrderNotes(item?.notes);
+  } catch (error) { return badRequest(error instanceof Error ? error.message : "Invalid food request notes."); }
   if (body.expectedUpdatedAt !== null && (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt)))) {
     return badRequest("Load the saved checklist revision before saving.");
   }
@@ -89,8 +104,7 @@ export async function PUT(request: Request) {
       eventId: event.id,
       eventName: event.name,
       eventDate: event.date,
-      poc: event.poc,
-      checklist: body.checklist,
+      checklist: reconcileChecklistSetup(event, body.checklist),
       expectedUpdatedAt: body.expectedUpdatedAt,
     });
 
@@ -100,7 +114,9 @@ export async function PUT(request: Request) {
 
     try {
       const sourceType = body.sourceType === "REFILL" ? "REFILL" as const : undefined;
-      const kitchenSync = body.syncFoodAddOnKeys
+      const kitchenSync = requesterName
+        ? await synchronizeChecklistFoodAddOns(kitchenEventId, body.checklist.food, body.syncFoodAddOnKeys, sourceType ?? "EVENT_HOST_ADDON", { requesterName })
+        : body.syncFoodAddOnKeys
         ? sourceType
           ? await synchronizeChecklistFoodAddOns(
               kitchenEventId,

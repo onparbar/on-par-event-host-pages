@@ -16,11 +16,14 @@ import {
 import type { ChecklistEvent } from "@/lib/checklist-events";
 import { checklistReadiness } from "@/lib/checklist-readiness";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { EventWorkspaceRequests } from "@/app/_components/EventWorkspace";
 import { operationalEventFromPlan } from "@/lib/operations/event-context";
+import { contractSetup, reconcileChecklistSetup, setupTaskFingerprint } from "@/lib/operations/setup";
 import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import { eventFoodDeliveryState, type EventFoodDelivery } from "@/lib/gotab/delivery";
 import {
   checklistSections,
+  completeChecklistTask,
   checklistEventForSelection,
   appetizerBarRefillAddOns,
   currency,
@@ -133,20 +136,22 @@ function metaFromRecord(record: ChecklistRecord): EventChecklistMeta {
   };
 }
 
-function mergeRecordState(record: ChecklistRecord, dateValue: string) {
-  return recordToChecklistState(dateValue, record);
+function mergeRecordState(record: ChecklistRecord, event: ChecklistEvent) {
+  return reconcileChecklistSetup(event, recordToChecklistState(event.date, record));
 }
 
 export default function ChecklistsClient({
   activeEventIds,
   events,
   workspace = "checklist",
+  sourceWarning = "",
 }: {
   activeEventIds: number[];
   events: ChecklistEvent[];
   workspace?: ChecklistWorkspace;
+  sourceWarning?: string;
 }) {
-  const { preferredEventId, ready: contextReady, selectEvent, clearEvent } = useEventContext();
+  const { preferredEventId, ready: contextReady, selectEvent, clearEvent, staffName } = useEventContext();
   const eligibleEvents = useMemo(
     () =>
       activeEventIds
@@ -202,6 +207,25 @@ export default function ChecklistsClient({
   const pageDescription = isAddOnWorkspace
     ? "Manage Food and Entertainment add-ons in their own shared event workspace."
     : "Complete event tasks with drafts saved automatically to the shared event record.";
+
+  useEffect(() => {
+    function receiveWorkspaceUpdate(event: Event) {
+      const record = (event as CustomEvent<{ record?: ChecklistRecord }>).detail?.record;
+      if (!record) return;
+      const plan = events.find((item) => item.id === record.eventId);
+      if (!plan || metaByEventRef.current[record.eventId]?.updatedAt === record.updatedAt) return;
+      if (dirtyEventIds.includes(record.eventId) || inFlightEventIds.current.has(record.eventId)) {
+        setConflictByEvent((current) => ({ ...current, [record.eventId]: true }));
+        return;
+      }
+      setChecklistsByEvent((current) => ({ ...current, [record.eventId]: mergeRecordState(record, plan) }));
+      metaByEventRef.current[record.eventId] = metaFromRecord(record);
+      setMetaByEvent((current) => ({ ...current, [record.eventId]: metaFromRecord(record) }));
+      setSaveStateByEvent((current) => ({ ...current, [record.eventId]: record.status === "submitted" ? "submitted" : "saved" }));
+    }
+    window.addEventListener("event-host:workspace-updated", receiveWorkspaceUpdate);
+    return () => window.removeEventListener("event-host:workspace-updated", receiveWorkspaceUpdate);
+  }, [events, dirtyEventIds]);
 
   useEffect(() => {
     const pending = Object.entries(pendingFoodByItem);
@@ -263,7 +287,7 @@ export default function ChecklistsClient({
             events.map((event) => {
               const record = recordsById.get(event.id);
               if ((revisionByEventRef.current[event.id] ?? 0) > 0 || inFlightEventIds.current.has(event.id)) return [event.id, current[event.id] ?? defaultChecklistState(event.date)];
-              return [event.id, record ? mergeRecordState(record, event.date) : current[event.id] ?? defaultChecklistState(event.date)];
+              return [event.id, record ? mergeRecordState(record, event) : current[event.id] ?? defaultChecklistState(event.date)];
             }),
           ),
         );
@@ -372,6 +396,7 @@ export default function ChecklistsClient({
             expectedUpdatedAt: metaByEventRef.current[eventId]?.updatedAt ?? null,
             checklist,
             syncFoodAddOns,
+            ...((staffName.trim() || checklist.bwa.trim()) ? { requesterName: staffName.trim() || checklist.bwa.trim() } : {}),
           }),
         });
 
@@ -384,11 +409,12 @@ export default function ChecklistsClient({
         const revisionIsCurrent =
           (revisionByEventRef.current[eventId] ?? 0) ===
           revisionSnapshot[eventId];
+        window.dispatchEvent(new Event("event-host:checklist-updated"));
 
         if (revisionIsCurrent) {
           setChecklistsByEvent((current) => ({
             ...current,
-            [eventId]: mergeRecordState(payload.record, event.date),
+            [eventId]: mergeRecordState(payload.record, event),
           }));
         }
         metaByEventRef.current[eventId] = metaFromRecord(payload.record);
@@ -479,6 +505,7 @@ export default function ChecklistsClient({
           eventId,
           expectedUpdatedAt: metaByEventRef.current[eventId]?.updatedAt ?? null,
           checklist,
+          ...((staffName.trim() || checklist.bwa.trim()) ? { requesterName: staffName.trim() || checklist.bwa.trim() } : {}),
         }),
       });
 
@@ -488,10 +515,11 @@ export default function ChecklistsClient({
         if (response.status === 409) setConflictByEvent((current) => ({ ...current, [eventId]: true }));
         throw new Error(payload.error ?? "Unable to submit checklist; your draft is retained.");
       }
+      window.dispatchEvent(new Event("event-host:checklist-updated"));
 
       setChecklistsByEvent((current) => ({
         ...current,
-        [eventId]: mergeRecordState(payload.record, event.date),
+        [eventId]: mergeRecordState(payload.record, event),
       }));
       metaByEventRef.current[eventId] = metaFromRecord(payload.record);
       setMetaByEvent((current) => ({
@@ -531,6 +559,35 @@ export default function ChecklistsClient({
   const activeChecklist = activeEvent ? checklistsByEvent[activeEvent.id] : undefined;
   const activeMeta = activeEvent ? metaByEvent[activeEvent.id] : undefined;
   const activeSaveState = activeEvent ? saveStateByEvent[activeEvent.id] : "idle";
+  const pollingEventId = activeEvent?.id;
+  useEffect(() => {
+    if (!pollingEventId || loadState !== "ready") return;
+    let cancelled = false;
+    let reading = false;
+    async function refreshSharedChecklist() {
+      if (reading || document.visibilityState !== "visible" || dirtyEventIds.includes(pollingEventId!) || inFlightEventIds.current.has(pollingEventId!)) return;
+      const revision = revisionByEventRef.current[pollingEventId!] ?? 0;
+      reading = true;
+      try {
+        const response = await fetch(`/api/checklists?eventId=${encodeURIComponent(String(pollingEventId))}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const body = await response.json() as { records?: ChecklistRecord[] };
+        if (cancelled || inFlightEventIds.current.has(pollingEventId!) || (revisionByEventRef.current[pollingEventId!] ?? 0) !== revision) return;
+        const record = body.records?.find((item) => item.eventId === pollingEventId);
+        const event = events.find((item) => item.id === pollingEventId);
+        if (!record || !event || metaByEventRef.current[record.eventId]?.updatedAt === record.updatedAt) return;
+        setChecklistsByEvent((current) => ({ ...current, [record.eventId]: mergeRecordState(record, event) }));
+        metaByEventRef.current[record.eventId] = metaFromRecord(record);
+        setMetaByEvent((current) => ({ ...current, [record.eventId]: metaFromRecord(record) }));
+        setSaveStateByEvent((current) => ({ ...current, [record.eventId]: record.status === "submitted" ? "submitted" : "saved" }));
+      } catch {
+        // Retain the visible draft on a read failure; writes remain revision checked.
+      } finally { reading = false; }
+    }
+    const timer = window.setInterval(() => void refreshSharedChecklist(), 15_000);
+    window.addEventListener("focus", refreshSharedChecklist);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("focus", refreshSharedChecklist); };
+  }, [pollingEventId, loadState, events, dirtyEventIds]);
   const activeFoodSubmissionStates = activeEvent ? Object.entries(foodSubmitByItem).filter(([key]) => key.startsWith(`${activeEvent.id}:`)).map(([, state]) => state) : [];
   const activeKitchenSyncState = activeEvent
     ? activeFoodSubmissionStates.some((state) => state === "error" || state === "uncertain") ? "error"
@@ -584,6 +641,7 @@ export default function ChecklistsClient({
   const foodSaveBusy = activeKitchenSyncState === "syncing" || activeSaveState === "saving";
   const canSendFood = isEditable && !conflictByEvent[activeEvent.id] && !foodSaveBusy;
   const readiness = checklistReadiness(activeEvent, activeChecklist);
+  const setup = contractSetup(activeEvent);
   const canSubmit = isEditable && readiness.canSubmit && !conflictByEvent[activeEvent.id] && !["submitting", "saving"].includes(activeSaveState);
   const progress = readiness;
   const entertainmentSubtotal = entertainmentAddOns.reduce((sum, item) => {
@@ -643,6 +701,15 @@ export default function ChecklistsClient({
         eyebrow="Event Host workspace"
         title={pageTitle}
       />
+      {sourceWarning ? <section className="checklist-meta-card" role="alert">{sourceWarning}</section> : null}
+      {isAddOnWorkspace ? <>
+        <EventWorkspaceRequests />
+        <section className="checklist-meta-card">
+          <strong>Contracted entertainment</strong>
+          <ul>{activeEvent.entertainment.map((item, index) => <li key={`${index}:${item.name}`}>{item.name}: {item.quantity}{/\bmini(?:ature)?\s*golf\b/i.test(item.name) ? " · Untimed" : ` · ${item.time || "Time needs review"}`}</li>)}</ul>
+          {!activeEvent.entertainment.length ? <p>No entertainment is listed in this event source.</p> : null}
+        </section>
+      </> : null}
 
       {conflictByEvent[activeEvent.id] ? <section className="checklist-meta-card" role="alert">
         <strong>A newer saved version exists. Your draft is still here.</strong>
@@ -680,7 +747,13 @@ export default function ChecklistsClient({
           <div className="event-field-grid">
             <Field label="Date" value={activeEvent.dateLabel} />
             <Field label="Event Name" value={activeEvent.name} />
-            <Field label="POC" value={activeEvent.poc} />
+            <EditableField
+              disabled={!isEditable}
+              label="Staff POC"
+              value={activeChecklist.poc ?? ""}
+              placeholder="Enter staff POC name"
+              onChange={(value) => updateEventChecklist(activeEvent.id, (current) => ({ ...current, poc: value }))}
+            />
             <EditableField
               disabled={!isEditable}
               label="BWA"
@@ -697,9 +770,9 @@ export default function ChecklistsClient({
           <div className="notes-grid">
             <EditableTextArea
               disabled={!isEditable}
-              label="Extras Added"
+              label="Staff notes / extras added"
               value={activeChecklist.extrasAdded}
-              placeholder="Track extra items added during the event."
+              placeholder="Enter staff notes, setup details, or extra items added during the event."
               onChange={(value) =>
                 updateEventChecklist(activeEvent.id, (current) => ({
                   ...current,
@@ -760,7 +833,19 @@ export default function ChecklistsClient({
 
         {!isAddOnWorkspace ? (
           <section className="paper-checklist">
-            <p className="meta">Enter the BWA name above before checking tasks. Completions record that name and time; names are staff-entered, not authenticated identity. Critical tasks must be completed before final submission; only Admin can reopen a submitted checklist.</p>
+            <article className="task-section-card">
+              <header className="task-section-header">Contract-driven Event Setup</header>
+              <div className="task-list">
+                <p>{setup.foodTables === null ? "Food tables: needs review" : `Food tables: ${setup.foodTables}`}{setup.mirrored ? " · Mirrored setup: duplicate equipment and supplies, not food quantities or charges." : ""}</p>
+                <p>Chafing dishes: {setup.chafingDishes ?? "Needs review"} · Tongs: {setup.tongs ?? "Needs review"} · Sauce containers: {setup.sauceContainers ?? "Needs review"} · Spoons: {setup.spoons ?? "Needs review"}</p>
+                <strong>Purchased food — quantities unchanged</strong>
+                <ul>{setup.purchasedFood.map((food, index) => <li key={`${index}:${food}`}>{food}</li>)}</ul>
+                <ul>{setup.food.map((food) => <li key={food.name}>{food.name}: {food.quantity === null ? "Quantity needs review" : `${food.quantity} ${food.unit}`}{food.pans !== null && food.panSize ? ` · ${food.pans} ${food.panSize} pans` : ""}</li>)}</ul>
+                <p className="meta">Chicken tenders and wings include ranch; mozzarella sticks include marinara. One spoon per sauce container; two tongs per purchased platter. Use approved kitchen packing for shared chafing dishes. Plates, napkins, linen, and unmapped bar supplies must be checked against the contract; no quantities are guessed.</p>
+                {setup.review.length ? <ul role="alert">{setup.review.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}
+              </div>
+            </article>
+            <p className="meta">Task completions record the staff name from this session, or the BWA name above, and the completion time. Names are staff-entered, not authenticated identity. Enter the BWA before final submission; only Admin can reopen a submitted checklist.</p>
             {readiness.review.length ? <p role="alert">Contract review needed for {readiness.review.length} critical task(s). Unverified items are not marked Not applicable.</p> : null}
             {checklistSections.map((section) => (
               <article className="task-section-card" key={section.key}>
@@ -774,17 +859,10 @@ export default function ChecklistsClient({
                       <input
                         type="checkbox"
                         checked={requirement.applicability !== "not-applicable" && activeChecklist.tasks[item.key]}
-                        disabled={!isEditable || requirement.applicability === "not-applicable" || !activeChecklist.bwa.trim()}
+                        disabled={!isEditable || requirement.applicability === "not-applicable" || !(staffName.trim() || activeChecklist.bwa.trim())}
                         onChange={(event) => {
                           const checked = event.target.checked;
-                          updateEventChecklist(activeEvent.id, (current) => ({
-                            ...current,
-                            tasks: {
-                              ...current.tasks,
-                              [item.key]: checked,
-                            },
-                            taskEvidence: checked ? { ...current.taskEvidence, [item.key]: { employeeName: current.bwa.trim(), completedAt: new Date().toISOString() } } : Object.fromEntries(Object.entries(current.taskEvidence ?? {}).filter(([key]) => key !== item.key)),
-                          }));
+                          updateEventChecklist(activeEvent.id, (current) => completeChecklistTask(current, item.key, checked, staffName, new Date().toISOString(), setupTaskFingerprint(activeEvent, item.key, setup)));
                         }}
                       />
                       <span>{item.label}{requirement.critical && requirement.applicability !== "not-applicable" ? " · Critical" : ""}<small className="meta">{requirement.applicability === "not-applicable" ? `Not applicable — ${requirement.reason}` : requirement.applicability === "needs-review" ? requirement.reason : requirement.dueAt ? `Due ${formatTimestamp(requirement.dueAt)} Eastern` : section.title}{evidence && activeChecklist.tasks[item.key] ? ` · Recorded by ${evidence.employeeName} · ${formatTimestamp(evidence.completedAt)} Eastern` : ""}</small></span>
@@ -963,6 +1041,17 @@ export default function ChecklistsClient({
                         {foodSaveBusy ? activeSaveState === "saving" ? "Saving…" : "Sending…" : activeRefillItem && ["submitting", "pending"].includes(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`]) ? "Sending…" : activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "sent" ? "GoTab accepted" : activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "uncertain" ? "Check saved order" : "Submit Refill"}
                       </button>
                     </div>
+                    <label className="control-block">
+                      <span>Notes for this refill</span>
+                      <textarea
+                        maxLength={500}
+                        disabled={!isEditable || !activeRefillItem || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`]) || foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "sent"}
+                        value={activeRefillItem ? activeChecklist.food[activeRefillItem.key].notes ?? "" : ""}
+                        onChange={(event) => activeRefillItem && updateFoodAddOn(activeEvent.id, activeRefillItem.key, { notes: event.target.value })}
+                        placeholder="Optional instructions for this refill only."
+                      />
+                      <small>Sent with this request. Editing notes never resends food.</small>
+                    </label>
                   </article>
                 ) : activeAddOnTab === "entertainment"
                   ? entertainmentAddOns.map((item) => {
@@ -1184,6 +1273,17 @@ export default function ChecklistsClient({
                                 : "Submit to Kitchen"}
                         </button>
                       </div>
+                      <label className="control-block">
+                        <span>Notes for this food request</span>
+                        <textarea
+                          maxLength={500}
+                          disabled={!isEditable || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`]) || foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "sent"}
+                          value={state.notes ?? ""}
+                          onChange={(event) => updateFoodAddOn(activeEvent.id, item.key, { notes: event.target.value })}
+                          placeholder="Optional instructions for this order only."
+                        />
+                        <small>Sent with this request. Editing notes never resends food.</small>
+                      </label>
                     </article>
                     </Fragment>
                   );
@@ -1242,7 +1342,7 @@ export default function ChecklistsClient({
   function updateFoodAddOn(
     eventId: number,
     key: string,
-    changes: { quantity?: string; manualPrice?: string; panSize?: "" | "1/3" | "1/2" },
+    changes: { quantity?: string; manualPrice?: string; panSize?: "" | "1/3" | "1/2"; notes?: string },
   ) {
     if (metaByEvent[eventId]?.status === "submitted" || finalSubmissionEventIds.current.has(eventId)) return;
     if (foodSubmissionLocked(foodSubmitByItem[`${eventId}:${key}`])) return;
@@ -1292,6 +1392,7 @@ export default function ChecklistsClient({
           syncFoodAddOns: true,
           syncFoodAddOnKeys: [key],
           sourceType,
+          ...((staffName.trim() || checklist.bwa.trim()) ? { requesterName: staffName.trim() || checklist.bwa.trim() } : {}),
         }),
       });
       const payload = (await response.json()) as ChecklistSaveResponse;
@@ -1302,6 +1403,7 @@ export default function ChecklistsClient({
       // A food delivery error can follow a successful checklist save. Keep its
       // revision, otherwise the next deliberate retry would use a stale draft.
       if (response.ok && payload.record) {
+        window.dispatchEvent(new Event("event-host:checklist-updated"));
         metaByEventRef.current[eventId] = metaFromRecord(payload.record);
         setMetaByEvent((current) => ({ ...current, [eventId]: metaFromRecord(payload.record) }));
       }
@@ -1346,7 +1448,7 @@ export default function ChecklistsClient({
       metaByEventRef.current[eventId] = meta;
       revisionByEventRef.current[eventId] = 0;
       setMetaByEvent((current) => ({ ...current, [eventId]: meta }));
-      setChecklistsByEvent((current) => ({ ...current, [eventId]: record ? mergeRecordState(record, event.date) : defaultChecklistState(event.date) }));
+      setChecklistsByEvent((current) => ({ ...current, [eventId]: record ? mergeRecordState(record, event) : defaultChecklistState(event.date) }));
       setConflictByEvent((current) => ({ ...current, [eventId]: false }));
       setDirtyEventIds((current) => current.filter((id) => id !== eventId));
       setDirtyFoodEventIds((current) => current.filter((id) => id !== eventId));

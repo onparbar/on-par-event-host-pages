@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   foodAddOns,
+  completeChecklistTask,
+  defaultChecklistState,
+  hydrateChecklistState,
+  normalizeStaffPoc,
   checklistEventForSelection,
   foodUnitPrice,
   appetizerBarRefillAddOns,
@@ -20,6 +24,22 @@ const emptyFoodState: FoodState = {
 };
 
 describe("Event Host food add-ons", () => {
+  it("starts the editable staff POC blank and strips only the known preview placeholder", () => {
+    expect(defaultChecklistState("2026-10-23").poc).toBe("");
+    expect(hydrateChecklistState("2026-10-23", { poc: "CONTACT OMITTED FROM PREVIEW" }).poc).toBe("");
+    expect(normalizeStaffPoc("Carlos")).toBe("Carlos");
+    expect(normalizeStaffPoc("Contact omitted from preview - ask Carlos")).toBe("Contact omitted from preview - ask Carlos");
+  });
+
+  it("records the session name or BWA without a separate employee input", () => {
+    const state = defaultChecklistState("2026-10-23");
+    expect(completeChecklistTask(state, "food-kitchen-window", true, "", "2026-10-23T17:00:00Z")).toBe(state);
+    state.bwa = " Brooke ";
+    const completed = completeChecklistTask(state, "food-kitchen-window", true, " Carlos ", "2026-10-23T17:00:00Z");
+    expect(completed.taskEvidence?.["food-kitchen-window"]).toEqual({ employeeName: "Carlos", completedAt: "2026-10-23T17:00:00Z" });
+    expect(completeChecklistTask(completed, "food-kitchen-window", true, "Other staff", "2026-10-23T18:00:00Z")).toBe(completed);
+    expect(completeChecklistTask(state, "food-kitchen-window", true, " ", "2026-10-23T18:00:00Z").taskEvidence?.["food-kitchen-window"].employeeName).toBe("Brooke");
+  });
   it("uses the remembered event before publishing the first tab default", () => {
     const first = { id: 1, name: "Event A" };
     const remembered = { id: 2, name: "Event B" };

@@ -9087,6 +9087,76 @@ a {
 .event-command-links a { color: var(--ope-action-green); font-weight: 800; font-size: .8rem; min-height: 44px; display: inline-flex; align-items: center; }
 .event-command-links .button { padding: 10px 14px; background: var(--ope-action-green); color: white; border-radius: 8px; text-decoration: none; }
 .event-command-empty { padding: 24px; border: 1px dashed var(--ope-sage); border-radius: var(--portal-radius-md); background: var(--portal-surface-muted); }
+.staff-event-selection-controls,
+.staff-event-date-controls,
+.portal-event-context-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+.staff-event-selection-controls { justify-content: space-between; margin: 18px 0; }
+.staff-event-date-controls label,
+.staff-event-search,
+.staff-name-select { display: grid; gap: 6px; color: var(--ope-forest); font-size: .8rem; font-weight: 800; }
+.staff-event-search { flex: 1; max-width: 340px; min-width: 200px; }
+.staff-event-selection-controls :is(button, input),
+.staff-name-select select,
+.staff-event-opening button,
+.event-command-links button { min-height: 44px; padding: 10px 14px; border: 1px solid var(--portal-border); border-radius: 8px; color: var(--ope-forest); background: white; font: inherit; }
+.staff-event-date-controls > button { min-width: 44px; font-weight: 800; }
+.staff-event-opening { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin: 18px 0; padding: 20px; border: 2px solid var(--ope-action-green); border-radius: 12px; background: white; }
+.staff-event-opening > div { flex: 1 1 260px; }
+.staff-event-opening h3 { margin: 4px 0; color: var(--ope-forest); }
+.staff-event-opening p { margin: 6px 0; font-size: .85rem; }
+.staff-event-opening .button,
+.event-command-links button.button { background: var(--ope-action-green); color: white; border-color: var(--ope-action-green); font-weight: 800; cursor: pointer; }
+.staff-event-opening button:disabled { opacity: .5; cursor: not-allowed; }
+.staff-event-opening .staff-identity-note { flex-basis: 100%; color: var(--portal-muted-text); font-size: .78rem; }
+.portal-event-context > .portal-event-context-actions { display: flex; justify-content: end; }
+.portal-event-context-actions .staff-name-select { min-width: 170px; }
+.portal-event-context-actions button { min-height: 44px; }
+.staff-event-workspace { display: grid; grid-template-columns: 210px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); align-content: start; }
+.staff-event-workspace > .portal-header { grid-column: 1 / -1; grid-row: 1; }
+.staff-event-workspace > .portal-connectivity-notice { grid-column: 1 / -1; grid-row: 2; }
+.staff-event-workspace > .portal-event-context { grid-column: 1 / -1; grid-row: 3; position: sticky; top: var(--event-header-height, 82px); z-index: 55; margin: 0; }
+.staff-event-workspace > :is(.portal-main, .entertainment-main) { grid-column: 2; grid-row: 4; min-width: 0; width: 100%; box-sizing: border-box; }
+.staff-event-workspace > .portal-main { padding-inline: clamp(16px, 2vw, 30px); }
+.staff-event-workspace > .portal-header .portal-navigation { display: none; }
+.staff-event-workspace > .portal-header .portal-menu-button { display: inline-flex; min-height: 44px; }
+.staff-workspace-sidebar { grid-column: 1; grid-row: 4; position: sticky; top: var(--staff-sidebar-top, 0px); min-width: 0; max-height: max(0px, calc(100dvh - var(--staff-sidebar-top, 0px))); align-self: start; overflow: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 18px 12px; border-right: 1px solid var(--portal-border); background: #e8eee8; }
+.staff-workspace-navigation { display: grid; position: sticky; top: 0; z-index: 1; gap: 8px; background: #e8eee8; }
+.staff-workspace-navigation a,
+.staff-all-operations { display: flex; min-height: 48px; align-items: center; padding: 10px 12px; border: 1px solid var(--portal-border); border-radius: 8px; background: white; color: var(--ope-forest); font-size: .9rem; font-weight: 800; text-decoration: none; }
+.staff-workspace-navigation a.is-active { border-color: var(--ope-forest); background: var(--ope-forest); color: white; box-shadow: inset 4px 0 var(--ope-sage); }
+.staff-all-operations { width: 100%; margin-top: 20px; background: transparent; cursor: pointer; font-family: inherit; }
+@media screen and (min-width: 900px) and (orientation: landscape) {
+  .staff-event-workspace.entertainment-dashboard-shell { height: 100dvh; }
+  .staff-event-workspace.entertainment-dashboard-shell > .staff-workspace-sidebar { min-height: 0; overflow: auto; }
+  .staff-event-workspace > .entertainment-main { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .staff-event-workspace > .entertainment-main > .event-workspace-panel { grid-column: 1; grid-row: 1; max-height: 23dvh; margin: 6px; overflow: auto; }
+  .staff-event-workspace > .entertainment-main > .entertainment-sidebar { grid-row: 2; }
+  .staff-event-workspace > .entertainment-main > .entertainment-workspace { grid-row: 3; }
+  .staff-event-workspace > .entertainment-main > .entertainment-legend { grid-row: 4; }
+}
+@media screen and (max-width: 900px) {
+  .staff-event-workspace { grid-template-columns: 180px minmax(0, 1fr); }
+  .staff-workspace-sidebar { padding: 12px 8px; }
+  .staff-workspace-navigation a { padding: 10px; font-size: .82rem; }
+  .staff-event-workspace .portal-event-context { align-items: start; }
+}
+@media screen and (max-width: 640px) {
+  .staff-event-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+  .staff-workspace-sidebar { grid-column: 1; grid-row: 4; position: static; max-height: none; overflow: visible; border-right: 0; border-top: 1px solid var(--portal-border); }
+  .staff-workspace-navigation { position: static; }
+  .staff-event-workspace > :is(.portal-main, .entertainment-main) { grid-column: 1; grid-row: 5; }
+  .staff-workspace-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .staff-event-date-controls { gap: 6px; }
+  .staff-event-date-controls input { max-width: 155px; }
+  .staff-event-selection-controls .staff-event-search { max-width: none; flex-basis: 100%; }
+}
+@media print {
+  .staff-event-workspace { display: block !important; }
+  .staff-workspace-sidebar,
+  .staff-event-selection-controls,
+  .staff-event-opening { display: none !important; }
+  .staff-event-workspace > :is(.portal-main, .entertainment-main) { width: 100%; padding-inline: 0; }
+}
 .portal-modules-title { color: var(--ope-forest); font-size: 1.3rem; }
 .kitchen-event-focus-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; padding: 12px 16px; border: 1px solid var(--ope-sage); border-radius: 10px; background: white; }
 .kitchen-view-switch { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }

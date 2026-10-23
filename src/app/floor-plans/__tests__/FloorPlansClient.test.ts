@@ -13,6 +13,7 @@ import {
   organizeFloorPlanAssets,
   syncFloorPlanFromTripleseat,
   syncFloorPlanWindowFromTripleseat,
+  SelectedEventFloorPlan,
 } from "../FloorPlansClient";
 import PublishedFloorPlanMap, { PublishedFloorPlanMapView } from "../PublishedFloorPlanMap";
 import FloorPlanEventLegend from "../FloorPlanEventLegend";
@@ -144,6 +145,33 @@ function sharedVipReservation(
     updatedBy: "test",
   };
 }
+
+describe("selected staff event floor plan", () => {
+  it("does not substitute a static image, another date, or another party when no exact plan is assigned", () => {
+    for (const props of [
+      { payload: null, date: interactivePlan.eventDate, eventId: interactivePlan.events[0].tripleseatEventId },
+      { payload: interactivePayload, date: "2026-08-06", eventId: interactivePlan.events[0].tripleseatEventId },
+      { payload: interactivePayload, date: interactivePlan.eventDate, eventId: "not-this-party" },
+      { payload: { ...interactivePayload, plan: { ...interactivePlan, reservations: [] } }, date: interactivePlan.eventDate, eventId: interactivePlan.events[0].tripleseatEventId },
+    ]) {
+      const html = renderToStaticMarkup(createElement(SelectedEventFloorPlan, props));
+      expect(html).toContain("No floor plan assigned");
+      expect(html).not.toContain("blank-floor-map.png");
+      expect(html).not.toContain(interactivePlan.events[0].name);
+    }
+  });
+  it("shows only the selected party's highlights and title, retaining zoom without event-switching controls", () => {
+    const other = { ...interactivePlan.events[0], id: "other-event", tripleseatEventId: "other-source", name: "Other private party", contractedAreaIds: ["vip-2"] };
+    const payload = { ...interactivePayload, plan: { ...interactivePlan, events: [...interactivePlan.events, other], reservations: [...interactivePlan.reservations, { ...interactivePlan.reservations[0], id: "other-highlight", floorPlanEventId: other.id, areaId: "vip-2" }] } };
+    const html = renderToStaticMarkup(createElement(SelectedEventFloorPlan, { payload, date: interactivePlan.eventDate, eventId: interactivePlan.events[0].tripleseatEventId, zoom: 120 }));
+    expect(html).toContain(interactivePlan.events[0].name);
+    expect(html).toContain("width:120%");
+    expect(html).toContain('aria-label="VIP 1 assigned to Redacted August 5 Event"');
+    expect(html).not.toContain(other.name);
+    expect(html).not.toContain("Show all events");
+    expect(html).not.toContain("Show only");
+  });
+});
 
 describe("floor-plan dashboard organization", () => {
   it("opens the nearest upcoming plan and archives past plans", () => {

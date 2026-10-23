@@ -11,6 +11,12 @@ import type { EventFoodSourceType } from "./event-food";
 import { GoTabIntegrationStorage } from "./storage";
 import { eventFoodDeliveryState, summarizeEventFoodDelivery, type EventFoodDelivery } from "./delivery";
 
+function foodOrderShape(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as { quantity?: unknown; panSize?: unknown };
+  return JSON.stringify({ quantity: Number(item.quantity), panSize: item.panSize || null });
+}
+
 async function verifySavedAddOnDelivery(kitchenEventId: string, food: Record<string, unknown>) {
   // A no-change save is not proof of delivery. Read this event's saved orders,
   // without retrying them or counting any other party's worker results.
@@ -62,6 +68,7 @@ export async function synchronizeChecklistFoodAddOns(
   food: unknown,
   submittedSourceKeys?: readonly string[],
   sourceType: EventFoodSourceType = "EVENT_HOST_ADDON",
+  options: { requesterName?: string } = {},
 ) {
   const previous = await getKitchenEventFoodAddOns(kitchenEventId);
   const previousFood = previous.food as Record<string, unknown>;
@@ -92,8 +99,7 @@ export async function synchronizeChecklistFoodAddOns(
   const changedSourceKeys = candidateKeys.filter(
     (key) =>
       submittedSourceKeys?.includes(key) ||
-      JSON.stringify(previousFood[key] ?? null) !==
-        JSON.stringify(savedFood[key] ?? null),
+      foodOrderShape(previousFood[key]) !== foodOrderShape(savedFood[key]),
   );
 
   if (changedSourceKeys.length === 0) {
@@ -108,6 +114,7 @@ export async function synchronizeChecklistFoodAddOns(
       sourceVersion: saved.revision,
       changedSourceKeys,
       dispatchImmediately: true,
+      ...(options.requesterName ? { requesterName: options.requesterName } : {}),
       ...(sourceType === "REFILL" ? { sourceType } : {}),
     },
   );

@@ -3,6 +3,8 @@ import type { KitchenEventAddOnFood } from "./addons";
 import { KITCHEN_RULE_CONFIG } from "./config";
 import { quantityAwareReadinessKey } from "./readiness";
 import { generateKitchenChecklist } from "./rules";
+import { KITCHEN_STAFF_ROSTER } from "./staff";
+export { KITCHEN_STAFF_ROSTER } from "./staff";
 import type {
   KitchenAddOnActivity,
   KitchenAddOnCompletion,
@@ -14,40 +16,6 @@ import type {
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const WEBHOOK_PROCESSING_LEASE_MS = 10 * 60 * 1000;
 const WEBHOOK_DEDUPLICATION_WINDOW_MS = 10 * 60 * 1000;
-export const KITCHEN_STAFF_ROSTER = [
-  "Adrian",
-  "Alanis",
-  "Ashleigh",
-  "Austin",
-  "Brooke",
-  "Cameron",
-  "Carlos",
-  "Chase",
-  "Daniel",
-  "Derek",
-  "Diana",
-  "Emily",
-  "Enrique",
-  "Estuardo",
-  "Geldi",
-  "Jasmonica",
-  "Julio",
-  "Kaleb",
-  "Karla",
-  "Lex",
-  "Lindsey",
-  "Molly",
-  "Rocky",
-  "Ryan",
-  "Samantha",
-  "Saul",
-  "Selena",
-  "Staci",
-  "Taylor",
-  "Tina",
-  "Veronica",
-] as const;
-
 export type KitchenSyncStatus = "running" | "success" | "error";
 
 export type KitchenSyncState = {

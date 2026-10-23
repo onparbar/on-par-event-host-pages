@@ -39,6 +39,7 @@ export async function synchronizeKitchenChecklistToEventFood(
     dispatchImmediately?: boolean;
     bookedFoodQuantities?: ReadonlyMap<string, number>;
     submittedAt?: string;
+    requesterName?: string;
   },
 ) {
   const storage = options.storage ?? new GoTabIntegrationStorage();
@@ -67,9 +68,9 @@ export async function synchronizeKitchenChecklistToEventFood(
   const projection = projectKitchenChecklist(isContract ? { ...checklist, liveFoodAddOns: [] } : checklist, mappings, {
     sourceType,
     sourceVersion,
-    requesterName:
-      checklist.foodRunners?.find((name) => name.trim()) ??
-      (checklist.foodRunnerOrBwa?.trim() || null),
+    requesterName: (!isContract ? options.requesterName : undefined) ??
+      (checklist.foodRunners?.find((name) => name.trim()) ??
+      (checklist.foodRunnerOrBwa?.trim() || null)),
     defaultPrepLeadMinutes: configuration.defaultPrepLeadMinutes ?? 60,
     bookedFoodQuantities: options.bookedFoodQuantities,
     submittedAt: options.submittedAt,
@@ -224,6 +225,7 @@ export async function synchronizeKitchenLiveAddOnsToEventFood(
     storage?: EventFoodSyncStorage;
     env?: Readonly<Record<string, string | undefined>>;
     dispatchImmediately?: boolean;
+    requesterName?: string;
   },
 ) {
   const changedItemKeys = new Set(
@@ -246,5 +248,6 @@ export async function synchronizeKitchenLiveAddOnsToEventFood(
     env: options.env,
     dispatchImmediately: options.dispatchImmediately ?? true,
     submittedAt: (options.dispatchImmediately ?? true) ? new Date().toISOString() : undefined,
+    ...(options.requesterName ? { requesterName: options.requesterName } : {}),
   });
 }

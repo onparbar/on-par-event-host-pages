@@ -22,21 +22,26 @@ import {
 import type { FloorPlanDayPayload } from "@/lib/floor-plans/types";
 import FloorPlanEventLegend from "./FloorPlanEventLegend";
 import FloorPlanLocalOutlines from "./FloorPlanLocalOutlines";
+import { formatClock } from "@/lib/entertainment/time";
 
 export default function PublishedFloorPlanMap({
   payload,
   zoom = 100,
+  focusEventId,
 }: {
   payload: FloorPlanDayPayload;
   zoom?: number;
+  focusEventId?: string;
 }) {
   const context = useEventContext();
-  const selected = findOperationalFloorPlanEvent(payload.plan.events, context.preferredEventId);
+  const requestedId = focusEventId ?? context.preferredEventId;
+  const selected = findOperationalFloorPlanEvent(payload.plan.events, requestedId);
   const contextEvent = selected ? {
     eventId: operationalFloorPlanEventId(selected), eventName: selected.name, date: payload.plan.eventDate,
     area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: selected.guestCount,
+    time: selected.startAt && selected.endAt ? `${formatClock(selected.startAt)} – ${formatClock(selected.endAt)}` : "Time needs review",
   } : null;
-  if (context.preferredEventId && !selected) return <p className="floor-plan-warning-copy" role="alert">The selected event cannot be uniquely matched to this saved floor plan. No other party was substituted. <button onClick={context.clearEvent} type="button">Show all events</button></p>;
+  if (requestedId && (!selected || (context.requestedDate && context.requestedDate !== payload.plan.eventDate))) return <p className="floor-plan-warning-copy" role="alert">No floor plan assigned. The selected event cannot be uniquely matched to this saved floor plan. No other party was substituted. <button onClick={context.switchEvent} type="button">Switch Event</button></p>;
   return (
     <>
     <EventSelectionBridge event={contextEvent} />
@@ -45,10 +50,12 @@ export default function PublishedFloorPlanMap({
         const event = payload.plan.events.find((item) => item.id === eventId);
         if (!event) { context.clearEvent(); return; }
         context.selectEvent({ eventId: operationalFloorPlanEventId(event), eventName: event.name, date: payload.plan.eventDate,
-          area: event.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: event.guestCount });
+          area: event.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: event.guestCount,
+          time: event.startAt && event.endAt ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}` : "Time needs review" });
       }}
       payload={payload}
       selectedEventId={selected?.id ?? null}
+      focused={Boolean(focusEventId)}
       zoom={zoom}
     />
     </>
@@ -60,11 +67,13 @@ export function PublishedFloorPlanMapView({
   zoom = 100,
   selectedEventId,
   onSelectEvent,
+  focused = false,
 }: {
   payload: FloorPlanDayPayload;
   zoom?: number;
   selectedEventId: string | null;
   onSelectEvent: (eventId: string | null) => void;
+  focused?: boolean;
 }) {
   const view = floorPlanEventView(payload.plan, payload.entertainmentReservations, selectedEventId);
   const { plan, entertainmentReservations } = view;
@@ -123,8 +132,9 @@ export function PublishedFloorPlanMapView({
           ))}
         <FloorPlanEventLegend
           onSelectEvent={onSelectEvent}
-          plan={payload.plan}
+          plan={focused ? plan : payload.plan}
           selectedEventId={view.selectedEventId}
+          readOnly={focused}
         />
         <div className="floor-plan-area-layer published-floor-plan-area-layer">
           <FloorPlanLocalOutlines plan={plan} entertainmentReservations={entertainmentReservations} />

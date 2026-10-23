@@ -357,7 +357,7 @@ export class GoTabIntegrationStorage {
     }
     const params = new URLSearchParams({
       event_id: `in.(${ids.join(",")})`,
-      select: "id,event_id,source_record_id,display_name,quantity,pan_size,dispatch_status",
+      select: "id,event_id,source_record_id,display_name,quantity,pan_size,dispatch_status,requester_name,created_at,request_notes",
       order: "created_at.desc",
       limit: "1000",
       ...(requestIds ? { id: `in.(${[...new Set(requestIds)].join(",")})` } : {}),
@@ -366,6 +366,7 @@ export class GoTabIntegrationStorage {
     const requests = await response.json() as Array<{
       id: string; event_id: string; source_record_id: string; display_name: string;
       quantity: number; pan_size: string; dispatch_status: string;
+      requester_name?: string; created_at?: string; request_notes?: string;
     }>;
     if (requests.length >= 1000) throw new Error("Food-delivery history is too large to verify completely.");
     const result: EventFoodDelivery[] = [];
@@ -390,6 +391,7 @@ export class GoTabIntegrationStorage {
           status: latest?.status ?? "UNKNOWN", orderReference: latest?.gotab_order_uuid ?? null,
           acceptedAt: latest?.sent_at ?? null, updatedAt: latest?.updated_at ?? "",
           error: latest?.last_error ? "This order needs review. Check the saved order before retrying." : null,
+          requesterName: request.requester_name ?? "", requestedAt: request.created_at ?? "", notes: request.request_notes ?? "",
         });
       }
     }
