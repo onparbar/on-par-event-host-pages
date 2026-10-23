@@ -16,6 +16,7 @@ import {
   foodAddOns,
   type ChecklistRecord,
 } from "@/lib/checklist-model";
+import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY } from "@/lib/checklist-readiness";
 import type { AdminState } from "@/lib/admin-types";
 import type {
   AdminContractEvidence,
@@ -105,6 +106,42 @@ export function completedChecklistEventName(
   fallbackName?: string,
 ) {
   return record.eventName.trim() || fallbackName?.trim() || `Event ${record.eventId}`;
+}
+
+export function ChecklistCloseoutWarnings({
+  record,
+}: {
+  record: Pick<ChecklistRecord, "status" | "tasks" | "taskEvidence">;
+}) {
+  const receipt = record.taskEvidence?.[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY];
+  const warnings = receipt?.contractWarnings;
+  if (
+    record.status !== "submitted"
+    || record.tasks?.[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY] !== true
+    || !receipt
+    || typeof receipt.employeeName !== "string"
+    || !receipt.employeeName.trim()
+    || typeof receipt.completedAt !== "string"
+    || !Number.isFinite(Date.parse(receipt.completedAt))
+    || typeof receipt.sourceFingerprint !== "string"
+    || !receipt.sourceFingerprint.trim()
+    || !Array.isArray(warnings)
+    || !warnings.length
+    || !warnings.every((warning) => typeof warning === "string" && warning.trim())
+  ) {
+    return null;
+  }
+
+  return (
+    <section className="event-workspace-panel" aria-label="Retained contract warnings">
+      <PortalStatusBadge tone="warning">Submitted with contract warnings — Needs Review</PortalStatusBadge>
+      <p>
+        Confirmed by {receipt.employeeName} · <time dateTime={receipt.completedAt}>{formatOperationsTimestamp(receipt.completedAt)} Eastern</time>
+      </p>
+      <p>Staff confirmation does not resolve these contract warnings.</p>
+      <ul>{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+    </section>
+  );
 }
 
 function itineraryMonthKey(date: string) {
@@ -548,6 +585,7 @@ export default function AdminClient({
                     <p className="meta">
                       {eventDate ? formatEventDate(eventDate) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{poc ? ` | ${poc}` : ""}
                     </p>
+                    <ChecklistCloseoutWarnings record={record} />
                     <div className="completed-meta-grid">
                       <div className="checklist-meta-card">
                         <span className="eyebrow">Submitted</span>

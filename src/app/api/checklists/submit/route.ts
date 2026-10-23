@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checklistEventsForPlans } from "../../../../lib/checklist-events";
 import { hydrateChecklistState, type EventChecklistState } from "../../../../lib/checklist-model";
-import { checklistReadiness } from "../../../../lib/checklist-readiness";
+import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY, checklistReadiness } from "../../../../lib/checklist-readiness";
 import { StaleSaveError } from "../../../../lib/stale-save";
 import { reconcileChecklistSetup } from "../../../../lib/operations/setup";
 import { normalizeKitchenOrderNotes } from "../../../../lib/kitchen/addons";
@@ -26,6 +26,7 @@ type SubmitChecklistRequest = {
   checklist?: EventChecklistState;
   expectedUpdatedAt?: string | null;
   requesterName?: string;
+  warningConfirmation?: { sourceFingerprint: string };
 };
 
 function badRequest(message: string) {
@@ -47,6 +48,9 @@ export async function POST(request: Request) {
 
   if (typeof body.eventId !== "number" || !body.checklist) {
     return badRequest("Missing eventId or checklist.");
+  }
+  if (body.warningConfirmation !== undefined && (!body.warningConfirmation || typeof body.warningConfirmation !== "object" || Array.isArray(body.warningConfirmation) || Object.keys(body.warningConfirmation).length !== 1 || typeof body.warningConfirmation.sourceFingerprint !== "string" || !body.warningConfirmation.sourceFingerprint.trim())) {
+    return badRequest("Warning confirmation must contain the current sourceFingerprint.");
   }
   if (body.requesterName !== undefined && (typeof body.requesterName !== "string" || body.requesterName.trim().length > 120 || /[\r\n\x00-\x1f\x7f]/.test(body.requesterName))) return badRequest("Requester name must be a single line of up to 120 characters.");
   const requesterName = body.requesterName?.trim();
@@ -77,16 +81,38 @@ export async function POST(request: Request) {
   const [event] = checklistEventsForPlans([plan]);
   const state = reconcileChecklistSetup(event, hydrateChecklistState(event.date, body.checklist));
   if (!Object.prototype.hasOwnProperty.call(body.checklist, "poc")) delete state.poc;
-  const readiness = checklistReadiness(event, state);
+  // A saved or client-provided receipt is not a new closeout confirmation.
+  delete state.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY];
+  if (state.taskEvidence) delete state.taskEvidence[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY];
+  const confirmationActor = requesterName || (typeof state.bwa === "string" ? state.bwa.trim() : "");
+  if (body.warningConfirmation && (!confirmationActor || confirmationActor.length > 120 || /[\r\n\x00-\x1f\x7f]/.test(confirmationActor))) {
+    return badRequest("Warning confirmation requires a staff name on a single line of up to 120 characters.");
+  }
+  const readiness = checklistReadiness(event, state, body.warningConfirmation?.sourceFingerprint);
+  if (body.warningConfirmation && body.warningConfirmation.sourceFingerprint !== readiness.warningFingerprint) {
+    return NextResponse.json({ error: "Contract warnings changed; refresh and confirm the current warnings before submitting." }, { status: 422 });
+  }
   if (!readiness.canSubmit) {
     return NextResponse.json({
-      error: "Complete critical tasks with an employee name and timestamp, resolve contract review items, and enter the BWA before closing this event. Only Admin can reopen a submitted checklist.",
+      error: "Complete critical tasks with a name and timestamp, enter the BWA, and explicitly confirm any unresolved contract warnings before closing this event. Only Admin can reopen a submitted checklist.",
       incompleteTasks: readiness.missing.map((task) => task.key),
       reviewTasks: readiness.review.map((task) => task.key),
     }, { status: 422 });
   }
 
   try {
+    if (body.warningConfirmation && readiness.warningFingerprint) {
+      state.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY] = true;
+      state.taskEvidence = {
+        ...state.taskEvidence,
+        [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: {
+          employeeName: confirmationActor,
+          completedAt: new Date().toISOString(),
+          sourceFingerprint: readiness.warningFingerprint,
+          contractWarnings: readiness.warningMessages,
+        },
+      };
+    }
     const record = await saveChecklist({
       action: "submit",
       eventId: event.id,

@@ -155,6 +155,23 @@ export function EventWorkspaceTimeline() {
   </section>;
 }
 
+export function FoodRequestsDisclosure({ foodCount, deliveries, error = "", children }: { foodCount: number; deliveries: readonly EventFoodDelivery[] | null; error?: string; children: ReactNode }) {
+  const pending = deliveries?.filter((delivery) => eventFoodDeliveryState(delivery).tone === "pending").length ?? 0;
+  const attention = deliveries?.filter((delivery) => delivery.status !== "CANCELLED" && (eventFoodDeliveryState(delivery).tone === "warning" || delivery.error)).length ?? 0;
+  return <details className="event-workspace-panel workspace-food-disclosure" aria-label="Food inclusions and request history">
+    <summary>
+      <h2>Contract food — already included</h2>
+      <span className="workspace-food-disclosure-counts">{foodCount} contract food item{foodCount === 1 ? "" : "s"} · {deliveries === null ? "Loading saved requests…" : `${deliveries.length} saved request${deliveries.length === 1 ? "" : "s"}`}</span>
+      <span className="workspace-food-disclosure-statuses">
+        {pending ? <span className="workspace-food-disclosure-badge" role="status">{pending} pending</span> : null}
+        {attention ? <span className="workspace-food-disclosure-badge" role="status">{attention} need attention</span> : null}
+        {error ? <span className="workspace-food-disclosure-badge" role="alert">Request history unavailable</span> : null}
+      </span>
+    </summary>
+    <div className="workspace-food-disclosure-content">{children}</div>
+  </details>;
+}
+
 export function EventWorkspaceRequests() {
   const workspace = useEventWorkspace();
   const { staffName } = useEventContext();
@@ -177,12 +194,12 @@ export function EventWorkspaceRequests() {
     return () => { active = false; window.clearInterval(timer); };
   }, [id, kitchenId]);
   if (!workspace?.payload) return null;
-  return <section className="event-workspace-panel" aria-label="Food inclusions and request history"><h2>Contract food — already included</h2><ul>{workspace.payload.event.food.map((item) => <li key={item}>{item}</li>)}</ul><p>Opening this tab does not order the included food. VIP booked food awaits explicit customer arrival confirmation.</p>
+  return <FoodRequestsDisclosure foodCount={workspace.payload.event.food.length} deliveries={history && history.eventId === id ? history.deliveries : null} error={error}><ul>{workspace.payload.event.food.map((item) => <li key={item}>{item}</li>)}</ul><p>Opening this tab does not order the included food. VIP booked food awaits explicit customer arrival confirmation.</p>
     <h3>Saved food requests & delivery</h3>{error ? <p role="alert">{error}</p> : null}
     {history && history.eventId === id ? history.deliveries.length ? <div className="workspace-activity-grid">{history.deliveries.map((delivery) => {
       const key = `workspace:request:${delivery.requestId}:fulfilled`;
       const fulfilled = workspace.payload?.record?.taskEvidence?.[key];
       return <article className="workspace-activity" key={delivery.requestId}><strong>{delivery.quantity} × {delivery.foodName} {delivery.panSize}</strong><p>{eventFoodDeliveryState(delivery).label}</p><small>{delivery.requesterName || "Requester not recorded"} · {delivery.requestedAt ? workspaceClock(delivery.requestedAt, true) : "Request time not recorded"}</small>{delivery.notes ? <p>{delivery.notes}</p> : null}{delivery.error ? <p role="alert">{delivery.error}</p> : null}{fulfilled ? <p>Fulfilled by {fulfilled.employeeName} · {workspaceClock(fulfilled.completedAt, true)}</p> : delivery.status === "SENT" ? <button disabled={workspace.state === "saving" || !staffName || workspace.payload?.cancelled || workspace.payload?.record?.status === "submitted"} onClick={() => void workspace.act({ action: "FULFILL_REQUEST", requestId: delivery.requestId })} type="button">Mark Fulfilled</button> : null}</article>;
     })}</div> : <p>No saved food requests for this event.</p> : <p>Loading saved requests…</p>}
-  </section>;
+  </FoodRequestsDisclosure>;
 }

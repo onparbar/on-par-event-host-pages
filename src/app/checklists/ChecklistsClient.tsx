@@ -194,6 +194,7 @@ export default function ChecklistsClient({
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [saveErrorByEvent, setSaveErrorByEvent] = useState<Record<number, string>>({});
   const [conflictByEvent, setConflictByEvent] = useState<Record<number, boolean>>({});
+  const [warningConfirmationByEvent, setWarningConfirmationByEvent] = useState<Record<number, { sourceFingerprint: string; employeeName: string }>>({});
   const inFlightEventIds = useRef(new Set<number>());
   const finalSubmissionEventIds = useRef(new Set<number>());
   const metaByEventRef = useRef(metaByEvent);
@@ -487,6 +488,11 @@ export default function ChecklistsClient({
     if (!event || !checklist || conflictByEvent[eventId] || inFlightEventIds.current.has(eventId)) {
       return;
     }
+    const currentReadiness = checklistReadiness(event, checklist);
+    const actor = staffName.trim() || checklist.bwa.trim();
+    const confirmation = warningConfirmationByEvent[eventId];
+    const confirmedWarnings = currentReadiness.warningFingerprint && confirmation?.sourceFingerprint === currentReadiness.warningFingerprint && confirmation.employeeName === actor;
+    if (!currentReadiness.canSubmit && !(confirmedWarnings && currentReadiness.canSubmitAfterWarningConfirmation)) return;
     inFlightEventIds.current.add(eventId);
     finalSubmissionEventIds.current.add(eventId);
 
@@ -505,6 +511,7 @@ export default function ChecklistsClient({
           eventId,
           expectedUpdatedAt: metaByEventRef.current[eventId]?.updatedAt ?? null,
           checklist,
+          ...(confirmedWarnings ? { warningConfirmation: { sourceFingerprint: currentReadiness.warningFingerprint } } : {}),
           ...((staffName.trim() || checklist.bwa.trim()) ? { requesterName: staffName.trim() || checklist.bwa.trim() } : {}),
         }),
       });
@@ -559,6 +566,19 @@ export default function ChecklistsClient({
   const activeChecklist = activeEvent ? checklistsByEvent[activeEvent.id] : undefined;
   const activeMeta = activeEvent ? metaByEvent[activeEvent.id] : undefined;
   const activeSaveState = activeEvent ? saveStateByEvent[activeEvent.id] : "idle";
+  const activeReadiness = activeEvent && activeChecklist ? checklistReadiness(activeEvent, activeChecklist) : null;
+  const activeWarningActor = staffName.trim() || activeChecklist?.bwa.trim() || "";
+  const activeWarningFingerprint = activeReadiness?.warningFingerprint ?? null;
+  useEffect(() => {
+    if (!activeEvent) return;
+    setWarningConfirmationByEvent((current) => {
+      const confirmation = current[activeEvent.id];
+      if (!confirmation || confirmation.sourceFingerprint === activeWarningFingerprint && confirmation.employeeName === activeWarningActor) return current;
+      const next = { ...current };
+      delete next[activeEvent.id];
+      return next;
+    });
+  }, [activeEvent?.id, activeWarningActor, activeWarningFingerprint]);
   const pollingEventId = activeEvent?.id;
   useEffect(() => {
     if (!pollingEventId || loadState !== "ready") return;
@@ -640,9 +660,12 @@ export default function ChecklistsClient({
   const isEditable = loadState === "ready" && !isSubmitted && activeSaveState !== "submitting";
   const foodSaveBusy = activeKitchenSyncState === "syncing" || activeSaveState === "saving";
   const canSendFood = isEditable && !conflictByEvent[activeEvent.id] && !foodSaveBusy;
-  const readiness = checklistReadiness(activeEvent, activeChecklist);
+  const readiness = activeReadiness!;
   const setup = contractSetup(activeEvent);
-  const canSubmit = isEditable && readiness.canSubmit && !conflictByEvent[activeEvent.id] && !["submitting", "saving"].includes(activeSaveState);
+  const warningActor = staffName.trim() || activeChecklist.bwa.trim();
+  const warningConfirmation = warningConfirmationByEvent[activeEvent.id];
+  const warningsConfirmed = Boolean(readiness.warningFingerprint && warningConfirmation?.sourceFingerprint === readiness.warningFingerprint && warningConfirmation.employeeName === warningActor);
+  const canSubmit = isEditable && (readiness.canSubmit || warningsConfirmed && readiness.canSubmitAfterWarningConfirmation) && !conflictByEvent[activeEvent.id] && !["submitting", "saving"].includes(activeSaveState);
   const progress = readiness;
   const entertainmentSubtotal = entertainmentAddOns.reduce((sum, item) => {
     const state = activeChecklist.entertainment[item.key];
@@ -694,6 +717,7 @@ export default function ChecklistsClient({
             <span className="meta">
               {progress.completed} of {progress.total} checklist items complete
             </span>
+            <progress aria-label="Checklist completion" className="checklist-progress" max={Math.max(1, progress.total)} value={progress.completed} />
             <span className={`sync-chip sync-chip-${activeSaveState}`}>{saveMessage}</span>
           </div>
         }
@@ -793,6 +817,26 @@ export default function ChecklistsClient({
               }
             />
           </div>
+          {readiness.warningMessages.length ? <section className="event-workspace-panel" aria-label="Contract warning confirmation">
+            <h3>Needs Review — contract warnings retained for Admin</h3>
+            <p>Staff may close a completed checklist after confirming these warnings. This does not resolve the source warnings, change the contract, or mark unfinished tasks complete.</p>
+            <details>
+              <summary>Review {readiness.warningMessages.length} contract warning{readiness.warningMessages.length === 1 ? "" : "s"}</summary>
+              <ul>{readiness.warningMessages.map((message) => <li key={message}>{message}</li>)}</ul>
+            </details>
+            <label className="task-row">
+              <input type="checkbox" checked={warningsConfirmed} disabled={!isEditable || !warningActor} onChange={(event) => {
+                const checked = event.target.checked;
+                setWarningConfirmationByEvent((current) => {
+                  const next = { ...current };
+                  if (checked && readiness.warningFingerprint) next[activeEvent.id] = { sourceFingerprint: readiness.warningFingerprint, employeeName: warningActor };
+                  else delete next[activeEvent.id];
+                  return next;
+                });
+              }} />
+              <span>I reviewed the unresolved contract warnings and confirm this checklist can be submitted with them retained for Admin.<small className="meta">{warningActor ? `Staff-entered confirmation: ${warningActor}. Name, submission time, and the warnings will be saved with the final record.` : "Enter the BWA or select your staff name before confirming."}</small></span>
+            </label>
+          </section> : null}
           <div className="checklist-actions">
             <div className="action-copy">
               <strong>
@@ -809,8 +853,18 @@ export default function ChecklistsClient({
                     ? isAddOnWorkspace
                       ? "Submit at the end of the event to send the complete add-on record to Admin."
                       : "Use the submit button when the event checklist is final."
-                    : "Enter the BWA, finish critical tasks with completion evidence, and resolve contract review items before submitting."}
+                    : "Enter the BWA, finish critical tasks with completion evidence, and confirm any retained contract warnings before submitting."}
               </span>
+              {!isSubmitted && !canSubmit ? (
+                <ul aria-label="Checklist submission requirements" className="meta">
+                  {!activeChecklist.bwa.trim() ? <li>Enter the BWA name.</li> : null}
+                  {readiness.missing.map((task) => <li key={task.key}>{activeChecklist.tasks[task.key] ? "Reconfirm with your staff name and completion time: " : "Complete: "}{task.label}</li>)}
+                  {readiness.warningMessages.length && !warningsConfirmed ? <li>Review and confirm the contract warnings above; they will remain flagged for Admin.</li> : null}
+                  {conflictByEvent[activeEvent.id] ? <li>Review the newer saved version using “Reload latest and review” above.</li> : null}
+                  {activeSaveState === "saving" ? <li>Wait for the current draft save to finish.</li> : null}
+                  {loadState !== "ready" ? <li>Saved checklist data must load successfully before submission.</li> : null}
+                </ul>
+              ) : null}
             </div>
             <button
               type="button"
@@ -836,8 +890,14 @@ export default function ChecklistsClient({
             <article className="task-section-card">
               <header className="task-section-header">Contract-driven Event Setup</header>
               <div className="task-list">
-                <p>{setup.foodTables === null ? "Food tables: needs review" : `Food tables: ${setup.foodTables}`}{setup.mirrored ? " · Mirrored setup: duplicate equipment and supplies, not food quantities or charges." : ""}</p>
-                <p>Chafing dishes: {setup.chafingDishes ?? "Needs review"} · Tongs: {setup.tongs ?? "Needs review"} · Sauce containers: {setup.sauceContainers ?? "Needs review"} · Spoons: {setup.spoons ?? "Needs review"}</p>
+                <dl className="setup-equipment-grid">
+                  <div><dt>Food tables</dt><dd data-needs-review={setup.foodTables === null}>{setup.foodTables ?? "Needs review"}</dd></div>
+                  <div><dt>Chafing dishes</dt><dd data-needs-review={setup.chafingDishes === null}>{setup.chafingDishes ?? "Needs review"}</dd></div>
+                  <div><dt>Tongs</dt><dd data-needs-review={setup.tongs === null}>{setup.tongs ?? "Needs review"}</dd></div>
+                  <div><dt>Sauce containers</dt><dd data-needs-review={setup.sauceContainers === null}>{setup.sauceContainers ?? "Needs review"}</dd></div>
+                  <div><dt>Spoons</dt><dd data-needs-review={setup.spoons === null}>{setup.spoons ?? "Needs review"}</dd></div>
+                </dl>
+                {setup.mirrored ? <p className="setup-mirror-note">Mirrored setup: duplicate equipment and supplies, not food quantities or charges.</p> : null}
                 <strong>Purchased food — quantities unchanged</strong>
                 <ul>{setup.purchasedFood.map((food, index) => <li key={`${index}:${food}`}>{food}</li>)}</ul>
                 <ul>{setup.food.map((food) => <li key={food.name}>{food.name}: {food.quantity === null ? "Quantity needs review" : `${food.quantity} ${food.unit}`}{food.pans !== null && food.panSize ? ` · ${food.pans} ${food.panSize} pans` : ""}</li>)}</ul>
@@ -846,7 +906,7 @@ export default function ChecklistsClient({
               </div>
             </article>
             <p className="meta">Task completions record the staff name from this session, or the BWA name above, and the completion time. Names are staff-entered, not authenticated identity. Enter the BWA before final submission; only Admin can reopen a submitted checklist.</p>
-            {readiness.review.length ? <p role="alert">Contract review needed for {readiness.review.length} critical task(s). Unverified items are not marked Not applicable.</p> : null}
+            {readiness.review.length ? <p role="alert">Contract warnings affect {readiness.review.length} critical task(s). Complete these tasks and confirm the warnings before submission. Unverified items are not marked Not applicable, and the warnings remain in Admin.</p> : null}
             {checklistSections.map((section) => (
               <article className="task-section-card" key={section.key}>
                 <header className="task-section-header">{section.title}</header>
@@ -1436,6 +1496,11 @@ export default function ChecklistsClient({
   }
 
   async function reloadChecklist(eventId: number) {
+    setWarningConfirmationByEvent((current) => {
+      const next = { ...current };
+      delete next[eventId];
+      return next;
+    });
     if (inFlightEventIds.current.has(eventId) || !window.confirm("Discard this screen’s unsaved draft and load the latest saved checklist?")) return;
     try {
       const response = await fetch("/api/checklists", { cache: "no-store" });

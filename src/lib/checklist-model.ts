@@ -42,6 +42,8 @@ export type FoodState = {
   notes?: string;
 };
 
+export const CHECKLIST_CLOSEOUT_CONFIRMATION_KEY = "workspace:closeout:contract-warnings";
+
 export type EventChecklistState = {
   bwa: string;
   /** Staff-entered event POC; never populated from the customer contact. */
@@ -49,7 +51,7 @@ export type EventChecklistState = {
   extrasAdded: string;
   remainingDrinkCardBalance: string;
   tasks: Record<string, boolean>;
-  taskEvidence?: Record<string, { employeeName: string; completedAt: string; sourceFingerprint?: string }>;
+  taskEvidence?: Record<string, { employeeName: string; completedAt: string; sourceFingerprint?: string; contractWarnings?: string[] }>;
   entertainment: Record<string, EntertainmentState>;
   food: Record<string, FoodState>;
 };
