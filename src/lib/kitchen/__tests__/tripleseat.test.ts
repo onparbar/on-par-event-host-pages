@@ -676,7 +676,7 @@ describe("Tripleseat adapter security and normalization", () => {
       expect.objectContaining({ name: "Fries", quantity: 4 }),
     ]);
     expect(rows.get("platter-mozzarella-sticks")).toMatchObject({
-      quantity: 6,
+      quantity: 12,
       unit: "pounds",
       numberOfPans: 3,
       panSize: "1/2",

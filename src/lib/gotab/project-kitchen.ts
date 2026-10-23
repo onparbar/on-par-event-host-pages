@@ -132,8 +132,13 @@ export function projectKitchenChecklist(
       });
       continue;
     }
-    // Both bars use the same BBQ product; keep each refill's source ID distinct.
-    const mapping = mappingByKey.get(mappingKey(row)) ??
+    const rowMappingKey = mappingKey(row);
+    // Reuse only the exact bowl product; retain the prep row's source identity.
+    const mapping = mappingByKey.get(rowMappingKey) ??
+      (rowMappingKey === "sauce-bbq:BOWL"
+        ? mappingByKey.get("addon:bbq-sauce:BOWL")
+        : null) ??
+      // Both bars use the same BBQ product; keep each refill's source ID distinct.
       (row.key === "addon:appetizer-refill-bbq"
         ? mappingByKey.get(mappingKey({ ...row, key: "addon:wing-refill-bbq" }))
         : null) ?? null;

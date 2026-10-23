@@ -789,7 +789,7 @@ describe("dessert and platter quantities", () => {
     [
       "Mozzarella Sticks",
       "platter-mozzarella-sticks",
-      2,
+      4,
       "Food Platters",
       2,
       "1/3",
@@ -1320,14 +1320,22 @@ describe("platter packing and chafing dishes", () => {
     });
   });
 
-  it("uses one half pan for mozzarella when two distinct foods select half pans", () => {
+  it.each([1, 2, 10])("uses %i half pan(s) for mozzarella when two distinct foods select half pans", (platterCount) => {
     const checklist = generateKitchenChecklist(sourceEvent([
-      { name: "Mozzarella Stick Platter", quantity: 2, sourceCategory: "Food Platters", isFood: true },
+      { name: "Mozzarella Stick Platter", quantity: platterCount, sourceCategory: "Food Platters", isFood: true },
       { name: "Wing Platter", quantity: 1, sourceCategory: "Food Platters", isFood: true },
     ]));
-    expect(row(checklist, "platter-mozzarella-sticks")).toMatchObject({ quantity: 4, numberOfPans: 2, panSize: "1/2" });
+    expect(row(checklist, "platter-mozzarella-sticks")).toMatchObject({ quantity: 4 * platterCount, unit: "pounds", numberOfPans: platterCount, panSize: "1/2" });
     expect(row(checklist, "platter-wings")).toMatchObject({ quantity: 64, numberOfPans: 2, panSize: "1/2" });
-    expect(checklist.chafingDishes.hotPlatters).toBe(2);
+    expect(checklist.chafingDishes.hotPlatters).toBe(Math.ceil((platterCount + 2) / 2));
+  });
+
+  it("does not generate food, pans, or sauce for zero mozzarella platters", () => {
+    const checklist = generateKitchenChecklist(sourceEvent([
+      { name: "Mozzarella Stick Platter", quantity: 0, sourceCategory: "Food Platters", isFood: true },
+    ]));
+    expect(checklist.sections.flatMap((section) => section.rows)).toEqual([]);
+    expect(checklist.chafingDishes).toEqual({ bars: 0, hotPlatters: 0, total: 0 });
   });
 
   it("keeps fries in half pans alongside an odd selection of third-pan foods", () => {
@@ -1363,7 +1371,7 @@ describe("platter packing and chafing dishes", () => {
     expect(checklist.chafingDishes.total).toBeNull();
   });
 
-  it("packs one two-pound mozzarella platter into two third pans and one chafing dish", () => {
+  it("packs one four-pound mozzarella platter into two third pans and one chafing dish", () => {
     const checklist = generateKitchenChecklist(
       packageEvent("Taco Bar", 11, [
         {
@@ -1376,7 +1384,7 @@ describe("platter packing and chafing dishes", () => {
     );
 
     expect(row(checklist, "platter-mozzarella-sticks")).toMatchObject({
-      quantity: 2,
+      quantity: 4,
       unit: "pounds",
       numberOfPans: 2,
       panSize: "1/3",
@@ -2042,7 +2050,7 @@ describe("classification, aliases, and review behavior", () => {
       ]),
     );
 
-    expect(row(checklist, "platter-mozzarella-sticks").quantity).toBe(2);
+    expect(row(checklist, "platter-mozzarella-sticks").quantity).toBe(4);
     expect(
       checklist.warnings.some(
         (warning) =>
@@ -2135,6 +2143,7 @@ describe("classification, aliases, and review behavior", () => {
     expect(sauceRows?.map((candidate) => candidate.key)).toEqual([
       "sauce-marinara",
       "sauce-ranch",
+      "sauce-bbq",
     ]);
     expect(sauceRows).toEqual(
       expect.arrayContaining([
@@ -2145,6 +2154,11 @@ describe("classification, aliases, and review behavior", () => {
         }),
         expect.objectContaining({
           key: "sauce-ranch",
+          quantity: 1,
+          unit: "bowl",
+        }),
+        expect.objectContaining({
+          key: "sauce-bbq",
           quantity: 1,
           unit: "bowl",
         }),

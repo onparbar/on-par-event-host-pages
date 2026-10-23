@@ -562,7 +562,7 @@ export default function FloorPlansClient({
   }>({ status: "idle", message: "" });
   const [planZoom, setPlanZoom] = useState(100);
   const focusedDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date ?? null;
-  const focusedWorkspace = Boolean(eventContext.preferredEventId);
+  const focusedWorkspace = Boolean(eventContext.requestedEventId);
   const focusedPayload = focusedDate ? liveByDate[focusedDate]?.payload ?? savedPublications.find((publication) => publication.plan.eventDate === focusedDate)?.payload ?? null : null;
 
   useEffect(() => {
@@ -641,8 +641,6 @@ export default function FloorPlansClient({
         key={`${asset.specialPage ? "special" : "plan"}-${asset.image}`}
         liveState={liveByDate[asset.date]}
         onOpenChange={(open) => {
-          const preferredDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
-          if (open && preferredDate && preferredDate !== asset.date) eventContext.clearEvent();
           setOpenAssetKey((current) =>
             open ? asset.image : current === asset.image ? null : current,
           );
@@ -661,8 +659,6 @@ export default function FloorPlansClient({
         key={entry.key}
         liveState={liveByDate[entry.date]}
         onOpenChange={(open) => {
-          const preferredDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
-          if (open && preferredDate && preferredDate !== entry.date) eventContext.clearEvent();
           setOpenAssetKey((current) =>
             open ? entry.key : current === entry.key ? null : current,
           );
@@ -695,7 +691,7 @@ export default function FloorPlansClient({
       {focusedWorkspace ? <>
         <PortalPageHeader description="Reserved seating and entertainment for your selected event only. Use Switch Event in the header to choose another party." eyebrow="My event workspace" title="Floor Plan" />
         <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 30 minutes after the event. Entertainment uses booked times only, with no buffer.</p>
-        {!eventContext.ready ? <p role="status">Loading the selected event floor plan…</p> : <SelectedEventFloorPlan date={focusedDate} eventId={eventContext.preferredEventId!} payload={focusedPayload} zoom={planZoom} />}
+        {!eventContext.ready ? <p role="status">Loading the selected event floor plan…</p> : <SelectedEventFloorPlan date={focusedDate} eventId={eventContext.requestedEventId!} payload={focusedPayload} zoom={planZoom} />}
       </> : <>
       <PortalPageHeader
         aside={
@@ -731,7 +727,7 @@ export default function FloorPlansClient({
             <PortalStatusBadge>View only</PortalStatusBadge>
           </div>
         }
-        description="Open one date at a time to review its latest saved seating highlights. The nearest upcoming event opens automatically."
+        description="Each date starts with all parties. Click an event name on its map to see only that party, or choose Show all events to restore the day."
         eyebrow="Event Operations"
         title="Floor Plans"
       />

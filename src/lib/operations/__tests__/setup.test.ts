@@ -22,19 +22,21 @@ describe("contract-driven event setup", () => {
   it("does not mirror exactly 100 guests, but mirrors 101 with unchanged purchased food", () => {
     const single = contractSetup(event);
     const mirrored = contractSetup({ ...event, guest_count: 101 });
-    expect(single).toMatchObject({ foodTables: 1, mirrored: false, tongs: 8, sauceContainers: 4, spoons: 4 });
-    expect(mirrored).toMatchObject({ foodTables: 2, mirrored: true, tongs: 16, sauceContainers: 8, spoons: 8 });
+    expect(single).toMatchObject({ foodTables: 1, mirrored: false, tongs: 8, sauceContainers: 7, spoons: 7 });
+    expect(mirrored).toMatchObject({ foodTables: 2, mirrored: true, tongs: 16, sauceContainers: 14, spoons: 14 });
     expect(mirrored.purchasedFood).toEqual(single.purchasedFood);
     expect(mirrored.food).toEqual(single.food);
     expect(mirrored.chafingDishes).toBe(single.chafingDishes! * 2);
   });
 
-  it("reuses pan packing, includes ranch/marinara, and does not double already doubled standalone chafers", () => {
+  it("reuses pan packing, includes ranch/marinara/BBQ, and does not double already doubled standalone chafers", () => {
     const setup = contractSetup(event);
     expect(setup.food).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "Chicken Tenders", quantity: 128, pans: 8, panSize: "1/3" }),
       expect.objectContaining({ name: "Ranch", quantity: 3 }),
       expect.objectContaining({ name: "Marinara Sauce", quantity: 1 }),
+      expect.objectContaining({ name: "BBQ Sauce", quantity: 3 }),
+      expect.objectContaining({ name: "Mozzarella Sticks", quantity: 4, unit: "pounds" }),
     ]));
     expect(contractSetup({ ...event, guest_count: 201 }).chafingDishes).toBe(contractSetup({ ...event, guest_count: 101 }).chafingDishes);
   });

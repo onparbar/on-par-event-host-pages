@@ -31,7 +31,7 @@ read-only history export. It makes no database connection or repair and always
 requires review. Its report helps prepare the exact manifest; it does not
 establish schema equivalence or replace the source-only dry run.
 
-The source candidate now incorporates operations through `afcbada`, preserving
+The source candidate now incorporates operations through `9fb9baf`, preserving
 the floor-plan, kitchen, itinerary and revision-safe staff workflow changes from
 `ef6e45f`, the October 22 platter calculations and contract-order replay guard
 from `1bcc612`, and the legacy duplicate-contract guard from `be9a129`.
@@ -47,19 +47,29 @@ canonical package-label parsing and adds fresh staff confirmation for otherwise
 complete checklists with contract warnings. Required critical tasks still block
 closeout; the server records current warnings for Admin without clearing source
 review flags. Existing GoTab and floor-plan checked-save runtime is preserved.
+The later `fd6b03b` release removes the obstructing Entertainment activity cards
+and their dedicated layout row while retaining schedule editing and saving.
+Recipe release `fa4ab16` uses 4-pound mozzarella platters and adds the approved
+BBQ bowl rules. Contract projection excludes live-only BBQ contributions and
+reuses only an exact verified bowl mapping, preserving source identities and
+repeat-sync protection. No mapping data or migration was changed here.
+The `9fb9baf` release makes the main Floor Plans page show all parties, with
+local map filtering and Show all. Checklist links remain scoped to the exact
+event/date, and map filtering does not rewrite the shared checklist selection.
+Saved-plan APIs, checked saves, reservations and conflict rules are preserved.
 Tina acknowledged the source handoff and Waitlist diagnostic in
 [comment 6351700367](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6351700367).
 Her operations release does not resolve the source adoption manifest, source-only
 dry run or authorized Preview of this combined candidate; those remain required.
 The local inventory contains 20 migrations; export the full current remote history
 and compare all local files rather than assuming the older count is current.
-Tina reported the October 23 operations promotion in
-[comment 6373119796](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6373119796),
+Tina reported the latest October 23 operations promotion in
+[comment 6375507936](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6375507936),
 following her separate staff-access decision and operations Preview checks.
-An independent October 23 configuration-only release check confirms `afcbada`
+An independent October 23 configuration-only release check confirms `9fb9baf`
 as production, the intended database target, and live Tripleseat/GoTab modes.
 This is configuration evidence, not source-migration or live-data acceptance.
-The operations Preview for `afcbada` does not contain this combined source
+The operations Preview for `9fb9baf` does not contain this combined source
 candidate. Physical KDS receipt and live multi-device staff actions remain owner
 validation; older task evidence without source fingerprints cannot be matched
 retrospectively to a historical contract revision. No such acceptance is claimed

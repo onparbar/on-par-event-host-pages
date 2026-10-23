@@ -210,7 +210,7 @@ describe("translateEventHostFoodAddOns", () => {
         panSize: "1/3",
       },
       {
-        quantity: 4,
+        quantity: 8,
         unit: "pounds",
         numberOfPans: 4,
         panSize: "1/3",
@@ -285,6 +285,8 @@ describe("translateEventHostFoodAddOns", () => {
     ).toMatchObject([
       {
         itemKey: "addon:mozzarella-sticks",
+        quantity: 8,
+        unit: "pounds",
         numberOfPans: 2,
         panSize: "1/2",
         selectedPanSize: "1/2",
@@ -309,7 +311,7 @@ describe("translateEventHostFoodAddOns", () => {
 
   const platterFormulaCases = [
     { key: "tater-kegs", amount: 64, unit: "each", halfPans: 2, thirdPans: 3 },
-    { key: "mozzarella-sticks", amount: 2, unit: "pounds", halfPans: 1, thirdPans: 2 },
+    { key: "mozzarella-sticks", amount: 4, unit: "pounds", halfPans: 1, thirdPans: 2 },
     { key: "chicken-tenders", amount: 64, unit: "each", halfPans: 2, thirdPans: 4 },
     { key: "wings", amount: 64, unit: "each", halfPans: 2, thirdPans: 4 },
     { key: "fry-platters", amount: 1, unit: "bags", halfPans: 1, thirdPans: null },
@@ -359,6 +361,10 @@ describe("translateEventHostFoodAddOns", () => {
     expect(addOns).toHaveLength(5);
     expect(addOns.every((item) => item.quantity === 2 &&
       item.unit === "requested units" && item.numberOfPans === null && item.panSize === null)).toBe(true);
+  });
+
+  it.each([undefined, "1/2", "1/3"] as const)("omits zero-quantity mozzarella platter add-ons with pan size %s", (panSize) => {
+    expect(translateEventHostFoodAddOns({ "mozzarella-sticks": { quantity: 0, panSize } }, null)).toEqual([]);
   });
 
   it("accepts positive whole number values and ignores invalid or unknown entries", () => {

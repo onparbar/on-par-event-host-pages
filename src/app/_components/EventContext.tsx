@@ -16,6 +16,7 @@ import { STAFF_CONTEXT_STORAGE_KEY, eventSelectionHref, persistedStaffContext, r
 
 type EventContextValue = {
   selectedEvent: SelectedOperationalEvent | null;
+  requestedEventId: string | null;
   preferredEventId: string | null;
   requestedDate: string | null;
   ready: boolean;
@@ -31,6 +32,7 @@ type EventContextValue = {
 
 const EventContext = createContext<EventContextValue>({
   selectedEvent: null,
+  requestedEventId: null,
   preferredEventId: null,
   requestedDate: null,
   ready: false,
@@ -127,6 +129,7 @@ export function EventContextProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<EventContextValue>(() => ({
     selectedEvent,
+    requestedEventId: requestedId,
     preferredEventId: requestedId || (selectedEvent?.eventId ?? null),
     requestedDate,
     ready,
