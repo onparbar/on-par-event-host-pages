@@ -91,6 +91,11 @@ export type StoredVipInitialFoodRelease = {
   last_error: string | null;
 };
 
+export type ContractFoodDispatchDecision = {
+  allowed: boolean;
+  reason: "CANONICAL" | "EARLIER_REQUEST_EXISTS" | "ALREADY_SENT";
+};
+
 export class GoTabIntegrationStorage {
   constructor(
     private readonly env: NodeJS.ProcessEnv = process.env,
@@ -192,10 +197,56 @@ export class GoTabIntegrationStorage {
     );
   }
 
-  async claimDueDispatches(workerId: string, limit = 25) {
+  async claimDueDispatches(workerId: string, limit = 25, requestIds?: readonly string[]) {
     if (!workerId.trim()) throw new Error("GoTab worker ID is required.");
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("GoTab dispatch claim limit must be between 1 and 100.");
+    }
+    if (requestIds !== undefined) {
+      if (requestIds.length > 100 || requestIds.some((id) => !/^[A-Za-z0-9-]{1,160}$/.test(id))) {
+        throw new Error("Invalid GoTab dispatch request scope.");
+      }
+      const ids = [...new Set(requestIds)];
+      if (!ids.length) return [];
+      const now = new Date();
+      const eligible = {
+        request_id: `in.(${ids.join(",")})`,
+        status: "in.(SCHEDULED,QUEUED,FAILED)",
+        attempt_count: "lt.5",
+        next_attempt_at: `lte.${now.toISOString()}`,
+        or: `(locked_at.is.null,locked_at.lt.${new Date(now.getTime() - 300_000).toISOString()})`,
+      };
+      const response = await this.request("event_food_dispatches", new URLSearchParams({
+        ...eligible,
+        select: "id,request_id,idempotency_key,action,attempt_count,sanitized_payload",
+        order: "next_attempt_at.asc,created_at.asc",
+        limit: String(limit),
+      }), { method: "GET" });
+      const candidates = await response.json() as ClaimedEventFoodDispatch[];
+      const claimed: ClaimedEventFoodDispatch[] = [];
+      for (const candidate of candidates) {
+        if (!ids.includes(candidate.request_id) || !Number.isInteger(candidate.attempt_count) ||
+            candidate.attempt_count < 0 || candidate.attempt_count >= 5) continue;
+        // Recheck eligibility and the observed attempt count in the same UPDATE.
+        // A concurrent cron/scoped worker can win, but only one may claim a row.
+        const result = await this.request("event_food_dispatches", new URLSearchParams({
+          ...eligible,
+          id: `eq.${candidate.id}`,
+          attempt_count: `eq.${candidate.attempt_count}`,
+        }), {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({
+            status: "SENDING",
+            locked_at: now.toISOString(),
+            locked_by: workerId,
+            attempt_count: candidate.attempt_count + 1,
+            updated_at: now.toISOString(),
+          }),
+        });
+        claimed.push(...await result.json() as ClaimedEventFoodDispatch[]);
+      }
+      return claimed;
     }
     const response = await this.request("rpc/claim_event_food_dispatches", null, {
       method: "POST",
@@ -469,7 +520,7 @@ export class GoTabIntegrationStorage {
     const response = await this.request(
       "event_food_requests",
       new URLSearchParams({
-        select: "event_id,source_record_id,food_service_time",
+        select: "event_id,source_type,source_record_id,food_service_time",
         id: `eq.${requestId}`,
         limit: "1",
       }),
@@ -477,10 +528,68 @@ export class GoTabIntegrationStorage {
     );
     const rows = await response.json() as Array<{
       event_id: string;
+      source_type: string;
       source_record_id: string;
       food_service_time: string;
     }>;
     return rows[0] ?? null;
+  }
+
+  async getContractFoodDispatchDecision(input: {
+    requestId: string;
+    eventId: string;
+    sourceRecordId: string;
+  }): Promise<ContractFoodDispatchDecision> {
+    const requestsResponse = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "id,created_at",
+        event_id: `eq.${input.eventId}`,
+        source_type: "eq.TRIPLESEAT_CONTRACT",
+        source_record_id: `eq.${input.sourceRecordId}`,
+        order: "created_at.asc,id.asc",
+        limit: "1000",
+      }),
+      { method: "GET" },
+    );
+    const requests = await requestsResponse.json() as Array<{
+      id: string;
+      created_at: string;
+    }>;
+    if (requests.length >= 1000) {
+      throw new Error("Contract food request history is too large to verify safely.");
+    }
+    if (!requests.some((request) => request.id === input.requestId)) {
+      throw new Error("The contract food request could not be verified.");
+    }
+    if (requests.length === 1) {
+      return { allowed: true, reason: "CANONICAL" };
+    }
+
+    const dispatchResponse = await this.request(
+      "event_food_dispatches",
+      new URLSearchParams({
+        select: "request_id,status",
+        request_id: `in.(${requests.map((request) => request.id).join(",")})`,
+        limit: "1000",
+      }),
+      { method: "GET" },
+    );
+    const dispatches = await dispatchResponse.json() as Array<{
+      request_id: string;
+      status: string;
+    }>;
+    if (dispatches.length >= 1000) {
+      throw new Error("Contract food dispatch history is too large to verify safely.");
+    }
+    if (dispatches.some((dispatch) =>
+      dispatch.request_id !== input.requestId && dispatch.status === "SENT"
+    )) {
+      return { allowed: false, reason: "ALREADY_SENT" };
+    }
+    return requests[0]?.id === input.requestId
+      ? { allowed: true, reason: "CANONICAL" }
+      : { allowed: false, reason: "EARLIER_REQUEST_EXISTS" };
   }
 
   async getKitchenFoodRunner(eventId: string) {

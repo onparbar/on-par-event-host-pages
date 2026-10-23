@@ -103,8 +103,8 @@ export async function PUT(
             changedSourceKeys,
           },
         );
-        await processGoTabDispatches();
         const requestIds = synchronization.requestIds ?? [];
+        await processGoTabDispatches({ requestIds });
         const deliveries = await new GoTabIntegrationStorage().listEventFoodDelivery([eventId], requestIds);
         const delivery = summarizeEventFoodDelivery(deliveries, requestIds);
         kds = {

@@ -127,23 +127,26 @@ export async function PUT(request: Request) {
       const dispatchedToKds =
         kitchenSync.exceptions === 0 &&
         kitchenSync.deliveryVerified === true;
+      const deliveryPending = kitchenSync.exceptions === 0 && kitchenSync.deliveryPending === true;
       return NextResponse.json({
         record,
         kitchenSync: {
-          status: dispatchedToKds ? "live" : kitchenSync.noFoodRequired ? "not-required" : "error",
+          status: dispatchedToKds ? "live" : kitchenSync.noFoodRequired ? "not-required" : deliveryPending ? "pending" : "error",
+          eventId: kitchenEventId,
+          requestIds: kitchenSync.requestIds ?? [],
           updatedAt: kitchenSync.saved.updatedAt,
           queued: kitchenSync.queued,
           exceptions: kitchenSync.exceptions,
           sent: kitchenSync.sent,
           accepted: kitchenSync.acceptedDeliveryCount,
           deliveries: kitchenSync.deliveries ?? [],
-          error: dispatchedToKds || kitchenSync.noFoodRequired
+          error: dispatchedToKds || kitchenSync.noFoodRequired || deliveryPending
             ? undefined
             : kitchenSync.error ?? (kitchenSync.exceptions > 0
               ? "This food item is not fully mapped to a verified GoTab Event Food product."
               : kitchenSync.queued === 0
                 ? "No new food quantity change was available to send to the KDS."
-                : "This item is saved, but GoTab acceptance has not been verified. Review delivery status before retrying."),
+                : "This item is saved, but GoTab acceptance has not been verified. Check the saved order before submitting again."),
         },
       });
     } catch {

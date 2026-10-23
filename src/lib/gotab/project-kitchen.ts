@@ -60,6 +60,7 @@ export function projectKitchenChecklist(
     requesterName?: string | null;
     defaultPrepLeadMinutes?: number;
     bookedFoodQuantities?: ReadonlyMap<string, number>;
+    submittedAt?: string;
   },
 ): EventFoodProjection {
   const eventId = String(checklist.event.eventId);
@@ -97,12 +98,19 @@ export function projectKitchenChecklist(
   let foodServiceAt: string;
   let prepDueAt: string;
   try {
-    foodServiceAt = localTimestamp(checklist.timing.foodReadyBy, "Food service time");
-    prepDueAt = checklist.timing.earliestPrepTime
-      ? localTimestamp(checklist.timing.earliestPrepTime, "Prep due time")
-      : new Date(
-          Date.parse(foodServiceAt) - (options.defaultPrepLeadMinutes ?? 60) * 60_000,
-        ).toISOString();
+    if (options.submittedAt && rows.every((row) => row.key.startsWith("addon:")) &&
+        ["EVENT_HOST_ADDON", "REFILL", "VIP_ADDON"].includes(options.sourceType ?? "")) {
+      // A staff refill is needed now, independently of contract-review timing.
+      foodServiceAt = new Date(options.submittedAt).toISOString();
+      prepDueAt = foodServiceAt;
+    } else {
+      foodServiceAt = localTimestamp(checklist.timing.foodReadyBy, "Food service time");
+      prepDueAt = checklist.timing.earliestPrepTime
+        ? localTimestamp(checklist.timing.earliestPrepTime, "Prep due time")
+        : new Date(
+            Date.parse(foodServiceAt) - (options.defaultPrepLeadMinutes ?? 60) * 60_000,
+          ).toISOString();
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Kitchen timing is invalid.";
     return {
@@ -137,7 +145,7 @@ export function projectKitchenChecklist(
       continue;
     }
     try {
-      requests.push(normalizeEventFoodItem(row, {
+      const request = normalizeEventFoodItem(row, {
         id: `${eventId}-${row.key}-${options.sourceVersion}`,
         eventId,
         tripleseatEventId: eventId.startsWith("vip-") ? null : eventId,
@@ -159,7 +167,13 @@ export function projectKitchenChecklist(
           : null,
         dietaryNotes: checklist.event.foodNotes?.map((note) => note.text).join(" | ") || null,
         allergyNotes: null,
-      }, mapping));
+      }, mapping);
+      if (options.submittedAt && row.key.startsWith("addon:") &&
+          ["EVENT_HOST_ADDON", "REFILL", "VIP_ADDON"].includes(request.sourceType)) {
+        request.approvalStatus = "APPROVED";
+        request.dispatchStatus = "QUEUED_FOR_KITCHEN";
+      }
+      requests.push(request);
     } catch (error) {
       exceptions.push({
         eventId,

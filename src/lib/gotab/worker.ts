@@ -22,13 +22,17 @@ export async function processGoTabDispatches(options?: {
   client?: Pick<GoTabClient, "createEventFoodTab">;
   workerId?: string;
   limit?: number;
+  requestIds?: readonly string[];
   env?: Readonly<Record<string, string | undefined>>;
   vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
 }): Promise<GoTabWorkerSummary> {
   const storage = options?.storage ?? new GoTabIntegrationStorage();
   const configuration = getGoTabConfigurationStatus(options?.env);
   const workerId = options?.workerId ?? `vercel-${randomUUID()}`;
-  const dispatches = await storage.claimDueDispatches(workerId, options?.limit ?? 25);
+  const limit = options?.limit ?? (options?.requestIds?.length || 25);
+  const dispatches = options?.requestIds !== undefined
+    ? await storage.claimDueDispatches(workerId, limit, options.requestIds)
+    : await storage.claimDueDispatches(workerId, limit);
   const summary: GoTabWorkerSummary = {
     claimed: dispatches.length,
     dryRunCompleted: 0,
@@ -48,6 +52,23 @@ export async function processGoTabDispatches(options?: {
       const context = await storage.getDispatchRequestContext(dispatch.request_id);
       if (!context) throw new Error("The saved food request was not found.");
       eventId = context.event_id;
+      if (context.source_type === "TRIPLESEAT_CONTRACT") {
+        const decision = await storage.getContractFoodDispatchDecision({
+          requestId: dispatch.request_id,
+          eventId: context.event_id,
+          sourceRecordId: context.source_record_id,
+        });
+        if (!decision.allowed) {
+          await storage.finishDispatch(dispatch.id, {
+            status: "HELD",
+            lastError: decision.reason === "ALREADY_SENT"
+              ? "Duplicate contract order blocked because this event item was already sent to GoTab."
+              : "Duplicate contract order blocked because an earlier request owns this event item.",
+          });
+          summary.held += 1;
+          continue;
+        }
+      }
       vipDispatch = context.event_id.startsWith("vip-");
       if (vipDispatch) {
         const checkin = await storage.getVipCheckin(context.event_id);

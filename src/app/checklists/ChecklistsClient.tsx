@@ -46,8 +46,9 @@ type EventChecklistMeta = {
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error" | "submitting" | "submitted";
-type KitchenSyncState = "idle" | "syncing" | "live" | "error";
-type FoodSubmitState = "idle" | "submitting" | "sent" | "error";
+type KitchenSyncState = "idle" | "syncing" | "pending" | "live" | "error";
+type FoodSubmitState = "idle" | "submitting" | "pending" | "sent" | "error" | "uncertain";
+type PendingFoodDelivery = { eventId: number; kitchenEventId: string; requestIds: string[] };
 type AddOnTab =
   | "food"
   | "refills"
@@ -58,7 +59,10 @@ type ChecklistSaveResponse = {
   record: ChecklistRecord;
   error?: string;
   kitchenSync?: {
-    status: "live" | "error" | "not-required";
+    status: "live" | "pending" | "error" | "not-required";
+    eventId?: string;
+    requestIds?: string[];
+    exceptions?: number;
     updatedAt?: string | null;
     error?: string;
     deliveries?: EventFoodDelivery[];
@@ -101,6 +105,10 @@ function buildInitialRevisionMap(events: readonly ChecklistEvent[]) {
 
 function uniqueIds(values: number[]) {
   return Array.from(new Set(values));
+}
+
+function foodSubmissionLocked(state: FoodSubmitState | undefined) {
+  return state === "submitting" || state === "pending" || state === "uncertain";
 }
 
 function formatTimestamp(value: string | null) {
@@ -171,6 +179,7 @@ export default function ChecklistsClient({
   const [dirtyFoodEventIds, setDirtyFoodEventIds] = useState<number[]>([]);
   const [foodSubmitByItem, setFoodSubmitByItem] = useState<Record<string, FoodSubmitState>>({});
   const [deliveryByEvent, setDeliveryByEvent] = useState<Record<number, EventFoodDelivery[]>>({});
+  const [pendingFoodByItem, setPendingFoodByItem] = useState<Record<string, PendingFoodDelivery>>({});
   function rememberDelivery(eventId: number, items?: EventFoodDelivery[]) {
     if (!items) return;
     setDeliveryByEvent((current) => ({ ...current, [eventId]: [
@@ -178,7 +187,6 @@ export default function ChecklistsClient({
     ] }));
   }
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
-  const [taskEmployeeName, setTaskEmployeeName] = useState("");
   const [saveErrorByEvent, setSaveErrorByEvent] = useState<Record<number, string>>({});
   const [conflictByEvent, setConflictByEvent] = useState<Record<number, boolean>>({});
   const inFlightEventIds = useRef(new Set<number>());
@@ -194,6 +202,42 @@ export default function ChecklistsClient({
   const pageDescription = isAddOnWorkspace
     ? "Manage Food and Entertainment add-ons in their own shared event workspace."
     : "Complete event tasks with drafts saved automatically to the shared event record.";
+
+  useEffect(() => {
+    const pending = Object.entries(pendingFoodByItem);
+    if (!pending.length) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const settled: string[] = [];
+      await Promise.all(pending.map(async ([itemKey, item]) => {
+        try {
+          const query = new URLSearchParams({ requestIds: item.requestIds.join(",") });
+          const response = await fetch(`/api/kitchen/events/${encodeURIComponent(item.kitchenEventId)}/food-delivery?${query}`, { cache: "no-store" });
+          const payload = await response.json() as { status?: "live" | "pending" | "error"; deliveries?: EventFoodDelivery[]; error?: string };
+          if (cancelled) return;
+          if (!response.ok) throw new Error("Delivery status is temporarily unavailable. This order is still being checked; do not submit it again.");
+          rememberDelivery(item.eventId, payload.deliveries);
+          if (payload.status === "pending") return;
+          const accepted = payload.status === "live";
+          const uncertain = !accepted && (payload.deliveries?.length !== item.requestIds.length || payload.deliveries?.some((delivery) => ["HELD", "SENDING", "UNKNOWN"].includes(delivery.status)));
+          setFoodSubmitByItem((current) => ({ ...current, [itemKey]: accepted ? "sent" : uncertain ? "uncertain" : "error" }));
+          setKitchenSyncByEvent((current) => ({ ...current, [item.eventId]: accepted ? "live" : "error" }));
+          setKitchenSyncErrorByEvent((current) => ({ ...current, [item.eventId]: accepted ? "" : payload.error ?? "Food acceptance could not be confirmed. Check the saved order before submitting again." }));
+          settled.push(itemKey);
+        } catch (error) {
+          if (cancelled) return;
+          setKitchenSyncErrorByEvent((current) => ({ ...current, [item.eventId]: error instanceof Error ? error.message : "Delivery status is temporarily unavailable. Do not submit this order again." }));
+          // Polling is read-only: a failed status check must never resend food.
+        }
+      }));
+      if (!cancelled) setPendingFoodByItem((current) => {
+        const next = { ...current };
+        for (const itemKey of settled) delete next[itemKey];
+        return next;
+      });
+    }, 2500);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [pendingFoodByItem]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -369,7 +413,7 @@ export default function ChecklistsClient({
             [eventId]: revisionIsCurrent
               ? kitchenStatus === "live"
                 ? "live"
-                : kitchenStatus === "not-required" ? "idle" : "error"
+                : kitchenStatus === "pending" ? "pending" : kitchenStatus === "not-required" ? "idle" : "error"
               : "idle",
           }));
           if (kitchenStatus === "live" && revisionIsCurrent) {
@@ -462,8 +506,13 @@ export default function ChecklistsClient({
       setKitchenSyncByEvent((current) => ({
         ...current,
         [eventId]:
-          payload.kitchenSync?.status === "live" ? "live" : payload.kitchenSync?.status === "not-required" ? "idle" : "error",
+          payload.kitchenSync?.status === "live" ? "live" : payload.kitchenSync?.status === "pending" ? "pending" : payload.kitchenSync?.status === "not-required" ? "idle" : "error",
       }));
+      if (payload.kitchenSync?.status === "pending" && payload.kitchenSync.requestIds?.length) {
+        const itemKey = `${eventId}:final-submission`;
+        setFoodSubmitByItem((current) => ({ ...current, [itemKey]: "pending" }));
+        setPendingFoodByItem((current) => ({ ...current, [itemKey]: { eventId, kitchenEventId: payload.kitchenSync!.eventId ?? String(eventId), requestIds: payload.kitchenSync!.requestIds! } }));
+      }
       if (payload.kitchenSync?.status === "live" || payload.kitchenSync?.status === "not-required") {
         setDirtyFoodEventIds((current) =>
           current.filter((item) => item !== eventId),
@@ -482,8 +531,10 @@ export default function ChecklistsClient({
   const activeChecklist = activeEvent ? checklistsByEvent[activeEvent.id] : undefined;
   const activeMeta = activeEvent ? metaByEvent[activeEvent.id] : undefined;
   const activeSaveState = activeEvent ? saveStateByEvent[activeEvent.id] : "idle";
+  const activeFoodSubmissionStates = activeEvent ? Object.entries(foodSubmitByItem).filter(([key]) => key.startsWith(`${activeEvent.id}:`)).map(([, state]) => state) : [];
   const activeKitchenSyncState = activeEvent
-    ? kitchenSyncByEvent[activeEvent.id]
+    ? activeFoodSubmissionStates.some((state) => state === "error" || state === "uncertain") ? "error"
+      : activeFoodSubmissionStates.includes("pending") ? "pending" : kitchenSyncByEvent[activeEvent.id]
     : "idle";
 
   if (!contextReady) {
@@ -530,6 +581,8 @@ export default function ChecklistsClient({
 
   const isSubmitted = activeMeta.status === "submitted";
   const isEditable = loadState === "ready" && !isSubmitted && activeSaveState !== "submitting";
+  const foodSaveBusy = activeKitchenSyncState === "syncing" || activeSaveState === "saving";
+  const canSendFood = isEditable && !conflictByEvent[activeEvent.id] && !foodSaveBusy;
   const readiness = checklistReadiness(activeEvent, activeChecklist);
   const canSubmit = isEditable && readiness.canSubmit && !conflictByEvent[activeEvent.id] && !["submitting", "saving"].includes(activeSaveState);
   const progress = readiness;
@@ -707,8 +760,7 @@ export default function ChecklistsClient({
 
         {!isAddOnWorkspace ? (
           <section className="paper-checklist">
-            <label className="field-card"><span>Employee completing tasks</span><input value={taskEmployeeName} onChange={(event) => setTaskEmployeeName(event.target.value)} placeholder="Enter your name before checking tasks" /></label>
-            <p className="meta">Completion names are staff-entered, not authenticated identity. Critical tasks must be completed before final submission; only Admin can reopen a submitted checklist.</p>
+            <p className="meta">Enter the BWA name above before checking tasks. Completions record that name and time; names are staff-entered, not authenticated identity. Critical tasks must be completed before final submission; only Admin can reopen a submitted checklist.</p>
             {readiness.review.length ? <p role="alert">Contract review needed for {readiness.review.length} critical task(s). Unverified items are not marked Not applicable.</p> : null}
             {checklistSections.map((section) => (
               <article className="task-section-card" key={section.key}>
@@ -722,7 +774,7 @@ export default function ChecklistsClient({
                       <input
                         type="checkbox"
                         checked={requirement.applicability !== "not-applicable" && activeChecklist.tasks[item.key]}
-                        disabled={!isEditable || requirement.applicability === "not-applicable" || !taskEmployeeName.trim()}
+                        disabled={!isEditable || requirement.applicability === "not-applicable" || !activeChecklist.bwa.trim()}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           updateEventChecklist(activeEvent.id, (current) => ({
@@ -731,7 +783,7 @@ export default function ChecklistsClient({
                               ...current.tasks,
                               [item.key]: checked,
                             },
-                            taskEvidence: checked ? { ...current.taskEvidence, [item.key]: { employeeName: taskEmployeeName.trim(), completedAt: new Date().toISOString() } } : Object.fromEntries(Object.entries(current.taskEvidence ?? {}).filter(([key]) => key !== item.key)),
+                            taskEvidence: checked ? { ...current.taskEvidence, [item.key]: { employeeName: current.bwa.trim(), completedAt: new Date().toISOString() } } : Object.fromEntries(Object.entries(current.taskEvidence ?? {}).filter(([key]) => key !== item.key)),
                           }));
                         }}
                       />
@@ -807,17 +859,19 @@ export default function ChecklistsClient({
 
               {activeAddOnTab !== "entertainment" ? (
                 <div
-                  className={`kitchen-sync-banner kitchen-sync-${activeKitchenSyncState}`}
+                  className={`kitchen-sync-banner kitchen-sync-${activeKitchenSyncState === "pending" ? "syncing" : activeKitchenSyncState}`}
                   role="status"
                 >
                   <div>
                     <strong>
                       {activeKitchenSyncState === "syncing"
                         ? "Sending food changes to Kitchen…"
+                        : activeKitchenSyncState === "pending"
+                          ? "Kitchen saved · Sending to GoTab…"
                         : activeKitchenSyncState === "live"
                           ? "Kitchen saved · GoTab accepted"
                           : activeKitchenSyncState === "error"
-                            ? "Food-order delivery needs review"
+                            ? "Food delivery needs attention"
                             : "Submit each food item to Kitchen and GoTab"}
                     </strong>
                     <span>
@@ -825,10 +879,10 @@ export default function ChecklistsClient({
                       submitted to Admin when the event is closed.
                     </span>
                   </div>
-                  {activeKitchenSyncState === "error" ? (
+                  {activeKitchenSyncState === "error" || activeKitchenSyncState === "pending" ? (
                     <span>
-                      {kitchenSyncErrorByEvent[activeEvent.id] ??
-                        "Review the order status before submitting this item again."}
+                      {kitchenSyncErrorByEvent[activeEvent.id] ||
+                        (activeKitchenSyncState === "pending" ? "No approval is needed. Delivery status updates automatically; do not submit again." : "Check the saved order status before submitting this item again.")}
                     </span>
                   ) : null}
                 </div>
@@ -883,7 +937,7 @@ export default function ChecklistsClient({
                       <label className="control-block quantity-block">
                         <span>Quantity</span>
                         <select
-                          disabled={!isEditable || !activeRefillItem}
+                          disabled={!isEditable || !activeRefillItem || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`])}
                           value={activeRefillItem ? activeChecklist.food[activeRefillItem.key].quantity : ""}
                           onChange={(event) => activeRefillItem && updateFoodAddOn(activeEvent.id, activeRefillItem.key, { quantity: event.target.value })}
                         >
@@ -902,11 +956,11 @@ export default function ChecklistsClient({
                       </label>
                       <button
                         className="submit-button"
-                        disabled={!isEditable || !activeRefillItem || numeric(activeChecklist.food[activeRefillItem.key].quantity) < 1 || foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "submitting"}
+                        disabled={!canSendFood || !activeRefillItem || numeric(activeChecklist.food[activeRefillItem.key].quantity) < 1 || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`])}
                         onClick={() => activeRefillItem && void submitFoodAddOn(activeEvent.id, activeRefillItem.key, "REFILL")}
                         type="button"
                       >
-                        {activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "sent" ? "GoTab accepted" : "Submit Refill"}
+                        {foodSaveBusy ? activeSaveState === "saving" ? "Saving…" : "Sending…" : activeRefillItem && ["submitting", "pending"].includes(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`]) ? "Sending…" : activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "sent" ? "GoTab accepted" : activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "uncertain" ? "Check saved order" : "Submit Refill"}
                       </button>
                     </div>
                   </article>
@@ -1079,7 +1133,7 @@ export default function ChecklistsClient({
                             inputMode="numeric"
                             min="0"
                             step="1"
-                            disabled={!isEditable}
+                            disabled={!isEditable || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`])}
                             value={state.quantity}
                             onChange={(event) =>
                               updateFoodAddOn(
@@ -1096,7 +1150,7 @@ export default function ChecklistsClient({
                           <span>Pan size</span>
                           <select
                             aria-label={`${item.label} pan size`}
-                            disabled={!isEditable}
+                            disabled={!isEditable || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`])}
                             value={state.panSize}
                             onChange={(event) =>
                               updateFoodAddOn(
@@ -1115,16 +1169,18 @@ export default function ChecklistsClient({
                         </label>
                         <button
                           className="submit-button"
-                          disabled={!isEditable || foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "submitting"}
+                          disabled={!canSendFood || numeric(state.quantity) < 1 || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`])}
                           onClick={() => void submitFoodAddOn(activeEvent.id, item.key)}
                           type="button"
                         >
-                          {foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "submitting"
+                          {foodSaveBusy
+                            ? activeSaveState === "saving" ? "Saving…" : "Sending…"
+                            : ["submitting", "pending"].includes(foodSubmitByItem[`${activeEvent.id}:${item.key}`])
                             ? "Sending…"
                             : foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "sent"
                               ? "GoTab accepted"
-                              : foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "error"
-                                ? "Review / Submit"
+                              : foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "uncertain"
+                                ? "Check saved order"
                                 : "Submit to Kitchen"}
                         </button>
                       </div>
@@ -1189,6 +1245,7 @@ export default function ChecklistsClient({
     changes: { quantity?: string; manualPrice?: string; panSize?: "" | "1/3" | "1/2" },
   ) {
     if (metaByEvent[eventId]?.status === "submitted" || finalSubmissionEventIds.current.has(eventId)) return;
+    if (foodSubmissionLocked(foodSubmitByItem[`${eventId}:${key}`])) return;
     revisionByEventRef.current[eventId] = (revisionByEventRef.current[eventId] ?? 0) + 1;
     setChecklistsByEvent((current) => ({
       ...current,
@@ -1214,6 +1271,7 @@ export default function ChecklistsClient({
     const checklist = checklistsByEvent[eventId];
     if (!checklist || metaByEvent[eventId]?.status === "submitted" || conflictByEvent[eventId] || finalSubmissionEventIds.current.has(eventId)) return;
     const itemStateKey = `${eventId}:${key}`;
+    if (foodSubmissionLocked(foodSubmitByItem[itemStateKey])) return;
     if (inFlightEventIds.current.has(eventId)) {
       setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: "A save is already in progress for this event. Wait for it to finish before submitting food." }));
       return;
@@ -1221,6 +1279,8 @@ export default function ChecklistsClient({
     inFlightEventIds.current.add(eventId);
     setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "submitting" }));
     setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "syncing" }));
+    setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: "" }));
+    let outcomeUncertain = true;
     try {
       const response = await fetch("/api/checklists", {
         method: "PUT",
@@ -1235,6 +1295,8 @@ export default function ChecklistsClient({
         }),
       });
       const payload = (await response.json()) as ChecklistSaveResponse;
+      outcomeUncertain = response.ok && payload.kitchenSync?.status === "error" && !payload.kitchenSync.exceptions &&
+        (!payload.kitchenSync.deliveries?.length || payload.kitchenSync.deliveries.some((delivery) => ["HELD", "SENDING", "UNKNOWN"].includes(delivery.status)));
       rememberDelivery(eventId, payload.kitchenSync?.deliveries);
       if (response.status === 409) setConflictByEvent((current) => ({ ...current, [eventId]: true }));
       // A food delivery error can follow a successful checklist save. Keep its
@@ -1243,13 +1305,26 @@ export default function ChecklistsClient({
         metaByEventRef.current[eventId] = metaFromRecord(payload.record);
         setMetaByEvent((current) => ({ ...current, [eventId]: metaFromRecord(payload.record) }));
       }
+      if (response.ok && payload.kitchenSync?.status === "pending" && payload.kitchenSync.requestIds?.length) {
+        setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "pending" }));
+        setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "pending" }));
+        setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: "No approval is needed. Delivery status updates automatically; do not submit again." }));
+        setPendingFoodByItem((current) => ({ ...current, [itemStateKey]: { eventId, kitchenEventId: payload.kitchenSync!.eventId ?? String(eventId), requestIds: payload.kitchenSync!.requestIds! } }));
+        return;
+      }
       if (!response.ok || payload.kitchenSync?.status !== "live") {
-        throw new Error(payload.error ?? payload.kitchenSync?.error ?? "Kitchen submission was not confirmed. Review delivery status before retrying.");
+        if (outcomeUncertain) {
+          setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "uncertain" }));
+          setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "error" }));
+          setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: payload.kitchenSync?.error ?? "Check the saved order before submitting again." }));
+          return;
+        }
+        throw new Error(payload.error ?? payload.kitchenSync?.error ?? "Kitchen submission was not confirmed. Check the saved order before submitting again.");
       }
       setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "sent" }));
       setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "live" }));
     } catch (error) {
-      setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "error" }));
+      setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: outcomeUncertain ? "uncertain" : "error" }));
       setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "error" }));
       setKitchenSyncErrorByEvent((current) => ({
         ...current,

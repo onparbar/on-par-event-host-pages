@@ -29,13 +29,16 @@ export function eventFoodDeliveryState(delivery: Pick<EventFoodDelivery, "status
 export function summarizeEventFoodDelivery(deliveries: readonly EventFoodDelivery[], expectedRequestIds: readonly string[]) {
   const expected = [...new Set(expectedRequestIds)];
   const matched = deliveries.filter((item) => expected.includes(item.requestId));
+  const found = new Set(matched.map((item) => item.requestId));
   const accepted = new Set(matched.filter((item) => eventFoodDeliveryState(item).accepted).map((item) => item.requestId));
-  const errors = matched.filter((item) => eventFoodDeliveryState(item).tone === "warning");
+  const errors = matched.filter((item) => eventFoodDeliveryState(item).tone === "warning" || (!eventFoodDeliveryState(item).accepted && item.error));
+  const missing = found.size < expected.length;
   return {
     deliveries: matched,
     sent: accepted.size,
     complete: expected.length > 0 && accepted.size === expected.length,
+    pending: expected.length > 0 && !missing && errors.length === 0 && matched.some((item) => eventFoodDeliveryState(item).tone === "pending"),
     error: errors[0]?.error ?? (errors.length ? eventFoodDeliveryState(errors[0]).label :
-      matched.length < expected.length ? "Some food-order delivery results are unavailable. Review before retrying." : null),
+      missing ? "Some food-order delivery results are unavailable. Check the saved order before submitting again." : null),
   };
 }

@@ -94,17 +94,20 @@ export async function POST(request: Request) {
         body.checklist.food,
       );
       const accepted = kitchenSync.exceptions === 0 && kitchenSync.deliveryVerified === true;
+      const pending = kitchenSync.exceptions === 0 && kitchenSync.deliveryPending === true;
       return NextResponse.json({
         record,
         kitchenSync: {
-          status: accepted ? "live" : kitchenSync.noFoodRequired ? "not-required" : "error",
+          status: accepted ? "live" : kitchenSync.noFoodRequired ? "not-required" : pending ? "pending" : "error",
+          eventId: kitchenEventId,
+          requestIds: kitchenSync.requestIds ?? [],
           updatedAt: kitchenSync.saved.updatedAt,
           queued: kitchenSync.queued,
           exceptions: kitchenSync.exceptions,
           sent: kitchenSync.sent,
           accepted: kitchenSync.acceptedDeliveryCount,
           deliveries: kitchenSync.deliveries ?? [],
-          ...(!accepted && !kitchenSync.noFoodRequired ? { error: kitchenSync.error ?? "Final record submitted to Admin, but GoTab acceptance was not verified for every food item. Review delivery status before retrying." } : {}),
+          ...(!accepted && !kitchenSync.noFoodRequired && !pending ? { error: kitchenSync.error ?? "Final record submitted to Admin, but GoTab acceptance was not verified for every food item. Check the saved orders before submitting again." } : {}),
         },
       });
     } catch {

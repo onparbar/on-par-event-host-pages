@@ -20,6 +20,44 @@ const sourceEvent = {
 };
 
 describe("Tripleseat kitchen projection", () => {
+  it.each(["EVENT_HOST_ADDON", "REFILL", "VIP_ADDON"] as const)("approves an immediate %s independently of original contract review and timing", (sourceType) => {
+    const submittedAt = "2026-10-23T16:30:00.000Z";
+    const keys = ["appetizer-refill-tater-kegs", "appetizer-refill-chicken-tenders", "appetizer-refill-mozzarella-sticks"];
+    const liveFoodAddOns = translateEventHostFoodAddOns(Object.fromEntries(
+      keys.map((key) => [key, { quantity: 1 }]),
+    ), submittedAt);
+    const checklist = {
+      ...generateKitchenChecklist({ ...sourceEvent, eventName: "Redacted corporate event" }, undefined, liveFoodAddOns),
+      sections: [],
+      needsReview: true,
+      timing: { startTime: null, foodReadyBy: null, earliestPrepTime: null },
+    };
+    const mappings = keys.map((key) => ({
+      id: key, canonicalProductKey: `addon:${key}`, displayName: key, aliases: [],
+      panSize: "NOT_APPLICABLE" as const, preparationStation: "FRYER" as const,
+      gotabProductUuid: `product-${key}`, verifiedAt: submittedAt,
+    }));
+    const result = projectKitchenChecklist(checklist, mappings, { sourceVersion: 1, sourceType, submittedAt });
+    expect(result.exceptions).toEqual([]);
+    expect(result.requests).toHaveLength(3);
+    expect(result.requests.every((request) => request.approvalStatus === "APPROVED" &&
+      request.dispatchStatus === "QUEUED_FOR_KITCHEN" && request.quantity === 1 &&
+      request.foodServiceAt === submittedAt && request.prepDueAt === submittedAt)).toBe(true);
+    expect(checklist.needsReview).toBe(true);
+  });
+
+  it("keeps initial contracted food dependent on verified contract timing", () => {
+    const checklist = {
+      ...generateKitchenChecklist(sourceEvent),
+      timing: { startTime: null, foodReadyBy: null, earliestPrepTime: null },
+    };
+    const result = projectKitchenChecklist(checklist, [], {
+      sourceVersion: 1, sourceType: "TRIPLESEAT_CONTRACT", submittedAt: "2026-10-23T16:30:00Z",
+    });
+    expect(result.requests).toEqual([]);
+    expect(result.exceptions.some((item) => item.reason.includes("Food service time"))).toBe(true);
+  });
+
   it("projects the temporary VIP check-in test as exactly two single-item KDS requests", () => {
     const reservation = vipKdsTestReservation("2026-09-23", Date.parse("2026-09-23T18:00:00Z"))!;
     const checklist = generateKitchenChecklist(vipPrepKitchenEvents([reservation])[0]);

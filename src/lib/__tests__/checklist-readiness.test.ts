@@ -63,4 +63,27 @@ describe("conditional setup and closeout readiness", () => {
     state.tasks["shift-lead-checkout"] = false;
     expect(checklistReadiness(event, state).missing.map((task) => task.key)).toEqual(["shift-lead-checkout"]);
   });
+
+  it("accepts the existing BWA name as task evidence without a separate employee entry", () => {
+    const state = defaultChecklistState(event.date);
+    state.bwa = "  Brooke  ";
+    for (const task of checklistTaskRequirements(event)) {
+      state.tasks[task.key] = true;
+      state.taskEvidence![task.key] = { employeeName: state.bwa.trim(), completedAt: "2026-10-23T16:00:00Z" };
+    }
+    expect(checklistReadiness(event, state).canSubmit).toBe(true);
+    expect(state.taskEvidence!["shift-lead-checkout"].employeeName).toBe("Brooke");
+    state.bwa = "";
+    expect(checklistReadiness(event, state).canSubmit).toBe(false);
+  });
+
+  it("keeps earlier completion names and timestamps when the BWA changes", () => {
+    const state = defaultChecklistState(event.date);
+    state.bwa = "Brooke";
+    state.tasks["shift-lead-checkout"] = true;
+    state.taskEvidence!["shift-lead-checkout"] = { employeeName: state.bwa, completedAt: "2026-10-23T16:00:00Z" };
+    state.bwa = "Carlos";
+    checklistReadiness(event, state);
+    expect(state.taskEvidence!["shift-lead-checkout"]).toEqual({ employeeName: "Brooke", completedAt: "2026-10-23T16:00:00Z" });
+  });
 });
