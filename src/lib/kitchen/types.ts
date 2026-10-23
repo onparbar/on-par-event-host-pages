@@ -78,7 +78,8 @@ export type KitchenFoodKey =
   | "platter-veggie-tray"
   | "platter-fries"
   | "sauce-marinara"
-  | "sauce-ranch";
+  | "sauce-ranch"
+  | "sauce-bbq";
 
 export type PanSize = "1/3" | "1/2";
 

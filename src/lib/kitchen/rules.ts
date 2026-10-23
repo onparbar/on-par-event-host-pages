@@ -514,18 +514,18 @@ export function generateKitchenChecklist(
   const rowsByCategory = new Map<KitchenCategory, KitchenChecklistRow[]>(
     CATEGORY_ORDER.map((category) => [category, []]),
   );
-  const requiredSauces = new Set<"marinara" | "ranch">();
+  const requiredSauces = new Set<"marinara" | "ranch" | "bbq">();
   const approvedSauceBowlCounts = new Map<
-    "marinara" | "ranch",
+    "marinara" | "ranch" | "bbq",
     number
   >();
   const unresolvedSauceBowlSources = new Map<
-    "marinara" | "ranch",
+    "marinara" | "ranch" | "bbq",
     Set<string>
   >();
   const packingItems: PlatterPackingItem[] = [];
   const addApprovedSauceBowls = (
-    sauce: "marinara" | "ranch",
+    sauce: "marinara" | "ranch" | "bbq",
     bowlCount: number,
   ): void => {
     approvedSauceBowlCounts.set(
@@ -534,7 +534,7 @@ export function generateKitchenChecklist(
     );
   };
   const addUnresolvedSauceSource = (
-    sauce: "marinara" | "ranch",
+    sauce: "marinara" | "ranch" | "bbq",
     source: string,
   ): void => {
     const sources =
@@ -866,6 +866,8 @@ export function generateKitchenChecklist(
   }
 
   if (activeBars.includes("wing")) {
+    requiredSauces.add("bbq");
+    addApprovedSauceBowls("bbq", config.wing.bbqBowlsPerBar);
     const guestCount = effectiveGuestCount;
     const groupCount = validGuestCount(guestCount)
       ? getStartedGroupCount(
@@ -934,6 +936,8 @@ export function generateKitchenChecklist(
   }
 
   if (activeBars.includes("appetizer")) {
+    requiredSauces.add("bbq");
+    addApprovedSauceBowls("bbq", config.appetizer.bbqBowlsPerBar);
     requiredSauces.add("marinara");
     requiredSauces.add("ranch");
     addApprovedSauceBowls(
@@ -1143,6 +1147,10 @@ export function generateKitchenChecklist(
         );
       }
     }
+    if (rule.bbqBowlsPerPlatter != null) {
+      requiredSauces.add("bbq");
+      addApprovedSauceBowls("bbq", rule.bbqBowlsPerPlatter * platterCount);
+    }
     if (rule.rowKey === "platter-mozzarella-sticks") {
       activateConflict("MARINARA_EIGHT_OUNCES", false);
     }
@@ -1234,6 +1242,10 @@ export function generateKitchenChecklist(
         );
       }
     }
+    if (rule.bbqBowlsPerPlatter != null) {
+      requiredSauces.add("bbq");
+      addApprovedSauceBowls("bbq", rule.bbqBowlsPerPlatter * effect.sourceQuantity);
+    }
     if (rule.rowKey === "platter-mozzarella-sticks") {
       activateConflict("MARINARA_EIGHT_OUNCES", false);
     }
@@ -1263,8 +1275,8 @@ export function generateKitchenChecklist(
   }
 
   const addSauce = (
-    sauce: "marinara" | "ranch",
-    key: "sauce-marinara" | "sauce-ranch",
+    sauce: "marinara" | "ranch" | "bbq",
+    key: "sauce-marinara" | "sauce-ranch" | "sauce-bbq",
     foodName: string,
   ) => {
     if (!requiredSauces.has(sauce)) {
@@ -1305,6 +1317,7 @@ export function generateKitchenChecklist(
   };
   addSauce("marinara", "sauce-marinara", "Marinara Sauce");
   addSauce("ranch", "sauce-ranch", "Ranch");
+  addSauce("bbq", "sauce-bbq", "BBQ Sauce");
   if (requiredSauces.size > 0) {
     activateConflict("DUPLICATE_SAUCE_ROWS", false);
   }

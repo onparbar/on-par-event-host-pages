@@ -3,6 +3,7 @@ import { generateKitchenChecklist } from "@/lib/kitchen/rules";
 import { translateEventHostFoodAddOns } from "@/lib/kitchen/addons";
 import { vipPrepKitchenEvents } from "@/lib/vip-prep/client";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
+import type { KitchenChecklist, KitchenSourceSelection } from "@/lib/kitchen/types";
 
 vi.mock("server-only", () => ({}));
 
@@ -44,7 +45,189 @@ const env = {
   EVENT_KDS_DEFAULT_PREP_LEAD_MINUTES: "60",
 };
 
+function contractWithBbq(): KitchenChecklist {
+  const platter = checklist.sections.flatMap((section) => section.rows)
+    .find((row) => row.key === "platter-veggie-tray")!;
+  return { ...checklist, sections: [
+    { category: "platters", label: "Platters", rows: [platter] },
+    { category: "sauces", label: "Sauces", rows: [{
+      key: "sauce-bbq", category: "sauces", foodName: "BBQ Sauce",
+      description: "Included BBQ sauce", quantity: 3, unit: "bowls",
+      numberOfPans: null, panSize: null, prepTiming: { kind: "not-applicable" },
+    }] },
+  ] };
+}
+
+const contractBbqMappings = [
+  {
+    id: "mapping-platter", canonical_product_key: "platter-veggie-tray", display_name: "Veggie Tray",
+    aliases: [], pan_size: "TRAY", preparation_station: "COLD_PREP", gotab_product_uuid: "product-veggie",
+    mapping_status: "VERIFIED", verified_at: "2026-10-23T16:00:00.000Z",
+  },
+  {
+    id: "mapping-bbq", canonical_product_key: "addon:bbq-sauce", display_name: "BBQ Sauce",
+    aliases: [], pan_size: "BOWL", preparation_station: "COLD_PREP", gotab_product_uuid: "product-bbq",
+    mapping_status: "VERIFIED", verified_at: "2026-10-23T16:00:00.000Z",
+  },
+];
+
+function generatedBbqChecklist(
+  selections: KitchenSourceSelection[],
+  liveFood: Parameters<typeof translateEventHostFoodAddOns>[0],
+) {
+  return generateKitchenChecklist({
+    eventId: 123, eventName: "Redacted event", localDate: "2026-10-23", startTime: "6:00 PM",
+    guestCount: 25, status: "DEFINITE", selections,
+  }, undefined, translateEventHostFoodAddOns(liveFood, "2026-10-23T16:00:00.000Z"));
+}
+
+function bbqOnlyStorage(previous: Array<{ source_record_id: string; quantity: number; pan_size: string }> = []) {
+  return {
+    listContractFoodRequests: vi.fn().mockImplementation(async () => previous),
+    listMappings: vi.fn().mockResolvedValue([contractBbqMappings[1]]),
+    saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+    enqueueRequest: vi.fn().mockImplementation(async (request) => {
+      previous.push({ source_record_id: request.sourceRecordId, quantity: request.quantity, pan_size: request.panSize });
+      return { duplicate: false };
+    }),
+  };
+}
+
 describe("Event Food synchronization", () => {
+  it("projects only contract BBQ from a generated checklist containing contract and live platters", async () => {
+    const mixed = generatedBbqChecklist([{ name: "Wing Platter", quantity: 2, isFood: true }], {
+      wings: { quantity: 3 }, "chicken-tenders": { quantity: 2 },
+    });
+    expect(mixed.sections.flatMap((section) => section.rows).find((row) => row.key === "sauce-bbq")?.quantity).toBe(7);
+    const before = structuredClone(mixed);
+    const storage = bbqOnlyStorage();
+    await synchronize(mixed, { sourceVersion: 1, storage: storage as never, env });
+    expect(storage.enqueueRequest).toHaveBeenCalledTimes(1);
+    expect(storage.enqueueRequest.mock.calls[0][0]).toMatchObject({ sourceRecordId: "sauce-bbq", quantity: 2, sourceType: "TRIPLESEAT_CONTRACT" });
+    expect(mixed).toEqual(before);
+  });
+
+  it("does not create a contract BBQ order when all BBQ comes from live platters", async () => {
+    const liveOnly = generatedBbqChecklist([], { wings: { quantity: 3 }, "chicken-tenders": { quantity: 2 } });
+    expect(liveOnly.sections.flatMap((section) => section.rows).find((row) => row.key === "sauce-bbq")?.quantity).toBe(5);
+    const storage = bbqOnlyStorage();
+    await synchronize(liveOnly, { sourceVersion: 1, storage: storage as never, env });
+    expect(storage.enqueueRequest).not.toHaveBeenCalled();
+    expect(storage.saveProjectionExceptions.mock.calls[0][0].exceptions.some((item: { itemKey: string }) => item.itemKey === "sauce-bbq")).toBe(false);
+  });
+
+  it.each(["Appetizer Bar", "Wing Bar"])("keeps the one contract %s BBQ bowl separate from live wings", async (bar) => {
+    const mixed = generatedBbqChecklist([
+      { name: "The Front Nine", quantity: 25, isFood: true }, { name: bar, quantity: 25, isFood: true },
+    ], { wings: { quantity: 2 } });
+    expect(mixed.sections.flatMap((section) => section.rows).find((row) => row.key === "sauce-bbq")?.quantity).toBe(3);
+    const storage = bbqOnlyStorage();
+    await synchronize(mixed, { sourceVersion: 1, storage: storage as never, env });
+    expect(storage.enqueueRequest).toHaveBeenCalledTimes(1);
+    expect(storage.enqueueRequest.mock.calls[0][0]).toMatchObject({ sourceRecordId: "sauce-bbq", quantity: 1 });
+  });
+
+  it("does not replay or flag contract BBQ when only live platter quantities change", async () => {
+    const source = [{ name: "Wing Platter", quantity: 2, isFood: true }];
+    const previous = [{ source_record_id: "platter-wings", quantity: 2, pan_size: "HALF_PAN" }];
+    const immutablePlatter = structuredClone(previous[0]);
+    const storage = bbqOnlyStorage(previous);
+    await synchronize(generatedBbqChecklist(source, { wings: { quantity: 3 }, "chicken-tenders": { quantity: 2 } }), { sourceVersion: 1, storage: storage as never, env });
+    const repeat = await synchronize(generatedBbqChecklist(source, { wings: { quantity: 5 }, "chicken-tenders": { quantity: 2 } }), { sourceVersion: 2, storage: storage as never, env });
+    expect(repeat.requestCount).toBe(0);
+    expect(storage.enqueueRequest).toHaveBeenCalledTimes(1);
+    expect(storage.enqueueRequest.mock.calls[0][0]).toMatchObject({ sourceRecordId: "sauce-bbq", quantity: 2 });
+    for (const [saved] of storage.saveProjectionExceptions.mock.calls) {
+      expect(saved.exceptions.some((item: { itemKey: string }) => item.itemKey === "sauce-bbq")).toBe(false);
+    }
+    expect(previous[0]).toEqual(immutablePlatter);
+  });
+
+  it.each([null, 0, 1, 2.5])("fails safely for an invalid or negative derived contract BBQ remainder: %s", async (quantity) => {
+    const mixed = generatedBbqChecklist([{ name: "Wing Platter", quantity: 2, isFood: true }], { wings: { quantity: 2 } });
+    mixed.sections.flatMap((section) => section.rows).find((row) => row.key === "sauce-bbq")!.quantity = quantity;
+    const storage = bbqOnlyStorage();
+    await synchronize(mixed, { sourceVersion: 1, storage: storage as never, env });
+    expect(storage.enqueueRequest).not.toHaveBeenCalled();
+    expect(storage.saveProjectionExceptions).toHaveBeenCalledWith(expect.objectContaining({
+      exceptions: expect.arrayContaining([expect.objectContaining({ itemKey: "sauce-bbq", reason: "A positive operational quantity is required." })]),
+    }));
+  });
+
+  it("does not attribute an unresolved live platter quantity to contract BBQ", async () => {
+    const mixed = generatedBbqChecklist([{ name: "Wing Platter", quantity: 2, isFood: true }], { wings: { quantity: 2 } });
+    mixed.liveFoodAddOns[0].quantity = 65;
+    const storage = bbqOnlyStorage();
+    await synchronize(mixed, { sourceVersion: 1, storage: storage as never, env });
+    expect(storage.enqueueRequest).not.toHaveBeenCalled();
+    expect(storage.saveProjectionExceptions).toHaveBeenCalledWith(expect.objectContaining({
+      exceptions: expect.arrayContaining([expect.objectContaining({ itemKey: "sauce-bbq", reason: "A positive operational quantity is required." })]),
+    }));
+  });
+
+  it.each(["VERIFIED", "DISABLED", "MAPPED", "NEEDS_MAPPING"])("uses the BBQ bowl fallback only with VERIFIED stored mappings: %s", async (mappingStatus) => {
+    const storage = {
+      listContractFoodRequests: vi.fn().mockResolvedValue([]),
+      listMappings: vi.fn().mockResolvedValue([
+        contractBbqMappings[0], { ...contractBbqMappings[1], mapping_status: mappingStatus },
+      ]),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn().mockResolvedValue({ duplicate: false }),
+    };
+    const result = await synchronize(contractWithBbq(), { sourceVersion: 99, storage: storage as never, env });
+    expect(result).toMatchObject({ requestCount: mappingStatus === "VERIFIED" ? 2 : 1, exceptionCount: mappingStatus === "VERIFIED" ? 0 : 1 });
+    expect(storage.enqueueRequest.mock.calls[0][0]).toMatchObject({ sourceRecordId: "platter-veggie-tray" });
+    if (mappingStatus === "VERIFIED") {
+      expect(storage.enqueueRequest.mock.calls[1][0]).toMatchObject({
+        sourceRecordId: "sauce-bbq", sourceVersion: 1, sourceType: "TRIPLESEAT_CONTRACT",
+        canonicalProductKey: "addon:bbq-sauce", quantity: 3, panSize: "BOWL", gotabProductUuid: "product-bbq",
+      });
+    } else {
+      expect(storage.saveProjectionExceptions).toHaveBeenCalledWith(expect.objectContaining({
+        exceptions: [expect.objectContaining({ itemKey: "sauce-bbq" })],
+      }));
+    }
+  });
+
+  it("queues a newly derived BBQ row once without replaying an existing contract platter", async () => {
+    const previous = [{ source_record_id: "platter-veggie-tray", quantity: 1, pan_size: "TRAY" }];
+    const storage = {
+      listContractFoodRequests: vi.fn().mockImplementation(async () => previous),
+      listMappings: vi.fn().mockResolvedValue(contractBbqMappings),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn().mockImplementation(async (request) => {
+        previous.push({ source_record_id: request.sourceRecordId, quantity: request.quantity, pan_size: request.panSize });
+        return { duplicate: false };
+      }),
+    };
+    const first = await synchronize(contractWithBbq(), { sourceVersion: 99, storage: storage as never, env });
+    const repeated = await synchronize(contractWithBbq(), { sourceVersion: 100, storage: storage as never, env });
+    expect(first).toMatchObject({ requestCount: 1, exceptionCount: 0 });
+    expect(repeated).toMatchObject({ requestCount: 0, exceptionCount: 0 });
+    expect(storage.enqueueRequest).toHaveBeenCalledTimes(1);
+    expect(storage.enqueueRequest.mock.calls[0][0]).toMatchObject({ sourceRecordId: "sauce-bbq", sourceVersion: 1, quantity: 3 });
+  });
+
+  it("keeps derived prep sauces out of an immediate Wing Platter add-on dispatch", async () => {
+    const liveFoodAddOns = translateEventHostFoodAddOns({ wings: { quantity: 1, panSize: "1/2" } }, "2026-10-23T16:00:00.000Z");
+    const withAddOn = generateKitchenChecklist({
+      eventId: 123, eventName: "Redacted event", localDate: "2026-10-23", startTime: "6:00 PM",
+      guestCount: 18, status: "DEFINITE", selections: [],
+    }, undefined, liveFoodAddOns);
+    const storage = {
+      listMappings: vi.fn().mockResolvedValue([
+        contractBbqMappings[1],
+        { ...contractBbqMappings[0], canonical_product_key: "addon:wings", pan_size: "HALF_PAN", gotab_product_uuid: "product-wings" },
+      ]),
+      saveProjectionExceptions: vi.fn().mockResolvedValue(undefined),
+      enqueueRequest: vi.fn().mockResolvedValue({ duplicate: false }),
+    };
+    const result = await synchronizeLiveAddOns(withAddOn, { sourceVersion: 4, changedSourceKeys: ["wings"], storage: storage as never, env });
+    expect(result).toMatchObject({ requestCount: 1, exceptionCount: 0 });
+    expect(storage.enqueueRequest).toHaveBeenCalledTimes(1);
+    expect(storage.enqueueRequest.mock.calls[0][0]).toMatchObject({ sourceRecordId: "addon:wings", quantity: 1, gotabProductUuid: "product-wings" });
+  });
+
   it("queues booked VIP food at prep time without payment or add-on rows", async () => {
     const vipChecklist = generateKitchenChecklist(vipPrepKitchenEvents(vipPrepPayload.reservations)[0]);
     const wing = vipChecklist.sections.flatMap((section) => section.rows)

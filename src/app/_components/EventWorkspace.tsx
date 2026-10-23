@@ -23,9 +23,9 @@ export function workspaceClock(value: string | null, includeDate = false) {
 }
 
 export function EventWorkspaceProvider({ children }: { children: ReactNode }) {
-  const { selectedEvent, staffName, ready } = useEventContext();
+  const { selectedEvent, requestedEventId, staffName, ready } = useEventContext();
   const pathname = usePathname();
-  const scope = ready && selectedEvent && WORKSPACE_PATHS.has(pathname) ? `${selectedEvent.eventId}|${selectedEvent.date}` : null;
+  const scope = ready && selectedEvent && WORKSPACE_PATHS.has(pathname) && (pathname !== "/floor-plans" || requestedEventId) ? `${selectedEvent.eventId}|${selectedEvent.date}` : null;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const [snapshot, setSnapshot] = useState<{ scope: string; payload: WorkspacePayload } | null>(null);
