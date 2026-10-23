@@ -38,6 +38,7 @@ export async function synchronizeKitchenChecklistToEventFood(
     env?: Readonly<Record<string, string | undefined>>;
     dispatchImmediately?: boolean;
     bookedFoodQuantities?: ReadonlyMap<string, number>;
+    submittedAt?: string;
   },
 ) {
   const storage = options.storage ?? new GoTabIntegrationStorage();
@@ -71,6 +72,7 @@ export async function synchronizeKitchenChecklistToEventFood(
       (checklist.foodRunnerOrBwa?.trim() || null),
     defaultPrepLeadMinutes: configuration.defaultPrepLeadMinutes ?? 60,
     bookedFoodQuantities: options.bookedFoodQuantities,
+    submittedAt: options.submittedAt,
   });
   const requests = projection.requests.filter((request) => {
     const existing = previous.filter((item) => item.source_record_id === request.sourceRecordId);
@@ -243,5 +245,6 @@ export async function synchronizeKitchenLiveAddOnsToEventFood(
     storage: options.storage,
     env: options.env,
     dispatchImmediately: options.dispatchImmediately ?? true,
+    submittedAt: (options.dispatchImmediately ?? true) ? new Date().toISOString() : undefined,
   });
 }

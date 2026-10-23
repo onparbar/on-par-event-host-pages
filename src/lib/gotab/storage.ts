@@ -192,10 +192,56 @@ export class GoTabIntegrationStorage {
     );
   }
 
-  async claimDueDispatches(workerId: string, limit = 25) {
+  async claimDueDispatches(workerId: string, limit = 25, requestIds?: readonly string[]) {
     if (!workerId.trim()) throw new Error("GoTab worker ID is required.");
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("GoTab dispatch claim limit must be between 1 and 100.");
+    }
+    if (requestIds !== undefined) {
+      if (requestIds.length > 100 || requestIds.some((id) => !/^[A-Za-z0-9-]{1,160}$/.test(id))) {
+        throw new Error("Invalid GoTab dispatch request scope.");
+      }
+      const ids = [...new Set(requestIds)];
+      if (!ids.length) return [];
+      const now = new Date();
+      const eligible = {
+        request_id: `in.(${ids.join(",")})`,
+        status: "in.(SCHEDULED,QUEUED,FAILED)",
+        attempt_count: "lt.5",
+        next_attempt_at: `lte.${now.toISOString()}`,
+        or: `(locked_at.is.null,locked_at.lt.${new Date(now.getTime() - 300_000).toISOString()})`,
+      };
+      const response = await this.request("event_food_dispatches", new URLSearchParams({
+        ...eligible,
+        select: "id,request_id,idempotency_key,action,attempt_count,sanitized_payload",
+        order: "next_attempt_at.asc,created_at.asc",
+        limit: String(limit),
+      }), { method: "GET" });
+      const candidates = await response.json() as ClaimedEventFoodDispatch[];
+      const claimed: ClaimedEventFoodDispatch[] = [];
+      for (const candidate of candidates) {
+        if (!ids.includes(candidate.request_id) || !Number.isInteger(candidate.attempt_count) ||
+            candidate.attempt_count < 0 || candidate.attempt_count >= 5) continue;
+        // Recheck eligibility and the observed attempt count in the same UPDATE.
+        // A concurrent cron/scoped worker can win, but only one may claim a row.
+        const result = await this.request("event_food_dispatches", new URLSearchParams({
+          ...eligible,
+          id: `eq.${candidate.id}`,
+          attempt_count: `eq.${candidate.attempt_count}`,
+        }), {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({
+            status: "SENDING",
+            locked_at: now.toISOString(),
+            locked_by: workerId,
+            attempt_count: candidate.attempt_count + 1,
+            updated_at: now.toISOString(),
+          }),
+        });
+        claimed.push(...await result.json() as ClaimedEventFoodDispatch[]);
+      }
+      return claimed;
     }
     const response = await this.request("rpc/claim_event_food_dispatches", null, {
       method: "POST",

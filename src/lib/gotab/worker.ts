@@ -22,13 +22,17 @@ export async function processGoTabDispatches(options?: {
   client?: Pick<GoTabClient, "createEventFoodTab">;
   workerId?: string;
   limit?: number;
+  requestIds?: readonly string[];
   env?: Readonly<Record<string, string | undefined>>;
   vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
 }): Promise<GoTabWorkerSummary> {
   const storage = options?.storage ?? new GoTabIntegrationStorage();
   const configuration = getGoTabConfigurationStatus(options?.env);
   const workerId = options?.workerId ?? `vercel-${randomUUID()}`;
-  const dispatches = await storage.claimDueDispatches(workerId, options?.limit ?? 25);
+  const limit = options?.limit ?? (options?.requestIds?.length || 25);
+  const dispatches = options?.requestIds !== undefined
+    ? await storage.claimDueDispatches(workerId, limit, options.requestIds)
+    : await storage.claimDueDispatches(workerId, limit);
   const summary: GoTabWorkerSummary = {
     claimed: dispatches.length,
     dryRunCompleted: 0,
