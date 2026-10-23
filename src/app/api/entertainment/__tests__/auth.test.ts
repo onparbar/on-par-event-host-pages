@@ -1,57 +1,78 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cookies } from "next/headers";
-import {
-  ADMIN_COOKIE_NAME,
-  createAdminSessionValue,
-} from "../../../../lib/admin-auth";
-import { requireEntertainmentSession } from "../_auth";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/headers", () => ({
-  cookies: vi.fn(),
+const { getEntertainmentDay, syncEntertainmentDay } = vi.hoisted(() => ({
+  getEntertainmentDay: vi.fn(),
+  syncEntertainmentDay: vi.fn(),
 }));
 
-afterEach(() => {
-  vi.clearAllMocks();
-  vi.unstubAllEnvs();
-});
+vi.mock("@/lib/entertainment/sync", () => ({
+  assertEntertainmentDate: vi.fn(),
+  EntertainmentSyncError: class EntertainmentSyncError extends Error {},
+  getEntertainmentDay,
+  syncEntertainmentDay,
+}));
 
-function configureProductionSession() {
-  vi.stubEnv("NODE_ENV", "production");
-  vi.stubEnv("EVENT_HOST_ADMIN_PIN", "1234");
-  vi.stubEnv(
-    "EVENT_HOST_SESSION_SECRET",
-    "entertainment-test-session-secret-123456",
-  );
-  vi.stubEnv("SUPABASE_SECRET_KEY", "");
-  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
-  vi.stubEnv("TRIPLESEAT_CLIENT_SECRET", "");
-  vi.stubEnv("CLIENT_SECRET", "");
-}
+import { GET } from "../schedule/route";
+import { POST } from "../sync/route";
 
-describe("Entertainment Schedule edit permission", () => {
-  it("rejects a missing or forged Event Host admin session", async () => {
-    configureProductionSession();
-    vi.mocked(cookies).mockResolvedValue({
-      get() {
-        return {
-          name: ADMIN_COOKIE_NAME,
-          value: "forged-entertainment-cookie",
-        };
-      },
-    } as never);
-    expect(await requireEntertainmentSession()).toBe(false);
+describe("entertainment operational access", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("NODE_ENV", "production");
+    getEntertainmentDay.mockResolvedValue({
+      date: "2026-08-06",
+      reservations: [],
+    });
+    syncEntertainmentDay.mockResolvedValue({
+      date: "2026-08-06",
+      reservations: [],
+    });
   });
 
-  it("accepts the existing signed Event Host admin session", async () => {
-    configureProductionSession();
-    const session = createAdminSessionValue();
-    vi.mocked(cookies).mockResolvedValue({
-      get() {
-        return session
-          ? { name: ADMIN_COOKIE_NAME, value: session }
-          : undefined;
-      },
-    } as never);
-    expect(await requireEntertainmentSession()).toBe(true);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("allows the schedule to load without an access-code session", async () => {
+    const response = await GET(
+      new Request(
+        "https://example.test/api/entertainment/schedule?date=2026-08-06",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(getEntertainmentDay).toHaveBeenCalledWith("2026-08-06");
+  });
+
+  it("allows a same-origin schedule sync without an access-code session", async () => {
+    const response = await POST(
+      new Request("https://example.test/api/entertainment/sync", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://example.test",
+        },
+        body: JSON.stringify({ date: "2026-08-06" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(syncEntertainmentDay).toHaveBeenCalledWith("2026-08-06");
+  });
+
+  it("rejects a cross-origin schedule mutation", async () => {
+    const response = await POST(
+      new Request("https://example.test/api/entertainment/sync", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://malicious.test",
+        },
+        body: JSON.stringify({ date: "2026-08-06" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(syncEntertainmentDay).not.toHaveBeenCalled();
   });
 });

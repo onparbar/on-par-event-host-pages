@@ -38,13 +38,20 @@ export type EntertainmentState = {
 export type FoodState = {
   quantity: string;
   manualPrice: string;
+  panSize?: "" | "1/3" | "1/2";
+  notes?: string;
 };
+
+export const CHECKLIST_CLOSEOUT_CONFIRMATION_KEY = "workspace:closeout:contract-warnings";
 
 export type EventChecklistState = {
   bwa: string;
+  /** Staff-entered event POC; never populated from the customer contact. */
+  poc?: string;
   extrasAdded: string;
   remainingDrinkCardBalance: string;
   tasks: Record<string, boolean>;
+  taskEvidence?: Record<string, { employeeName: string; completedAt: string; sourceFingerprint?: string; contractWarnings?: string[] }>;
   entertainment: Record<string, EntertainmentState>;
   food: Record<string, FoodState>;
 };
@@ -53,10 +60,37 @@ export type ChecklistRecordStatus = "draft" | "submitted";
 
 export type ChecklistRecord = EventChecklistState & {
   eventId: number;
+  eventName: string;
+  eventDate: string;
+  poc: string;
   status: ChecklistRecordStatus;
   updatedAt: string | null;
   submittedAt: string | null;
 };
+
+/** Resolve the navigation preference before rendering or publishing a default. */
+export function checklistEventForSelection<T extends { id: number }>(events: readonly T[], preferredEventId: string | null, activeEventId: number) {
+  if (preferredEventId) return events.find((event) => String(event.id) === preferredEventId);
+  return events.find((event) => event.id === activeEventId) ?? events[0];
+}
+
+export function normalizeStaffPoc(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return /^contact omitted from preview$/i.test(value.trim()) ? "" : value;
+}
+
+export function completeChecklistTask(state: EventChecklistState, key: string, checked: boolean, staffName: string, completedAt: string, sourceFingerprint?: string): EventChecklistState {
+  const actor = staffName.trim() || state.bwa.trim();
+  if (checked && (!actor || !Number.isFinite(Date.parse(completedAt)))) return state;
+  if (checked && state.tasks[key] && state.taskEvidence?.[key]) return state;
+  return {
+    ...state,
+    tasks: { ...state.tasks, [key]: checked },
+    taskEvidence: checked
+      ? { ...state.taskEvidence, [key]: { employeeName: actor, completedAt, ...(sourceFingerprint ? { sourceFingerprint } : {}) } }
+      : Object.fromEntries(Object.entries(state.taskEvidence ?? {}).filter(([entry]) => entry !== key)),
+  };
+}
 
 export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
   {
@@ -90,7 +124,7 @@ export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
     label: "Mini Golf",
     kind: "fixed-price",
     fixedPrice: 9,
-    unitLabel: "courses",
+    unitLabel: "guests",
   },
   {
     key: "shuffleboard",
@@ -100,6 +134,16 @@ export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
     options: [
       { key: "sun-thu", label: "Sun-Thursday · $30 per hour", price: 30 },
       { key: "fri-sat", label: "Friday-Saturday · $40 per hour", price: 40 },
+    ],
+  },
+  {
+    key: "pool-tables",
+    label: "Pool Tables",
+    kind: "rate-select",
+    unitLabel: "hours",
+    options: [
+      { key: "sun-thu", label: "Sunday-Thursday · $12 per hour", price: 12 },
+      { key: "fri-sat", label: "Friday-Saturday · $18 per hour", price: 18 },
     ],
   },
   {
@@ -165,24 +209,55 @@ export const foodAddOns: FoodAddOnConfig[] = [
   { key: "garlic-parm", label: "Garlic Parm", kind: "fixed-price", fixedPrice: 5 },
   { key: "buffalo-sauce", label: "Buffalo Sauce", kind: "fixed-price", fixedPrice: 5 },
   { key: "ranch", label: "Ranch", kind: "fixed-price", fixedPrice: 5 },
-  { key: "dessert-platter", label: "Dessert Platter", kind: "manual-price" },
+  { key: "dessert-platter", label: "Dessert Platter", kind: "fixed-price", fixedPrice: 120 },
   { key: "taco-beef", label: "Beef", kind: "quantity-only" },
   { key: "taco-chicken", label: "Chicken", kind: "quantity-only" },
   { key: "taco-black-beans", label: "Black Beans", kind: "quantity-only" },
   { key: "taco-tortillas", label: "Tortillas", kind: "quantity-only" },
-  { key: "taco-lettuce-wraps", label: "Lettuce Wraps", kind: "quantity-only" },
+  { key: "taco-lettuce-wraps", label: "Wraps", kind: "quantity-only" },
   { key: "taco-tomatoes", label: "Tomatoes", kind: "quantity-only" },
   { key: "taco-lettuce", label: "Lettuce", kind: "quantity-only" },
   { key: "taco-sour-cream", label: "Sour Cream", kind: "quantity-only" },
   { key: "taco-diced-onion", label: "Diced Onion", kind: "quantity-only" },
   { key: "taco-shredded-cheese", label: "Shredded Cheese", kind: "quantity-only" },
   { key: "taco-salsa", label: "Salsa", kind: "quantity-only" },
+  { key: "appetizer-refill-tater-kegs", label: "Tater Kegs", kind: "quantity-only" },
+  { key: "appetizer-refill-mozzarella-sticks", label: "Mozzarella Sticks", kind: "quantity-only" },
+  { key: "appetizer-refill-chicken-tenders", label: "Chicken Tenders", kind: "quantity-only" },
+  { key: "appetizer-refill-marinara", label: "Marinara", kind: "quantity-only" },
+  { key: "appetizer-refill-ranch", label: "Ranch", kind: "quantity-only" },
+  { key: "appetizer-refill-bbq", label: "BBQ Sauce", kind: "quantity-only" },
+  { key: "wing-refill-wings", label: "Wings", kind: "quantity-only" },
+  { key: "wing-refill-fries", label: "Fries", kind: "quantity-only" },
+  { key: "wing-refill-ranch", label: "Ranch", kind: "quantity-only" },
+  { key: "wing-refill-bbq", label: "BBQ Sauce", kind: "quantity-only" },
+  { key: "wing-refill-garlic-parm", label: "Garlic Parm", kind: "quantity-only" },
+  { key: "wing-refill-buffalo", label: "Buffalo Sauce", kind: "quantity-only" },
 ];
+
+export const tacoBarRefillAddOns = foodAddOns.filter((item) =>
+  item.key.startsWith("taco-"),
+);
+
+export const appetizerBarRefillAddOns = foodAddOns.filter((item) =>
+  item.key.startsWith("appetizer-refill-"),
+);
+
+export const wingBarRefillAddOns = foodAddOns.filter((item) =>
+  item.key.startsWith("wing-refill-"),
+);
+
+export const standardFoodAddOns = foodAddOns.filter(
+  (item) =>
+    !item.key.startsWith("taco-") &&
+    !item.key.startsWith("appetizer-refill-") &&
+    !item.key.startsWith("wing-refill-"),
+);
 
 export const checklistSections: ChecklistSection[] = [
   {
     key: "morning-of-event",
-    title: "Morning of Event-Shift Lead",
+    title: "Before Arrival / Preparation",
     items: [
       { key: "tripleseat-contract-printed", label: "Confirm 2 copies of the contract is printed from Tripleseat" },
       {
@@ -201,7 +276,7 @@ export const checklistSections: ChecklistSection[] = [
   },
   {
     key: "one-hour-before",
-    title: "1 hour before the event-BWA POC",
+    title: "Event Setup",
     items: [
       { key: "contract-details-confirmed", label: "Confirm food, drink card, and entertainment details with the contract" },
       {
@@ -228,8 +303,8 @@ export const checklistSections: ChecklistSection[] = [
     ],
   },
   {
-    key: "guest-arrival",
-    title: "Guest Arrival-BWA POC",
+    key: "during-event",
+    title: "During Event",
     items: [
       { key: "introduce-bwa", label: "Introduce yourself and the BWA(s) working the event to the groups POC" },
       {
@@ -255,13 +330,7 @@ export const checklistSections: ChecklistSection[] = [
         key: "additional-items-noted",
         label: "If guests add any additional items, write those items down on the Events Add-Ons sheet",
       },
-    ],
-  },
-  {
-    key: "during-event",
-    title: "During the Event check-ins-BWA POC",
-    items: [
-      { key: "food-kitchen-window", label: "Food shall be in the kitchen window 15 minutes prior to start of the event" },
+      { key: "food-kitchen-window", label: "Get Food Out" },
       { key: "food-setup-confirmed", label: "Ensure all the food the party ordered is set up at event start time" },
       { key: "food-quality-check", label: "Ensure food is filled quickly" },
       {
@@ -273,7 +342,7 @@ export const checklistSections: ChecklistSection[] = [
   },
   {
     key: "end-of-event",
-    title: "End of the Event",
+    title: "Closing / Breakdown",
     items: [
       { key: "ask-experience", label: "Ask the guests how their experience and favorite part of the event was" },
       {
@@ -317,6 +386,7 @@ export function defaultChecklistState(dateValue: string): EventChecklistState {
       {
         quantity: "",
         manualPrice: "",
+        panSize: "" as const,
       },
     ]),
   );
@@ -326,9 +396,11 @@ export function defaultChecklistState(dateValue: string): EventChecklistState {
 
   return {
     bwa: "",
+    poc: "",
     extrasAdded: "",
     remainingDrinkCardBalance: "",
     tasks,
+    taskEvidence: {},
     entertainment,
     food,
   };
@@ -340,10 +412,12 @@ export function hydrateChecklistState(dateValue: string, savedState?: Partial<Ev
   return {
     ...base,
     ...savedState,
+    poc: normalizeStaffPoc(savedState?.poc),
     tasks: {
       ...base.tasks,
       ...(savedState?.tasks ?? {}),
     },
+    taskEvidence: { ...(savedState?.taskEvidence ?? {}) },
     entertainment: Object.fromEntries(
       entertainmentAddOns.map((item) => [
         item.key,
@@ -400,7 +474,7 @@ export function foodUnitPrice(config: FoodAddOnConfig, state: FoodState) {
 
 export function eventCompletion(state: EventChecklistState) {
   const total = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-  const completed = Object.values(state.tasks).filter(Boolean).length;
+  const completed = checklistSections.flatMap((section) => section.items).filter((item) => state.tasks[item.key]).length;
   return { completed, total };
 }
 

@@ -5,20 +5,25 @@ import {
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
 import { loadAdminState } from "@/lib/admin-state";
-import { entertainmentSchedules } from "@/lib/events";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
-import { activeEvents } from "@/lib/event-lifecycle";
-import { loadEventPlanWindow } from "@/lib/event-plans/sync";
+import { activeEvents, easternDateValue } from "@/lib/event-lifecycle";
+import { isValidEntertainmentDate } from "@/lib/entertainment/time";
+import { listChecklistRecords } from "@/lib/checklist-storage";
+import { buildOperationalEventSummaries } from "@/lib/operations/command-center";
+import { EventCommandCenter } from "@/app/_components/EventCommandCenter";
+import { loadStaffEventPlans } from "@/lib/operations/staff-events";
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
-  const [adminState, eventPlanWindow] = await Promise.all([
-    loadAdminState(),
-    loadEventPlanWindow(),
-  ]);
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
   const now = new Date();
-  const visibleSchedules = entertainmentSchedules.filter((schedule) => !adminState.archivedAssetKeys.includes(schedule.image));
+  const { date: requestedDate } = await searchParams;
+  const date = requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(now);
+  const [adminState, eventPlanWindow, checklistRecords] = await Promise.all([
+    loadAdminState(),
+    loadStaffEventPlans(date),
+    listChecklistRecords().catch(() => null),
+  ]);
   const visibleEvents = activeEvents(
     eventPlanWindow.plans,
     adminState.archivedEventIds,
@@ -30,6 +35,11 @@ export default async function HomePage() {
     checklistEvents,
     adminState.archivedEventIds,
     now,
+  );
+  const operationalEvents = buildOperationalEventSummaries(
+    eventPlanWindow.plans.filter((event) => !adminState.archivedEventIds.includes(event.id)),
+    checklistRecords,
+    eventPlanWindow.sync,
   );
 
   return (
@@ -52,10 +62,17 @@ export default async function HomePage() {
             </PortalStatusBadge>
           </div>
         }
-        description={`${visibleSchedules.length} published schedule dates plus live Tripleseat-backed entertainment and kitchen operations.`}
+        description="Choose an event, review what needs attention, and continue into seating, entertainment, kitchen, setup, and add-ons."
         eyebrow="On Par operations"
         title="Event Host Portal"
       />
+      <EventCommandCenter
+        assignedStaffByEvent={Object.fromEntries((checklistRecords ?? []).filter((record) => record.bwa.trim()).map((record) => [`${record.eventDate}:${record.eventId}`, record.bwa]))}
+        events={operationalEvents}
+        initialNow={now.toISOString()}
+        sourceWarning={eventPlanWindow.sourceWarning}
+      />
+      <h2 className="portal-modules-title">All operations</h2>
       <nav className="link-grid portal-module-grid" aria-label="Event host sections">
           <Link className="home-link portal-module-card" href="/floor-plans">
             <span className="portal-module-kicker">Venue maps</span>
@@ -81,6 +98,11 @@ export default async function HomePage() {
             <span className="portal-module-kicker">Food &amp; entertainment</span>
             <strong>Event Add-Ons</strong>
             <span>Send Food add-ons live to Kitchen and close the complete add-on record to Admin.</span>
+          </Link>
+          <Link className="home-link portal-module-card" href="/vip-check-in">
+            <span className="portal-module-kicker">VIP arrivals</span>
+            <strong>VIP Check-In</strong>
+            <span>Confirm VIP arrivals and release their reserved food to the kitchen.</span>
           </Link>
           <Link className="home-link portal-module-card" href="/kitchen">
             <span className="portal-module-kicker">Daily production</span>

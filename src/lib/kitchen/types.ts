@@ -32,6 +32,7 @@ export type KitchenSourceEvent = {
   endTime?: string | null;
   guestCount: number | null;
   status: string | null;
+  fullBuyout?: boolean;
   statusVerified?: boolean;
   room?: string | null;
   selections: readonly KitchenSourceSelection[];
@@ -41,7 +42,10 @@ export type KitchenSourceEvent = {
   sourceState?: "fresh" | "stale" | "sync-failed";
 };
 
-export type PackageMarker = "the-full-course" | "the-front-nine";
+export type PackageMarker =
+  | "the-full-course"
+  | "the-front-nine"
+  | "food-only-package";
 export type BarType = "taco" | "wing" | "appetizer";
 export type KitchenClassification = "bar-package" | "platter-only";
 
@@ -74,7 +78,8 @@ export type KitchenFoodKey =
   | "platter-veggie-tray"
   | "platter-fries"
   | "sauce-marinara"
-  | "sauce-ranch";
+  | "sauce-ranch"
+  | "sauce-bbq";
 
 export type PanSize = "1/3" | "1/2";
 
@@ -114,7 +119,9 @@ export type KitchenLiveFoodAddOn = {
   unit: string;
   numberOfPans: number | null;
   panSize: PanSize | null;
+  selectedPanSize?: PanSize | null;
   sourceUpdatedAt: string | null;
+  requestNotes?: string;
 };
 
 export type KitchenAddOnActivity = {
@@ -211,6 +218,9 @@ export type KitchenReferenceConflict = {
 export type PlatterPackingItem = {
   key: Extract<
     KitchenFoodKey,
+    | "appetizer-tater-kegs"
+    | "appetizer-chicken-tenders"
+    | "appetizer-mozzarella-sticks"
     | "platter-tater-kegs"
     | "platter-chicken-tenders"
     | "platter-mozzarella-sticks"
@@ -218,24 +228,16 @@ export type PlatterPackingItem = {
     | "platter-fries"
   >;
   platterCount: number;
+  panSize?: PanSize;
 };
 
-export type PlatterPackingResult =
-  | {
-      status: "approved";
-      totalHotPlatters: number;
-      panCount: number;
-      panSize: PanSize | null;
-      chafingDishes: number;
-    }
-  | {
-      status: "needs-review";
-      reason: "unapproved-total";
-      totalHotPlatters: number;
-      panCount: null;
-      panSize: null;
-      chafingDishes: null;
-    };
+export type PlatterPackingResult = {
+  status: "approved";
+  totalHotPlatters: number;
+  panCount: number;
+  panSize: PanSize | null;
+  chafingDishes: number;
+};
 
 export type KitchenChecklist = {
   ruleVersion: string;
@@ -258,7 +260,14 @@ export type KitchenChecklist = {
     foodNotes?: KitchenFoodNote[];
     specialNotes: string[];
   };
+  /** Legacy single-value assignment retained while older snapshots migrate. */
   foodRunnerOrBwa: string;
+  assignmentUpdatedAt?: string | null;
+  foodRunners?: string[];
+  pocs?: string[];
+  setup?: string[];
+  preppedBy?: string;
+  verifiedBy?: string;
   classification: KitchenClassification;
   packageMarkers: PackageMarker[];
   selectedBars: BarType[];
@@ -272,6 +281,14 @@ export type KitchenChecklist = {
   sections: KitchenChecklistSection[];
   liveFoodAddOns: KitchenLiveFoodAddOn[];
   completedItemKeys: string[];
+  preppedItemKeys?: string[];
+  preppedItemDetails?: Record<
+    string,
+    {
+      employeeName: string | null;
+      preppedAt: string | null;
+    }
+  >;
   finalCompletedItemKeys: string[];
   chafingDishes: {
     bars: number | null;

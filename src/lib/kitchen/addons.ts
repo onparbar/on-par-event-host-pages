@@ -1,7 +1,5 @@
-import {
-  KITCHEN_RULE_CONFIG,
-  type PanCapacityKey,
-} from "./config";
+import { KITCHEN_RULE_CONFIG } from "./config";
+import { getPlatterPanAllocation } from "./platter-pans";
 import type { KitchenLiveFoodAddOn } from "./types";
 
 type AddOnUnit =
@@ -17,7 +15,9 @@ export type KitchenEventAddOnSection =
   | "party-platters"
   | "sauces"
   | "dessert"
-  | "taco-bar";
+  | "taco-bar"
+  | "appetizer-bar-refills"
+  | "wing-bar-refills";
 
 export type KitchenAddOnCalculation =
   | {
@@ -53,7 +53,6 @@ type AddOnRule = {
   amountPerSourceUnit: number;
   maxSourceQuantity: number;
   unit: AddOnUnit;
-  panCapacityKey?: PanCapacityKey;
   calculation: KitchenAddOnCalculation;
 };
 
@@ -77,11 +76,11 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     foodName: "Wings",
     section: "party-platters",
     sourceUnitLabel: "platters",
-    description: "Traditional wings served with celery and ranch.",
-    amountPerSourceUnit: 64,
+    description: "Traditional wings served with celery, ranch, and BBQ sauce.",
+    amountPerSourceUnit:
+      KITCHEN_RULE_CONFIG.platter.rules["platter:wings"].amountPerPlatter,
     maxSourceQuantity: 10,
     unit: "each",
-    panCapacityKey: "wings",
     calculation: {
       kind: "platter",
       platterKind: "platter:wings",
@@ -94,10 +93,10 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     sourceUnitLabel: "platters",
     description:
       "Golden fried mozzarella sticks served with marinara for dipping.",
-    amountPerSourceUnit: 4,
+    amountPerSourceUnit:
+      KITCHEN_RULE_CONFIG.platter.rules["platter:mozzarella-sticks"].amountPerPlatter,
     maxSourceQuantity: 10,
     unit: "pounds",
-    panCapacityKey: "mozzarellaSticks",
     calculation: {
       kind: "platter",
       platterKind: "platter:mozzarella-sticks",
@@ -110,10 +109,10 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     sourceUnitLabel: "platters",
     description:
       "Crispy mashed-potato tots with cheese, bacon, and chives.",
-    amountPerSourceUnit: 64,
+    amountPerSourceUnit:
+      KITCHEN_RULE_CONFIG.platter.rules["platter:tater-kegs"].amountPerPlatter,
     maxSourceQuantity: 10,
     unit: "each",
-    panCapacityKey: "taterKegs",
     calculation: {
       kind: "platter",
       platterKind: "platter:tater-kegs",
@@ -124,8 +123,9 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     foodName: "Fries",
     section: "party-platters",
     sourceUnitLabel: "platters",
-    description: "Golden crispy fries, piled high.",
-    amountPerSourceUnit: 1,
+    description: "One 5-pound bag of golden crispy fries per platter.",
+    amountPerSourceUnit:
+      KITCHEN_RULE_CONFIG.platter.rules["platter:fries"].amountPerPlatter,
     maxSourceQuantity: 10,
     unit: "bags",
     calculation: {
@@ -138,11 +138,11 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     foodName: "Chicken Tenders",
     section: "party-platters",
     sourceUnitLabel: "platters",
-    description: "Fried chicken tenders served with ranch dipping sauce.",
-    amountPerSourceUnit: 50,
+    description: "Fried chicken tenders served with ranch and BBQ dipping sauces.",
+    amountPerSourceUnit:
+      KITCHEN_RULE_CONFIG.platter.rules["platter:chicken-tenders"].amountPerPlatter,
     maxSourceQuantity: 10,
     unit: "each",
-    panCapacityKey: "chickenTenders",
     calculation: {
       kind: "platter",
       platterKind: "platter:chicken-tenders",
@@ -154,7 +154,8 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     section: "party-platters",
     sourceUnitLabel: "trays",
     description: "Assorted fresh vegetables served with ranch dressing.",
-    amountPerSourceUnit: 1,
+    amountPerSourceUnit:
+      KITCHEN_RULE_CONFIG.platter.rules["platter:veggie-tray"].amountPerPlatter,
     maxSourceQuantity: 10,
     unit: "pretzel plates",
     calculation: {
@@ -231,6 +232,42 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     unit: "requested units" as const,
     calculation: { kind: "unresolved-taco-addon" as const },
   })),
+  ...[
+    ["appetizer-refill-tater-kegs", "Tater Kegs"],
+    ["appetizer-refill-mozzarella-sticks", "Mozzarella Sticks"],
+    ["appetizer-refill-chicken-tenders", "Chicken Tenders"],
+    ["appetizer-refill-marinara", "Marinara"],
+    ["appetizer-refill-ranch", "Ranch"],
+    ["appetizer-refill-bbq", "BBQ Sauce"],
+  ].map(([sourceKey, foodName]) => ({
+    sourceKey,
+    foodName,
+    section: "appetizer-bar-refills" as const,
+    sourceUnitLabel: "requested units" as const,
+    description: `${foodName} refill requested for the Appetizer Bar.`,
+    amountPerSourceUnit: 1,
+    maxSourceQuantity: 9999,
+    unit: "requested units" as const,
+    calculation: { kind: "display-only" as const },
+  })),
+  ...[
+    ["wing-refill-wings", "Wings"],
+    ["wing-refill-fries", "Fries"],
+    ["wing-refill-ranch", "Ranch"],
+    ["wing-refill-bbq", "BBQ Sauce"],
+    ["wing-refill-garlic-parm", "Garlic Parm"],
+    ["wing-refill-buffalo", "Buffalo Sauce"],
+  ].map(([sourceKey, foodName]) => ({
+    sourceKey,
+    foodName,
+    section: "wing-bar-refills" as const,
+    sourceUnitLabel: "requested units" as const,
+    description: `${foodName} refill requested for the Wing Bar.`,
+    amountPerSourceUnit: 1,
+    maxSourceQuantity: 9999,
+    unit: "requested units" as const,
+    calculation: { kind: "display-only" as const },
+  })),
 ] as const satisfies readonly AddOnRule[];
 
 export const KITCHEN_EVENT_ADD_ON_SECTIONS = [
@@ -238,6 +275,8 @@ export const KITCHEN_EVENT_ADD_ON_SECTIONS = [
   { key: "sauces", label: "Sauces" },
   { key: "dessert", label: "Dessert" },
   { key: "taco-bar", label: "Taco Bar" },
+  { key: "appetizer-bar-refills", label: "Appetizer Bar Refills" },
+  { key: "wing-bar-refills", label: "Wing Bar Refills" },
 ] as const satisfies readonly {
   key: KitchenEventAddOnSection;
   label: string;
@@ -247,7 +286,7 @@ export type EventHostFoodAddOnKey =
   (typeof KITCHEN_EVENT_ADD_ON_FIELDS)[number]["sourceKey"];
 
 export type KitchenEventAddOnFood = Partial<
-  Record<EventHostFoodAddOnKey, { quantity: number }>
+  Record<EventHostFoodAddOnKey, { quantity: number; panSize?: "1/3" | "1/2"; notes?: string }>
 >;
 
 export type KitchenAddOnItemKey = `addon:${EventHostFoodAddOnKey}`;
@@ -259,8 +298,10 @@ export type KitchenAddOnItem = {
   quantity: number;
   unit: AddOnUnit;
   numberOfPans: number | null;
-  panSize: "1/3" | null;
+  panSize: "1/3" | "1/2" | null;
+  selectedPanSize?: "1/3" | "1/2" | null;
   sourceUpdatedAt: string | null;
+  requestNotes?: string;
 };
 
 export type KitchenLiveAddOnEffect = {
@@ -291,6 +332,23 @@ function sourceQuantity(value: unknown) {
     return null;
   }
   return positiveWholeQuantity(value.quantity);
+}
+
+function sourcePanSize(value: unknown) {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return value.panSize === "1/3" || value.panSize === "1/2"
+    ? value.panSize
+    : null;
+}
+
+export function normalizeKitchenOrderNotes(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string" || value.trim().length > 500 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)) {
+    throw new Error("Food request notes must be text of up to 500 characters without control characters.");
+  }
+  return value.trim() || undefined;
 }
 
 export function resolveKitchenLiveFoodAddOns(
@@ -339,11 +397,20 @@ export function translateEventHostFoodAddOns(
     if (!Number.isSafeInteger(quantity)) {
       return [];
     }
-    const panCapacity =
-      "panCapacityKey" in rule
-        ? KITCHEN_RULE_CONFIG.panCapacities[rule.panCapacityKey]
-            .amountPerPan
-        : undefined;
+    const selectedPanSize = sourcePanSize(food[rule.sourceKey]);
+    const rawValue = food[rule.sourceKey];
+    const requestNotes = normalizeKitchenOrderNotes(isRecord(rawValue) ? rawValue.notes : undefined);
+    const platterRule = rule.calculation.kind === "platter"
+      ? KITCHEN_RULE_CONFIG.platter.rules[rule.calculation.platterKind]
+      : null;
+    const panAllocation: Pick<KitchenAddOnItem, "numberOfPans" | "panSize"> = platterRule?.pansPerPlatter
+      ? selectedPanSize === "1/3" && platterRule.pansPerPlatter["1/3"] === null
+        ? { numberOfPans: null, panSize: selectedPanSize }
+        : getPlatterPanAllocation(platterRule, platterOrBowlCount, selectedPanSize ?? "1/3")
+      : {
+          numberOfPans: selectedPanSize ? platterOrBowlCount : null,
+          panSize: selectedPanSize,
+        };
 
     return [
       {
@@ -352,12 +419,10 @@ export function translateEventHostFoodAddOns(
         description: rule.description,
         quantity,
         unit: rule.unit,
-        numberOfPans:
-          panCapacity === undefined
-            ? null
-            : Math.ceil(quantity / panCapacity),
-        panSize: panCapacity === undefined ? null : "1/3",
+        ...panAllocation,
+        ...(selectedPanSize ? { selectedPanSize } : {}),
         sourceUpdatedAt,
+        ...(requestNotes ? { requestNotes } : {}),
       },
     ];
   });

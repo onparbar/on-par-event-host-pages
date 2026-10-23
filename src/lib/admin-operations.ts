@@ -12,7 +12,7 @@ import {
   getAreaForEntertainmentResource,
   getFloorPlanArea,
 } from "@/lib/floor-plans/configuration/areas";
-import { detectFloorPlanConflicts, timeRangesOverlap } from "@/lib/floor-plans/conflicts";
+import { detectFloorPlanConflicts, floorPlanAreaTimeOverlap } from "@/lib/floor-plans/conflicts";
 import type { FloorPlanDocument } from "@/lib/floor-plans/types";
 import type { KitchenChecklist, KitchenWarningCode } from "@/lib/kitchen/types";
 
@@ -257,7 +257,9 @@ export function evaluateEventCompleteness({
       : check("food-quantities", "Food quantities", "complete", `${kitchenRows.length} operational food line${kitchenRows.length === 1 ? "" : "s"} have quantities.`);
 
   const floorPlanEvent = floorPlan?.events.find(
-    (event) => event.tripleseatEventId === String(plan.id),
+    (event) =>
+      event.tripleseatEventId === String(plan.id) ||
+      event.source.sourceEventIds?.includes(String(plan.id)),
   );
   const floorPlanAssignments = floorPlanEvent
     ? floorPlan!.reservations.filter(
@@ -272,9 +274,14 @@ export function evaluateEventCompleteness({
         ? check("floor-plan", "Floor plan", "complete", `${floorPlan.status} with ${floorPlanAssignments.length} assignment${floorPlanAssignments.length === 1 ? "" : "s"}.`)
         : check("floor-plan", "Floor plan", "needs-review", `${floorPlan.status} with ${floorPlanAssignments.length} saved assignment${floorPlanAssignments.length === 1 ? "" : "s"}.`);
 
-  const staffAssignments = !kitchen?.foodRunnerOrBwa.trim()
-    ? check("staff-assignments", "Staff assignments", "missing", "No Food Runner/BWA assignment is saved.")
-    : check("staff-assignments", "Staff assignments", "needs-review", `${kitchen.foodRunnerOrBwa} is saved in the legacy BWA field; separate POC and FR roles are not yet available.`);
+  const foodRunners = kitchen?.foodRunners ?? [];
+  const pocs = kitchen?.pocs ?? [];
+  const legacyAssignment = kitchen?.foodRunnerOrBwa.trim() ?? "";
+  const staffAssignments = foodRunners.length > 0 && pocs.length > 0
+    ? check("staff-assignments", "Staff assignments", "complete", `Food Runner: ${foodRunners.join(", ")}; POC: ${pocs.join(", ")}.`)
+    : legacyAssignment
+      ? check("staff-assignments", "Staff assignments", "needs-review", `${legacyAssignment} is saved in the legacy assignment field; select a POC.`)
+      : check("staff-assignments", "Staff assignments", "missing", "Food Runner and POC assignments are both required.");
 
   const checks = [
     endTime,
@@ -296,18 +303,6 @@ export function evaluateEventCompleteness({
       (item) => item.status === "missing" || item.status === "needs-review",
     ).length,
     checks,
-  };
-}
-
-function intersection(
-  leftStart: string,
-  leftEnd: string,
-  rightStart: string,
-  rightEnd: string,
-) {
-  return {
-    startAt: Date.parse(leftStart) >= Date.parse(rightStart) ? leftStart : rightStart,
-    endAt: Date.parse(leftEnd) <= Date.parse(rightEnd) ? leftEnd : rightEnd,
   };
 }
 
@@ -369,7 +364,7 @@ export function buildAdminConflictCenter({
     for (let rightIndex = leftIndex + 1; rightIndex < plans.length; rightIndex += 1) {
       const right = plans[rightIndex];
       const rightRange = eventRange(right.plan, right.source);
-      if (!rightRange || !timeRangesOverlap(leftRange.startAt, leftRange.endAt, rightRange.startAt, rightRange.endAt)) continue;
+      if (!rightRange) continue;
       const rightAreas = new Set(
         (right.source?.rooms ?? right.plan.rooms)
           .map(resolveAreaAlias)
@@ -378,15 +373,17 @@ export function buildAdminConflictCenter({
             return area?.type === "room" || area?.type === "seating-section";
           }),
       );
-      const sharedAreaIds = leftAreas.has("facility") && rightAreas.size > 0
-        ? ["facility"]
+      const sharedAreas = leftAreas.has("facility") && rightAreas.size > 0
+        ? [...rightAreas].map((timingAreaId) => ({ areaId: "facility", timingAreaId }))
         : rightAreas.has("facility") && leftAreas.size > 0
-          ? ["facility"]
-          : [...leftAreas].filter((areaId) => rightAreas.has(areaId));
-      for (const areaId of sharedAreaIds) {
-        const overlap = intersection(leftRange.startAt, leftRange.endAt, rightRange.startAt, rightRange.endAt);
+          ? [...leftAreas].map((timingAreaId) => ({ areaId: "facility", timingAreaId }))
+          : [...leftAreas].filter((areaId) => rightAreas.has(areaId))
+            .map((areaId) => ({ areaId, timingAreaId: areaId }));
+      for (const { areaId, timingAreaId } of sharedAreas) {
+        const overlap = floorPlanAreaTimeOverlap(timingAreaId, leftRange.startAt, leftRange.endAt, rightRange.startAt, rightRange.endAt);
+        if (!overlap) continue;
         conflicts.push({
-          id: `contracted:${date}:${areaId}:${left.plan.id}:${right.plan.id}`,
+          id: `contracted:${date}:${areaId}:${timingAreaId}:${left.plan.id}:${right.plan.id}`,
           date,
           kind: "contracted-room",
           resourceId: areaId,

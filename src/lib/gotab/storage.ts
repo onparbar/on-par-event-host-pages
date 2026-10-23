@@ -1,0 +1,725 @@
+import "server-only";
+
+import { getSupabaseSecret, KITCHEN_ROLE_METADATA_PREFIX } from "@/lib/kitchen/storage";
+import type { GoTabCapabilityCheck } from "./client";
+import type { NormalizedEventFoodItem } from "./event-food";
+import type { EventFoodDelivery } from "./delivery";
+
+const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
+
+type FetchImplementation = typeof fetch;
+
+export type ClaimedEventFoodDispatch = {
+  id: string;
+  request_id: string;
+  idempotency_key: string;
+  action: "DISPATCH" | "CORRECTION" | "CANCELLATION" | "TEST";
+  status: "SENDING";
+  attempt_count: number;
+  sanitized_payload: Record<string, unknown> | null;
+};
+
+export type StoredEventFoodMapping = {
+  id: string;
+  canonical_product_key: string;
+  source_system: "TRIPLESEAT" | "EVENT_HOST" | "VIP";
+  source_product_key: string;
+  source_product_name: string;
+  aliases: string[];
+  display_name: string;
+  pan_size: string;
+  preparation_station: string;
+  gotab_product_uuid: string | null;
+  mapping_status: "NEEDS_MAPPING" | "MAPPED" | "VERIFIED" | "DISABLED";
+  verified_at: string | null;
+  updated_at: string;
+};
+
+export type StoredEventFoodActivity = {
+  id: string;
+  event_id: string;
+  event_name: string;
+  source_type: string;
+  display_name: string;
+  pan_size: string;
+  quantity: number;
+  preparation_station: string;
+  food_service_time: string;
+  prep_due_at: string;
+  requester_name: string | null;
+  dispatch_status: string;
+  gotab_order_uuid: string | null;
+  retry_count: number;
+  failure_reason: string | null;
+  dispatched_at: string | null;
+  created_at: string;
+};
+
+export type StoredEventFoodException = {
+  id: string;
+  event_id: string;
+  source_type: string;
+  source_version: number;
+  item_key: string;
+  food_name: string;
+  reason: string;
+  status: "OPEN" | "RESOLVED" | "IGNORED";
+  created_at: string;
+};
+
+export type StoredVipBookingFoodRequest = {
+  id: string;
+  source_record_id: string;
+  quantity: number;
+  pan_size: string;
+  dispatch_status: string;
+};
+
+export type StoredVipCheckin = {
+  event_id: string;
+  reservation_id: string;
+  booking_date: string;
+  employee_name: string;
+  checked_in_at: string;
+};
+
+export type StoredVipInitialFoodRelease = {
+  reservation_id: string;
+  event_id: string;
+  expected_item_count: number;
+  status: "PENDING" | "NO_FOOD" | "FAILED";
+  last_error: string | null;
+};
+
+export type ContractFoodDispatchDecision = {
+  allowed: boolean;
+  reason: "CANONICAL" | "EARLIER_REQUEST_EXISTS" | "ALREADY_SENT";
+};
+
+export class GoTabIntegrationStorage {
+  constructor(
+    private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly fetchImpl: FetchImplementation = fetch,
+  ) {}
+
+  private async request(
+    table: string,
+    params: URLSearchParams | null,
+    init: RequestInit,
+  ) {
+    const secret = getSupabaseSecret(this.env);
+    if (!secret) throw new Error("GoTab integration database is not configured.");
+    const baseUrl = (this.env.SUPABASE_URL?.trim() || DEFAULT_SUPABASE_URL).replace(/\/+$/, "");
+    const headers = new Headers(init.headers);
+    headers.set("apikey", secret);
+    headers.set("content-type", "application/json");
+    if (/^eyJ[^.]*\.[^.]+\.[^.]+$/.test(secret)) {
+      headers.set("authorization", `Bearer ${secret}`);
+    }
+    const query = params?.toString();
+    const response = await this.fetchImpl(
+      `${baseUrl}/rest/v1/${table}${query ? `?${query}` : ""}`,
+      { ...init, headers, cache: "no-store" },
+    );
+    if (!response.ok) {
+      throw new Error(`GoTab integration database request failed (${response.status}).`);
+    }
+    return response;
+  }
+
+  async saveCapabilityCheck(check: GoTabCapabilityCheck, dryRun: boolean, enabled: boolean) {
+    await this.request("gotab_integration_status", null, {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        singleton: true,
+        connection_status: check.connected ? "CONNECTED" : "ERROR",
+        configured_location_uuid: check.configuredLocationUuid,
+        matched_location_name: check.matchedLocation?.name ?? null,
+        matched_location_uuid: check.matchedLocation?.locationUuid ?? null,
+        product_read_permission: check.catalogRead.toUpperCase().replace("-", "_"),
+        product_write_permission: check.productWrite.toUpperCase().replace("-", "_"),
+        order_create_permission: check.orderCreate.toUpperCase().replace("-", "_"),
+        spot_read_permission: check.spotRead.toUpperCase().replace("-", "_"),
+        station_read_permission: check.stationRead.toUpperCase().replace("-", "_"),
+        webhook_status: "CONFIGURED",
+        dry_run: dryRun,
+        live_dispatch_enabled: enabled,
+        last_successful_connection_at: check.connected ? check.checkedAt : null,
+        last_error: check.lastError,
+        updated_at: check.checkedAt,
+      }),
+    });
+  }
+
+  async claimWebhook(receipt: {
+    receiptId: string;
+    eventType: string;
+    targetUuid: string | null;
+    locationUuid: string | null;
+    payloadHash: string;
+    receivedAt: string;
+  }) {
+    const response = await this.request("gotab_webhook_receipts", null, {
+      method: "POST",
+      headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
+      body: JSON.stringify({
+        receipt_id: receipt.receiptId,
+        event_type: receipt.eventType,
+        target_uuid: receipt.targetUuid,
+        location_uuid: receipt.locationUuid,
+        payload_hash: receipt.payloadHash,
+        status: "PROCESSING",
+        received_at: receipt.receivedAt,
+      }),
+    });
+    const rows = (await response.json().catch(() => [])) as unknown[];
+    return rows.length > 0;
+  }
+
+  async completeWebhook(
+    receiptId: string,
+    status: "PROCESSED" | "IGNORED" | "FAILED",
+    errorMessage: string | null = null,
+  ) {
+    await this.request(
+      "gotab_webhook_receipts",
+      new URLSearchParams({ receipt_id: `eq.${receiptId}` }),
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          status,
+          error_message: errorMessage,
+          processed_at: new Date().toISOString(),
+        }),
+      },
+    );
+  }
+
+  async claimDueDispatches(workerId: string, limit = 25, requestIds?: readonly string[]) {
+    if (!workerId.trim()) throw new Error("GoTab worker ID is required.");
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("GoTab dispatch claim limit must be between 1 and 100.");
+    }
+    if (requestIds !== undefined) {
+      if (requestIds.length > 100 || requestIds.some((id) => !/^[A-Za-z0-9-]{1,160}$/.test(id))) {
+        throw new Error("Invalid GoTab dispatch request scope.");
+      }
+      const ids = [...new Set(requestIds)];
+      if (!ids.length) return [];
+      const now = new Date();
+      const eligible = {
+        request_id: `in.(${ids.join(",")})`,
+        status: "in.(SCHEDULED,QUEUED,FAILED)",
+        attempt_count: "lt.5",
+        next_attempt_at: `lte.${now.toISOString()}`,
+        or: `(locked_at.is.null,locked_at.lt.${new Date(now.getTime() - 300_000).toISOString()})`,
+      };
+      const response = await this.request("event_food_dispatches", new URLSearchParams({
+        ...eligible,
+        select: "id,request_id,idempotency_key,action,attempt_count,sanitized_payload",
+        order: "next_attempt_at.asc,created_at.asc",
+        limit: String(limit),
+      }), { method: "GET" });
+      const candidates = await response.json() as ClaimedEventFoodDispatch[];
+      const claimed: ClaimedEventFoodDispatch[] = [];
+      for (const candidate of candidates) {
+        if (!ids.includes(candidate.request_id) || !Number.isInteger(candidate.attempt_count) ||
+            candidate.attempt_count < 0 || candidate.attempt_count >= 5) continue;
+        // Recheck eligibility and the observed attempt count in the same UPDATE.
+        // A concurrent cron/scoped worker can win, but only one may claim a row.
+        const result = await this.request("event_food_dispatches", new URLSearchParams({
+          ...eligible,
+          id: `eq.${candidate.id}`,
+          attempt_count: `eq.${candidate.attempt_count}`,
+        }), {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({
+            status: "SENDING",
+            locked_at: now.toISOString(),
+            locked_by: workerId,
+            attempt_count: candidate.attempt_count + 1,
+            updated_at: now.toISOString(),
+          }),
+        });
+        claimed.push(...await result.json() as ClaimedEventFoodDispatch[]);
+      }
+      return claimed;
+    }
+    const response = await this.request("rpc/claim_event_food_dispatches", null, {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ p_worker_id: workerId, p_limit: limit }),
+    });
+    return response.json() as Promise<ClaimedEventFoodDispatch[]>;
+  }
+
+  async finishDispatch(
+    dispatchId: string,
+    result: {
+      status: "DRY_RUN" | "FAILED" | "HELD" | "SENT";
+      nextAttemptAt?: string;
+      sanitizedResponse?: Record<string, unknown>;
+      lastError?: string;
+      tabUuid?: string | null;
+      orderUuid?: string | null;
+      itemUuid?: string | null;
+    },
+  ) {
+    await this.request(
+      "event_food_dispatches",
+      new URLSearchParams({ id: `eq.${dispatchId}` }),
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          status: result.status,
+          next_attempt_at: result.nextAttemptAt,
+          sanitized_response: result.sanitizedResponse ?? null,
+          gotab_tab_uuid: result.tabUuid ?? null,
+          gotab_order_uuid: result.orderUuid ?? null,
+          gotab_item_uuid: result.itemUuid ?? null,
+          last_error: result.lastError ?? null,
+          sent_at: result.status === "SENT" ? new Date().toISOString() : undefined,
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date().toISOString(),
+        }),
+      },
+    );
+  }
+
+  async listMappings() {
+    const response = await this.request(
+      "event_food_product_mappings",
+      new URLSearchParams({
+        select: "*",
+        order: "source_product_name.asc,pan_size.asc",
+      }),
+      { method: "GET" },
+    );
+    return response.json() as Promise<StoredEventFoodMapping[]>;
+  }
+
+  async updateMapping(
+    id: string,
+    update: {
+      gotabProductUuid: string | null;
+      preparationStation: string;
+      panSize: string;
+      mappingStatus: StoredEventFoodMapping["mapping_status"];
+    },
+  ) {
+    const response = await this.request(
+      "event_food_product_mappings",
+      new URLSearchParams({ id: `eq.${id}`, select: "*" }),
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          gotab_product_uuid: update.gotabProductUuid,
+          preparation_station: update.preparationStation,
+          pan_size: update.panSize,
+          mapping_status: update.mappingStatus,
+          verified_at: update.mappingStatus === "VERIFIED" ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        }),
+      },
+    );
+    const rows = await response.json() as StoredEventFoodMapping[];
+    if (!rows[0]) throw new Error("GoTab product mapping was not found.");
+    return rows[0];
+  }
+
+  async listActivity(limit = 100) {
+    const response = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "id,event_id,event_name,source_type,display_name,pan_size,quantity,preparation_station,food_service_time,prep_due_at,requester_name,dispatch_status,gotab_order_uuid,retry_count,failure_reason,dispatched_at,created_at",
+        order: "created_at.desc",
+        limit: String(limit),
+      }),
+      { method: "GET" },
+    );
+    return response.json() as Promise<StoredEventFoodActivity[]>;
+  }
+
+  async listEventFoodDelivery(eventIds: readonly string[], requestIds?: readonly string[]): Promise<EventFoodDelivery[]> {
+    const ids = [...new Set(eventIds)];
+    if (!ids.length) return [];
+    if (ids.length > 100 || ids.some((id) => !/^[A-Za-z0-9:_-]{1,160}$/.test(id))) {
+      throw new Error("Invalid food-delivery event scope.");
+    }
+    if (requestIds && (!requestIds.length || requestIds.some((id) => !/^[A-Za-z0-9-]{1,160}$/.test(id)))) {
+      return [];
+    }
+    const params = new URLSearchParams({
+      event_id: `in.(${ids.join(",")})`,
+      select: "id,event_id,source_record_id,display_name,quantity,pan_size,dispatch_status,requester_name,created_at,request_notes",
+      order: "created_at.desc",
+      limit: "1000",
+      ...(requestIds ? { id: `in.(${[...new Set(requestIds)].join(",")})` } : {}),
+    });
+    const response = await this.request("event_food_requests", params, { method: "GET" });
+    const requests = await response.json() as Array<{
+      id: string; event_id: string; source_record_id: string; display_name: string;
+      quantity: number; pan_size: string; dispatch_status: string;
+      requester_name?: string; created_at?: string; request_notes?: string;
+    }>;
+    if (requests.length >= 1000) throw new Error("Food-delivery history is too large to verify completely.");
+    const result: EventFoodDelivery[] = [];
+    for (let offset = 0; offset < requests.length; offset += 100) {
+      const batch = requests.slice(offset, offset + 100);
+      const dispatchResponse = await this.request("event_food_dispatches", new URLSearchParams({
+        request_id: `in.(${batch.map((request) => request.id).join(",")})`,
+        select: "request_id,status,gotab_order_uuid,sent_at,last_error,updated_at",
+        order: "updated_at.desc",
+        limit: "1000",
+      }), { method: "GET" });
+      const dispatches = await dispatchResponse.json() as Array<{
+        request_id: string; status: string; gotab_order_uuid: string | null;
+        sent_at: string | null; last_error: string | null; updated_at: string;
+      }>;
+      if (dispatches.length >= 1000) throw new Error("Food-dispatch history is incomplete.");
+      for (const request of batch) {
+        const latest = dispatches.find((dispatch) => dispatch.request_id === request.id);
+        result.push({
+          requestId: request.id, eventId: request.event_id, sourceKey: request.source_record_id,
+          foodName: request.display_name, quantity: request.quantity, panSize: request.pan_size,
+          status: latest?.status ?? "UNKNOWN", orderReference: latest?.gotab_order_uuid ?? null,
+          acceptedAt: latest?.sent_at ?? null, updatedAt: latest?.updated_at ?? "",
+          error: latest?.last_error ? "This order needs review. Check the saved order before retrying." : null,
+          requesterName: request.requester_name ?? "", requestedAt: request.created_at ?? "", notes: request.request_notes ?? "",
+        });
+      }
+    }
+    return result;
+  }
+
+  async listVipBookingFoodRequests(eventId: string) {
+    const response = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "id,source_record_id,quantity,pan_size,dispatch_status",
+        event_id: `eq.${eventId}`,
+        source_type: "eq.VIP_ADDON",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipBookingFoodRequest[];
+    return rows.filter((row) => !row.source_record_id.startsWith("addon:"));
+  }
+
+  async listContractFoodRequests(eventId: string) {
+    const response = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "id,source_record_id,quantity,pan_size,dispatch_status",
+        event_id: `eq.${eventId}`,
+        source_type: "eq.TRIPLESEAT_CONTRACT",
+        limit: "1000",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipBookingFoodRequest[];
+    if (rows.length >= 1000) throw new Error("Contract food history is too large to verify completely.");
+    return rows.filter((row) => !row.source_record_id.startsWith("addon:"));
+  }
+
+  async listVipCheckinsForDate(date: string) {
+    const response = await this.request(
+      "vip_checkins",
+      new URLSearchParams({
+        select: "event_id,reservation_id,booking_date,employee_name,checked_in_at",
+        booking_date: `eq.${date}`,
+      }),
+      { method: "GET" },
+    );
+    return response.json() as Promise<StoredVipCheckin[]>;
+  }
+
+  async getVipCheckin(eventId: string) {
+    const response = await this.request(
+      "vip_checkins",
+      new URLSearchParams({
+        select: "event_id,reservation_id,booking_date,employee_name,checked_in_at",
+        event_id: `eq.${eventId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipCheckin[];
+    return rows[0] ?? null;
+  }
+
+  async confirmVipCheckin(input: {
+    eventId: string;
+    reservationId: string;
+    bookingDate: string;
+    employeeName: string;
+    expectedItemCount: number;
+  }) {
+    const response = await this.request("rpc/confirm_vip_checkin", null, {
+      method: "POST",
+      body: JSON.stringify({
+        p_event_id: input.eventId,
+        p_reservation_id: input.reservationId,
+        p_booking_date: input.bookingDate,
+        p_employee_name: input.employeeName,
+        p_expected_item_count: input.expectedItemCount,
+      }),
+    });
+    return response.json() as Promise<StoredVipCheckin>;
+  }
+
+  async getVipInitialFoodRelease(eventId: string) {
+    const response = await this.request(
+      "vip_initial_food_releases",
+      new URLSearchParams({
+        select: "reservation_id,event_id,expected_item_count,status,last_error",
+        event_id: `eq.${eventId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as StoredVipInitialFoodRelease[];
+    return rows[0] ?? null;
+  }
+
+  async markVipInitialFoodReleaseFailed(eventId: string, error: string) {
+    await this.request(
+      "vip_initial_food_releases",
+      new URLSearchParams({ event_id: `eq.${eventId}` }),
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          status: "FAILED",
+          last_error: error,
+          updated_at: new Date().toISOString(),
+        }),
+      },
+    );
+  }
+
+  async listVipInitialFoodDispatches(eventId: string) {
+    const requests = await this.listVipBookingFoodRequests(eventId);
+    if (!requests.length) return [];
+    const response = await this.request(
+      "event_food_dispatches",
+      new URLSearchParams({
+        select: "request_id,status",
+        request_id: `in.(${requests.map((request) => request.id).join(",")})`,
+      }),
+      { method: "GET" },
+    );
+    return response.json() as Promise<Array<{ request_id: string; status: string }>>;
+  }
+
+  async getDispatchRequestContext(requestId: string) {
+    const response = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "event_id,source_type,source_record_id,food_service_time",
+        id: `eq.${requestId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as Array<{
+      event_id: string;
+      source_type: string;
+      source_record_id: string;
+      food_service_time: string;
+    }>;
+    return rows[0] ?? null;
+  }
+
+  async getContractFoodDispatchDecision(input: {
+    requestId: string;
+    eventId: string;
+    sourceRecordId: string;
+  }): Promise<ContractFoodDispatchDecision> {
+    const requestsResponse = await this.request(
+      "event_food_requests",
+      new URLSearchParams({
+        select: "id,created_at",
+        event_id: `eq.${input.eventId}`,
+        source_type: "eq.TRIPLESEAT_CONTRACT",
+        source_record_id: `eq.${input.sourceRecordId}`,
+        order: "created_at.asc,id.asc",
+        limit: "1000",
+      }),
+      { method: "GET" },
+    );
+    const requests = await requestsResponse.json() as Array<{
+      id: string;
+      created_at: string;
+    }>;
+    if (requests.length >= 1000) {
+      throw new Error("Contract food request history is too large to verify safely.");
+    }
+    if (!requests.some((request) => request.id === input.requestId)) {
+      throw new Error("The contract food request could not be verified.");
+    }
+    if (requests.length === 1) {
+      return { allowed: true, reason: "CANONICAL" };
+    }
+
+    const dispatchResponse = await this.request(
+      "event_food_dispatches",
+      new URLSearchParams({
+        select: "request_id,status",
+        request_id: `in.(${requests.map((request) => request.id).join(",")})`,
+        limit: "1000",
+      }),
+      { method: "GET" },
+    );
+    const dispatches = await dispatchResponse.json() as Array<{
+      request_id: string;
+      status: string;
+    }>;
+    if (dispatches.length >= 1000) {
+      throw new Error("Contract food dispatch history is too large to verify safely.");
+    }
+    if (dispatches.some((dispatch) =>
+      dispatch.request_id !== input.requestId && dispatch.status === "SENT"
+    )) {
+      return { allowed: false, reason: "ALREADY_SENT" };
+    }
+    return requests[0]?.id === input.requestId
+      ? { allowed: true, reason: "CANONICAL" }
+      : { allowed: false, reason: "EARLIER_REQUEST_EXISTS" };
+  }
+
+  async getKitchenFoodRunner(eventId: string) {
+    const response = await this.request(
+      "kitchen_manual_assignments",
+      new URLSearchParams({
+        select: "bwa,food_runners",
+        event_id: `eq.${eventId}`,
+        limit: "1",
+      }),
+      { method: "GET" },
+    );
+    const rows = await response.json() as Array<{ bwa: string | null; food_runners: string[] | null }>;
+    const legacy = rows[0]?.bwa?.trim();
+    return rows[0]?.food_runners?.find((name) => name.trim())?.trim() ??
+      (legacy && !legacy.startsWith(KITCHEN_ROLE_METADATA_PREFIX) ? legacy : null);
+  }
+
+  async listExceptions(limit = 100) {
+    const response = await this.request(
+      "event_food_exceptions",
+      new URLSearchParams({
+        select: "id,event_id,source_type,source_version,item_key,food_name,reason,status,created_at",
+        status: "eq.OPEN",
+        order: "created_at.desc",
+        limit: String(limit),
+      }),
+      { method: "GET" },
+    );
+    return response.json() as Promise<StoredEventFoodException[]>;
+  }
+
+  async saveProjectionExceptions(input: {
+    eventId: string;
+    sourceType: string;
+    sourceVersion: number;
+    exceptions: Array<{ itemKey: string; foodName: string; reason: string }>;
+  }) {
+    if (!input.exceptions.length) return;
+    await this.request(
+      "event_food_exceptions",
+      new URLSearchParams({ on_conflict: "event_id,source_type,source_version,item_key,reason" }),
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
+        body: JSON.stringify(input.exceptions.map((item) => ({
+          event_id: input.eventId,
+          source_type: input.sourceType,
+          source_version: input.sourceVersion,
+          item_key: item.itemKey,
+          food_name: item.foodName,
+          reason: item.reason,
+          status: "OPEN",
+        }))),
+      },
+    );
+  }
+
+  async enqueueRequest(
+    request: NormalizedEventFoodItem,
+    preview: Record<string, unknown>,
+    actor: string,
+    options: { immediate?: boolean } = {},
+  ) {
+    const scheduledAt = options.immediate
+      ? new Date().toISOString()
+      : request.prepDueAt;
+    const status = Date.parse(scheduledAt) <= Date.now() ? "QUEUED" : "SCHEDULED";
+    const response = await this.request("rpc/enqueue_event_food_request", null, {
+      method: "POST",
+      body: JSON.stringify({
+        p_request: {
+          event_id: request.eventId,
+          event_name: request.eventName,
+          tripleseat_event_id: request.tripleseatEventId,
+          tripleseat_booking_id: request.tripleseatBookingId,
+          source_type: request.sourceType,
+          source_record_id: request.sourceRecordId,
+          source_version: request.sourceVersion,
+          canonical_product_key: request.canonicalProductKey,
+          original_source_name: request.originalSourceName,
+          display_name: request.displayName,
+          pan_size: request.panSize,
+          quantity: request.quantity,
+          preparation_station: request.preparationStation,
+          event_area: request.eventArea,
+          food_service_time: request.foodServiceAt,
+          prep_due_at: request.prepDueAt,
+          requester_name: request.requesterName,
+          request_notes: request.requestNotes,
+          dietary_notes: request.dietaryNotes,
+          allergy_notes: request.allergyNotes,
+          approval_status: request.approvalStatus,
+          dispatch_status: request.dispatchStatus,
+          gotab_product_uuid: request.gotabProductUuid,
+          external_id: request.externalId,
+          idempotency_key: request.idempotencyKey,
+        },
+        p_dispatch: {
+          idempotency_key: request.idempotencyKey,
+          action: "DISPATCH",
+          status,
+          scheduled_at: scheduledAt,
+          next_attempt_at: scheduledAt,
+          sanitized_payload: preview,
+        },
+        p_actor: actor,
+        p_reason: "Normalized from Event Host kitchen rules.",
+      }),
+    });
+    return response.json() as Promise<{ request_id: string; dispatch_id: string; duplicate: boolean }>;
+  }
+
+  async performAdministrativeAction(input: {
+    requestId: string;
+    action: "HOLD" | "SEND_NOW" | "RETRY" | "CANCEL";
+    actor: string;
+    reason: string;
+  }) {
+    const response = await this.request("rpc/admin_event_food_dispatch_action", null, {
+      method: "POST",
+      body: JSON.stringify({
+        p_request_id: input.requestId,
+        p_action: input.action,
+        p_actor: input.actor,
+        p_reason: input.reason,
+      }),
+    });
+    return response.json() as Promise<{ request_id: string; action: string }>;
+  }
+}

@@ -1,27 +1,14 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
 import {
   assertKitchenDate,
   getKitchenDay,
 } from "@/lib/kitchen/sync";
+import { GoTabIntegrationStorage } from "@/lib/gotab/storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
-
 export async function GET(request: Request) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
-  }
-
   const date = new URL(request.url).searchParams.get("date") ?? "";
   try {
     assertKitchenDate(date);
@@ -34,8 +21,13 @@ export async function GET(request: Request) {
 
   try {
     const day = await getKitchenDay(date);
+    const delivery = await new GoTabIntegrationStorage()
+      .listEventFoodDelivery(day.events.map((event) => String(event.event.eventId)))
+      .then((items) => ({ foodDelivery: items, foodDeliveryError: null }))
+      .catch(() => ({ foodDelivery: [], foodDeliveryError: "Food-order delivery could not be verified. Do not resubmit an uncertain order." }));
     return NextResponse.json({
       ...day,
+      ...delivery,
       serverTime: new Date().toISOString(),
     });
   } catch {

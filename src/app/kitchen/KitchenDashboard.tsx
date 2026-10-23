@@ -1,7 +1,21 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
+import { kitchenProgress } from "@/lib/kitchen/production";
+import { FoodDeliveryPanel, KitchenExpoPanel, KitchenProductionPanel } from "./KitchenOperationsPanel";
+import type { EventFoodDelivery } from "@/lib/gotab/delivery";
+import { KitchenSheetViewport } from "./KitchenSheetViewport";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   PortalFrame,
   PortalHeader,
@@ -14,7 +28,6 @@ import {
   type SoundAlertState,
 } from "../../lib/kitchen/alert-sound";
 import {
-  currentKitchenAddOnAlerts,
   dueKitchenAlerts,
   easternMinuteKey,
   kitchenTimedAlerts,
@@ -24,11 +37,7 @@ import {
   type KitchenTimedAlert,
 } from "../../lib/kitchen/alerts";
 import { quantityAwareReadinessKey } from "../../lib/kitchen/readiness";
-import {
-  kitchenFocusSnapshot,
-  minutesUntil,
-  type KitchenFocusItem,
-} from "../../lib/kitchen/focus";
+import { appetizerDropReminder } from "../../lib/kitchen/appetizer-drop";
 import type {
   KitchenAddOnActivity,
   KitchenAddOnCompletion,
@@ -44,6 +53,7 @@ type KitchenDayResponse = {
   date: string;
   serverTime: string;
   events: KitchenChecklist[];
+  bwaOptions: string[];
   archivedEventCount: number;
   addOnActivity: KitchenAddOnActivity[];
   addOnCompletions: KitchenAddOnCompletion[];
@@ -53,11 +63,24 @@ type KitchenDayResponse = {
   syncError: string | null;
   warnings: string[];
   missingEnvironmentVariables: string[];
+  foodDelivery?: EventFoodDelivery[];
+  foodDeliveryError?: string | null;
 };
+
+export function printableEventChecklists(events: readonly KitchenChecklist[]) {
+  return events.filter((event) => !String(event.event.eventId).startsWith("vip-"));
+}
 
 type LoadState = "loading" | "ready" | "error";
 type SyncState = "idle" | "syncing" | "error";
-type BwaSaveState = "idle" | "saving" | "saved" | "error";
+type BwaSaveState = "idle" | "saving" | "saved" | "error" | "conflict";
+type StaffAssignmentDraft = {
+  setup: string[];
+  foodRunners: string[];
+  pocs: string[];
+  preppedBy: string;
+  verifiedBy: string;
+};
 type FoodDescriptionItem = {
   foodName: string;
   description: string;
@@ -68,6 +91,10 @@ type FoodDescriptionItem = {
 };
 
 const DISMISSED_ALERTS_STORAGE_KEY = "ope-kitchen-dismissed-alerts-v1";
+const KITCHEN_ZOOM_STORAGE_KEY = "ope-kitchen-dashboard-zoom-v1";
+const KITCHEN_ZOOM_MIN = 40;
+const KITCHEN_ZOOM_MAX = 130;
+const KITCHEN_ZOOM_STEP = 10;
 const LIVE_REFRESH_INTERVAL_MS = 3_000;
 const ALERT_CHECK_INTERVAL_MS = 10_000;
 const EMPTY_READINESS_KEYS: ReadonlySet<string> = new Set();
@@ -207,6 +234,23 @@ function formatTimestamp(value: string | null) {
   }).format(parsed);
 }
 
+export function formatPreppedTimestamp(value: string | null) {
+  if (!value) {
+    return "Time not recorded";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Time not recorded";
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+  }).format(parsed);
+}
+
 export function timeSortValue(value: string | null) {
   if (!value) {
     return Number.POSITIVE_INFINITY;
@@ -281,6 +325,35 @@ function persistDismissedAlertIds(ids: ReadonlySet<string>) {
   );
 }
 
+export function clampKitchenZoom(value: number) {
+  if (!Number.isFinite(value)) {
+    return 100;
+  }
+  const stepped = Math.round(value / KITCHEN_ZOOM_STEP) * KITCHEN_ZOOM_STEP;
+  return Math.min(KITCHEN_ZOOM_MAX, Math.max(KITCHEN_ZOOM_MIN, stepped));
+}
+
+export function nextKitchenZoom(current: number, direction: -1 | 1) {
+  return clampKitchenZoom(current + direction * KITCHEN_ZOOM_STEP);
+}
+
+function safeStoredKitchenZoom() {
+  try {
+    const stored = window.localStorage.getItem(KITCHEN_ZOOM_STORAGE_KEY);
+    return stored === null ? 100 : clampKitchenZoom(Number(stored));
+  } catch {
+    return 100;
+  }
+}
+
+function persistKitchenZoom(value: number) {
+  try {
+    window.localStorage.setItem(KITCHEN_ZOOM_STORAGE_KEY, String(value));
+  } catch {
+    // The selected zoom still applies for this session if storage is blocked.
+  }
+}
+
 function sourceModeLabel(mode: string) {
   if (mode.toLowerCase() === "mock") {
     return "Mock data";
@@ -292,14 +365,26 @@ function sourceModeLabel(mode: string) {
 }
 
 export default function KitchenDashboard() {
+  const eventContext = useEventContext();
   const [selectedDate, setSelectedDate] = useState(easternToday);
+  const [operationsView, setOperationsView] = useState<"events" | "production" | "expo">("events");
   const [day, setDay] = useState<KitchenDayResponse | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [syncState, setSyncState] = useState<SyncState>("idle");
+  const [bookingSyncState, setBookingSyncState] = useState<SyncState>("idle");
+  const [bookingSyncMessage, setBookingSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | number | null>(null);
+  const [expandedEventIds, setExpandedEventIds] = useState<string[]>([]);
   const [pendingPrintId, setPendingPrintId] = useState<string | number | null>(null);
-  const [bwaDrafts, setBwaDrafts] = useState<Record<string, string>>({});
+  const [staffDrafts, setStaffDrafts] = useState<
+    Record<string, StaffAssignmentDraft>
+  >({});
+  const staffDraftsRef = useRef<Record<string, StaffAssignmentDraft>>({});
+  const dirtyStaffRef = useRef(new Set<string>());
+  const savingStaffRef = useRef(new Set<string>());
+  const staffRevisionRef = useRef<Record<string, string | null>>({});
+  const [staffConflicts, setStaffConflicts] = useState<string[]>([]);
   const [bwaSaveStates, setBwaSaveStates] = useState<Record<string, BwaSaveState>>({});
   const [readinessPending, setReadinessPending] = useState<Set<string>>(
     () => new Set(),
@@ -307,10 +392,14 @@ export default function KitchenDashboard() {
   const [completionPending, setCompletionPending] = useState<Set<string>>(
     () => new Set(),
   );
+  const [preppedPending, setPreppedPending] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [descriptionItem, setDescriptionItem] =
     useState<FoodDescriptionItem | null>(null);
   const [soundAlertState, setSoundAlertState] =
-    useState<SoundAlertState>("off");
+    useState<SoundAlertState>("waiting");
+  const [dashboardZoom, setDashboardZoom] = useState(100);
   const [alertQueue, setAlertQueue] = useState<KitchenTimedAlert[]>([]);
   const [addOnAlertQueue, setAddOnAlertQueue] = useState<
     KitchenLiveAddOnAlert[]
@@ -319,32 +408,44 @@ export default function KitchenDashboard() {
   const [lastLiveRefreshAt, setLastLiveRefreshAt] = useState<string | null>(
     null,
   );
-  const [focusNowMs, setFocusNowMs] = useState<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const serverClockAnchorRef = useRef({
-    epochMs: 0,
-    monotonicMs: 0,
-  });
+  const soundActivationInFlightRef = useRef(false);
   const dismissedAlertIdsRef = useRef<Set<string>>(new Set());
   const knownTimedAlertIdsRef = useRef<Set<string>>(new Set());
   const knownTimedAlertDateRef = useRef<string | null>(null);
   const lastAlertCheckAtRef = useRef<string | null>(null);
   const selectedDateRef = useRef(selectedDate);
   const dayLoadGenerationRef = useRef(0);
-  const soundAlertsEnabled = soundAlertState === "on";
+  const ignoredRequestedDateRef = useRef<string | null>(null);
   selectedDateRef.current = selectedDate;
 
-  const selectKitchenDate = useCallback((nextDate: string) => {
+  const selectKitchenDate = useCallback((nextDate: string, preserveContext = false) => {
+    if (!preserveContext) {
+      ignoredRequestedDateRef.current = eventContext.requestedDate ?? eventContext.selectedEvent?.date ?? null;
+      eventContext.clearEvent();
+    }
     if (!nextDate || nextDate === selectedDateRef.current) {
       return;
     }
     selectedDateRef.current = nextDate;
     dayLoadGenerationRef.current += 1;
     setAddOnAlertQueue([]);
+    setExpandedEventIds([]);
     setSelectedDate(nextDate);
     setSyncState("idle");
+    setBookingSyncState("idle");
+    setBookingSyncMessage("");
     setError("");
-  }, []);
+  }, [eventContext.clearEvent, eventContext.requestedDate, eventContext.selectedEvent?.date]);
+
+  useEffect(() => {
+    const preferredDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
+    if (!preferredDate) { ignoredRequestedDateRef.current = null; return; }
+    if (preferredDate === ignoredRequestedDateRef.current) return;
+    if (eventContext.ready && preferredDate && /^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) {
+      selectKitchenDate(preferredDate, true);
+    }
+  }, [eventContext.ready, eventContext.requestedDate, eventContext.selectedEvent?.date, selectKitchenDate]);
 
   const loadDay = useCallback(async (
     date: string,
@@ -380,10 +481,14 @@ export default function KitchenDashboard() {
         return false;
       }
 
-      const nextAddOnAlerts = currentKitchenAddOnAlerts(
-        payload.addOnActivity ?? [],
-        dismissedAlertIdsRef.current,
-      );
+      const visiblePayload = {
+        ...payload,
+        events: printableEventChecklists(payload.events),
+      };
+
+      // Event add-ons are delivered to GoTab KDS directly; they are not
+      // duplicated as kitchen-sheet alerts.
+      const nextAddOnAlerts: KitchenLiveAddOnAlert[] = [];
       setAddOnAlertQueue((current) => {
         const applicableIds = new Set(
           nextAddOnAlerts.map((alert) => alert.id),
@@ -401,30 +506,39 @@ export default function KitchenDashboard() {
           ? [...stillApplicable, ...additions]
           : stillApplicable;
       });
-      setDay(payload);
-      const serverTime = Date.parse(payload.serverTime);
-      if (Number.isFinite(serverTime)) {
-        serverClockAnchorRef.current = {
-          epochMs: serverTime,
-          monotonicMs: window.performance.now(),
-        };
-        setFocusNowMs(serverTime);
-      }
+      setDay(visiblePayload);
       setLiveRefreshHealthy(true);
       setLastLiveRefreshAt(new Date().toISOString());
-      setBwaDrafts((current) =>
-        Object.fromEntries(
-          payload.events.map((checklist) => {
+      setStaffDrafts((current) => {
+        const retained = Object.entries(current).filter(([eventId]) =>
+          dirtyStaffRef.current.has(eventId) || savingStaffRef.current.has(eventId),
+        );
+        const next = { ...Object.fromEntries(retained), ...Object.fromEntries(
+          visiblePayload.events.map((checklist) => {
             const eventKey = String(checklist.event.eventId);
+            const keepDraft = dirtyStaffRef.current.has(eventKey) || savingStaffRef.current.has(eventKey);
+            if (!keepDraft) staffRevisionRef.current[eventKey] = checklist.assignmentUpdatedAt ?? null;
             return [
               eventKey,
-              background && Object.hasOwn(current, eventKey)
+              keepDraft && Object.hasOwn(current, eventKey)
                 ? current[eventKey]
-                : checklist.foodRunnerOrBwa,
+                  : {
+                    setup: checklist.setup ?? [],
+                    foodRunners: checklist.foodRunners ?? (
+                      checklist.foodRunnerOrBwa
+                        ? [checklist.foodRunnerOrBwa]
+                        : []
+                    ),
+                    pocs: checklist.pocs ?? [],
+                    preppedBy: checklist.preppedBy ?? "",
+                    verifiedBy: checklist.verifiedBy ?? "",
+                  },
             ];
           }),
-        ),
-      );
+        ) };
+        staffDraftsRef.current = next;
+        return next;
+      });
       if (!background) {
         setBwaSaveStates({});
       }
@@ -458,6 +572,10 @@ export default function KitchenDashboard() {
       setError(loadError instanceof Error ? loadError.message : "Unable to load the kitchen day.");
       return false;
     }
+  }, []);
+
+  useEffect(() => {
+    setDashboardZoom(safeStoredKitchenZoom());
   }, []);
 
   useEffect(() => {
@@ -503,22 +621,6 @@ export default function KitchenDashboard() {
     };
   }, [loadDay, loadState, selectedDate]);
 
-  const hasServerClock = focusNowMs !== null;
-  useEffect(() => {
-    if (!hasServerClock) {
-      return;
-    }
-    const updateClock = () => {
-      const anchor = serverClockAnchorRef.current;
-      setFocusNowMs(
-        anchor.epochMs +
-          (window.performance.now() - anchor.monotonicMs),
-      );
-    };
-    const interval = window.setInterval(updateClock, 30_000);
-    return () => window.clearInterval(interval);
-  }, [hasServerClock]);
-
   const sortedEvents = useMemo(
     () =>
       [...(day?.events ?? [])].sort(
@@ -532,17 +634,38 @@ export default function KitchenDashboard() {
 
   const selectedChecklist =
     sortedEvents.find((checklist) => sameEventId(selectedEventId, checklist.event.eventId)) ?? null;
-  const focusNow = new Date(focusNowMs ?? Number.NaN);
-  const eventFocus = useMemo(
-    () => kitchenFocusSnapshot(sortedEvents, focusNow),
-    [focusNowMs, sortedEvents],
-  );
+  const focusedEvent = eventContext.preferredEventId
+    ? sortedEvents.find((event) => operationalKitchenEventId(event.event.eventId) === eventContext.preferredEventId) ?? null
+    : null;
+  const visibleKitchenEvents = operationsView === "events" || !eventContext.preferredEventId
+    ? sortedEvents : focusedEvent ? [focusedEvent] : [];
+  const openedContextEventRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!eventContext.preferredEventId) {
+      openedContextEventRef.current = null;
+    } else if (focusedEvent && openedContextEventRef.current !== eventContext.preferredEventId) {
+      openedContextEventRef.current = eventContext.preferredEventId;
+      const eventId = String(focusedEvent.event.eventId);
+      setExpandedEventIds((current) => current.includes(eventId) ? current : [...current, eventId]);
+    }
+  }, [eventContext.preferredEventId, focusedEvent]);
+  const retainedStaffDraftCount = Object.keys(staffDrafts).filter((eventId) =>
+    dirtyStaffRef.current.has(eventId) && !sortedEvents.some((event) => String(event.event.eventId) === eventId),
+  ).length;
+  const eventSelection = (checklist: KitchenChecklist) => ({
+    eventId: operationalKitchenEventId(checklist.event.eventId), eventName: checklist.event.name,
+    date: checklist.event.localDate, area: checklist.event.room ?? "", guestCount: checklist.event.guestCount ?? undefined,
+    foodRunner: checklist.foodRunners?.join(", ") || checklist.foodRunnerOrBwa,
+    poc: checklist.pocs?.join(", "),
+  });
   const warningCount = sortedEvents.reduce((sum, checklist) => sum + checklist.warnings.length, 0);
   const reviewCount = sortedEvents.filter((checklist) => checklist.needsReview).length;
   const timedAlerts = useMemo(
     () => kitchenTimedAlerts(sortedEvents, selectedDate),
     [selectedDate, sortedEvents],
   );
+  const timedAlertsRef = useRef(timedAlerts);
+  timedAlertsRef.current = timedAlerts;
   const activeAlert =
     addOnAlertQueue[0] ?? alertQueue[0] ?? null;
   const activeAlertId = activeAlert?.id ?? null;
@@ -564,9 +687,32 @@ export default function KitchenDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!soundAlertsEnabled) {
-      return;
+    let active = true;
+    const removeActivationListeners = () => {
+      window.removeEventListener("pointerdown", activateFromInteraction, true);
+      window.removeEventListener("keydown", activateFromInteraction, true);
+    };
+    const activate = async (reportFailure: boolean) => {
+      const enabled = await enableSoundAlerts(reportFailure);
+      if (active && enabled) {
+        removeActivationListeners();
+      }
+    };
+    function activateFromInteraction() {
+      void activate(true);
     }
+
+    window.addEventListener("pointerdown", activateFromInteraction, true);
+    window.addEventListener("keydown", activateFromInteraction, true);
+    void activate(false);
+
+    return () => {
+      active = false;
+      removeActivationListeners();
+    };
+  }, []);
+
+  useEffect(() => {
 
     const scanForAlerts = () => {
       const currentMinute = easternMinuteKey(new Date());
@@ -594,6 +740,7 @@ export default function KitchenDashboard() {
       const dueThisMinute = timedAlerts.filter(
         (alert) =>
           alert.scheduledAt === currentMinute &&
+          (!alert.expiresAt || alert.expiresAt > currentMinute) &&
           !dismissedAlertIdsRef.current.has(alert.id),
       );
       setAlertQueue((current) => {
@@ -601,7 +748,8 @@ export default function KitchenDashboard() {
           timedAlerts.map((alert) => alert.id),
         );
         const stillApplicable = current.filter(
-          (alert) => currentAlertIds.has(alert.id),
+          (alert) => currentAlertIds.has(alert.id) &&
+            (!alert.expiresAt || alert.expiresAt > currentMinute),
         );
         const existingIds = new Set(
           stillApplicable.map((alert) => alert.id),
@@ -640,11 +788,15 @@ export default function KitchenDashboard() {
       window.removeEventListener("focus", scanWhenVisible);
       document.removeEventListener("visibilitychange", scanWhenVisible);
     };
-  }, [soundAlertsEnabled, timedAlerts]);
+  }, [selectedDate, timedAlerts]);
 
   useEffect(() => {
     const context = audioContextRef.current;
-    if (!soundAlertsEnabled || activeAlertId === null || context === null) {
+    if (
+      soundAlertState !== "on" ||
+      activeAlertId === null ||
+      context === null
+    ) {
       return;
     }
 
@@ -668,7 +820,7 @@ export default function KitchenDashboard() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [activeAlertId, soundAlertsEnabled]);
+  }, [activeAlertId, soundAlertState]);
 
   const closeChecklist = useCallback(() => {
     setSelectedEventId(null);
@@ -679,25 +831,43 @@ export default function KitchenDashboard() {
     setPendingPrintId(eventId);
   }
 
-  async function enableSoundAlerts() {
+  async function enableSoundAlerts(reportFailure = true) {
+    if (audioContextRef.current?.state === "running") {
+      setSoundAlertState("on");
+      return true;
+    }
+    if (soundActivationInFlightRef.current) {
+      return false;
+    }
+    soundActivationInFlightRef.current = true;
     setSoundAlertState("enabling");
-    setError("");
+    setError((current) =>
+      current === AUDIO_ALERT_ERROR ? "" : current,
+    );
     try {
       const context =
         audioContextRef.current?.state === "closed"
           ? new window.AudioContext()
           : (audioContextRef.current ?? new window.AudioContext());
       audioContextRef.current = context;
-      await playAlertTone(context);
+      await ensureAudioContextRunning(context);
       lastAlertCheckAtRef.current = easternMinuteKey(new Date());
-      knownTimedAlertDateRef.current = selectedDate;
+      knownTimedAlertDateRef.current = selectedDateRef.current;
       knownTimedAlertIdsRef.current = new Set(
-        timedAlerts.map((alert) => alert.id),
+        timedAlertsRef.current.map((alert) => alert.id),
       );
       setSoundAlertState("on");
+      return true;
     } catch {
-      setSoundAlertState("error");
-      setError(AUDIO_ALERT_ERROR);
+      if (reportFailure) {
+        setSoundAlertState("error");
+        setError(AUDIO_ALERT_ERROR);
+      } else {
+        setSoundAlertState("waiting");
+      }
+      return false;
+    } finally {
+      soundActivationInFlightRef.current = false;
     }
   }
 
@@ -763,9 +933,49 @@ export default function KitchenDashboard() {
     }
   }
 
-  async function saveBwa(checklist: KitchenChecklist) {
+  async function syncBookings() {
+    const syncDate = selectedDateRef.current;
+    setBookingSyncState("syncing");
+    setBookingSyncMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/kitchen/bookings/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ date: syncDate }),
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string; bookingCount?: number } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to refresh OnPar bookings.");
+      }
+      if (selectedDateRef.current !== syncDate) return;
+      await loadDay(syncDate);
+      if (selectedDateRef.current !== syncDate) return;
+      setBookingSyncState("idle");
+      const count = payload?.bookingCount ?? 0;
+      setBookingSyncMessage(`Booking Sync complete: ${formatCount(count, "VIP booking")}.`);
+    } catch (syncError) {
+      if (selectedDateRef.current !== syncDate) return;
+      await loadDay(syncDate);
+      if (selectedDateRef.current !== syncDate) return;
+      setBookingSyncState("error");
+      setError(syncError instanceof Error ? syncError.message : "Unable to refresh OnPar bookings.");
+    }
+  }
+
+  async function saveStaffAssignments(checklist: KitchenChecklist) {
     const eventKey = String(checklist.event.eventId);
-    const bwa = bwaDrafts[eventKey] ?? "";
+    if (savingStaffRef.current.has(eventKey) || staffConflicts.includes(eventKey)) return;
+    const assignments = staffDrafts[eventKey] ?? {
+      setup: [],
+      foodRunners: [],
+      pocs: [],
+      preppedBy: "",
+      verifiedBy: "",
+    };
+    const expectedUpdatedAt = Object.hasOwn(staffRevisionRef.current, eventKey) ? staffRevisionRef.current[eventKey] : checklist.assignmentUpdatedAt ?? null;
+    const submitted = JSON.stringify(assignments);
+    savingStaffRef.current.add(eventKey);
     setBwaSaveStates((current) => ({ ...current, [eventKey]: "saving" }));
 
     try {
@@ -774,28 +984,59 @@ export default function KitchenDashboard() {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ bwa }),
+        body: JSON.stringify({ ...assignments, expectedUpdatedAt }),
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as { error?: string; updatedAt?: string | null } | null;
       if (!response.ok) {
-        throw new Error(payload?.error || "Unable to save the BWA name.");
+        if (response.status === 409) setStaffConflicts((current) => [...new Set([...current, eventKey])]);
+        throw new Error(payload?.error || "Unable to save staff assignments.");
       }
+      staffRevisionRef.current[eventKey] = payload?.updatedAt ?? null;
       setDay((current) =>
         current
           ? {
               ...current,
               events: current.events.map((eventChecklist) =>
                 sameEventId(eventChecklist.event.eventId, checklist.event.eventId)
-                  ? { ...eventChecklist, foodRunnerOrBwa: bwa }
+                  ? {
+                      ...eventChecklist,
+                      foodRunnerOrBwa: assignments.foodRunners.join(", "),
+                      setup: assignments.setup,
+                      foodRunners: assignments.foodRunners,
+                      pocs: assignments.pocs,
+                      preppedBy: assignments.preppedBy,
+                      verifiedBy: assignments.verifiedBy,
+                      assignmentUpdatedAt: payload?.updatedAt ?? null,
+                    }
                   : eventChecklist,
               ),
             }
           : current,
       );
-      setBwaSaveStates((current) => ({ ...current, [eventKey]: "saved" }));
-    } catch {
+      const unchanged = JSON.stringify(staffDraftsRef.current[eventKey]) === submitted;
+      if (unchanged) dirtyStaffRef.current.delete(eventKey);
+      setBwaSaveStates((current) => ({ ...current, [eventKey]: unchanged ? "saved" : "idle" }));
+    } catch (saveError) {
       setBwaSaveStates((current) => ({ ...current, [eventKey]: "error" }));
+      setError(saveError instanceof Error ? saveError.message : "Staff save was not confirmed. Reload the latest assignments before retrying.");
+    } finally {
+      savingStaffRef.current.delete(eventKey);
     }
+  }
+
+  function updateStaffDraft(checklist: KitchenChecklist, value: StaffAssignmentDraft) {
+    const key = String(checklist.event.eventId);
+    if (!dirtyStaffRef.current.has(key)) staffRevisionRef.current[key] = checklist.assignmentUpdatedAt ?? null;
+    dirtyStaffRef.current.add(key);
+    staffDraftsRef.current = { ...staffDraftsRef.current, [key]: value };
+    setStaffDrafts(staffDraftsRef.current);
+    setBwaSaveStates((current) => ({ ...current, [key]: "idle" }));
+  }
+
+  async function reloadStaffConflicts() {
+    if (!window.confirm("Discard the conflicting staff-assignment drafts and reload the latest saved assignments?")) return;
+    for (const key of staffConflicts) dirtyStaffRef.current.delete(key);
+    if (await loadDay(selectedDate)) setStaffConflicts([]);
   }
 
   async function saveItemReadiness(
@@ -931,7 +1172,7 @@ export default function KitchenDashboard() {
     } catch {
       updateLocalState(wasCompleted);
       setError(
-        `Could not save the Completed checkbox for ${checklist.event.name}. Try again.`,
+        `Could not save the Verified checkbox for ${checklist.event.name}. Try again.`,
       );
     } finally {
       setCompletionPending((current) => {
@@ -942,9 +1183,117 @@ export default function KitchenDashboard() {
     }
   }
 
-  async function lockDashboard() {
-    await fetch("/api/admin-session", { method: "DELETE" });
-    window.location.reload();
+  async function saveItemPrepped(
+    checklist: KitchenChecklist,
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string,
+  ) {
+    if (prepped && !employeeName) {
+      setError(
+        `Select the employee responsible for prep before marking ${checklist.event.name} items Prepped.`,
+      );
+      return;
+    }
+    const eventId = String(checklist.event.eventId);
+    const requestKey = readinessRequestKey(eventId, itemKey);
+    const wasPrepped = (checklist.preppedItemKeys ?? []).includes(itemKey);
+    const previousDetail = checklist.preppedItemDetails?.[itemKey];
+    const updateLocalState = (
+      nextPrepped: boolean,
+      detail?: { employeeName: string | null; preppedAt: string | null },
+    ) => {
+      setDay((current) =>
+        current
+          ? {
+              ...current,
+              events: current.events.map((eventChecklist) => {
+                if (!sameEventId(eventChecklist.event.eventId, eventId)) {
+                  return eventChecklist;
+                }
+                const preppedKeys = new Set(
+                  eventChecklist.preppedItemKeys ?? [],
+                );
+                const preppedItemDetails = {
+                  ...(eventChecklist.preppedItemDetails ?? {}),
+                };
+                if (nextPrepped) preppedKeys.add(itemKey);
+                else preppedKeys.delete(itemKey);
+                if (nextPrepped && detail) {
+                  preppedItemDetails[itemKey] = detail;
+                } else if (!nextPrepped) {
+                  delete preppedItemDetails[itemKey];
+                }
+                return {
+                  ...eventChecklist,
+                  preppedItemKeys: [...preppedKeys].sort(),
+                  preppedItemDetails,
+                };
+              }),
+            }
+          : current,
+      );
+    };
+
+    updateLocalState(
+      prepped,
+      prepped ? { employeeName, preppedAt: null } : undefined,
+    );
+    setPreppedPending((current) => new Set(current).add(requestKey));
+    try {
+      const response = await fetch(
+        `/api/kitchen/events/${encodeURIComponent(eventId)}/items/${encodeURIComponent(itemKey)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            prepped,
+            ...(prepped ? { preppedBy: employeeName } : {}),
+          }),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        employeeName?: string | null;
+        preppedAt?: string | null;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to save item preparation.");
+      }
+      updateLocalState(
+        prepped,
+        prepped
+          ? {
+              employeeName: payload?.employeeName ?? employeeName,
+              preppedAt: payload?.preppedAt ?? null,
+            }
+          : undefined,
+      );
+    } catch {
+      updateLocalState(wasPrepped, previousDetail);
+      setError(
+        `Could not save the Prepped checkbox for ${checklist.event.name}. Try again.`,
+      );
+    } finally {
+      setPreppedPending((current) => {
+        const next = new Set(current);
+        next.delete(requestKey);
+        return next;
+      });
+    }
+  }
+
+  function changeDashboardZoom(direction: -1 | 1) {
+    setDashboardZoom((current) => {
+      const next = nextKitchenZoom(current, direction);
+      persistKitchenZoom(next);
+      return next;
+    });
+  }
+
+  function resetDashboardZoom() {
+    setDashboardZoom(100);
+    persistKitchenZoom(100);
   }
 
   const hasBlockingOverlay =
@@ -959,23 +1308,58 @@ export default function KitchenDashboard() {
     <PortalFrame
       className={`kitchen-dashboard-shell${selectedChecklist ? " kitchen-dashboard-shell-focus" : ""}`}
     >
+      <EventSelectionBridge event={focusedEvent ? eventSelection(focusedEvent) : null} />
       <PortalHeader
         actions={
-          <button
-            className="portal-header-button kitchen-sound-button"
-            disabled={
-              soundAlertState === "on" ||
-              soundAlertState === "enabling"
-            }
-            onClick={() => void enableSoundAlerts()}
-            type="button"
-          >
-            {soundAlertButtonLabel(soundAlertState)}
-          </button>
+          <>
+            <div
+              aria-label="Dashboard zoom"
+              className="kitchen-zoom-controls"
+              role="group"
+            >
+              <button
+                aria-label="Zoom out"
+                className="kitchen-zoom-button"
+                disabled={dashboardZoom === KITCHEN_ZOOM_MIN}
+                onClick={() => changeDashboardZoom(-1)}
+                type="button"
+              >
+                −
+              </button>
+              <button
+                aria-label={`Reset dashboard zoom from ${dashboardZoom}% to 100%`}
+                className="kitchen-zoom-value"
+                disabled={dashboardZoom === 100}
+                onClick={resetDashboardZoom}
+                type="button"
+              >
+                {dashboardZoom}%
+              </button>
+              <button
+                aria-label="Zoom in"
+                className="kitchen-zoom-button"
+                disabled={dashboardZoom === KITCHEN_ZOOM_MAX}
+                onClick={() => changeDashboardZoom(1)}
+                type="button"
+              >
+                +
+              </button>
+            </div>
+            <button
+              className="portal-header-button kitchen-sound-button"
+              disabled={
+                soundAlertState === "on" ||
+                soundAlertState === "enabling"
+              }
+              onClick={() => void enableSoundAlerts(true)}
+              type="button"
+            >
+              {soundAlertButtonLabel(soundAlertState)}
+            </button>
+          </>
         }
         allowFullscreen
         blocked={hasBlockingOverlay}
-        onLock={() => void lockDashboard()}
         sectionSubtitle="Prep dashboard"
         sectionTitle="Event Kitchen"
       />
@@ -984,12 +1368,20 @@ export default function KitchenDashboard() {
         aria-hidden={hasBlockingOverlay ? true : undefined}
         className="kitchen-dashboard-main"
         inert={hasBlockingOverlay ? true : undefined}
+        style={
+          {
+            "--kitchen-dashboard-zoom": dashboardZoom / 100,
+            "--kitchen-dashboard-zoom-height": `calc(${10000 / dashboardZoom}dvh - ${8200 / dashboardZoom}px)`,
+            "--kitchen-dashboard-zoom-max-width": `${192000 / dashboardZoom}px`,
+            "--kitchen-dashboard-zoom-width": `${10000 / dashboardZoom}%`,
+          } as CSSProperties
+        }
       >
         <section className="kitchen-dashboard-intro">
           <div>
             <span className="kitchen-eyebrow">Daily production view</span>
             <h1>{dateLabel(selectedDate)}</h1>
-            <p>Definite events and their generated kitchen prep requirements.</p>
+            <p>Event kitchen prep requirements. VIP food is sent to KDS after check-in.</p>
           </div>
           <div className="kitchen-day-summary" aria-live="polite">
             <span className="kitchen-summary-chip">{formatCount(sortedEvents.length, "event")}</span>
@@ -1043,26 +1435,26 @@ export default function KitchenDashboard() {
             <div className="kitchen-sync-copy" aria-live="polite">
               <strong>Last synced: {formatTimestamp(day?.lastSyncedAt ?? null)}</strong>
               <span className="kitchen-source-note">{sourceModeLabel(day?.sourceMode ?? "")}</span>
+              {bookingSyncMessage ? <span className="kitchen-source-note" role="status">{bookingSyncMessage}</span> : null}
             </div>
             <button
               className="kitchen-primary-button"
-              disabled={syncState === "syncing"}
+              disabled={syncState === "syncing" || bookingSyncState === "syncing"}
               onClick={() => void syncDay()}
               type="button"
             >
               {syncState === "syncing" ? "Syncing…" : "Sync now"}
             </button>
+            <button
+              className="kitchen-secondary-button"
+              disabled={syncState === "syncing" || bookingSyncState === "syncing"}
+              onClick={() => void syncBookings()}
+              type="button"
+            >
+              {bookingSyncState === "syncing" ? "Syncing bookings…" : "Booking Sync"}
+            </button>
           </div>
         </section>
-
-        {loadState === "ready" ? (
-          <KitchenEventFocusPanel
-            current={eventFocus.current}
-            currentEventCount={eventFocus.currentEventCount}
-            next={eventFocus.next}
-            now={focusNow}
-          />
-        ) : null}
 
         {day?.missingEnvironmentVariables.length ? (
           <section className="kitchen-alert" role="status">
@@ -1112,7 +1504,7 @@ export default function KitchenDashboard() {
               !
             </span>
             <div>
-              <strong>{syncState === "error" ? "Sync failed" : "Kitchen data unavailable"}</strong>
+              <strong>{bookingSyncState === "error" ? "Booking Sync failed" : syncState === "error" ? "Sync failed" : "Kitchen data unavailable"}</strong>
               <p>{error}</p>
             </div>
           </section>
@@ -1122,11 +1514,8 @@ export default function KitchenDashboard() {
           <section className="kitchen-reconnect-panel" aria-label="Tripleseat reconnection required">
             <div>
               <strong>Tripleseat authorization expired</strong>
-              <span>Reconnect once, then use Sync now again for the selected date.</span>
+              <span>Ask an administrator to reconnect Tripleseat, then use Sync now again for the selected date.</span>
             </div>
-            <a className="kitchen-primary-button kitchen-reconnect-link" href="/api/kitchen/oauth/start">
-              Reconnect Tripleseat
-            </a>
           </section>
         ) : null}
 
@@ -1149,7 +1538,7 @@ export default function KitchenDashboard() {
             message={
               day?.archivedEventCount
                 ? "All scheduled kitchen events for this date have ended and were archived."
-                : "No definite Tripleseat events are scheduled for this date."
+                : "No event kitchen checklists are scheduled for this date."
             }
             title={
               day?.archivedEventCount
@@ -1159,56 +1548,118 @@ export default function KitchenDashboard() {
           />
         ) : null}
 
-        {loadState === "ready" && sortedEvents.length ? (
+        {loadState === "ready" && eventContext.preferredEventId ? <section className="kitchen-event-focus-banner" role="status">
+          <span>{focusedEvent
+            ? operationsView === "events" ? `Selected ${focusedEvent.event.name}. All parties for this date are listed below.` : `Showing ${focusedEvent.event.name}`
+            : "The selected event is not available on this kitchen date. No other party was substituted."}</span>
+          <button className="kitchen-secondary-button" onClick={eventContext.clearEvent} type="button">{operationsView === "events" ? "Clear event selection" : "Show all events"}</button>
+        </section> : null}
+        {retainedStaffDraftCount > 0 ? <p className="kitchen-event-focus-banner" role="status">{retainedStaffDraftCount} unsaved staff-assignment draft(s) are retained for events not shown on this date. Return to the original event to review and save. They have not been sent and will be lost if this page is closed.</p> : null}
+        {staffConflicts.length > 0 ? <section className="kitchen-event-focus-banner" role="alert"><span>Staff assignments changed on another tablet. Your drafts were kept and are blocked from overwriting the newer record.</span><button className="kitchen-secondary-button" onClick={() => void reloadStaffConflicts()} type="button">Reload latest staff assignments</button></section> : null}
+        {loadState === "ready" && sortedEvents.length ? <div className="kitchen-view-switch" aria-label="Kitchen work view">
+          {([ ["events", "Event sheets"], ["production", "Production totals"], ["expo", "Expo / Food Runner"] ] as const).map(([view, label]) => <button aria-pressed={operationsView === view} className={operationsView === view ? "is-active" : ""} key={view} onClick={() => setOperationsView(view)} type="button">{label}</button>)}
+        </div> : null}
+        {loadState === "ready" && operationsView === "production" ? <KitchenProductionPanel events={visibleKitchenEvents} /> : null}
+        {loadState === "ready" && operationsView === "expo" ? <KitchenExpoPanel events={visibleKitchenEvents} /> : null}
+        {loadState === "ready" && sortedEvents.length > 0 && operationsView === "events" ? (
+          <div className="kitchen-party-controls" aria-label="Party sheet controls">
+            <p>Click a party to open or close its sheet. Multiple parties can stay open.</p>
+            <div>
+              <button className="kitchen-secondary-button" disabled={sortedEvents.every((event) => expandedEventIds.includes(String(event.event.eventId)))} onClick={() => setExpandedEventIds(sortedEvents.map((event) => String(event.event.eventId)))} type="button">Expand all parties</button>
+              <button className="kitchen-secondary-button" disabled={!sortedEvents.some((event) => expandedEventIds.includes(String(event.event.eventId)))} onClick={() => setExpandedEventIds([])} type="button">Collapse all parties</button>
+            </div>
+          </div>
+        ) : null}
+        {loadState === "ready" && sortedEvents.length && operationsView === "events" ? (
           <section
-            className={`kitchen-event-grid kitchen-event-checklist-grid${sortedEvents.length > 1 ? " kitchen-event-checklist-grid-multiple" : ""}`}
-            aria-label="Definite event kitchen checklists"
+            className="kitchen-event-grid kitchen-event-checklist-grid kitchen-event-accordion-list"
+            aria-label="Event kitchen checklists"
           >
-            {sortedEvents.map((checklist) => {
+            {visibleKitchenEvents.map((checklist) => {
               const eventKey = String(checklist.event.eventId);
               return (
-                <KitchenChecklistSheet
-                  bwaDraft={bwaDrafts[eventKey] ?? ""}
-                  bwaSaveState={bwaSaveStates[eventKey] ?? "idle"}
+                <KitchenEventAccordion
                   checklist={checklist}
-                  completionPending={completionPending}
-                  inline
                   key={eventKey}
-                  onBwaChange={(value) => {
-                    setBwaDrafts((current) => ({ ...current, [eventKey]: value }));
-                    setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
-                  }}
-                  onOpenDescription={setDescriptionItem}
-                  onPrint={() => printChecklist(checklist.event.eventId)}
-                  onCompletedChange={(itemKey, completed) =>
-                    void saveItemCompletion(
-                      checklist,
-                      itemKey,
-                      completed,
-                    )
-                  }
-                  onReadyChange={(itemKey, ready) =>
-                    void saveItemReadiness(checklist, itemKey, ready)
-                  }
-                  onSaveBwa={() => void saveBwa(checklist)}
-                  readinessPending={readinessPending}
-                />
+                  open={expandedEventIds.includes(eventKey)}
+                  onToggle={(open) => setExpandedEventIds((current) => {
+                    if (current.includes(eventKey) === open) return current;
+                    return open ? [...current, eventKey] : current.filter((id) => id !== eventKey);
+                  })}
+                >
+                  <KitchenChecklistSheet
+                    staffDraft={
+                      staffDrafts[eventKey] ?? {
+                        setup: [],
+                        foodRunners: [],
+                        pocs: [],
+                        preppedBy: "",
+                        verifiedBy: "",
+                      }
+                    }
+                    bwaOptions={day?.bwaOptions ?? []}
+                    bwaSaveState={staffConflicts.includes(eventKey) ? "conflict" : bwaSaveStates[eventKey] ?? "idle"}
+                    checklist={checklist}
+                    completionPending={completionPending}
+                    hideEventIdentity
+                    inline
+                    onStaffChange={(value) => {
+                      updateStaffDraft(checklist, value);
+                    }}
+                    onOpenDescription={setDescriptionItem}
+                    onOpenSheet={() => setSelectedEventId(checklist.event.eventId)}
+                    onPrint={() => printChecklist(checklist.event.eventId)}
+                    onCompletedChange={(itemKey, completed) =>
+                      void saveItemCompletion(
+                        checklist,
+                        itemKey,
+                        completed,
+                      )
+                    }
+                    onReadyChange={(itemKey, ready) =>
+                      void saveItemReadiness(checklist, itemKey, ready)
+                    }
+                    onPreppedChange={(itemKey, prepped, employeeName) =>
+                      void saveItemPrepped(
+                        checklist,
+                        itemKey,
+                        prepped,
+                        employeeName,
+                      )
+                    }
+                    preppedPending={preppedPending}
+                    onSaveStaff={() => void saveStaffAssignments(checklist)}
+                    readinessPending={readinessPending}
+                  />
+                </KitchenEventAccordion>
               );
             })}
           </section>
         ) : null}
+        {loadState === "ready" && sortedEvents.length ? <FoodDeliveryPanel
+          events={visibleKitchenEvents}
+          items={(day?.foodDelivery ?? []).filter((item) => visibleKitchenEvents.some((event) => String(event.event.eventId) === item.eventId))}
+          error={day?.foodDeliveryError}
+        /> : null}
       </main>
 
       {selectedChecklist && !activeAlert ? (
         <ChecklistPanel
-          bwaDraft={bwaDrafts[String(selectedChecklist.event.eventId)] ?? ""}
-          bwaSaveState={bwaSaveStates[String(selectedChecklist.event.eventId)] ?? "idle"}
+          staffDraft={
+            staffDrafts[String(selectedChecklist.event.eventId)] ?? {
+              setup: [],
+              foodRunners: [],
+              pocs: [],
+              preppedBy: "",
+              verifiedBy: "",
+            }
+          }
+          bwaOptions={day?.bwaOptions ?? []}
+          bwaSaveState={staffConflicts.includes(String(selectedChecklist.event.eventId)) ? "conflict" : bwaSaveStates[String(selectedChecklist.event.eventId)] ?? "idle"}
           checklist={selectedChecklist}
           completionPending={completionPending}
-          onBwaChange={(value) => {
-            const eventKey = String(selectedChecklist.event.eventId);
-            setBwaDrafts((current) => ({ ...current, [eventKey]: value }));
-            setBwaSaveStates((current) => ({ ...current, [eventKey]: "idle" }));
+          onStaffChange={(value) => {
+            updateStaffDraft(selectedChecklist, value);
           }}
           onClose={closeChecklist}
           onCompletedChange={(itemKey, completed) =>
@@ -1223,7 +1674,16 @@ export default function KitchenDashboard() {
           onReadyChange={(itemKey, ready) =>
             void saveItemReadiness(selectedChecklist, itemKey, ready)
           }
-          onSaveBwa={() => void saveBwa(selectedChecklist)}
+          onPreppedChange={(itemKey, prepped, employeeName) =>
+            void saveItemPrepped(
+              selectedChecklist,
+              itemKey,
+              prepped,
+              employeeName,
+            )
+          }
+          preppedPending={preppedPending}
+          onSaveStaff={() => void saveStaffAssignments(selectedChecklist)}
           readinessPending={readinessPending}
         />
       ) : null}
@@ -1238,107 +1698,12 @@ export default function KitchenDashboard() {
       {activeAlert ? (
         <KitchenAlertDialog
           alert={activeAlert}
-          onEnableSound={() => void enableSoundAlerts()}
+          onEnableSound={() => void enableSoundAlerts(true)}
           onDismiss={dismissActiveAlert}
           soundAlertState={soundAlertState}
         />
       ) : null}
     </PortalFrame>
-  );
-}
-
-function durationLabel(totalMinutes: number) {
-  const minutes = Math.max(0, totalMinutes);
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (!hours) {
-    return `${minutes} min`;
-  }
-  return remainingMinutes
-    ? `${hours} hr ${remainingMinutes} min`
-    : `${hours} hr`;
-}
-
-function focusTimeLabel(value: number | null) {
-  return value === null
-    ? "Time not set"
-    : formatTime(new Date(value).toISOString());
-}
-
-function currentFoodReadyLabel(item: KitchenFocusItem, now: Date) {
-  const minutes = minutesUntil(item.foodReadyAt, now);
-  if (minutes === null) {
-    return "Food ready time not set";
-  }
-  if (minutes > 0) {
-    return `Food ready in ${durationLabel(minutes)}`;
-  }
-  if (minutes === 0) {
-    return "Food ready now";
-  }
-  return `Food ready time passed ${durationLabel(Math.abs(minutes))} ago`;
-}
-
-export function KitchenEventFocusPanel({
-  current,
-  currentEventCount,
-  next,
-  now,
-}: {
-  current: KitchenFocusItem | null;
-  currentEventCount: number;
-  next: KitchenFocusItem | null;
-  now: Date;
-}) {
-  const remaining = current ? minutesUntil(current.endAt, now) : null;
-  const untilNext = next ? minutesUntil(next.startAt, now) : null;
-
-  return (
-    <section
-      aria-label="Current and next kitchen events"
-      className="kitchen-event-focus"
-    >
-      <article className="kitchen-event-focus-item is-current">
-        <span className="kitchen-event-focus-label">Current event</span>
-        {current ? (
-          <>
-            <strong>{current.event.event.name}</strong>
-            <span>
-              {current.endAt === null
-                ? "End time missing"
-                : `Ends at ${focusTimeLabel(current.endAt)}`}
-            </span>
-            <span>
-              {remaining === null
-                ? "Time remaining unavailable"
-                : `${durationLabel(remaining)} remaining`}
-            </span>
-            <span>{currentFoodReadyLabel(current, now)}</span>
-            {currentEventCount > 1 ? (
-              <small>{currentEventCount - 1} more event{currentEventCount === 2 ? " is" : "s are"} active</small>
-            ) : null}
-          </>
-        ) : (
-          <span>No event is active right now.</span>
-        )}
-      </article>
-      <article className="kitchen-event-focus-item is-next">
-        <span className="kitchen-event-focus-label">Next event</span>
-        {next ? (
-          <>
-            <strong>{next.event.event.name}</strong>
-            <span>Starts at {focusTimeLabel(next.startAt)}</span>
-            <span>
-              {untilNext === null
-                ? "Start countdown unavailable"
-                : `Starts in ${durationLabel(untilNext)}`}
-            </span>
-          </>
-        ) : (
-          <span>No later event is scheduled.</span>
-        )}
-      </article>
-    </section>
   );
 }
 
@@ -1368,33 +1733,44 @@ function StateCard({
 }
 
 function ChecklistPanel({
-  bwaDraft,
+  staffDraft,
+  bwaOptions,
   bwaSaveState,
   checklist,
   completionPending,
-  onBwaChange,
+  onStaffChange,
   onClose,
   onCompletedChange,
   onOpenDescription,
   onPrint,
+  onPreppedChange,
   onReadyChange,
-  onSaveBwa,
+  onSaveStaff,
   readinessPending,
+  preppedPending,
 }: {
-  bwaDraft: string;
+  staffDraft: StaffAssignmentDraft;
+  bwaOptions: readonly string[];
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
-  onBwaChange: (value: string) => void;
+  onStaffChange: (value: StaffAssignmentDraft) => void;
   onClose: () => void;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription: (item: FoodDescriptionItem) => void;
   onPrint: () => void;
+  onPreppedChange?: (
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string,
+  ) => void;
   onReadyChange: (itemKey: string, ready: boolean) => void;
-  onSaveBwa: () => void;
+  onSaveStaff: () => void;
   readinessPending: ReadonlySet<string>;
+  preppedPending?: ReadonlySet<string>;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [fitSheet, setFitSheet] = useState(true);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
@@ -1422,6 +1798,14 @@ function ChecklistPanel({
         <h2 id="kitchen-focus-view-title">Kitchen event view</h2>
         <div className="kitchen-checklist-toolbar-actions">
           <button
+            aria-pressed={fitSheet}
+            className="kitchen-secondary-button kitchen-fit-toggle"
+            onClick={() => setFitSheet((current) => !current)}
+            type="button"
+          >
+            {fitSheet ? "Fit entire sheet ✓" : "Fit entire sheet"}
+          </button>
+          <button
             className="kitchen-secondary-button"
             onClick={onClose}
             ref={closeButtonRef}
@@ -1435,69 +1819,200 @@ function ChecklistPanel({
         </div>
       </div>
 
+      <KitchenSheetViewport fit={fitSheet}>
       <KitchenChecklistSheet
-        bwaDraft={bwaDraft}
+        staffDraft={staffDraft}
+        bwaOptions={bwaOptions}
         bwaSaveState={bwaSaveState}
         checklist={checklist}
+        fitToScreen={fitSheet}
         completionPending={completionPending}
-        onBwaChange={onBwaChange}
+        onStaffChange={onStaffChange}
         onCompletedChange={onCompletedChange}
         onOpenDescription={onOpenDescription}
+        onPreppedChange={onPreppedChange}
         onReadyChange={onReadyChange}
-        onSaveBwa={onSaveBwa}
+        onSaveStaff={onSaveStaff}
         readinessPending={readinessPending}
+        preppedPending={preppedPending}
       />
+      </KitchenSheetViewport>
     </section>
   );
 }
 
+export function KitchenEventAccordion({
+  checklist,
+  children,
+  open,
+  onToggle,
+}: {
+  checklist: KitchenChecklist;
+  children?: ReactNode;
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
+}) {
+  const progress = kitchenProgress(checklist);
+  const startTime = formatTime(
+    checklist.timing.startTime ?? checklist.event.startTime,
+  );
+  const eventTime = checklist.event.endTime
+    ? `${startTime}–${formatTime(checklist.event.endTime)}`
+    : startTime;
+
+  return (
+    <details
+      className="kitchen-event-accordion"
+      data-kitchen-event-accordion={String(checklist.event.eventId)}
+      open={open}
+      onToggle={(event) => {
+        if (event.target === event.currentTarget) onToggle?.(event.currentTarget.open);
+      }}
+    >
+      <summary className="kitchen-event-accordion-summary">
+        <span className="kitchen-event-accordion-identity">
+          <strong>{checklist.event.name}</strong>
+          <span className="kitchen-event-area">Area reserved: {checklist.event.room || "Area not listed"}</span>
+          <span className="kitchen-event-readiness">Prepped {progress.prepped}/{progress.total} · Ready {progress.ready}/{progress.total}{checklist.needsReview ? " · Needs review" : ""}{!(checklist.foodRunners?.length || checklist.foodRunnerOrBwa) ? " · Food Runner unassigned" : ""}</span>
+        </span>
+        <span className="kitchen-event-accordion-time">{eventTime}</span>
+      </summary>
+      <div className="kitchen-event-accordion-content">{children}</div>
+    </details>
+  );
+}
+
+function StaffMultiSelect({
+  label,
+  className = "kitchen-staff-select",
+  onChange,
+  options,
+  selected,
+}: {
+  label: string;
+  className?: string;
+  onChange: (values: string[]) => void;
+  options: readonly string[];
+  selected: readonly string[];
+}) {
+  const selectedSet = new Set(selected);
+  return (
+    <details className={className} name="kitchen-staff-assignment">
+      <summary>
+        <span>{label}</span>
+        <strong>{selected.length ? selected.join(", ") : "Select employees"}</strong>
+      </summary>
+      <fieldset>
+        <legend>{label}</legend>
+        {options.map((option) => (
+          <label key={option}>
+            <input
+              checked={selectedSet.has(option)}
+              onChange={(event) =>
+                onChange(
+                  event.target.checked
+                    ? [...selected, option]
+                    : selected.filter((value) => value !== option),
+                )
+              }
+              type="checkbox"
+            />
+            <span>{option}</span>
+          </label>
+        ))}
+      </fieldset>
+    </details>
+  );
+}
+
 export function KitchenChecklistSheet({
-  bwaDraft,
+  staffDraft = { setup: [], foodRunners: [], pocs: [], preppedBy: "", verifiedBy: "" },
+  bwaDraft: _legacyBwaDraft,
+  bwaOptions = [],
   bwaSaveState,
   checklist,
   completionPending = EMPTY_READINESS_KEYS,
+  fitToScreen = false,
+  hideEventIdentity = false,
   inline = false,
-  onBwaChange,
+  onStaffChange = () => {},
+  onBwaChange: _legacyOnBwaChange,
   onCompletedChange,
   onOpenDescription,
+  onOpenSheet,
   onPrint,
+  onPreppedChange,
   onReadyChange,
-  onSaveBwa,
+  onSaveStaff = () => {},
+  onSaveBwa: _legacyOnSaveBwa,
   readinessPending = EMPTY_READINESS_KEYS,
+  preppedPending = EMPTY_READINESS_KEYS,
 }: {
-  bwaDraft: string;
+  staffDraft?: StaffAssignmentDraft;
+  bwaDraft?: string;
+  bwaOptions?: readonly string[];
   bwaSaveState: BwaSaveState;
   checklist: KitchenChecklist;
   completionPending?: ReadonlySet<string>;
+  fitToScreen?: boolean;
+  hideEventIdentity?: boolean;
   inline?: boolean;
-  onBwaChange: (value: string) => void;
+  onStaffChange?: (value: StaffAssignmentDraft) => void;
+  onBwaChange?: (value: string) => void;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
+  onOpenSheet?: () => void;
   onPrint?: () => void;
+  onPreppedChange?: (
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string,
+  ) => void;
   onReadyChange?: (itemKey: string, ready: boolean) => void;
-  onSaveBwa: () => void;
+  onSaveStaff?: () => void;
+  onSaveBwa?: () => void;
   readinessPending?: ReadonlySet<string>;
+  preppedPending?: ReadonlySet<string>;
 }) {
   const visibleSections = [...checklist.sections]
     .filter((section) => section.rows.length > 0)
     .sort((left, right) => categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category));
+  const dropReminder = appetizerDropReminder(checklist);
   const reviewMessages = [
     ...new Set([
       ...checklist.warnings.map((warning) => warning.message),
       ...checklist.referenceConflicts.map((conflict) => `${conflict.title}: ${conflict.currentResolution}`),
     ]),
   ];
-  const bwaChanged = bwaDraft !== checklist.foodRunnerOrBwa;
+  const bwaChanged =
+    JSON.stringify(staffDraft.setup) !== JSON.stringify(checklist.setup ?? []) ||
+    JSON.stringify(staffDraft.foodRunners) !==
+      JSON.stringify(checklist.foodRunners ?? []) ||
+    JSON.stringify(staffDraft.pocs) !== JSON.stringify(checklist.pocs ?? []) ||
+    staffDraft.preppedBy !== (checklist.preppedBy ?? "") ||
+    staffDraft.verifiedBy !== (checklist.verifiedBy ?? "");
+  const availableBwaOptions = [
+    ...new Set(
+      [...bwaOptions]
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ].sort((left, right) =>
+    left.localeCompare(right, "en", { sensitivity: "base" }),
+  );
   const completedItemKeys = new Set(checklist.completedItemKeys ?? []);
+  const preppedItemKeys = new Set(checklist.preppedItemKeys ?? []);
+  const preppedItemDetails = checklist.preppedItemDetails ?? {};
   const finalCompletedItemKeys = new Set(
     checklist.finalCompletedItemKeys ?? [],
   );
-  const liveFoodAddOns = checklist.liveFoodAddOns ?? [];
   const eventId = checklist.event.eventId;
   const isCompletionPending = (itemKey: string) =>
     completionPending.has(readinessRequestKey(eventId, itemKey));
   const isReadinessPending = (itemKey: string) =>
     readinessPending.has(readinessRequestKey(eventId, itemKey));
+  const isPreppedPending = (itemKey: string) =>
+    preppedPending.has(readinessRequestKey(eventId, itemKey));
 
   return (
     <article
@@ -1505,36 +2020,35 @@ export function KitchenChecklistSheet({
       className={`kitchen-checklist${inline ? " kitchen-checklist-inline" : ""}`}
       data-kitchen-event-id={String(checklist.event.eventId)}
     >
-      <header className="kitchen-checklist-heading" data-kitchen-checklist-header>
-        <div className="kitchen-checklist-event-name">
-          <span>Event name</span>
-          <div className="kitchen-event-name-line">
-            <h2>{checklist.event.name}</h2>
-            {checklist.needsReview ? (
-              <strong className="kitchen-needs-review-badge">
-                Needs review
-              </strong>
-            ) : null}
+      <header
+        className={`kitchen-checklist-heading${hideEventIdentity ? " kitchen-checklist-heading-accordion" : ""}`}
+        data-kitchen-checklist-header
+      >
+        {!hideEventIdentity ? (
+          <div className="kitchen-checklist-event-name">
+            <span>Event name</span>
+            <div className="kitchen-event-name-line">
+              <h2>{checklist.event.name}</h2>
+              {checklist.needsReview ? (
+                <strong className="kitchen-needs-review-badge">
+                  Needs review
+                </strong>
+              ) : null}
+            </div>
+            <p>
+              {formatTime(checklist.timing.startTime ?? checklist.event.startTime)}
+              {checklist.event.endTime ? `–${formatTime(checklist.event.endTime)}` : ""}
+              {checklist.selectedCategories.length
+                ? ` · ${checklist.selectedCategories
+                    .map((category) => categoryLabels[category])
+                    .join(", ")}`
+                : ""}
+            </p>
           </div>
-          <p>
-            {formatTime(checklist.timing.startTime ?? checklist.event.startTime)}
-            {checklist.event.endTime ? `–${formatTime(checklist.event.endTime)}` : ""}
-            {" · "}
-            {checklist.event.room || "Room or area not listed"}
-            {" · "}
-            {checklist.event.status || "Status not verified"}
-            {" · "}
-            {checklist.classification === "bar-package"
-              ? "Bar package"
-              : "Platter event"}
-            {checklist.selectedCategories.length
-              ? ` · ${checklist.selectedCategories
-                  .map((category) => categoryLabels[category])
-                  .join(", ")}`
-              : ""}
-            {" · Source "}
-            {formatTimestamp(checklist.event.sourceUpdatedAt)}
-          </p>
+        ) : null}
+        <div className="kitchen-checklist-header-fact kitchen-reserved-area">
+          <span>Area reserved</span>
+          <strong>{checklist.event.room || "Area not listed"}</strong>
         </div>
         <div className="kitchen-checklist-header-fact">
           <span>Number of guests</span>
@@ -1542,7 +2056,7 @@ export function KitchenChecklistSheet({
         </div>
         <div className="kitchen-checklist-header-fact">
           <span>Chafing dishes</span>
-          <strong>{checklist.chafingDishes.total ?? "Needs review"}</strong>
+          <strong>{checklist.chafingDishes.total ?? "—"}</strong>
         </div>
         <div className="kitchen-checklist-brand-actions">
           <Image
@@ -1552,6 +2066,11 @@ export function KitchenChecklistSheet({
             src="/brand/on-par-logo-black-on-white.jpg"
             width={432}
           />
+          {inline && onOpenSheet ? (
+            <button className="kitchen-card-button" onClick={onOpenSheet} type="button">
+              Open full sheet
+            </button>
+          ) : null}
           {inline && onPrint ? (
             <button
               aria-label={`Print checklist for ${checklist.event.name}`}
@@ -1568,30 +2087,45 @@ export function KitchenChecklistSheet({
       <div className="kitchen-checklist-schedule">
         <div className="kitchen-checklist-bwa">
           <div className="kitchen-bwa-field">
-            <label htmlFor={`kitchen-bwa-${checklist.event.eventId}`}>Food Runner or BWA</label>
-            <input
-              id={`kitchen-bwa-${checklist.event.eventId}`}
-              onChange={(event) => onBwaChange(event.target.value)}
-              placeholder="Enter employee name"
-              type="text"
-              value={bwaDraft}
+            <StaffMultiSelect
+              className="kitchen-staff-select kitchen-setup-select"
+              label="Set Up"
+              onChange={(setup) => onStaffChange({ ...staffDraft, setup })}
+              options={availableBwaOptions}
+              selected={staffDraft.setup}
+            />
+            <StaffMultiSelect
+              label="Food Runner"
+              onChange={(foodRunners) =>
+                onStaffChange({ ...staffDraft, foodRunners })
+              }
+              options={availableBwaOptions}
+              selected={staffDraft.foodRunners}
+            />
+            <StaffMultiSelect
+              label="POC"
+              onChange={(pocs) => onStaffChange({ ...staffDraft, pocs })}
+              options={availableBwaOptions}
+              selected={staffDraft.pocs}
             />
             <button
               className="kitchen-primary-button kitchen-bwa-save"
-              disabled={!bwaChanged || bwaSaveState === "saving"}
-              onClick={onSaveBwa}
+              disabled={!bwaChanged || bwaSaveState === "saving" || bwaSaveState === "conflict"}
+              onClick={onSaveStaff}
               type="button"
             >
-              {bwaSaveState === "saving" ? "Saving…" : "Save"}
+              {bwaSaveState === "saving" ? "Saving…" : bwaSaveState === "conflict" ? "Reload required" : "Save"}
             </button>
           </div>
           <span className="kitchen-bwa-status" role="status">
             {bwaSaveState === "saved"
-              ? "BWA saved separately from Tripleseat."
-              : bwaSaveState === "error"
+              ? "Staff assignments saved separately from Tripleseat."
+              : bwaSaveState === "conflict"
+                ? "Draft kept. Reload and review the newer staff assignments before saving."
+                : bwaSaveState === "error"
                 ? "Save failed. Try again."
                 : bwaChanged
-                  ? "Unsaved BWA change"
+                  ? "Unsaved staff changes"
                   : ""}
           </span>
         </div>
@@ -1612,29 +2146,105 @@ export function KitchenChecklistSheet({
         />
       </div>
 
+      {dropReminder ? (
+        <section
+          className={`kitchen-drop-reminder${dropReminder.source === "needs-review" ? " kitchen-drop-reminder-review" : ""}`}
+          aria-label="Appetizer drop reminder"
+        >
+          <strong>
+            {dropReminder.scheduledAt
+              ? `Drop appetizers at ${formatTime(dropReminder.scheduledAt)}`
+              : "Appetizer drop time needs review"}
+          </strong>
+          <span>
+            {dropReminder.source === "default"
+              ? "30 minutes before the event."
+              : dropReminder.source === "contract"
+                ? "Uses the contract's food timing instruction."
+                : "Confirm the food timing notes before dropping appetizers; no automatic drop alert is scheduled."}
+          </span>
+          <span>{dropReminder.itemNames.join(", ")}</span>
+          {dropReminder.sourceNotes.length ? (
+            <details>
+              <summary>Food timing notes</summary>
+              {dropReminder.sourceNotes.map((note) => <p key={note}>{note}</p>)}
+            </details>
+          ) : null}
+        </section>
+      ) : null}
+
       <div className="kitchen-table-scroll">
         <table className="kitchen-checklist-table">
           <thead>
             <tr>
+              <th scope="col">
+                <span className="kitchen-verified-heading">Prepped</span>
+                <select
+                  aria-label="Employee responsible for prep"
+                  className="kitchen-column-staff-select"
+                  onChange={(event) =>
+                    onStaffChange({
+                      ...staffDraft,
+                      preppedBy: event.target.value,
+                    })
+                  }
+                  value={staffDraft.preppedBy}
+                >
+                  <option value="">Employee</option>
+                  {availableBwaOptions.map((employee) => (
+                    <option key={employee} value={employee}>
+                      {employee}
+                    </option>
+                  ))}
+                </select>
+              </th>
+              <th scope="col">
+                <span className="kitchen-verified-heading">Verified</span>
+                <small className="kitchen-verified-subheading">
+                  Different person
+                </small>
+                <select
+                  aria-label="Employee responsible for verification"
+                  className="kitchen-column-staff-select"
+                  onChange={(event) =>
+                    onStaffChange({
+                      ...staffDraft,
+                      verifiedBy: event.target.value,
+                    })
+                  }
+                  value={staffDraft.verifiedBy}
+                >
+                  <option value="">Employee</option>
+                  {availableBwaOptions.map((employee) => (
+                    <option key={employee} value={employee}>
+                      {employee}
+                    </option>
+                  ))}
+                </select>
+              </th>
               <th scope="col">Ready</th>
               <th scope="col">Food Name</th>
               <th scope="col">Number of Pans</th>
               <th scope="col">Pan Size</th>
               <th scope="col">Quantity</th>
-              <th scope="col">Completed</th>
             </tr>
           </thead>
           <tbody>
             {visibleSections.map((section) => (
               <ChecklistSection
                 completedItemKeys={completedItemKeys}
+                preppedItemKeys={preppedItemKeys}
+                preppedItemDetails={preppedItemDetails}
+                preppedBy={staffDraft.preppedBy}
                 finalCompletedItemKeys={finalCompletedItemKeys}
                 isCompletionPending={isCompletionPending}
                 isReadinessPending={isReadinessPending}
+                isPreppedPending={isPreppedPending}
                 key={section.category}
                 onCompletedChange={onCompletedChange}
                 onOpenDescription={onOpenDescription}
                 onReadyChange={onReadyChange}
+                onPreppedChange={onPreppedChange}
                 ruleVersion={checklist.ruleVersion}
                 section={section}
               />
@@ -1644,22 +2254,18 @@ export function KitchenChecklistSheet({
       </div>
 
       <div className="kitchen-review-area" data-kitchen-review-area>
-        <section
-          aria-live="polite"
-          className="kitchen-review-panel kitchen-addon-panel"
-        >
-          <div className="kitchen-panel-heading">
-            <h3>Live food add-ons</h3>
-            <span>Updates automatically</span>
-          </div>
-          {liveFoodAddOns.length ? (
-            <div className="kitchen-addon-list">
-              {liveFoodAddOns.map((item) => {
+        <section className="kitchen-review-panel kitchen-addon-panel kitchen-addon-panel-hidden" aria-hidden="true">
+          <span>Live food add-ons are sent directly to GoTab KDS.</span>
+        </section>
+        {true ? (
+          <div className="kitchen-addon-panel-hidden">
+              {checklist.liveFoodAddOns.map((item) => {
                 const readinessKey = quantityAwareReadinessKey({
                   ...item,
                   ruleVersion: checklist.ruleVersion,
                 });
                 const isReady = completedItemKeys.has(readinessKey);
+                const isPrepped = preppedItemKeys.has(readinessKey);
                 const isCompleted =
                   finalCompletedItemKeys.has(readinessKey);
                 return (
@@ -1685,6 +2291,33 @@ export function KitchenChecklistSheet({
                       />
                       <span>Ready</span>
                     </label>
+                    <div className="kitchen-addon-prepped-control">
+                      <label className="kitchen-ready-control">
+                        <input
+                          aria-label={`Mark add-on ${item.foodName} prepped`}
+                          checked={isPrepped}
+                          disabled={
+                            !onPreppedChange ||
+                            isPreppedPending(readinessKey)
+                          }
+                          onChange={(event) =>
+                            onPreppedChange?.(
+                              readinessKey,
+                              event.target.checked,
+                              staffDraft.preppedBy,
+                            )
+                          }
+                          type="checkbox"
+                        />
+                        <span>Prepped</span>
+                      </label>
+                      {isPrepped ? (
+                        <PreppedAudit
+                          detail={preppedItemDetails[readinessKey]}
+                          pending={isPreppedPending(readinessKey)}
+                        />
+                      ) : null}
+                    </div>
                     <button
                       aria-haspopup="dialog"
                       className="kitchen-food-button"
@@ -1710,7 +2343,7 @@ export function KitchenChecklistSheet({
                     </span>
                     <label className="kitchen-completed-control">
                       <input
-                        aria-label={`Mark add-on ${item.foodName} completed`}
+                        aria-label={`Mark add-on ${item.foodName} verified by a different person`}
                         checked={isCompleted}
                         disabled={
                           !onCompletedChange ||
@@ -1724,16 +2357,13 @@ export function KitchenChecklistSheet({
                         }
                         type="checkbox"
                       />
-                      <span>Completed</span>
+                      <span>Verified (different person)</span>
                     </label>
                   </div>
                 );
               })}
-            </div>
-          ) : (
-            <p>No food add-ons have been entered for this event.</p>
-          )}
-        </section>
+          </div>
+        ) : null}
         <section className="kitchen-review-panel">
           <h3>Food contract notes</h3>
           {(checklist.event.foodNotes ?? []).length ? (
@@ -1746,24 +2376,12 @@ export function KitchenChecklistSheet({
               ))}
             </ul>
           ) : (
-            <p>No food notes found in the Tripleseat contract or notes.</p>
-          )}
-        </section>
-        <section className="kitchen-review-panel">
-          <h3>Contract review alerts</h3>
-          {checklist.event.specialNotes.length ? (
-            <ul>
-              {checklist.event.specialNotes.map((note, index) => (
-                <li key={`${note}-${index}`}>{note}</li>
-              ))}
-            </ul>
-          ) : (
-            <p>No contract import alerts.</p>
+            <p>No food notes found in the contract Special Instructions section.</p>
           )}
         </section>
         <details
           className={`kitchen-review-panel kitchen-safety-details${reviewMessages.length > 0 && checklist.needsReview ? " kitchen-review-panel-warning" : ""}`}
-          open={!inline && checklist.needsReview}
+          open={!inline && !fitToScreen && checklist.needsReview}
         >
           <summary>
             {reviewMessages.length
@@ -1806,24 +2424,66 @@ function ChecklistFact({
   );
 }
 
+function PreppedAudit({
+  detail,
+  pending,
+}: {
+  detail:
+    | { employeeName: string | null; preppedAt: string | null }
+    | undefined;
+  pending: boolean;
+}) {
+  return (
+    <span className="kitchen-prepped-audit">
+      <strong>{detail?.employeeName ?? "Employee not recorded"}</strong>
+      {pending && !detail?.preppedAt ? (
+        <span>Saving…</span>
+      ) : detail?.preppedAt ? (
+        <time dateTime={detail.preppedAt}>
+          {formatPreppedTimestamp(detail.preppedAt)}
+        </time>
+      ) : (
+        <span>Time not recorded</span>
+      )}
+    </span>
+  );
+}
+
 function ChecklistSection({
   completedItemKeys,
+  preppedItemKeys,
+  preppedItemDetails,
+  preppedBy,
   finalCompletedItemKeys,
   isCompletionPending,
   isReadinessPending,
+  isPreppedPending,
   onCompletedChange,
   onOpenDescription,
   onReadyChange,
+  onPreppedChange,
   ruleVersion,
   section,
 }: {
   completedItemKeys: ReadonlySet<string>;
+  preppedItemKeys: ReadonlySet<string>;
+  preppedItemDetails: Record<
+    string,
+    { employeeName: string | null; preppedAt: string | null }
+  >;
+  preppedBy: string;
   finalCompletedItemKeys: ReadonlySet<string>;
   isCompletionPending: (itemKey: string) => boolean;
   isReadinessPending: (itemKey: string) => boolean;
+  isPreppedPending: (itemKey: string) => boolean;
   onCompletedChange?: (itemKey: string, completed: boolean) => void;
   onOpenDescription?: (item: FoodDescriptionItem) => void;
   onReadyChange?: (itemKey: string, ready: boolean) => void;
+  onPreppedChange?: (
+    itemKey: string,
+    prepped: boolean,
+    employeeName: string,
+  ) => void;
   ruleVersion: string;
   section: KitchenChecklistSection;
 }) {
@@ -1831,7 +2491,7 @@ function ChecklistSection({
   return (
     <>
       <tr className={`kitchen-category-heading kitchen-category-${categoryClassName}`}>
-        <th colSpan={6} scope="colgroup">
+        <th colSpan={7} scope="colgroup">
           {section.label || categoryLabels[section.category]}
         </th>
       </tr>
@@ -1845,12 +2505,66 @@ function ChecklistSection({
           ruleVersion,
         });
         const isReady = completedItemKeys.has(readinessKey);
+        const isPrepped = preppedItemKeys.has(readinessKey);
         const isCompleted = finalCompletedItemKeys.has(readinessKey);
         return (
           <tr
             className={`kitchen-category-${categoryClassName}${isReady ? " kitchen-item-complete" : ""}`}
             key={row.key}
           >
+            <td className="kitchen-ready-cell" data-label="Prepped">
+              <div className="kitchen-prepped-control">
+                <label className="kitchen-ready-control">
+                  <input
+                    aria-label={`Mark ${row.foodName} prepped`}
+                    checked={isPrepped}
+                    disabled={
+                      !onPreppedChange || isPreppedPending(readinessKey)
+                    }
+                    onChange={(event) =>
+                      onPreppedChange?.(
+                        readinessKey,
+                        event.target.checked,
+                        preppedBy,
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span className="kitchen-visually-hidden">Prepped</span>
+                </label>
+                {isPrepped ? (
+                  <PreppedAudit
+                    detail={preppedItemDetails[readinessKey]}
+                    pending={isPreppedPending(readinessKey)}
+                  />
+                ) : null}
+              </div>
+            </td>
+            <td
+              className="kitchen-completed-cell"
+              data-label="Verified (different person)"
+            >
+              <label className="kitchen-completed-control">
+                <input
+                  aria-label={`Mark ${row.foodName} verified by a different person`}
+                  checked={isCompleted}
+                  disabled={
+                    !onCompletedChange ||
+                    isCompletionPending(readinessKey)
+                  }
+                  onChange={(event) =>
+                    onCompletedChange?.(
+                      readinessKey,
+                      event.target.checked,
+                    )
+                  }
+                  type="checkbox"
+                />
+                <span className="kitchen-visually-hidden">
+                  Verified by a different person
+                </span>
+              </label>
+            </td>
             <td className="kitchen-ready-cell" data-label="Ready">
               <label className="kitchen-ready-control">
                 <input
@@ -1891,31 +2605,6 @@ function ChecklistSection({
             <td data-label="Number of pans">{row.numberOfPans ?? "—"}</td>
             <td data-label="Pan size">{row.panSize ?? "—"}</td>
             <td data-label="Quantity">{formatQuantity(row)}</td>
-            <td
-              className="kitchen-completed-cell"
-              data-label="Completed"
-            >
-              <label className="kitchen-completed-control">
-                <input
-                  aria-label={`Mark ${row.foodName} completed`}
-                  checked={isCompleted}
-                  disabled={
-                    !onCompletedChange ||
-                    isCompletionPending(readinessKey)
-                  }
-                  onChange={(event) =>
-                    onCompletedChange?.(
-                      readinessKey,
-                      event.target.checked,
-                    )
-                  }
-                  type="checkbox"
-                />
-                <span className="kitchen-visually-hidden">
-                  Completed
-                </span>
-              </label>
-            </td>
           </tr>
         );
       })}
@@ -2029,7 +2718,9 @@ function KitchenAlertDialog({
             ? "New or updated food add-on"
             : alert.kind === "prep"
               ? "Start prepping now"
-              : "Food should be ready"}
+              : alert.kind === "appetizer-drop"
+                ? "Drop appetizers now"
+                : "Food should be ready"}
         </h2>
         <strong>{alert.eventName}</strong>
         <p id="kitchen-alert-description">
