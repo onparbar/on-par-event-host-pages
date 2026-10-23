@@ -694,6 +694,7 @@ export default function ChecklistsClient({
             <span className="meta">
               {progress.completed} of {progress.total} checklist items complete
             </span>
+            <progress aria-label="Checklist completion" className="checklist-progress" max={Math.max(1, progress.total)} value={progress.completed} />
             <span className={`sync-chip sync-chip-${activeSaveState}`}>{saveMessage}</span>
           </div>
         }
@@ -836,8 +837,14 @@ export default function ChecklistsClient({
             <article className="task-section-card">
               <header className="task-section-header">Contract-driven Event Setup</header>
               <div className="task-list">
-                <p>{setup.foodTables === null ? "Food tables: needs review" : `Food tables: ${setup.foodTables}`}{setup.mirrored ? " · Mirrored setup: duplicate equipment and supplies, not food quantities or charges." : ""}</p>
-                <p>Chafing dishes: {setup.chafingDishes ?? "Needs review"} · Tongs: {setup.tongs ?? "Needs review"} · Sauce containers: {setup.sauceContainers ?? "Needs review"} · Spoons: {setup.spoons ?? "Needs review"}</p>
+                <dl className="setup-equipment-grid">
+                  <div><dt>Food tables</dt><dd data-needs-review={setup.foodTables === null}>{setup.foodTables ?? "Needs review"}</dd></div>
+                  <div><dt>Chafing dishes</dt><dd data-needs-review={setup.chafingDishes === null}>{setup.chafingDishes ?? "Needs review"}</dd></div>
+                  <div><dt>Tongs</dt><dd data-needs-review={setup.tongs === null}>{setup.tongs ?? "Needs review"}</dd></div>
+                  <div><dt>Sauce containers</dt><dd data-needs-review={setup.sauceContainers === null}>{setup.sauceContainers ?? "Needs review"}</dd></div>
+                  <div><dt>Spoons</dt><dd data-needs-review={setup.spoons === null}>{setup.spoons ?? "Needs review"}</dd></div>
+                </dl>
+                {setup.mirrored ? <p className="setup-mirror-note">Mirrored setup: duplicate equipment and supplies, not food quantities or charges.</p> : null}
                 <strong>Purchased food — quantities unchanged</strong>
                 <ul>{setup.purchasedFood.map((food, index) => <li key={`${index}:${food}`}>{food}</li>)}</ul>
                 <ul>{setup.food.map((food) => <li key={food.name}>{food.name}: {food.quantity === null ? "Quantity needs review" : `${food.quantity} ${food.unit}`}{food.pans !== null && food.panSize ? ` · ${food.pans} ${food.panSize} pans` : ""}</li>)}</ul>
