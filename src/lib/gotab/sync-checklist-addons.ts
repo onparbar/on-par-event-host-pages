@@ -39,13 +39,21 @@ async function verifySavedAddOnDelivery(kitchenEventId: string, food: Record<str
     const order = latest.get(item.sourceKey);
     return order?.quantity === item.quantity && (item.panSize === null || order.panSize === item.panSize) && eventFoodDeliveryState(order).accepted;
   }).length;
+  const missingIdentity = current.filter((item) => {
+    const order = latest.get(item.sourceKey);
+    return !order || order.quantity !== item.quantity || (item.panSize !== null && order.panSize !== item.panSize);
+  });
+  const summary = summarizeEventFoodDelivery(deliveries, deliveries.map((item) => item.requestId));
+  const deliveryPending = missingIdentity.length === 0 && summary.pending;
   return {
     deliveries,
+    requestIds: deliveries.map((item) => item.requestId),
     acceptedDeliveryCount,
     deliveryVerified: current.length > 0 && missing.length === 0 && outstanding.length === 0,
     noFoodRequired: current.length === 0 && outstanding.length === 0,
-    exceptions: exceptionKeys.size,
-    error: missing.length || outstanding.length ? "Saved food has missing, pending, failed, or held GoTab delivery evidence. Review the saved orders before retrying." : null,
+    deliveryPending,
+    exceptions: deliveryPending ? 0 : exceptionKeys.size,
+    error: !deliveryPending && (missing.length || outstanding.length) ? "Saved food has missing, failed, or held GoTab delivery evidence. Check the saved orders before retrying." : null,
   };
 }
 
@@ -103,8 +111,9 @@ export async function synchronizeChecklistFoodAddOns(
       ...(sourceType === "REFILL" ? { sourceType } : {}),
     },
   );
-  await processGoTabDispatches();
   const requestIds = synchronization.requestIds ?? [];
+  // Do not spend this staff submission's response window on other parties.
+  await processGoTabDispatches({ requestIds });
   const deliveries = await new GoTabIntegrationStorage().listEventFoodDelivery([kitchenEventId], requestIds);
   const delivery = summarizeEventFoodDelivery(deliveries, requestIds);
   const verification = !submittedSourceKeys?.length
@@ -121,5 +130,8 @@ export async function synchronizeChecklistFoodAddOns(
     noFoodRequired: verification?.noFoodRequired ?? false,
     error: verification?.error ?? delivery.error,
     deliveries: verification?.deliveries ?? delivery.deliveries,
+    requestIds: verification?.requestIds ?? requestIds,
+    deliveryPending: synchronization.exceptionCount === 0 &&
+      (verification?.deliveryPending ?? delivery.pending),
   };
 }

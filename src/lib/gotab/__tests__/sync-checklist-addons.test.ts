@@ -72,6 +72,7 @@ describe("Event Add-Ons Kitchen and KDS synchronization", () => {
       },
     );
     expect(gotabMocks.processGoTabDispatches).toHaveBeenCalledOnce();
+    expect(gotabMocks.processGoTabDispatches).toHaveBeenCalledWith({ requestIds: ["request-1"] });
   });
 
   it("retries an explicitly submitted item even when its saved quantity is unchanged", async () => {
@@ -106,6 +107,20 @@ describe("Event Add-Ons Kitchen and KDS synchronization", () => {
     );
   });
 
+  it("keeps a known pending refill separate from errors without another send", async () => {
+    const food = { "appetizer-refill-tater-kegs": { quantity: 1 } };
+    kitchenMocks.getKitchenEventFoodAddOns.mockResolvedValue({ food });
+    kitchenMocks.updateKitchenEventFoodAddOns.mockResolvedValue({ eventId: "event-1", food, revision: 3 });
+    vi.mocked(GoTabIntegrationStorage.prototype.listEventFoodDelivery).mockResolvedValue([{
+      requestId: "pending-refill", eventId: "event-1", sourceKey: "addon:appetizer-refill-tater-kegs",
+      foodName: "Tater Kegs", quantity: 1, panSize: "NOT_APPLICABLE", status: "SENDING",
+      orderReference: null, acceptedAt: null, updatedAt: "2026-10-23T16:30:00Z", error: null,
+    }]);
+    const result = await synchronizeChecklistFoodAddOns("event-1", food);
+    expect(result).toMatchObject({ deliveryVerified: false, deliveryPending: true, exceptions: 0, error: null, requestIds: ["pending-refill"] });
+    expect(gotabMocks.processGoTabDispatches).not.toHaveBeenCalled();
+  });
+
   it("never counts another event's successful worker send as this item's acceptance", async () => {
     kitchenMocks.getKitchenEventFoodAddOns.mockResolvedValue({ food: {} });
     kitchenMocks.updateKitchenEventFoodAddOns.mockResolvedValue({ food: { wings: { quantity: 1 } }, revision: 4 });
@@ -129,7 +144,8 @@ describe("Event Add-Ons Kitchen and KDS synchronization", () => {
     kitchenMocks.updateKitchenEventFoodAddOns.mockResolvedValue({ eventId: "event-1", food, revision: 5, updatedAt: "2026-10-21T17:00:00Z" });
     vi.mocked(GoTabIntegrationStorage.prototype.listEventFoodDelivery).mockResolvedValue([{ requestId: "prior-failed", eventId: "event-1", sourceKey: "addon:wing-refill-wings", foodName: "Wings", quantity: 1, panSize: "TRAY", status, orderReference: null, acceptedAt: null, updatedAt: "2026-10-21T17:00:00Z", error: null }]);
     const result = await synchronizeChecklistFoodAddOns("event-1", food);
-    expect(result).toMatchObject({ queued: 0, sent: 0, acceptedDeliveryCount: 0, deliveryVerified: false, noFoodRequired: false, exceptions: 1 });
+    const pending = ["SENDING", "QUEUED"].includes(status);
+    expect(result).toMatchObject({ queued: 0, sent: 0, acceptedDeliveryCount: 0, deliveryVerified: false, noFoodRequired: false, deliveryPending: pending, exceptions: pending ? 0 : 1 });
     expect(result.deliveries).toHaveLength(1);
     expect(gotabMocks.processGoTabDispatches).not.toHaveBeenCalled();
     expect(gotabMocks.synchronizeKitchenLiveAddOnsToEventFood).not.toHaveBeenCalled();

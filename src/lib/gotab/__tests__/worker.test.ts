@@ -25,6 +25,74 @@ function environment(overrides: Record<string, string> = {}) {
 }
 
 describe("GoTab dispatch worker", () => {
+  it("processes only the newly submitted refill even with more than 25 older due orders", async () => {
+    const fresh = {
+      id: "fresh-dispatch", request_id: "fresh-request", idempotency_key: "event:REFILL:wings:1:DISPATCH",
+      action: "DISPATCH", status: "SENDING", attempt_count: 1,
+      sanitized_payload: { eventName: "Training event", product: "Wings", gotabProductUuid: "prd_wings", quantity: 1 },
+    };
+    const backlog = Array.from({ length: 30 }, (_, index) => ({ ...fresh, id: `old-dispatch-${index}`, request_id: `old-request-${index}` }));
+    const storage = {
+      claimDueDispatches: vi.fn().mockImplementation(async (_workerId, _limit, requestIds) =>
+        requestIds ? [fresh].filter((row) => requestIds.includes(row.request_id)) : backlog.slice(0, 25)),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({ event_id: "event-1", source_record_id: "addon:wings" }),
+      getKitchenFoodRunner: vi.fn().mockResolvedValue(null),
+      finishDispatch: vi.fn().mockResolvedValue(undefined),
+    };
+    const createEventFoodTab = vi.fn().mockResolvedValue({ tabUuid: "tab-1", orderUuid: "order-1", itemUuid: "item-1" });
+    const result = await processGoTabDispatches({
+      storage: storage as never, workerId: "staff-worker", requestIds: ["fresh-request"],
+      client: { createEventFoodTab }, env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+    });
+    expect(storage.claimDueDispatches).toHaveBeenCalledWith("staff-worker", 1, ["fresh-request"]);
+    expect(result).toMatchObject({ claimed: 1, sent: 1 });
+    expect(createEventFoodTab).toHaveBeenCalledOnce();
+    expect(storage.finishDispatch).toHaveBeenCalledWith("fresh-dispatch", expect.objectContaining({ status: "SENT" }));
+  });
+
+  it("does not turn an empty immediate request scope into an unscoped cron run", async () => {
+    const storage = { claimDueDispatches: vi.fn().mockResolvedValue([]) };
+    const result = await processGoTabDispatches({ storage: storage as never, workerId: "staff-worker", requestIds: [], env: environment() });
+    expect(storage.claimDueDispatches).toHaveBeenCalledWith("staff-worker", 25, []);
+    expect(result.claimed).toBe(0);
+  });
+
+  it("holds a duplicate contract item before any GoTab write", async () => {
+    const createEventFoodTab = vi.fn();
+    const storage = {
+      claimDueDispatches: vi.fn().mockResolvedValue([{
+        id: "duplicate-dispatch", request_id: "duplicate-request",
+        idempotency_key: "event:TRIPLESEAT_CONTRACT:taco-beef:old-version:DISPATCH",
+        action: "DISPATCH", status: "SENDING", attempt_count: 1,
+        sanitized_payload: {
+          eventName: "Redacted Event", product: "Taco Bar Beef",
+          gotabProductUuid: "prd_beef", quantity: 1,
+        },
+      }]),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "event-123", source_type: "TRIPLESEAT_CONTRACT",
+        source_record_id: "taco-beef", food_service_time: "2026-10-23T16:00:00Z",
+      }),
+      getContractFoodDispatchDecision: vi.fn().mockResolvedValue({
+        allowed: false, reason: "ALREADY_SENT",
+      }),
+      finishDispatch: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await processGoTabDispatches({
+      storage: storage as never,
+      client: { createEventFoodTab },
+      env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+    });
+
+    expect(result).toMatchObject({ held: 1, sent: 0, failed: 0 });
+    expect(createEventFoodTab).not.toHaveBeenCalled();
+    expect(storage.finishDispatch).toHaveBeenCalledWith("duplicate-dispatch", {
+      status: "HELD",
+      lastError: "Duplicate contract order blocked because this event item was already sent to GoTab.",
+    });
+  });
+
   it.each([
     { scenario: "a timeout after possible order acceptance", status: null },
     { scenario: "a server error after possible order acceptance", status: 500 },

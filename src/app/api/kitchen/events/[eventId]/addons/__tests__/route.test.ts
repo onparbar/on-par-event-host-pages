@@ -167,6 +167,7 @@ describe("kitchen event add-on API", () => {
     );
     expect(gotabMocks.processGoTabDispatches).toHaveBeenCalledOnce();
     expect(gotabMocks.listEventFoodDelivery).toHaveBeenCalledWith(["preview-alpha"], ["request-1"]);
+    expect(gotabMocks.processGoTabDispatches).toHaveBeenCalledWith({ requestIds: ["request-1"] });
   });
 
   it("returns the current revision when another staff session wins the write", async () => {
