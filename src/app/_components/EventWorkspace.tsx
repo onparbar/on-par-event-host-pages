@@ -126,25 +126,6 @@ export function EventWorkspaceReminders() {
   </section>;
 }
 
-export function EventWorkspaceActivities() {
-  const workspace = useEventWorkspace(); const { staffName } = useEventContext();
-  if (!workspace?.payload) return null;
-  const { payload, state } = workspace;
-  return <section className="event-workspace-panel" aria-label="Selected event activities"><h2>This event’s entertainment</h2>
-    {payload.warnings.map((warning) => <p role="status" key={warning}>{warning}</p>)}
-    {!payload.activities.length ? <p>No entertainment is booked or explicitly assigned to this event.</p> : null}
-    <div className="workspace-activity-grid">{payload.activities.map((activity) => <article className="workspace-activity" key={activity.id}>
-      <h3>{activity.label}{activity.quantity ? `: ${activity.quantity}` : ""}</h3>
-      <p>{activity.untimed ? "Untimed — contract quantity only" : `${workspaceClock(activity.startAt, true)} – ${workspaceClock(activity.endAt, true)}`}</p>
-      <p>{activity.resourceNames.join(", ") || payload.event.rooms.join(", ")}</p>
-      <strong>{activity.cancelled ? "Cancelled" : activity.completedAt ? "Completed" : activity.startedAt ? "Started" : "Not started"}</strong>
-      {activity.startedAt ? <small>Started by {activity.startedBy} · {workspaceClock(activity.startedAt, true)}</small> : null}
-      {activity.completedAt ? <small>Completed by {activity.completedBy} · {workspaceClock(activity.completedAt, true)}</small> : null}
-      {!activity.cancelled && !activity.completedAt ? <div className="workspace-action-row">{!activity.startedAt ? <button disabled={state === "saving" || !staffName || payload.record?.status === "submitted"} onClick={() => void workspace.act({ action: "START_ACTIVITY", activityId: activity.id })} type="button">Mark Started</button> : null}<button disabled={state === "saving" || !staffName || payload.record?.status === "submitted"} onClick={() => void workspace.act({ action: "COMPLETE_ACTIVITY", activityId: activity.id })} type="button">Mark Completed</button></div> : null}
-    </article>)}</div>
-  </section>;
-}
-
 export function EventWorkspaceTimeline() {
   const workspace = useEventWorkspace();
   const entries = useMemo(() => workspace?.payload ? workspaceTimeline(workspace.payload) : [], [workspace?.payload]);
