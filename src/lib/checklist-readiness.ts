@@ -3,6 +3,7 @@ import type { EventPlan } from "./event-plans/types";
 import { kitchenEventInterval } from "./kitchen/lifecycle";
 import { normalizeKitchenSelections } from "./kitchen/normalize";
 import { contractSetup, setupTaskFingerprint } from "./operations/setup";
+export { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY } from "./checklist-model";
 
 export type ChecklistTaskRequirement = {
   key: string;
@@ -34,8 +35,8 @@ function categoryRequirement(event: EventPlan, values: string[], matches: (value
 export function checklistTaskRequirements(event: EventPlan): ChecklistTaskRequirement[] {
   const food = categoryRequirement(event, event.food, (value) => !/^no food\b|^none$/i.test(value.trim()), "Food");
   // Event-plan display values use the deterministic “quantity × item” format.
-  // Remove that presentation prefix before applying the existing food aliases.
-  const normalizedFood = normalizeKitchenSelections(event.food.map((name) => ({ name: name.replace(/^\s*\d+(?:\.\d+)?\s*[×x]\s*/i, ""), isFood: true })));
+  // Remove that presentation prefix and split the exact canonical kind-label separator before applying the existing food aliases.
+  const normalizedFood = normalizeKitchenSelections(event.food.flatMap((name) => name.replace(/^\s*\d+(?:\.\d+)?\s*[×x]\s*/i, "").split(" + ").map((name) => ({ name, isFood: true }))));
   const hotFood = food.applicability !== "required" ? food
     : normalizedFood.some((selection) => selection.kinds.some((kind) => kind.startsWith("bar:") || (kind.startsWith("platter:") && kind !== "platter:veggie-tray"))) ? required
     : normalizedFood.some((selection) => !selection.kinds.length || selection.kinds.some((kind) => kind.startsWith("package:"))) ? { applicability: "needs-review" as const, reason: "Hot-food equipment requirements are not verified from the food selections." }
@@ -64,18 +65,36 @@ export function checklistTaskRequirements(event: EventPlan): ChecklistTaskRequir
   }));
 }
 
-export function checklistReadiness(event: EventPlan, state: Pick<EventChecklistState, "tasks" | "bwa" | "taskEvidence">) {
+export function checklistReadiness(event: EventPlan, state: Pick<EventChecklistState, "tasks" | "bwa" | "taskEvidence">, confirmedWarningFingerprint?: string) {
   const setup = contractSetup(event);
+  const changedTasks = new Set<string>();
   const tasks = checklistTaskRequirements(event).map((task) => {
     const recorded = state.taskEvidence?.[task.key]?.sourceFingerprint;
     const current = recorded ? setupTaskFingerprint(event, task.key, setup) : undefined;
-    return recorded && current && recorded !== current
-      ? { ...task, applicability: "needs-review" as const, reason: "Contract setup changed. Review the updated setup, then complete this task again." }
-      : task;
+    if (recorded && current && recorded !== current) {
+      changedTasks.add(task.key);
+      return { ...task, applicability: "needs-review" as const, reason: "Contract setup changed. Review the updated setup, then complete this task again." };
+    }
+    return task;
   });
   const review = tasks.filter((task) => task.critical && task.applicability === "needs-review");
   const applicable = tasks.filter((task) => task.applicability === "required");
   const complete = (task: ChecklistTaskRequirement) => state.tasks[task.key] === true && typeof state.taskEvidence?.[task.key]?.employeeName === "string" && Boolean(state.taskEvidence[task.key].employeeName.trim()) && Number.isFinite(Date.parse(state.taskEvidence[task.key].completedAt));
-  const missing = applicable.filter((task) => task.critical && !complete(task));
-  return { tasks, review, missing, completed: applicable.filter(complete).length, total: applicable.length, canSubmit: Boolean(state.bwa.trim()) && review.length === 0 && missing.length === 0 };
+  const missing = tasks.filter((task) => task.critical && task.applicability !== "not-applicable" && (!complete(task) || changedTasks.has(task.key)));
+  const warningMessages = review.length ? [...new Set([
+    ...review.map((task) => `${task.label}: ${task.reason}`),
+    ...(event.review_reasons ?? []),
+  ].map((message) => message.trim()).filter(Boolean))] : [];
+  // Like setupTaskFingerprint, bind consent to the exact current source inputs, not the saved receipt.
+  const warningFingerprint = review.length ? JSON.stringify([
+    "contract-closeout-v1", event.id, event.date, event.name, event.time, event.guest_count,
+    event.rooms, event.food, event.drink_options, event.entertainment, event.special_instructions ?? [],
+    event.operational_notes ?? [], event.verification_status, Boolean(event.needs_review),
+    [...new Set(event.review_reasons ?? [])].sort(), event.tripleseat_booking_id ?? null,
+    event.source_updated_at ?? null, event.rule_version ?? null,
+    tasks.filter((task) => task.critical).map((task) => [task.key, task.applicability, task.reason, setupTaskFingerprint(event, task.key, setup) ?? null]),
+  ]) : null;
+  const canSubmitAfterWarningConfirmation = Boolean(state.bwa.trim()) && review.length > 0 && missing.length === 0;
+  const canSubmit = Boolean(state.bwa.trim()) && missing.length === 0 && (review.length === 0 || (canSubmitAfterWarningConfirmation && confirmedWarningFingerprint === warningFingerprint));
+  return { tasks, review, missing, completed: applicable.filter(complete).length, total: applicable.length, canSubmit, warningFingerprint, warningMessages, canSubmitAfterWarningConfirmation };
 }

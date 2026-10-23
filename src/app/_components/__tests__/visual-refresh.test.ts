@@ -52,4 +52,15 @@ describe("dashboard visual refresh boundaries", () => {
     expect(checklist).toContain('<progress aria-label="Checklist completion"');
     expect(checklist).toContain('max={Math.max(1, progress.total)} value={progress.completed}');
   });
+  it("shows the exact submission blockers without bypassing closeout validation", () => {
+    expect(checklist).toContain('aria-label="Checklist submission requirements"');
+    expect(checklist).toContain("readiness.missing.map((task)");
+    expect(checklist).toContain("readiness.warningMessages.map((message)");
+    expect(checklist).toContain("Reconfirm with your staff name and completion time:");
+    expect(checklist).toContain("readiness.canSubmit || warningsConfirmed && readiness.canSubmitAfterWarningConfirmation");
+    expect(checklist).toContain("warningConfirmation.employeeName === warningActor");
+    expect(checklist).toContain("confirmation?.sourceFingerprint === currentReadiness.warningFingerprint");
+    expect(checklist).toContain("confirmedWarnings ? { warningConfirmation:");
+    expect(checklist).toContain("disabled={!canSubmit || isSubmitted}");
+  });
 });
