@@ -9,6 +9,7 @@ supabase/.temp/
 .private-migration-audit/
 *.tsbuildinfo
 *.log
+supabase/.temp/
 .env
 .env.*
 !.env.example
