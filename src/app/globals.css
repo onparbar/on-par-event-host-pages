@@ -9128,11 +9128,6 @@ a {
 @media screen and (min-width: 900px) and (orientation: landscape) {
   .staff-event-workspace.entertainment-dashboard-shell { height: 100dvh; }
   .staff-event-workspace.entertainment-dashboard-shell > .staff-workspace-sidebar { min-height: 0; overflow: auto; }
-  .staff-event-workspace > .entertainment-main { grid-template-rows: auto auto minmax(0, 1fr) auto; }
-  .staff-event-workspace > .entertainment-main > .event-workspace-panel { grid-column: 1; grid-row: 1; max-height: 23dvh; margin: 6px; overflow: auto; }
-  .staff-event-workspace > .entertainment-main > .entertainment-sidebar { grid-row: 2; }
-  .staff-event-workspace > .entertainment-main > .entertainment-workspace { grid-row: 3; }
-  .staff-event-workspace > .entertainment-main > .entertainment-legend { grid-row: 4; }
 }
 @media screen and (max-width: 900px) {
   .staff-event-workspace { grid-template-columns: 180px minmax(0, 1fr); }

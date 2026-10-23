@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -8,6 +9,15 @@ import type {
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/entertainment-schedules",
+}));
+
+vi.mock("@/app/_components/EventWorkspace", () => ({
+  EventWorkspaceActivities: () => createElement(
+    "section",
+    { "aria-label": "Selected event activities" },
+    "This event’s entertainment",
+  ),
+  EventWorkspaceReminders: () => null,
 }));
 
 import EntertainmentScheduleDashboard, {
@@ -123,6 +133,29 @@ describe("entertainment schedule kiosk fit", () => {
 });
 
 describe("entertainment schedule dashboard controls", () => {
+  it("keeps the activity-card panel out of the schedule editing area", () => {
+    const html = renderToStaticMarkup(
+      createElement(EntertainmentScheduleDashboard, {
+        initialDate: "2026-08-14",
+        initialPayload: loadedPayload,
+      }),
+    );
+
+    expect(html).not.toContain('aria-label="Selected event activities"');
+    expect(html).not.toContain("This event’s entertainment");
+    expect(html).toContain(">Edit</button>");
+    expect(html).toContain(">Save</button>");
+    expect(html).toContain('data-layout-region="main"');
+    expect(html).toContain('data-layout-region="compact"');
+  });
+
+  it("does not reserve a kiosk layout row for the removed activity cards", () => {
+    const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
+
+    expect(css).not.toContain(".staff-event-workspace > .entertainment-main > .event-workspace-panel");
+    expect(css).not.toContain(".staff-event-workspace > .entertainment-main { grid-template-rows: auto auto minmax(0, 1fr) auto; }");
+  });
+
   it("starts locked with explicit Edit and Save controls", () => {
     const html = renderToStaticMarkup(
       createElement(EntertainmentScheduleDashboard, {

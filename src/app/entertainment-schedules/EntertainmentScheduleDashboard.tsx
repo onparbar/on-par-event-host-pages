@@ -1,7 +1,5 @@
 "use client";
 
-import { EventWorkspaceActivities } from "@/app/_components/EventWorkspace";
-
 import {
   useEffect,
   useMemo,
@@ -1762,7 +1760,6 @@ export default function EntertainmentScheduleDashboard({
         sectionTitle="Entertainment Schedule"
       />
       <main className="entertainment-main">
-        <EventWorkspaceActivities />
         <h1 className="entertainment-visually-hidden">
           Entertainment Schedule
         </h1>
