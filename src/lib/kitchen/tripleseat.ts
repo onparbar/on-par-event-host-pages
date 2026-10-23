@@ -79,6 +79,10 @@ export interface TripleseatAdapter {
   fetchEntertainmentEventsForDate?(
     date: string,
   ): Promise<EntertainmentSourceEvent[]>;
+  fetchEntertainmentEventsOverlappingRange?(
+    from: string,
+    to: string,
+  ): Promise<EntertainmentSourceEvent[]>;
   fetchEventDateById(eventId: string): Promise<string | null>;
   getDiagnostics(): TripleseatDiagnostics;
 }
@@ -1022,15 +1026,19 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     startDate: string,
     endDate = startDate,
     status: string | null = REQUIRED_STATUS,
+    requireComplete = false,
+    overlap = false,
   ) {
     const events: UnknownRecord[] = [];
     const seen = new Set<string>();
 
     const searchStatus = async (requestedStatus: string | null) => {
+      let expectedPages: number | null = null;
+      const statusSeen = new Set<string>();
       for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
         const query = new URLSearchParams({
-          event_start_date: apiDate(startDate),
-          event_end_date: apiDate(endDate),
+          [overlap ? "date_range_start" : "event_start_date"]: apiDate(startDate),
+          [overlap ? "date_range_end" : "event_end_date"]: apiDate(endDate),
           location_ids: this.locationId,
           order: "event_start",
           sort_direction: "asc",
@@ -1040,12 +1048,45 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
           query.set("status", requestedStatus);
         }
         const payload = await this.requestJson(`events/search?${query}`);
+        const envelope = asRecord(payload);
+        const totalPages = envelope ? asNumber(envelope.total_pages) : null;
+        if (requireComplete) {
+          if (
+            !Array.isArray(envelope?.results) ||
+            totalPages == null ||
+            !Number.isInteger(totalPages) ||
+            totalPages < 0 ||
+            totalPages > MAX_EVENT_PAGES ||
+            (expectedPages != null && totalPages !== expectedPages)
+          ) {
+            throw new Error(
+              "Tripleseat event search completeness could not be verified.",
+            );
+          }
+          expectedPages = totalPages;
+        }
         const records = extractArray(payload, ["results", "events", "data"])
           .map(asRecord)
           .filter((record): record is UnknownRecord => record != null);
         let added = 0;
+        if (
+          requireComplete &&
+          (records.length !== (envelope!.results as unknown[]).length ||
+            (records.length === 0 && totalPages! > 1) ||
+            (totalPages === 0 && records.length > 0))
+        ) {
+          throw new Error(
+            "Tripleseat event search completeness could not be verified.",
+          );
+        }
         for (const record of records) {
           const id = sourceEventId(record);
+          if (requireComplete && (!id || statusSeen.has(id))) {
+            throw new Error(
+              "Tripleseat event search completeness could not be verified.",
+            );
+          }
+          if (id) statusSeen.add(id);
           if (id && !seen.has(id)) {
             seen.add(id);
             events.push(record);
@@ -1053,11 +1094,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
           }
         }
 
-        const envelope = asRecord(payload);
-        const totalPages = envelope ? asNumber(envelope.total_pages) : null;
         if (
           records.length === 0 ||
-          added === 0 ||
+          (!requireComplete && added === 0) ||
           (totalPages != null && page >= totalPages)
         ) {
           break;
@@ -1076,8 +1115,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       ]) {
         try {
           await searchStatus(fallbackStatus);
-          if (events.length > 0) break;
+          if (!requireComplete && events.length > 0) break;
         } catch (error) {
+          if (requireComplete) throw error;
           if (!(error instanceof TripleseatApiError)) throw error;
         }
       }
@@ -1264,6 +1304,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
   private async normalizeEntertainmentEvent(
     summary: UnknownRecord,
     requestedDate: string,
+    strict = false,
   ): Promise<EntertainmentSourceEvent | null> {
     const summaryId = sourceEventId(summary);
     if (!summaryId) {
@@ -1272,9 +1313,16 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const detail = await this.eventDetail(summaryId);
     const eventId = sourceEventId(detail) ?? summaryId;
     const status = asString(detail.status);
-    const fullBuyout = isFullBuyoutRecord(summary, detail);
+    // On Par uses every Tentative event as a complete venue buyout, independent of its name.
+    const fullBuyout =
+      status?.trim().toUpperCase() === "TENTATIVE" ||
+      isFullBuyoutRecord(summary, detail);
     const locationId = asString(detail.location_id);
-    if (status && status.toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
+    if (strict && (sourceEventId(detail) !== summaryId || locationId !== this.locationId || !status ||
+      !["DEFINITE", "TENTATIVE", "PROSPECT", "LOST", "CLOSED", "CANCELED", "CANCELLED"].includes(status.trim().toUpperCase()))) {
+      throw new Error("Tripleseat entertainment identity or location could not be verified.");
+    }
+    if (status && status.trim().toUpperCase() !== REQUIRED_STATUS && !fullBuyout) {
       return null;
     }
     if (locationId && locationId !== this.locationId) {
@@ -1656,7 +1704,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         ].join(", ")}.`,
       );
     }
-    const summaries = await this.eventSummaries(date, date, null);
+    const summaries = await this.eventSummaries(date, date, null, true);
     const events = await Promise.all(
       summaries.map((summary) =>
         this.normalizeEntertainmentEvent(summary, date),
@@ -1670,6 +1718,25 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       .sort((left, right) =>
         (left.eventStartAt ?? "").localeCompare(right.eventStartAt ?? ""),
       );
+  }
+
+  /** Inclusive calendar overlap search: do not filter the result by its starting date. */
+  async fetchEntertainmentEventsOverlappingRange(from: string, to: string) {
+    if (!isValidKitchenDate(from) || !isValidKitchenDate(to) || from > to ||
+      Date.parse(to) - Date.parse(from) > 33 * 86_400_000) {
+      throw new Error("Entertainment overlap range is invalid.");
+    }
+    await this.ensureInitialized();
+    const summaries = await this.eventSummaries(from, to, null, true, true);
+    const events: EntertainmentSourceEvent[] = [];
+    // Bound upstream concurrency. A failed detail read invalidates the whole result.
+    for (let index = 0; index < summaries.length; index += 5) {
+      const batch = await Promise.all(summaries.slice(index, index + 5).map(
+        (summary) => this.normalizeEntertainmentEvent(summary, from, true),
+      ));
+      events.push(...batch.filter((event): event is EntertainmentSourceEvent => event != null));
+    }
+    return events;
   }
 
   async fetchEventDateById(eventId: string) {
@@ -1766,13 +1833,19 @@ function mockRequested(env: NodeJS.ProcessEnv) {
 export function createTripleseatAdapter(options: LiveAdapterOptions = {}) {
   const env = options.env ?? process.env;
   const missing = getMissingTripleseatEnvironmentVariables(env);
-  if (mockRequested(env) || missing.length > 0) {
+  if (tripleseatSourceMode(env) === "mock") {
     return new MockTripleseatAdapter({
       missingEnvironmentVariables: missing,
       locationId: env.TRIPLESEAT_LOCATION_ID?.trim() || DEFAULT_LOCATION_ID,
     });
   }
   return new LiveTripleseatAdapter(options);
+}
+
+/** Configuration-only selection, also used by the real adapter factory. No I/O. */
+export function tripleseatSourceMode(env: NodeJS.ProcessEnv = process.env): "live" | "mock" {
+  return mockRequested(env) || getMissingTripleseatEnvironmentVariables(env).length > 0
+    ? "mock" : "live";
 }
 
 export function getTripleseatAdapter() {
