@@ -16,6 +16,7 @@ import { ConnectivityBanner } from "./ConnectivityBanner";
 import { isStaffWorkspaceRoute, STAFF_WORKSPACE_NAVIGATION } from "@/lib/operations/staff-workspace";
 import { StaffNameSelect } from "./StaffNameSelect";
 import { EventWorkspaceReminders } from "./EventWorkspace";
+import { operationalEventRequestHref } from "@/lib/operations/event-context";
 
 const PORTAL_NAVIGATION = [
   { href: "/", label: "Home" },
@@ -52,7 +53,7 @@ function PortalNavigation({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const { eventHref } = useEventContext();
+  const { eventHref, requestedDate, selectedEvent } = useEventContext();
 
   return (
     <nav
@@ -65,7 +66,7 @@ function PortalNavigation({
           <Link
             aria-current={active ? "page" : undefined}
             className={active ? "is-active" : undefined}
-            href={eventHref(item.href)}
+            href={item.href === "/floor-plans" ? operationalEventRequestHref(item.href, null, requestedDate ?? selectedEvent?.date ?? null) : eventHref(item.href)}
             key={item.href}
             onClick={onNavigate}
           >
@@ -90,7 +91,7 @@ export function PortalHeader({
   const [changingStaff, setChangingStaff] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
-  const { selectedEvent, preferredEventId, ready, clearEvent, staffName, setStaffName, switchEvent } = useEventContext();
+  const { selectedEvent, requestedEventId, preferredEventId, ready, clearEvent, staffName, setStaffName, switchEvent } = useEventContext();
 
   useEffect(() => {
     const header = headerRef.current;
@@ -189,7 +190,7 @@ export function PortalHeader({
       ) : null}
     </header>
     {!blocked ? <ConnectivityBanner /> : null}
-    {!pathname.startsWith("/admin") && !blocked && ready && (selectedEvent || preferredEventId) ? (
+    {!pathname.startsWith("/admin") && (pathname !== "/floor-plans" || requestedEventId) && !blocked && ready && (selectedEvent || preferredEventId) ? (
       <section aria-label="Selected event workspace" className="portal-event-context">
         <div>
           <span className="portal-event-context-label">Selected event</span>
@@ -217,8 +218,8 @@ export function PortalFrame({
   className?: string;
 }) {
   const pathname = usePathname();
-  const { selectedEvent, staffName, ready, switchEvent } = useEventContext();
-  const workspace = Boolean(ready && selectedEvent && staffName && isStaffWorkspaceRoute(pathname));
+  const { selectedEvent, requestedEventId, staffName, ready, switchEvent } = useEventContext();
+  const workspace = Boolean(ready && selectedEvent && staffName && isStaffWorkspaceRoute(pathname) && (pathname !== "/floor-plans" || requestedEventId));
   const shellRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const shell = shellRef.current;

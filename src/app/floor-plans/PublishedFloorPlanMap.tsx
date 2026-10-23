@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
 import { findOperationalFloorPlanEvent, operationalFloorPlanEventId } from "@/lib/operations/floor-plan-context";
 import {
@@ -34,25 +35,20 @@ export default function PublishedFloorPlanMap({
   focusEventId?: string;
 }) {
   const context = useEventContext();
-  const requestedId = focusEventId ?? context.preferredEventId;
+  const [visibleEventId, setVisibleEventId] = useState<string | null>(null);
+  const requestedId = focusEventId ?? visibleEventId;
   const selected = findOperationalFloorPlanEvent(payload.plan.events, requestedId);
   const contextEvent = selected ? {
     eventId: operationalFloorPlanEventId(selected), eventName: selected.name, date: payload.plan.eventDate,
     area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: selected.guestCount,
     time: selected.startAt && selected.endAt ? `${formatClock(selected.startAt)} – ${formatClock(selected.endAt)}` : "Time needs review",
   } : null;
-  if (requestedId && (!selected || (context.requestedDate && context.requestedDate !== payload.plan.eventDate))) return <p className="floor-plan-warning-copy" role="alert">No floor plan assigned. The selected event cannot be uniquely matched to this saved floor plan. No other party was substituted. <button onClick={context.switchEvent} type="button">Switch Event</button></p>;
+  if (focusEventId && (!selected || (context.requestedDate && context.requestedDate !== payload.plan.eventDate))) return <p className="floor-plan-warning-copy" role="alert">No floor plan assigned. The selected event cannot be uniquely matched to this saved floor plan. No other party was substituted. <button onClick={context.switchEvent} type="button">Switch Event</button></p>;
   return (
     <>
-    <EventSelectionBridge event={contextEvent} />
+    <EventSelectionBridge event={focusEventId ? contextEvent : null} />
     <PublishedFloorPlanMapView
-      onSelectEvent={(eventId) => {
-        const event = payload.plan.events.find((item) => item.id === eventId);
-        if (!event) { context.clearEvent(); return; }
-        context.selectEvent({ eventId: operationalFloorPlanEventId(event), eventName: event.name, date: payload.plan.eventDate,
-          area: event.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: event.guestCount,
-          time: event.startAt && event.endAt ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}` : "Time needs review" });
-      }}
+      onSelectEvent={setVisibleEventId}
       payload={payload}
       selectedEventId={selected?.id ?? null}
       focused={Boolean(focusEventId)}
