@@ -31,7 +31,7 @@ read-only history export. It makes no database connection or repair and always
 requires review. Its report helps prepare the exact manifest; it does not
 establish schema equivalence or replace the source-only dry run.
 
-The source candidate now incorporates operations through `5f2f041`, preserving
+The source candidate now incorporates operations through `afcbada`, preserving
 the floor-plan, kitchen, itinerary and revision-safe staff workflow changes from
 `ef6e45f`, the October 22 platter calculations and contract-order replay guard
 from `1bcc612`, and the legacy duplicate-contract guard from `be9a129`.
@@ -42,6 +42,11 @@ The subsequent `5f2f041` workspace release adds event-scoped navigation, manual
 staff POC, shared task/activity/reminder evidence, request notes and operating
 timelines using the existing checked-save records. It preserves source/revision
 checks, seating-only buffers and untimed Mini Golf; no migration was added.
+The subsequent `afcbada` release preserves visual refresh `2181e97`, corrects
+canonical package-label parsing and adds fresh staff confirmation for otherwise
+complete checklists with contract warnings. Required critical tasks still block
+closeout; the server records current warnings for Admin without clearing source
+review flags. Existing GoTab and floor-plan checked-save runtime is preserved.
 Tina acknowledged the source handoff and Waitlist diagnostic in
 [comment 6351700367](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6351700367).
 Her operations release does not resolve the source adoption manifest, source-only
@@ -49,12 +54,12 @@ dry run or authorized Preview of this combined candidate; those remain required.
 The local inventory contains 20 migrations; export the full current remote history
 and compare all local files rather than assuming the older count is current.
 Tina reported the October 23 operations promotion in
-[comment 6371418043](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6371418043),
+[comment 6373119796](https://github.com/onparbar/on-par-event-host-pages/pull/3#issuecomment-6373119796),
 following her separate staff-access decision and operations Preview checks.
-An independent October 23 configuration-only release check confirms `5f2f041`
+An independent October 23 configuration-only release check confirms `afcbada`
 as production, the intended database target, and live Tripleseat/GoTab modes.
 This is configuration evidence, not source-migration or live-data acceptance.
-The operations Preview for `5f2f041` does not contain this combined source
+The operations Preview for `afcbada` does not contain this combined source
 candidate. Physical KDS receipt and live multi-device staff actions remain owner
 validation; older task evidence without source fingerprints cannot be matched
 retrospectively to a historical contract revision. No such acceptance is claimed
