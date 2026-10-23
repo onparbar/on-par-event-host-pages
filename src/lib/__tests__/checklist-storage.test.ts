@@ -6,7 +6,7 @@ import {
   resetLocalChecklistStorageForTests,
   saveChecklist,
 } from "../checklist-storage";
-import { defaultChecklistState } from "../checklist-model";
+import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY, defaultChecklistState } from "../checklist-model";
 
 afterEach(() => {
   resetLocalChecklistStorageForTests();
@@ -272,6 +272,53 @@ describe("atomic checklist saves", () => {
     const submitted = await saveChecklist({ ...input, action: "submit" });
     await expect(saveChecklist({ ...input, expectedUpdatedAt: submitted.updatedAt })).rejects.toMatchObject({ status: 409 });
     await expect(saveChecklist({ ...input, expectedUpdatedAt: submitted.updatedAt, allowReopen: true })).resolves.toMatchObject({ status: "draft", submittedAt: null });
+  });
+
+  it("does not allow draft saves to forge a closeout confirmation receipt", async () => {
+    const input = localInput();
+    const forged = { ...input.checklist, tasks: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: true }, taskEvidence: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: { employeeName: "Client supplied", completedAt: "2026-10-23T17:00:00Z", sourceFingerprint: "client supplied", contractWarnings: ["Client supplied warning"] } } };
+    const first = await saveChecklist({ ...input, checklist: forged });
+    expect(first.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+    expect(first.taskEvidence![CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+    const second = await saveChecklist({ ...input, expectedUpdatedAt: first.updatedAt, checklist: forged });
+    expect(second.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+    expect(second.taskEvidence![CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+  });
+
+  it("preserves the server receipt during Admin reopen but clears it on ordinary resubmission", async () => {
+    const input = localInput();
+    const receipt = { employeeName: "Brooke", completedAt: "2026-10-23T17:00:00Z", sourceFingerprint: "server-reviewed-source", contractWarnings: ["Original unresolved contract detail"] };
+    const workspaceKey = "workspace:activity:bowling:completed";
+    const submitted = await saveChecklist({ ...input, action: "submit", checklist: { ...input.checklist, tasks: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: true, [workspaceKey]: true }, taskEvidence: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: receipt, [workspaceKey]: { employeeName: "Carlos", completedAt: "2026-10-23T17:00:00Z" } } } });
+    const reopened = await saveChecklist({ ...input, expectedUpdatedAt: submitted.updatedAt, allowReopen: true });
+    expect(reopened.taskEvidence![CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toEqual(receipt);
+    expect(reopened.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBe(true);
+    const tampered = { ...input.checklist, tasks: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: false }, taskEvidence: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: { ...receipt, employeeName: "Client replacement" } } };
+    const draft = await saveChecklist({ ...input, expectedUpdatedAt: reopened.updatedAt, checklist: tampered });
+    expect(draft.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBe(true);
+    expect(draft.taskEvidence![CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toEqual(receipt);
+    const final = await saveChecklist({ ...input, action: "submit", expectedUpdatedAt: draft.updatedAt });
+    expect(final.status).toBe("submitted");
+    expect(final.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+    expect(final.taskEvidence![CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+    expect(final.tasks[workspaceKey]).toBe(true);
+    expect(final.taskEvidence![workspaceKey].employeeName).toBe("Carlos");
+  });
+
+  it("omits a previous receipt from the hosted CAS payload unless the server supplies a new one", async () => {
+    const input = localInput();
+    vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test");
+    const prior = { event_id: input.eventId, updated_at: "2026-10-23T17:00:00Z", status: "draft", tasks: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: true, "workspace:reminder:food:ack": true }, task_evidence: { [CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]: { employeeName: "Brooke", completedAt: "2026-10-23T17:00:00Z", sourceFingerprint: "old-server-source", contractWarnings: ["Old warning"] } } };
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => init?.method === "POST" ? Response.json({ ...prior, ...JSON.parse(String(init.body)).p_record }) : Response.json([prior]));
+    vi.stubGlobal("fetch", fetchMock);
+    const saved = await saveChecklist({ ...input, action: "submit", expectedUpdatedAt: prior.updated_at });
+    expect(saved.tasks[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+    expect(saved.taskEvidence![CHECKLIST_CLOSEOUT_CONFIRMATION_KEY]).toBeUndefined();
+    expect(saved.tasks["workspace:reminder:food:ack"]).toBe(true);
+    const payload = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(payload.p_expected_updated_at).toBe(prior.updated_at);
+    expect(payload.p_record.tasks).not.toHaveProperty(CHECKLIST_CLOSEOUT_CONFIRMATION_KEY);
+    expect(payload.p_record.task_evidence).not.toHaveProperty(CHECKLIST_CLOSEOUT_CONFIRMATION_KEY);
   });
 
   it("sends the loaded revision to the atomic RPC and never falls back after a missing migration", async () => {

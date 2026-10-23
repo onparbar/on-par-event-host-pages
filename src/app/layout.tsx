@@ -4,6 +4,8 @@ import { EventContextProvider } from "@/app/_components/EventContext";
 import { EventWorkspaceProvider } from "@/app/_components/EventWorkspace";
 import "./globals.css";
 import "./workspace.css";
+import "./visual-refresh.css";
+import "./kitchen-refresh.css";
 
 export const metadata: Metadata = {
   title: "On Par Event Host",

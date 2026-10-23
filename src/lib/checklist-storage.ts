@@ -1,4 +1,4 @@
-import { checklistSections, normalizeStaffPoc, type ChecklistRecord } from "@/lib/checklist-model";
+import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY, checklistSections, normalizeStaffPoc, type ChecklistRecord } from "@/lib/checklist-model";
 import { StaleSaveError } from "@/lib/stale-save";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
@@ -193,8 +193,10 @@ export async function saveChecklist(input: SaveChecklistInput) {
       updated_at: record.updatedAt, poc: record.poc, tasks: record.tasks, task_evidence: record.taskEvidence, status: record.status,
     } : undefined);
   const taskKeys = new Set(checklistSections.flatMap((section) => section.items.map((item) => item.key)));
-  const previousUnknownTasks = Object.fromEntries(Object.entries(previous?.tasks ?? {}).filter(([key]) => !taskKeys.has(key)));
-  const previousUnknownEvidence = Object.fromEntries(Object.entries(previous?.task_evidence ?? {}).filter(([key]) => !taskKeys.has(key)));
+  const preservePrevious = (key: string) => !taskKeys.has(key) && (input.action !== "submit" || key !== CHECKLIST_CLOSEOUT_CONFIRMATION_KEY);
+  const acceptIncoming = (key: string) => input.action === "submit" || key !== CHECKLIST_CLOSEOUT_CONFIRMATION_KEY;
+  const previousUnknownTasks = Object.fromEntries(Object.entries(previous?.tasks ?? {}).filter(([key]) => preservePrevious(key)));
+  const previousUnknownEvidence = Object.fromEntries(Object.entries(previous?.task_evidence ?? {}).filter(([key]) => preservePrevious(key)));
   const suppliedPoc = input.checklist.poc ?? input.poc;
   const incomingPoc = typeof suppliedPoc === "string" ? suppliedPoc.trim() && !normalizeStaffPoc(suppliedPoc) ? undefined : suppliedPoc : undefined;
   const now = new Date(Math.max(Date.now(), Date.parse(previous?.updated_at ?? "") + 1 || 0)).toISOString();
@@ -206,8 +208,8 @@ export async function saveChecklist(input: SaveChecklistInput) {
     bwa: input.checklist.bwa ?? "",
     extras_added: input.checklist.extrasAdded ?? "",
     remaining_drink_card_balance: input.checklist.remainingDrinkCardBalance ?? "",
-    tasks: { ...previousUnknownTasks, ...(input.checklist.tasks ?? {}) },
-    task_evidence: { ...previousUnknownEvidence, ...(input.checklist.taskEvidence ?? {}) },
+    tasks: { ...previousUnknownTasks, ...Object.fromEntries(Object.entries(input.checklist.tasks ?? {}).filter(([key]) => acceptIncoming(key))) },
+    task_evidence: { ...previousUnknownEvidence, ...Object.fromEntries(Object.entries(input.checklist.taskEvidence ?? {}).filter(([key]) => acceptIncoming(key))) },
     entertainment: input.checklist.entertainment ?? {},
     food: input.checklist.food ?? {},
     status: input.action === "submit" ? "submitted" : "draft",
