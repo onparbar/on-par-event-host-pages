@@ -2,10 +2,11 @@ import ItinerariesClient from "./ItinerariesClient";
 import { loadAdminState } from "@/lib/admin-state";
 import { activeEvents } from "@/lib/event-lifecycle";
 import { itineraries } from "@/lib/events";
-import { getEntertainmentDay } from "@/lib/entertainment/sync";
+import { readSavedEntertainmentDay } from "@/lib/entertainment/saved-day";
+import { isValidEntertainmentDate, todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import { loadStaffEventPlans } from "@/lib/operations/staff-events";
 import {
   findEventPlanById,
-  loadEventPlanWindow,
 } from "@/lib/event-plans/sync";
 import { buildItineraryAsset } from "@/lib/itineraries/asset";
 import { getFloorPlanStorage } from "@/lib/floor-plans/storage";
@@ -24,16 +25,19 @@ export const dynamic = "force-dynamic";
 export default async function ItinerariesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ eventId?: string }>;
+  searchParams: Promise<{ eventId?: string; date?: string }>;
 }) {
-  const requestedEventId = Number((await searchParams).eventId);
-  const requestedEvent = Number.isSafeInteger(requestedEventId)
+  const query = await searchParams;
+  const requestedEventId = Number(query.eventId);
+  const storedRequestedEvent = Number.isSafeInteger(requestedEventId)
     ? await findEventPlanById(requestedEventId)
     : null;
+  const date = query.date && isValidEntertainmentDate(query.date) ? query.date : storedRequestedEvent?.date ?? todayInEntertainmentTimeZone();
   const [adminState, eventPlanWindow] = await Promise.all([
     loadAdminState(),
-    loadEventPlanWindow(),
+    loadStaffEventPlans(date),
   ]);
+  const requestedEvent = eventPlanWindow.plans.find((plan) => plan.id === requestedEventId) ?? storedRequestedEvent;
   const savedPdfById = new Map(
     itineraries
       .filter((item) => item.pdf)
@@ -49,7 +53,7 @@ export default async function ItinerariesPage({
     [...new Set(itineraryDates.map((plan) => plan.date))].map(async (date) => {
       const [floorPlan, day] = await Promise.all([
         floorPlanStorage.get(date).catch(() => null),
-        getEntertainmentDay(date).catch(() => null),
+        readSavedEntertainmentDay(date).catch(() => null),
       ]);
       return { date, floorPlan, day };
     }),

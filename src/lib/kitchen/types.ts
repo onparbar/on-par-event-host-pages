@@ -120,6 +120,7 @@ export type KitchenLiveFoodAddOn = {
   panSize: PanSize | null;
   selectedPanSize?: PanSize | null;
   sourceUpdatedAt: string | null;
+  requestNotes?: string;
 };
 
 export type KitchenAddOnActivity = {

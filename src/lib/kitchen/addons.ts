@@ -286,7 +286,7 @@ export type EventHostFoodAddOnKey =
   (typeof KITCHEN_EVENT_ADD_ON_FIELDS)[number]["sourceKey"];
 
 export type KitchenEventAddOnFood = Partial<
-  Record<EventHostFoodAddOnKey, { quantity: number; panSize?: "1/3" | "1/2" }>
+  Record<EventHostFoodAddOnKey, { quantity: number; panSize?: "1/3" | "1/2"; notes?: string }>
 >;
 
 export type KitchenAddOnItemKey = `addon:${EventHostFoodAddOnKey}`;
@@ -301,6 +301,7 @@ export type KitchenAddOnItem = {
   panSize: "1/3" | "1/2" | null;
   selectedPanSize?: "1/3" | "1/2" | null;
   sourceUpdatedAt: string | null;
+  requestNotes?: string;
 };
 
 export type KitchenLiveAddOnEffect = {
@@ -340,6 +341,14 @@ function sourcePanSize(value: unknown) {
   return value.panSize === "1/3" || value.panSize === "1/2"
     ? value.panSize
     : null;
+}
+
+export function normalizeKitchenOrderNotes(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string" || value.trim().length > 500 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)) {
+    throw new Error("Food request notes must be text of up to 500 characters without control characters.");
+  }
+  return value.trim() || undefined;
 }
 
 export function resolveKitchenLiveFoodAddOns(
@@ -389,6 +398,8 @@ export function translateEventHostFoodAddOns(
       return [];
     }
     const selectedPanSize = sourcePanSize(food[rule.sourceKey]);
+    const rawValue = food[rule.sourceKey];
+    const requestNotes = normalizeKitchenOrderNotes(isRecord(rawValue) ? rawValue.notes : undefined);
     const platterRule = rule.calculation.kind === "platter"
       ? KITCHEN_RULE_CONFIG.platter.rules[rule.calculation.platterKind]
       : null;
@@ -411,6 +422,7 @@ export function translateEventHostFoodAddOns(
         ...panAllocation,
         ...(selectedPanSize ? { selectedPanSize } : {}),
         sourceUpdatedAt,
+        ...(requestNotes ? { requestNotes } : {}),
       },
     ];
   });

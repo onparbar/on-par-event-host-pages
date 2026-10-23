@@ -19,6 +19,8 @@ import type {
   FloorPlanEvent,
 } from "@/lib/floor-plans/types";
 import PublishedFloorPlanMap from "./PublishedFloorPlanMap";
+import { findOperationalFloorPlanEvent } from "@/lib/operations/floor-plan-context";
+import { floorPlanEventView } from "@/lib/floor-plans/event-view";
 
 const FLOOR_PLAN_ZOOM_MIN = 50;
 const FLOOR_PLAN_ZOOM_MAX = 200;
@@ -67,6 +69,20 @@ export type FloorPlanUpcomingEntry =
       kind: "saved";
       publication: FloorPlanPublication;
     };
+
+/** A staff workspace never substitutes an all-party image or another date. */
+export function SelectedEventFloorPlan({ payload, eventId, date, zoom = 100 }: {
+  payload: FloorPlanDayPayload | null;
+  eventId: string;
+  date: string | null;
+  zoom?: number;
+}) {
+  const selected = payload && payload.plan.eventDate === date ? findOperationalFloorPlanEvent(payload.plan.events, eventId) : null;
+  const view = payload && selected ? floorPlanEventView(payload.plan, payload.entertainmentReservations, selected.id) : null;
+  const assigned = selected && (selected.fullBuyout || Boolean(view?.plan.reservations.length) || Boolean(view?.entertainmentReservations.length));
+  if (!payload || !assigned) return <PortalCard className="floor-plan-empty-card"><h2>No floor plan assigned</h2><p>No saved floor plan is assigned to this exact event and date. No other party’s seating or whole-day image has been substituted. Ask a manager to assign the plan.</p></PortalCard>;
+  return <PublishedFloorPlanMap focusEventId={eventId} payload={payload} zoom={zoom} />;
+}
 
 export function buildUpcomingFloorPlanEntries(
   assets: readonly FloorPlanDisplayAsset[],
@@ -545,6 +561,9 @@ export default function FloorPlansClient({
     message: string;
   }>({ status: "idle", message: "" });
   const [planZoom, setPlanZoom] = useState(100);
+  const focusedDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date ?? null;
+  const focusedWorkspace = Boolean(eventContext.preferredEventId);
+  const focusedPayload = focusedDate ? liveByDate[focusedDate]?.payload ?? savedPublications.find((publication) => publication.plan.eventDate === focusedDate)?.payload ?? null : null;
 
   useEffect(() => {
     const date = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
@@ -673,6 +692,11 @@ export default function FloorPlansClient({
       sectionSubtitle="Event Host"
       sectionTitle="Floor Plans"
     >
+      {focusedWorkspace ? <>
+        <PortalPageHeader description="Reserved seating and entertainment for your selected event only. Use Switch Event in the header to choose another party." eyebrow="My event workspace" title="Floor Plan" />
+        <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 30 minutes after the event. Entertainment uses booked times only, with no buffer.</p>
+        {!eventContext.ready ? <p role="status">Loading the selected event floor plan…</p> : <SelectedEventFloorPlan date={focusedDate} eventId={eventContext.preferredEventId!} payload={focusedPayload} zoom={planZoom} />}
+      </> : <>
       <PortalPageHeader
         aside={
           <div className="portal-status-row">
@@ -753,6 +777,7 @@ export default function FloorPlansClient({
       <AwaitingApprovalSection
         plans={pendingPublications.map((publication) => publication.plan)}
       />
+      </>}
     </PortalShell>
   );
 }

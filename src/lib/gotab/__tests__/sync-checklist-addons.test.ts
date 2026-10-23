@@ -38,6 +38,27 @@ beforeEach(() => {
 });
 
 describe("Event Add-Ons Kitchen and KDS synchronization", () => {
+  it("saves notes-only edits without creating or retrying a food order", async () => {
+    const key = "wing-refill-wings";
+    kitchenMocks.getKitchenEventFoodAddOns.mockResolvedValue({ food: { [key]: { quantity: 1, notes: "Original note" } } });
+    const food = { [key]: { quantity: 1, notes: "Updated draft note only" } };
+    kitchenMocks.updateKitchenEventFoodAddOns.mockResolvedValue({ eventId: "event-1", food, revision: 9, updatedAt: "2026-10-23T18:00:00Z" });
+    const result = await synchronizeChecklistFoodAddOns("event-1", food);
+    expect(result).toMatchObject({ queued: 0, sent: 1, deliveryVerified: true });
+    expect(kitchenMocks.updateKitchenEventFoodAddOns).toHaveBeenCalledWith("event-1", food);
+    expect(gotabMocks.synchronizeKitchenLiveAddOnsToEventFood).not.toHaveBeenCalled();
+    expect(gotabMocks.processGoTabDispatches).not.toHaveBeenCalled();
+  });
+  it("passes requester metadata without changing the saved Food Runner or POC assignments", async () => {
+    kitchenMocks.getKitchenEventFoodAddOns.mockResolvedValue({ food: {} });
+    kitchenMocks.updateKitchenEventFoodAddOns.mockResolvedValue({ eventId: "event-1", food: { "wing-refill-wings": { quantity: 1 } }, revision: 2, updatedAt: "2026-10-23T17:00:00Z" });
+    const assigned = { event: {}, foodRunners: ["Lex"], pocs: ["Tina"] };
+    kitchenMocks.getKitchenEventChecklist.mockResolvedValue(assigned);
+    gotabMocks.synchronizeKitchenLiveAddOnsToEventFood.mockResolvedValue({ requestCount: 1, exceptionCount: 0, requestIds: ["request-1"] });
+    await synchronizeChecklistFoodAddOns("event-1", { "wing-refill-wings": { quantity: 1 } }, ["wing-refill-wings"], "REFILL", { requesterName: "Carlos" });
+    expect(gotabMocks.synchronizeKitchenLiveAddOnsToEventFood).toHaveBeenCalledWith(assigned, expect.objectContaining({ requesterName: "Carlos", sourceType: "REFILL" }));
+    expect(assigned).toMatchObject({ foodRunners: ["Lex"], pocs: ["Tina"] });
+  });
   it("updates Kitchen, queues changed food, and dispatches it to KDS", async () => {
     kitchenMocks.getKitchenEventFoodAddOns.mockResolvedValue({
       food: {},

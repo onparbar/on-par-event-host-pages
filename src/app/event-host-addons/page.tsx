@@ -1,10 +1,9 @@
 import ChecklistsClient from "@/app/checklists/ChecklistsClient";
 import { loadAdminState } from "@/lib/admin-state";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
-import { loadEventPlanWindow } from "@/lib/event-plans/sync";
-import { rollingEventPlanHorizon } from "@/lib/event-plans/horizon";
-import type { EventPlan } from "@/lib/event-plans/types";
-import { VipPrepClient, vipPrepEventPlan } from "@/lib/vip-prep/client";
+import { loadStaffEventPlans } from "@/lib/operations/staff-events";
+import { easternDateValue } from "@/lib/event-lifecycle";
+import { isValidEntertainmentDate } from "@/lib/entertainment/time";
 
 export const metadata = {
   title: "Event Host Add-Ons | On Par Entertainment",
@@ -16,28 +15,13 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function EventHostAddOnsPage() {
+export default async function EventHostAddOnsPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  const { date: requestedDate } = await searchParams;
   const [adminState, eventPlanWindow] = await Promise.all([
     loadAdminState(),
-    loadEventPlanWindow(),
+    loadStaffEventPlans(requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(new Date())),
   ]);
-  const horizon = rollingEventPlanHorizon();
-  const vipClient = new VipPrepClient();
-  let vipPlans: EventPlan[] = [];
-  if (vipClient.configured) {
-    try {
-      vipPlans = (await vipClient.fetchRange(
-        horizon.startDate,
-        horizon.endDate,
-      )).reservations.map(vipPrepEventPlan);
-    } catch {
-      // Keep Tripleseat add-on sheets available during a temporary VIP API outage.
-    }
-  }
-  const checklistEvents = checklistEventsForPlans([
-    ...eventPlanWindow.plans,
-    ...vipPlans,
-  ]).sort(
+  const checklistEvents = checklistEventsForPlans(eventPlanWindow.plans).sort(
     (left, right) =>
       left.date.localeCompare(right.date) ||
       left.time.localeCompare(right.time) ||
@@ -53,6 +37,7 @@ export default async function EventHostAddOnsPage() {
       activeEventIds={activeEventIds}
       events={checklistEvents}
       workspace="addons"
+      sourceWarning={eventPlanWindow.sourceWarning}
     />
   );
 }

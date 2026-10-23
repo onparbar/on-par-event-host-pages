@@ -1,4 +1,4 @@
-import type { ChecklistRecord } from "@/lib/checklist-model";
+import { checklistSections, normalizeStaffPoc, type ChecklistRecord } from "@/lib/checklist-model";
 import { StaleSaveError } from "@/lib/stale-save";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
@@ -7,6 +7,7 @@ const CHECKLIST_COLUMNS =
 
 type ChecklistPayload = {
   bwa?: string;
+  poc?: string;
   extrasAdded?: string;
   remainingDrinkCardBalance?: string;
   tasks?: Record<string, unknown>;
@@ -127,7 +128,7 @@ function toChecklistRecord(record: DatabaseRecord): ChecklistRecord {
     eventId: Number(record.event_id),
     eventName: record.event_name ?? "",
     eventDate: record.event_date ?? "",
-    poc: record.poc ?? "",
+    poc: normalizeStaffPoc(record.poc),
     bwa: record.bwa ?? "",
     extrasAdded: record.extras_added ?? "",
     remainingDrinkCardBalance: record.remaining_drink_card_balance ?? "",
@@ -186,18 +187,27 @@ export async function saveChecklist(input: SaveChecklistInput) {
   if (input.expectedUpdatedAt !== null && (typeof input.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(input.expectedUpdatedAt)))) {
     throw new Error("Load the saved checklist revision before saving.");
   }
-  const previous = useLocalMemoryStorage() ? memoryRecords.get(input.eventId) : undefined;
+  const previous = useLocalMemoryStorage()
+    ? memoryRecords.get(input.eventId)
+    : input.expectedUpdatedAt === null ? undefined : await getChecklistRecord(input.eventId).then((record) => record ? {
+      updated_at: record.updatedAt, poc: record.poc, tasks: record.tasks, task_evidence: record.taskEvidence, status: record.status,
+    } : undefined);
+  const taskKeys = new Set(checklistSections.flatMap((section) => section.items.map((item) => item.key)));
+  const previousUnknownTasks = Object.fromEntries(Object.entries(previous?.tasks ?? {}).filter(([key]) => !taskKeys.has(key)));
+  const previousUnknownEvidence = Object.fromEntries(Object.entries(previous?.task_evidence ?? {}).filter(([key]) => !taskKeys.has(key)));
+  const suppliedPoc = input.checklist.poc ?? input.poc;
+  const incomingPoc = typeof suppliedPoc === "string" ? suppliedPoc.trim() && !normalizeStaffPoc(suppliedPoc) ? undefined : suppliedPoc : undefined;
   const now = new Date(Math.max(Date.now(), Date.parse(previous?.updated_at ?? "") + 1 || 0)).toISOString();
   const row = {
     event_id: input.eventId,
     event_name: input.eventName,
     event_date: input.eventDate,
-    poc: input.poc ?? "",
+    poc: normalizeStaffPoc(incomingPoc === undefined ? previous?.poc : incomingPoc),
     bwa: input.checklist.bwa ?? "",
     extras_added: input.checklist.extrasAdded ?? "",
     remaining_drink_card_balance: input.checklist.remainingDrinkCardBalance ?? "",
-    tasks: input.checklist.tasks ?? {},
-    task_evidence: input.checklist.taskEvidence ?? {},
+    tasks: { ...previousUnknownTasks, ...(input.checklist.tasks ?? {}) },
+    task_evidence: { ...previousUnknownEvidence, ...(input.checklist.taskEvidence ?? {}) },
     entertainment: input.checklist.entertainment ?? {},
     food: input.checklist.food ?? {},
     status: input.action === "submit" ? "submitted" : "draft",

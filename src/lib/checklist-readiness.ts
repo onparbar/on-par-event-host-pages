@@ -2,6 +2,7 @@ import { checklistSections, type EventChecklistState } from "./checklist-model";
 import type { EventPlan } from "./event-plans/types";
 import { kitchenEventInterval } from "./kitchen/lifecycle";
 import { normalizeKitchenSelections } from "./kitchen/normalize";
+import { contractSetup, setupTaskFingerprint } from "./operations/setup";
 
 export type ChecklistTaskRequirement = {
   key: string;
@@ -19,6 +20,7 @@ const CARD_TASKS = new Set(["prepaid-drink-cards-labeled", "prepaid-drink-cards-
 const HOT_EQUIPMENT_TASKS = new Set(["chaffing-dishes-placed", "chaffing-dishes-clean", "sternos-cooled"]);
 const CRITICAL_TASKS = new Set(["tablet-layout-accurate", "entertainment-tablet-accurate", "food-details-accurate", "prepaid-drink-cards-labeled", "contract-details-confirmed", "entertainment-reserved", "event-tables-cleaned", "table-line-placed", "food-carts-prepped", "chaffing-dishes-placed", "mini-golf-coins", "show-reserved-seating", "prepaid-drink-cards-shown", "food-ready", "food-kitchen-window", "food-setup-confirmed", "used-tables-bussed", "sternos-cooled", "prepaid-cards-collected", "shift-lead-checkout"]);
 const UNCERTAIN = /\b(?:unknown|unmapped|unverified|unavailable|missing|needs? review|could not|not (?:listed|verified|available))\b/i;
+const ARRIVAL_TASKS = new Set(["introduce-bwa", "review-times-with-poc", "mini-golf-coins", "show-reserved-seating", "prepaid-drink-cards-shown", "food-ready", "plates-and-tables-cleared", "upsell-additional-items", "additional-items-noted"]);
 
 function categoryRequirement(event: EventPlan, values: string[], matches: (value: string) => boolean, label: string): Requirement {
   const usable = values.filter((value) => value.trim());
@@ -56,14 +58,21 @@ export function checklistTaskRequirements(event: EventPlan): ChecklistTaskRequir
       : required;
     const due = item.key === "food-kitchen-window" ? (interval.startAt === null ? null : interval.startAt - 15 * 60_000)
       : section.key === "one-hour-before" ? (interval.startAt === null ? null : interval.startAt - 60 * 60_000)
-      : section.key === "guest-arrival" || item.key === "food-setup-confirmed" ? interval.startAt
+      : ARRIVAL_TASKS.has(item.key) || item.key === "food-setup-confirmed" ? interval.startAt
       : section.key === "end-of-event" ? interval.endAt : null;
     return { ...item, ...requirement, critical: CRITICAL_TASKS.has(item.key), dueAt: due === null ? null : new Date(due).toISOString() };
   }));
 }
 
 export function checklistReadiness(event: EventPlan, state: Pick<EventChecklistState, "tasks" | "bwa" | "taskEvidence">) {
-  const tasks = checklistTaskRequirements(event);
+  const setup = contractSetup(event);
+  const tasks = checklistTaskRequirements(event).map((task) => {
+    const recorded = state.taskEvidence?.[task.key]?.sourceFingerprint;
+    const current = recorded ? setupTaskFingerprint(event, task.key, setup) : undefined;
+    return recorded && current && recorded !== current
+      ? { ...task, applicability: "needs-review" as const, reason: "Contract setup changed. Review the updated setup, then complete this task again." }
+      : task;
+  });
   const review = tasks.filter((task) => task.critical && task.applicability === "needs-review");
   const applicable = tasks.filter((task) => task.applicability === "required");
   const complete = (task: ChecklistTaskRequirement) => state.tasks[task.key] === true && typeof state.taskEvidence?.[task.key]?.employeeName === "string" && Boolean(state.taskEvidence[task.key].employeeName.trim()) && Number.isFinite(Date.parse(state.taskEvidence[task.key].completedAt));

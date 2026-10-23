@@ -5,15 +5,17 @@ export default function FloorPlanEventLegend({
   plan,
   selectedEventId,
   onSelectEvent,
+  readOnly = false,
 }: {
   plan: FloorPlanDocument;
   selectedEventId: string | null;
   onSelectEvent: (eventId: string | null) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="floor-plan-map-date">
       <strong>{formatFullDate(plan.eventDate)}</strong>
-      {plan.events.length > 1 ? (
+      {!readOnly && plan.events.length > 1 ? (
         <div className="floor-plan-event-view-controls">
           <button
             aria-pressed={!selectedEventId}
@@ -27,7 +29,11 @@ export default function FloorPlanEventLegend({
           </small>
         </div>
       ) : null}
-      {plan.events.map((event) => (
+      {plan.events.map((event) => readOnly ? (
+        <span className="floor-plan-event-filter" key={event.id} style={{ color: event.color }}>
+          <span><b>{event.name} ({event.guestCount})</b><small>{event.startAt && event.endAt ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}` : "Time needs review"}</small></span>
+        </span>
+      ) : (
         <button
           aria-label={`Show only ${event.name} on the floor plan`}
           aria-pressed={event.id === selectedEventId}

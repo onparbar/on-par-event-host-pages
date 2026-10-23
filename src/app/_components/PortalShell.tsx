@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -12,6 +13,9 @@ import {
 import { formatEventDate } from "@/lib/event-format";
 import { useEventContext } from "./EventContext";
 import { ConnectivityBanner } from "./ConnectivityBanner";
+import { isStaffWorkspaceRoute, STAFF_WORKSPACE_NAVIGATION } from "@/lib/operations/staff-workspace";
+import { StaffNameSelect } from "./StaffNameSelect";
+import { EventWorkspaceReminders } from "./EventWorkspace";
 
 const PORTAL_NAVIGATION = [
   { href: "/", label: "Home" },
@@ -83,8 +87,19 @@ export function PortalHeader({
 }: PortalHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [changingStaff, setChangingStaff] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
-  const { selectedEvent, preferredEventId, ready, clearEvent } = useEventContext();
+  const { selectedEvent, preferredEventId, ready, clearEvent, staffName, setStaffName, switchEvent } = useEventContext();
+
+  useEffect(() => {
+    const header = headerRef.current;
+    const shell = header?.closest<HTMLElement>(".portal-shell");
+    if (!header || !shell || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => shell.style.setProperty("--event-header-height", `${header.getBoundingClientRect().height}px`));
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     function updateFullscreenState() {
@@ -113,8 +128,9 @@ export function PortalHeader({
       aria-hidden={blocked ? true : undefined}
       className="portal-header"
       inert={blocked ? true : undefined}
+      ref={headerRef}
     >
-      <Link className="portal-brand" href="/">
+      <Link className="portal-brand" href="/" onClick={(event) => { if (selectedEvent) { event.preventDefault(); switchEvent(); } }}>
         <Image
           alt="On Par Entertainment"
           className="portal-brand-logo"
@@ -178,10 +194,15 @@ export function PortalHeader({
         <div>
           <span className="portal-event-context-label">Selected event</span>
           <strong>{selectedEvent?.eventName ?? "Requested event is not available in this view"}</strong>
-          {selectedEvent ? <span>{formatEventDate(selectedEvent.date)}{selectedEvent.time ? ` · ${selectedEvent.time}` : ""} · {selectedEvent.area || "Reserved area needs review"}</span> : <span>Select the matching party before making changes. A different event has not been substituted.</span>}
+          {selectedEvent ? <span>{formatEventDate(selectedEvent.date)} · {selectedEvent.time || "Time needs review"} · {selectedEvent.guestCount || "Guest count needs review"}{selectedEvent.guestCount ? " guests" : ""} · {selectedEvent.area || "Reserved area needs review"}</span> : <span>Select the matching party before making changes. A different event has not been substituted.</span>}
+          {selectedEvent ? <span>Employee: {staffName || "Select your name to open your staff workspace"}</span> : null}
           {selectedEvent?.foodRunner || selectedEvent?.poc ? <span>Food Runner: {selectedEvent.foodRunner || "Not assigned"} · POC: {selectedEvent.poc || "Not assigned"}</span> : null}
         </div>
-        <button className="secondary" onClick={clearEvent} type="button">Clear selection</button>
+        <div className="portal-event-context-actions">
+          {selectedEvent && (changingStaff || !staffName) ? <StaffNameSelect id="workspace-employee" onChange={(name) => { setStaffName(name); if (name) setChangingStaff(false); }} value={staffName} /> : null}
+          {selectedEvent && staffName && !changingStaff ? <button className="secondary" onClick={() => setChangingStaff(true)} type="button">Change Staff</button> : null}
+          <button className="secondary" onClick={selectedEvent ? switchEvent : clearEvent} type="button">Switch Event</button>
+        </div>
       </section>
     ) : null}
     </>
@@ -195,11 +216,43 @@ export function PortalFrame({
   children: ReactNode;
   className?: string;
 }) {
+  const pathname = usePathname();
+  const { selectedEvent, staffName, ready, switchEvent } = useEventContext();
+  const workspace = Boolean(ready && selectedEvent && staffName && isStaffWorkspaceRoute(pathname));
+  const shellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!workspace || !shell || typeof ResizeObserver === "undefined") return;
+    let observed: HTMLElement[] = [];
+    const updateSidebarOffset = () => {
+      const height = observed.reduce((total, element) => total + element.getBoundingClientRect().height, 0);
+      shell.style.setProperty("--staff-sidebar-top", `${Math.ceil(height)}px`);
+    };
+    const observer = new ResizeObserver(updateSidebarOffset);
+    const observeHeader = () => {
+      for (const element of observed) observer.unobserve(element);
+      observed = Array.from(shell.querySelectorAll<HTMLElement>(":scope > .portal-header, :scope > .portal-event-context"));
+      for (const element of observed) observer.observe(element);
+      updateSidebarOffset();
+    };
+    observeHeader();
+    // A modal temporarily removes the event strip; remeasure when it returns.
+    const mutations = new MutationObserver(observeHeader);
+    mutations.observe(shell, { childList: true });
+    return () => { observer.disconnect(); mutations.disconnect(); };
+  }, [workspace]);
   return (
-    <div className={`portal-shell${className ? ` ${className}` : ""}`}>
+    <div className={`portal-shell${workspace ? " staff-event-workspace" : ""}${className ? ` ${className}` : ""}`} ref={shellRef}>
       {children}
+      {workspace ? <aside aria-label="Event workspace sidebar" className="staff-workspace-sidebar"><StaffWorkspaceNavigation /><EventWorkspaceReminders /><button className="staff-all-operations" onClick={switchEvent} type="button">All operations</button></aside> : null}
     </div>
   );
+}
+
+export function StaffWorkspaceNavigation() {
+  const pathname = usePathname();
+  const { eventHref } = useEventContext();
+  return <nav aria-label="My event workspace" className="staff-workspace-navigation">{STAFF_WORKSPACE_NAVIGATION.map((item) => <Link aria-current={pathname === item.href ? "page" : undefined} className={pathname === item.href ? "is-active" : undefined} href={eventHref(item.href)} key={item.href}>{item.label}</Link>)}</nav>;
 }
 
 export function PortalZoomControls({

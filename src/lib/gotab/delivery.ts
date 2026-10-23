@@ -10,6 +10,9 @@ export type EventFoodDelivery = {
   acceptedAt: string | null;
   updatedAt: string;
   error: string | null;
+  requesterName?: string;
+  requestedAt?: string;
+  notes?: string;
 };
 
 export function eventFoodDeliveryState(delivery: Pick<EventFoodDelivery, "status">) {
