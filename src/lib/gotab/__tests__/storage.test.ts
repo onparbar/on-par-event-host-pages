@@ -206,3 +206,66 @@ describe("contract food history", () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });
+
+describe("contract food dispatch guard", () => {
+  it("allows only the earliest request when legacy rule versions queued the same item twice", async () => {
+    const requests = [
+      { id: "request-first", created_at: "2026-10-21T19:10:09Z" },
+      { id: "request-second", created_at: "2026-10-22T14:04:50Z" },
+    ];
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(Response.json(requests))
+      .mockResolvedValueOnce(Response.json([
+        { request_id: "request-first", status: "SCHEDULED" },
+        { request_id: "request-second", status: "SENDING" },
+      ]));
+    const storage = new GoTabIntegrationStorage({
+      NODE_ENV: "test", SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SECRET_KEY: "test-secret",
+    }, fetchImpl);
+
+    await expect(storage.getContractFoodDispatchDecision({
+      requestId: "request-second", eventId: "event-123", sourceRecordId: "taco-beef",
+    })).resolves.toEqual({ allowed: false, reason: "EARLIER_REQUEST_EXISTS" });
+    const requestUrl = new URL(fetchImpl.mock.calls[0][0]);
+    expect(Object.fromEntries(requestUrl.searchParams)).toEqual({
+      select: "id,created_at", event_id: "eq.event-123",
+      source_type: "eq.TRIPLESEAT_CONTRACT", source_record_id: "eq.taco-beef",
+      order: "created_at.asc,id.asc", limit: "1000",
+    });
+  });
+
+  it("blocks every unsent duplicate after any sibling request was accepted by GoTab", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(Response.json([
+        { id: "request-first", created_at: "2026-10-21T19:10:09Z" },
+        { id: "request-second", created_at: "2026-10-22T14:04:50Z" },
+      ]))
+      .mockResolvedValueOnce(Response.json([
+        { request_id: "request-first", status: "SENT" },
+        { request_id: "request-second", status: "SENDING" },
+      ]));
+    const storage = new GoTabIntegrationStorage({
+      NODE_ENV: "test", SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SECRET_KEY: "test-secret",
+    }, fetchImpl);
+
+    await expect(storage.getContractFoodDispatchDecision({
+      requestId: "request-second", eventId: "event-123", sourceRecordId: "taco-beef",
+    })).resolves.toEqual({ allowed: false, reason: "ALREADY_SENT" });
+  });
+
+  it("fails closed when the claimed request is missing from its logical history", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json([
+      { id: "different-request", created_at: "2026-10-21T19:10:09Z" },
+    ]));
+    const storage = new GoTabIntegrationStorage({
+      NODE_ENV: "test", SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SECRET_KEY: "test-secret",
+    }, fetchImpl);
+
+    await expect(storage.getContractFoodDispatchDecision({
+      requestId: "missing-request", eventId: "event-123", sourceRecordId: "taco-beef",
+    })).rejects.toThrow("could not be verified");
+  });
+});

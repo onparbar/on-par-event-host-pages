@@ -57,6 +57,42 @@ describe("GoTab dispatch worker", () => {
     expect(result.claimed).toBe(0);
   });
 
+  it("holds a duplicate contract item before any GoTab write", async () => {
+    const createEventFoodTab = vi.fn();
+    const storage = {
+      claimDueDispatches: vi.fn().mockResolvedValue([{
+        id: "duplicate-dispatch", request_id: "duplicate-request",
+        idempotency_key: "event:TRIPLESEAT_CONTRACT:taco-beef:old-version:DISPATCH",
+        action: "DISPATCH", status: "SENDING", attempt_count: 1,
+        sanitized_payload: {
+          eventName: "Redacted Event", product: "Taco Bar Beef",
+          gotabProductUuid: "prd_beef", quantity: 1,
+        },
+      }]),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "event-123", source_type: "TRIPLESEAT_CONTRACT",
+        source_record_id: "taco-beef", food_service_time: "2026-10-23T16:00:00Z",
+      }),
+      getContractFoodDispatchDecision: vi.fn().mockResolvedValue({
+        allowed: false, reason: "ALREADY_SENT",
+      }),
+      finishDispatch: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await processGoTabDispatches({
+      storage: storage as never,
+      client: { createEventFoodTab },
+      env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+    });
+
+    expect(result).toMatchObject({ held: 1, sent: 0, failed: 0 });
+    expect(createEventFoodTab).not.toHaveBeenCalled();
+    expect(storage.finishDispatch).toHaveBeenCalledWith("duplicate-dispatch", {
+      status: "HELD",
+      lastError: "Duplicate contract order blocked because this event item was already sent to GoTab.",
+    });
+  });
+
   it.each([
     { scenario: "a timeout after possible order acceptance", status: null },
     { scenario: "a server error after possible order acceptance", status: 500 },
