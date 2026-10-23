@@ -5,6 +5,8 @@ import { projectKitchenChecklist } from "../project-kitchen";
 import { vipPrepKitchenEvents } from "@/lib/vip-prep/client";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
 import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
+import type { KitchenChecklist } from "@/lib/kitchen/types";
+import type { EventFoodProductMapping } from "../event-food";
 
 const sourceEvent = {
   eventId: 123,
@@ -19,7 +21,90 @@ const sourceEvent = {
   selections: [{ name: "Mozzarella Stick Platter", quantity: 1, isFood: true }],
 };
 
+function bbqPrepChecklist(quantity = 3): KitchenChecklist {
+  return {
+    ...generateKitchenChecklist(sourceEvent),
+    sections: [{ category: "sauces", label: "Sauces", rows: [{
+      key: "sauce-bbq", category: "sauces", foodName: "BBQ Sauce",
+      description: "Included BBQ sauce", quantity, unit: "bowls",
+      numberOfPans: null, panSize: null, prepTiming: { kind: "not-applicable" },
+    }] }],
+  };
+}
+
+const bbqBowlMapping: EventFoodProductMapping = {
+  id: "mapping-bbq-bowl", canonicalProductKey: "addon:bbq-sauce",
+  displayName: "BBQ Sauce", aliases: [], panSize: "BOWL",
+  preparationStation: "COLD_PREP", gotabProductUuid: "product-bbq-bowl",
+  verifiedAt: "2026-10-23T16:00:00.000Z",
+};
+
 describe("Tripleseat kitchen projection", () => {
+  it("reuses the exact standalone BBQ bowl mapping without merging source identities", () => {
+    const checklist = {
+      ...bbqPrepChecklist(),
+      liveFoodAddOns: translateEventHostFoodAddOns({ "bbq-sauce": { quantity: 2 } }, "2026-10-23T16:00:00.000Z"),
+    };
+    const result = projectKitchenChecklist(checklist, [bbqBowlMapping], { sourceVersion: 1, sourceType: "TRIPLESEAT_CONTRACT" });
+    expect(result.exceptions).toEqual([]);
+    expect(result.requests.map((request) => ({
+      sourceRecordId: request.sourceRecordId, canonicalProductKey: request.canonicalProductKey,
+      quantity: request.quantity, panSize: request.panSize, product: request.gotabProductUuid,
+    }))).toEqual([
+      { sourceRecordId: "sauce-bbq", canonicalProductKey: "addon:bbq-sauce", quantity: 3, panSize: "BOWL", product: "product-bbq-bowl" },
+      { sourceRecordId: "addon:bbq-sauce", canonicalProductKey: "addon:bbq-sauce", quantity: 2, panSize: "BOWL", product: "product-bbq-bowl" },
+    ]);
+    expect(result.requests[0]).toMatchObject({
+      id: "123-sauce-bbq-1", sourceType: "TRIPLESEAT_CONTRACT", sourceVersion: 1,
+      eventId: "123", tripleseatEventId: "123", tripleseatBookingId: "456",
+      originalSourceName: "BBQ Sauce", eventName: sourceEvent.eventName,
+    });
+    expect(result.requests[0].idempotencyKey).not.toBe(result.requests[1].idempotencyKey);
+    expect(checklist.sections[0].rows[0].key).toBe("sauce-bbq");
+  });
+
+  it("prefers a direct canonical BBQ bowl mapping over the standalone fallback", () => {
+    const direct = { ...bbqBowlMapping, id: "direct-bbq", canonicalProductKey: "sauce-bbq", gotabProductUuid: "direct-product" };
+    const result = projectKitchenChecklist(bbqPrepChecklist(4), [bbqBowlMapping, direct], { sourceVersion: 1 });
+    expect(result.exceptions).toEqual([]);
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({ sourceRecordId: "sauce-bbq", canonicalProductKey: "sauce-bbq", quantity: 4, gotabProductUuid: "direct-product" });
+  });
+
+  it.each([
+    { label: "wrong pan", mapping: { ...bbqBowlMapping, panSize: "NOT_APPLICABLE" as const } },
+    { label: "wing refill", mapping: { ...bbqBowlMapping, canonicalProductKey: "addon:wing-refill-bbq" } },
+    { label: "appetizer refill", mapping: { ...bbqBowlMapping, canonicalProductKey: "addon:appetizer-refill-bbq" } },
+    { label: "similar key", mapping: { ...bbqBowlMapping, canonicalProductKey: "addon:bbq" } },
+    { label: "alias only", mapping: { ...bbqBowlMapping, canonicalProductKey: "another-product", aliases: ["sauce-bbq", "BBQ Sauce"] } },
+    { label: "missing product", mapping: { ...bbqBowlMapping, gotabProductUuid: null } },
+  ])("does not infer a BBQ bowl mapping from $label", ({ mapping }) => {
+    const result = projectKitchenChecklist(bbqPrepChecklist(), [mapping], { sourceVersion: 1 });
+    expect(result.requests).toEqual([]);
+    expect(result.exceptions).toEqual([expect.objectContaining({ itemKey: "sauce-bbq", reason: "A verified GoTab product mapping is required." })]);
+  });
+
+  it("does not use the bowl fallback for a BBQ row with non-bowl units", () => {
+    const checklist = bbqPrepChecklist();
+    checklist.sections[0].rows[0].unit = "requested units";
+    const result = projectKitchenChecklist(checklist, [bbqBowlMapping], { sourceVersion: 1 });
+    expect(result.requests).toEqual([]);
+    expect(result.exceptions).toHaveLength(1);
+  });
+
+  it("keeps other mapped food projectable when the new BBQ bowl has no mapping", () => {
+    const baseChecklist = generateKitchenChecklist(sourceEvent);
+    const platter = baseChecklist.sections.flatMap((section) => section.rows).find((row) => row.key === "platter-mozzarella-sticks")!;
+    const checklist = { ...bbqPrepChecklist(), sections: [{ category: "platters" as const, label: "Platters", rows: [platter] }, ...bbqPrepChecklist().sections] };
+    const result = projectKitchenChecklist(checklist, [{
+      ...bbqBowlMapping, id: "mapping-platter", canonicalProductKey: platter.key,
+      panSize: platter.panSize === "1/3" ? "THIRD_PAN" : "HALF_PAN", gotabProductUuid: "product-platter",
+    }], { sourceVersion: 1 });
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0].sourceRecordId).toBe(platter.key);
+    expect(result.exceptions).toEqual([expect.objectContaining({ itemKey: "sauce-bbq" })]);
+  });
+
   it("snapshots each submitted refill's own notes without changing its quantity or another item", () => {
     const submittedAt = "2026-10-23T17:00:00Z";
     const keys = ["appetizer-refill-tater-kegs", "appetizer-refill-chicken-tenders"];

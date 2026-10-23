@@ -36,6 +36,7 @@ export type PlatterRule = {
   unit: string;
   hot: boolean;
   pansPerPlatter?: Readonly<Record<PanSize, number | null>>;
+  bbqBowlsPerPlatter?: number;
   sauce?: {
     name: "marinara" | "ranch";
     bowlsPerPlatter: number | null;
@@ -66,6 +67,7 @@ export type KitchenRuleConfig = {
     celeryHalfSticksPerGuest: number;
     friesPansPerGroup: number;
     friesPanSize: PanSize;
+    bbqBowlsPerBar: number;
   };
   appetizer: {
     maxGuests: number;
@@ -75,6 +77,7 @@ export type KitchenRuleConfig = {
     mozzarellaPoundsPerGroup: number;
     marinaraBowlsPerBar: number;
     ranchBowlsPerBar: number;
+    bbqBowlsPerBar: number;
   };
   panCapacities: Readonly<Record<PanCapacityKey, PanCapacityRule>>;
   dessertGuestsPerPlatter: number;
@@ -206,7 +209,7 @@ export const KITCHEN_REFERENCE_CONFLICTS: readonly KitchenReferenceConflict[] = 
   {
     code: "DUPLICATE_SAUCE_ROWS",
     title: "Sauce placement on the checklist",
-    writtenRule: "Use the yellow sauce section for required Ranch and Marinara.",
+    writtenRule: "Use the yellow sauce section for required Ranch, Marinara, and BBQ Sauce.",
     referenceRule: "The checklist also embeds sauces in food names and includes generic or duplicate Ranch rows.",
     currentResolution: "Generate each required sauce once in the sauce section.",
     appliesTo: ["sauces"],
@@ -263,7 +266,7 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
   "platter-chicken-tenders":
     "Chicken Tender Platters contain 64 each; use two 1/2 pans or four 1/3 pans per platter.",
   "platter-mozzarella-sticks":
-    "Mozzarella Stick Platters contain 2 pounds; use one 1/2 pan or two 1/3 pans per platter.",
+    "Mozzarella Stick Platters contain 4 pounds; use one 1/2 pan with 4 pounds or two 1/3 pans with 2 pounds each per platter.",
   "platter-wings":
     "Bone-In Chicken Wing Platters contain 64 each; use two 1/2 pans or four 1/3 pans per platter.",
   "platter-veggie-tray":
@@ -274,10 +277,12 @@ export const KITCHEN_FOOD_DESCRIPTIONS: Readonly<
     "Marinara dipping sauce required by the selected mozzarella items or Appetizer Bar.",
   "sauce-ranch":
     "Ranch dipping sauce required by the selected wings, tenders, veggie trays, or bar.",
+  "sauce-bbq":
+    "Include one BBQ sauce bowl per Wing or Chicken Tender Platter and one per selected Appetizer Bar or Wing Bar, alongside the existing sauces.",
 };
 
 export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
-  ruleVersion: "ope-kitchen-2026-10-22.1",
+  ruleVersion: "ope-kitchen-2026-10-23.1",
   foodReadyOffsetMinutes: 15,
   definiteStatuses: ["definite"],
   taco: {
@@ -300,6 +305,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
     celeryHalfSticksPerGuest: 1,
     friesPansPerGroup: 1,
     friesPanSize: "1/2",
+    bbqBowlsPerBar: 1,
   },
   appetizer: {
     maxGuests: 250,
@@ -309,6 +315,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
     mozzarellaPoundsPerGroup: 6,
     marinaraBowlsPerBar: 1,
     ranchBowlsPerBar: 1,
+    bbqBowlsPerBar: 1,
   },
   panCapacities: {
     taterKegs: {
@@ -369,6 +376,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         unit: "each",
         hot: true,
         pansPerPlatter: { "1/2": 2, "1/3": 4 },
+        bbqBowlsPerPlatter: 1,
         sauce: {
           name: "ranch",
           bowlsPerPlatter: 1,
@@ -377,7 +385,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
       "platter:mozzarella-sticks": {
         rowKey: "platter-mozzarella-sticks",
         foodName: "Mozzarella Sticks",
-        amountPerPlatter: 2,
+        amountPerPlatter: 4,
         unit: "pounds",
         hot: true,
         pansPerPlatter: { "1/2": 1, "1/3": 2 },
@@ -393,6 +401,7 @@ export const KITCHEN_RULE_CONFIG: KitchenRuleConfig = {
         unit: "each",
         hot: true,
         pansPerPlatter: { "1/2": 2, "1/3": 4 },
+        bbqBowlsPerPlatter: 1,
         sauce: {
           name: "ranch",
           bowlsPerPlatter: 1,

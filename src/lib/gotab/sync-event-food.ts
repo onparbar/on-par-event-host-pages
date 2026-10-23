@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { resolveKitchenLiveFoodAddOns } from "@/lib/kitchen/addons";
+import { KITCHEN_RULE_CONFIG } from "@/lib/kitchen/config";
 import type { KitchenChecklist } from "@/lib/kitchen/types";
 import { getGoTabConfigurationStatus } from "./config";
 import { buildGoTabKdsPreview, type EventFoodProductMapping, type EventFoodSourceType } from "./event-food";
@@ -26,6 +28,28 @@ export function eventFoodSourceVersion(checklist: KitchenChecklist) {
     liveFoodAddOns: checklist.liveFoodAddOns,
   });
   return Number.parseInt(createHash("sha256").update(content).digest("hex").slice(0, 12), 16);
+}
+
+function contractProjectionChecklist(checklist: KitchenChecklist): KitchenChecklist {
+  const liveEffects = resolveKitchenLiveFoodAddOns(checklist.liveFoodAddOns);
+  const liveBbqBowls = liveEffects.reduce((total, effect) => effect.calculation.kind === "platter"
+    ? total + (KITCHEN_RULE_CONFIG.platter.rules[effect.calculation.platterKind].bbqBowlsPerPlatter ?? 0) * effect.sourceQuantity
+    : total, 0);
+  const invalidLiveBbq = !Number.isSafeInteger(liveBbqBowls) || liveBbqBowls < 0 ||
+    checklist.liveFoodAddOns.some((item) => ["addon:wings", "addon:chicken-tenders"].includes(item.itemKey) &&
+      !liveEffects.some((effect) => effect.item === item));
+  return {
+    ...checklist,
+    liveFoodAddOns: [],
+    sections: checklist.sections.map((section) => ({ ...section, rows: section.rows.flatMap((row) => {
+      if (row.key !== "sauce-bbq") return [row];
+      // Prep combines contract and live food; contract orders must not replay live sauces.
+      const quantity = !invalidLiveBbq && Number.isSafeInteger(row.quantity) && row.quantity != null && row.quantity > 0
+        ? row.quantity - liveBbqBowls : null;
+      if (quantity === 0 && liveBbqBowls > 0) return [];
+      return [{ ...row, quantity: quantity != null && quantity > 0 ? quantity : null }];
+    }) })),
+  };
 }
 
 export async function synchronizeKitchenChecklistToEventFood(
@@ -65,7 +89,7 @@ export async function synchronizeKitchenChecklistToEventFood(
       gotabProductUuid: mapping.gotab_product_uuid,
       verifiedAt: mapping.verified_at,
     }));
-  const projection = projectKitchenChecklist(isContract ? { ...checklist, liveFoodAddOns: [] } : checklist, mappings, {
+  const projection = projectKitchenChecklist(isContract ? contractProjectionChecklist(checklist) : checklist, mappings, {
     sourceType,
     sourceVersion,
     requesterName: (!isContract ? options.requesterName : undefined) ??

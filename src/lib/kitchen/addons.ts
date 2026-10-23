@@ -76,7 +76,7 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     foodName: "Wings",
     section: "party-platters",
     sourceUnitLabel: "platters",
-    description: "Traditional wings served with celery and ranch.",
+    description: "Traditional wings served with celery, ranch, and BBQ sauce.",
     amountPerSourceUnit:
       KITCHEN_RULE_CONFIG.platter.rules["platter:wings"].amountPerPlatter,
     maxSourceQuantity: 10,
@@ -138,7 +138,7 @@ export const KITCHEN_EVENT_ADD_ON_FIELDS = [
     foodName: "Chicken Tenders",
     section: "party-platters",
     sourceUnitLabel: "platters",
-    description: "Fried chicken tenders served with ranch dipping sauce.",
+    description: "Fried chicken tenders served with ranch and BBQ dipping sauces.",
     amountPerSourceUnit:
       KITCHEN_RULE_CONFIG.platter.rules["platter:chicken-tenders"].amountPerPlatter,
     maxSourceQuantity: 10,
