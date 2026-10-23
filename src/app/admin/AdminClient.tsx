@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import EditableAssetSection from "@/app/_components/EditableAssetSection";
 import AdminFloorPlanAssets from "./AdminFloorPlanAssets";
+import WorkspaceSettings from "./WorkspaceSettings";
 import {
   PortalPageHeader,
   PortalShell,
@@ -95,7 +96,7 @@ function submittedAddOnLines(record: ChecklistRecord) {
 
 function completedTaskCount(record: ChecklistRecord) {
   const total = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-  const completed = Object.values(record.tasks ?? {}).filter(Boolean).length;
+  const completed = checklistSections.flatMap((section) => section.items).filter((item) => record.tasks?.[item.key] === true).length;
   return { completed, total };
 }
 
@@ -391,6 +392,7 @@ export default function AdminClient({
           </Link>
         </section>
 
+        <WorkspaceSettings />
         <section className="sheet-tab-strip" aria-label="Admin sections">
           <button aria-pressed={activeTab === "readiness"} className={`sheet-tab${activeTab === "readiness" ? " active" : ""}`} onClick={() => setActiveTab("readiness")} type="button">
             Event Readiness

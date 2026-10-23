@@ -39,14 +39,17 @@ export type FoodState = {
   quantity: string;
   manualPrice: string;
   panSize?: "" | "1/3" | "1/2";
+  notes?: string;
 };
 
 export type EventChecklistState = {
   bwa: string;
+  /** Staff-entered event POC; never populated from the customer contact. */
+  poc?: string;
   extrasAdded: string;
   remainingDrinkCardBalance: string;
   tasks: Record<string, boolean>;
-  taskEvidence?: Record<string, { employeeName: string; completedAt: string }>;
+  taskEvidence?: Record<string, { employeeName: string; completedAt: string; sourceFingerprint?: string }>;
   entertainment: Record<string, EntertainmentState>;
   food: Record<string, FoodState>;
 };
@@ -67,6 +70,24 @@ export type ChecklistRecord = EventChecklistState & {
 export function checklistEventForSelection<T extends { id: number }>(events: readonly T[], preferredEventId: string | null, activeEventId: number) {
   if (preferredEventId) return events.find((event) => String(event.id) === preferredEventId);
   return events.find((event) => event.id === activeEventId) ?? events[0];
+}
+
+export function normalizeStaffPoc(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return /^contact omitted from preview$/i.test(value.trim()) ? "" : value;
+}
+
+export function completeChecklistTask(state: EventChecklistState, key: string, checked: boolean, staffName: string, completedAt: string, sourceFingerprint?: string): EventChecklistState {
+  const actor = staffName.trim() || state.bwa.trim();
+  if (checked && (!actor || !Number.isFinite(Date.parse(completedAt)))) return state;
+  if (checked && state.tasks[key] && state.taskEvidence?.[key]) return state;
+  return {
+    ...state,
+    tasks: { ...state.tasks, [key]: checked },
+    taskEvidence: checked
+      ? { ...state.taskEvidence, [key]: { employeeName: actor, completedAt, ...(sourceFingerprint ? { sourceFingerprint } : {}) } }
+      : Object.fromEntries(Object.entries(state.taskEvidence ?? {}).filter(([entry]) => entry !== key)),
+  };
 }
 
 export const entertainmentAddOns: EntertainmentAddOnConfig[] = [
@@ -234,7 +255,7 @@ export const standardFoodAddOns = foodAddOns.filter(
 export const checklistSections: ChecklistSection[] = [
   {
     key: "morning-of-event",
-    title: "Morning of Event-Shift Lead",
+    title: "Before Arrival / Preparation",
     items: [
       { key: "tripleseat-contract-printed", label: "Confirm 2 copies of the contract is printed from Tripleseat" },
       {
@@ -253,7 +274,7 @@ export const checklistSections: ChecklistSection[] = [
   },
   {
     key: "one-hour-before",
-    title: "1 hour before the event-BWA POC",
+    title: "Event Setup",
     items: [
       { key: "contract-details-confirmed", label: "Confirm food, drink card, and entertainment details with the contract" },
       {
@@ -280,8 +301,8 @@ export const checklistSections: ChecklistSection[] = [
     ],
   },
   {
-    key: "guest-arrival",
-    title: "Guest Arrival-BWA POC",
+    key: "during-event",
+    title: "During Event",
     items: [
       { key: "introduce-bwa", label: "Introduce yourself and the BWA(s) working the event to the groups POC" },
       {
@@ -307,13 +328,7 @@ export const checklistSections: ChecklistSection[] = [
         key: "additional-items-noted",
         label: "If guests add any additional items, write those items down on the Events Add-Ons sheet",
       },
-    ],
-  },
-  {
-    key: "during-event",
-    title: "During the Event check-ins-BWA POC",
-    items: [
-      { key: "food-kitchen-window", label: "Food shall be in the kitchen window 15 minutes prior to start of the event" },
+      { key: "food-kitchen-window", label: "Get Food Out" },
       { key: "food-setup-confirmed", label: "Ensure all the food the party ordered is set up at event start time" },
       { key: "food-quality-check", label: "Ensure food is filled quickly" },
       {
@@ -325,7 +340,7 @@ export const checklistSections: ChecklistSection[] = [
   },
   {
     key: "end-of-event",
-    title: "End of the Event",
+    title: "Closing / Breakdown",
     items: [
       { key: "ask-experience", label: "Ask the guests how their experience and favorite part of the event was" },
       {
@@ -379,6 +394,7 @@ export function defaultChecklistState(dateValue: string): EventChecklistState {
 
   return {
     bwa: "",
+    poc: "",
     extrasAdded: "",
     remainingDrinkCardBalance: "",
     tasks,
@@ -394,6 +410,7 @@ export function hydrateChecklistState(dateValue: string, savedState?: Partial<Ev
   return {
     ...base,
     ...savedState,
+    poc: normalizeStaffPoc(savedState?.poc),
     tasks: {
       ...base.tasks,
       ...(savedState?.tasks ?? {}),
@@ -455,7 +472,7 @@ export function foodUnitPrice(config: FoodAddOnConfig, state: FoodState) {
 
 export function eventCompletion(state: EventChecklistState) {
   const total = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-  const completed = Object.values(state.tasks).filter(Boolean).length;
+  const completed = checklistSections.flatMap((section) => section.items).filter((item) => state.tasks[item.key]).length;
   return { completed, total };
 }
 

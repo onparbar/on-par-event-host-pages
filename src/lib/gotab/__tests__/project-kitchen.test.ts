@@ -20,6 +20,21 @@ const sourceEvent = {
 };
 
 describe("Tripleseat kitchen projection", () => {
+  it("snapshots each submitted refill's own notes without changing its quantity or another item", () => {
+    const submittedAt = "2026-10-23T17:00:00Z";
+    const keys = ["appetizer-refill-tater-kegs", "appetizer-refill-chicken-tenders"];
+    const liveFoodAddOns = translateEventHostFoodAddOns({
+      [keys[0]]: { quantity: 1, notes: "Deliver to VIP 1 food table" },
+      [keys[1]]: { quantity: 2, notes: "Ranch on side" },
+    }, submittedAt);
+    const checklist = { ...generateKitchenChecklist(sourceEvent, undefined, liveFoodAddOns), sections: [] };
+    const mappings = keys.map((key) => ({ id: key, canonicalProductKey: `addon:${key}`, displayName: key, aliases: [], panSize: "NOT_APPLICABLE" as const, preparationStation: "FRYER" as const, gotabProductUuid: `product-${key}`, verifiedAt: submittedAt }));
+    const projected = projectKitchenChecklist(checklist, mappings, { sourceVersion: 9, sourceType: "REFILL", submittedAt, requesterName: "Carlos" });
+    expect(projected.exceptions).toEqual([]);
+    expect(projected.requests.map((item) => [item.quantity, item.requestNotes])).toEqual([[1, "Deliver to VIP 1 food table"], [2, "Ranch on side"]]);
+    liveFoodAddOns[0].requestNotes = "Draft edit after sending";
+    expect(projected.requests[0].requestNotes).toBe("Deliver to VIP 1 food table");
+  });
   it.each(["EVENT_HOST_ADDON", "REFILL", "VIP_ADDON"] as const)("approves an immediate %s independently of original contract review and timing", (sourceType) => {
     const submittedAt = "2026-10-23T16:30:00.000Z";
     const keys = ["appetizer-refill-tater-kegs", "appetizer-refill-chicken-tenders", "appetizer-refill-mozzarella-sticks"];

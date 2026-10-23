@@ -1138,6 +1138,8 @@ describe("kitchen synchronization", () => {
   });
 
   it("validates full add-on snapshots and treats blank or zero as removal", async () => {
+    expect(normalizeKitchenEventAddOnFood({ "chicken-tenders": { quantity: "1", panSize: "1/2", notes: "  Sauce on side  " } })).toEqual({ "chicken-tenders": { quantity: 1, panSize: "1/2", notes: "Sauce on side" } });
+    expect(() => normalizeKitchenEventAddOnFood({ "chicken-tenders": { quantity: 1, notes: "a".repeat(501) } })).toThrow("500");
     expect(
       normalizeKitchenEventAddOnFood({
         wings: { quantity: "" },

@@ -6,21 +6,24 @@ import {
 } from "@/app/_components/PortalShell";
 import { loadAdminState } from "@/lib/admin-state";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
-import { activeEvents } from "@/lib/event-lifecycle";
-import { loadEventPlanWindow } from "@/lib/event-plans/sync";
+import { activeEvents, easternDateValue } from "@/lib/event-lifecycle";
+import { isValidEntertainmentDate } from "@/lib/entertainment/time";
 import { listChecklistRecords } from "@/lib/checklist-storage";
 import { buildOperationalEventSummaries } from "@/lib/operations/command-center";
 import { EventCommandCenter } from "@/app/_components/EventCommandCenter";
+import { loadStaffEventPlans } from "@/lib/operations/staff-events";
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  const now = new Date();
+  const { date: requestedDate } = await searchParams;
+  const date = requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(now);
   const [adminState, eventPlanWindow, checklistRecords] = await Promise.all([
     loadAdminState(),
-    loadEventPlanWindow(),
+    loadStaffEventPlans(date),
     listChecklistRecords().catch(() => null),
   ]);
-  const now = new Date();
   const visibleEvents = activeEvents(
     eventPlanWindow.plans,
     adminState.archivedEventIds,
@@ -63,7 +66,12 @@ export default async function HomePage() {
         eyebrow="On Par operations"
         title="Event Host Portal"
       />
-      <EventCommandCenter events={operationalEvents} initialNow={now.toISOString()} />
+      <EventCommandCenter
+        assignedStaffByEvent={Object.fromEntries((checklistRecords ?? []).filter((record) => record.bwa.trim()).map((record) => [`${record.eventDate}:${record.eventId}`, record.bwa]))}
+        events={operationalEvents}
+        initialNow={now.toISOString()}
+        sourceWarning={eventPlanWindow.sourceWarning}
+      />
       <h2 className="portal-modules-title">All operations</h2>
       <nav className="link-grid portal-module-grid" aria-label="Event host sections">
           <Link className="home-link portal-module-card" href="/floor-plans">

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { EventWorkspaceTimeline } from "@/app/_components/EventWorkspace";
 import { operationalEventFromPlan } from "@/lib/operations/event-context";
 import {
   PortalPageHeader,
@@ -339,6 +340,7 @@ export default function ItinerariesClient({
         })}
       </section>
 
+      <EventWorkspaceTimeline />
       <section className="itinerary-panel">
         {!isOnline ? <p className="itinerary-source-alert" role="alert">Offline — this is the last loaded copy. Reconnect and refresh before issuing it to staff.</p> : null}
         {changedSections[activeEvent.id]?.length ? <p className="itinerary-source-alert" role="status">Updated since this page was opened: {changedSections[activeEvent.id].join(", ")}. Review the new revision before printing.</p> : null}

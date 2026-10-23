@@ -4,10 +4,19 @@ import {
   KITCHEN_EVENT_ADD_ON_FIELDS,
   KITCHEN_EVENT_ADD_ON_SECTIONS,
   resolveKitchenLiveFoodAddOns,
+  normalizeKitchenOrderNotes,
   translateEventHostFoodAddOns,
 } from "../addons";
 
 describe("translateEventHostFoodAddOns", () => {
+  it("retains bounded per-request instructions without changing quantities or pan allocation", () => {
+    const plain = translateEventHostFoodAddOns({ "chicken-tenders": { quantity: 1, panSize: "1/2" } }, "2026-10-23T17:00:00Z");
+    const noted = translateEventHostFoodAddOns({ "chicken-tenders": { quantity: 1, panSize: "1/2", notes: "  Keep sauce on side  " } }, "2026-10-23T17:00:00Z");
+    expect(noted).toEqual([{ ...plain[0], requestNotes: "Keep sauce on side" }]);
+    expect(normalizeKitchenOrderNotes("")).toBeUndefined();
+    expect(() => normalizeKitchenOrderNotes("a".repeat(501))).toThrow("500");
+    expect(() => normalizeKitchenOrderNotes("bad\u0000note")).toThrow("control");
+  });
   it("exports the canonical Event Host entry fields and source units", () => {
     expect(
       KITCHEN_EVENT_ADD_ON_FIELDS.slice(0, 22).map(

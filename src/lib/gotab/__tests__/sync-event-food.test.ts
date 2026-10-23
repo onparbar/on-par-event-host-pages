@@ -208,6 +208,16 @@ describe("Event Food synchronization", () => {
       }),
       "SYSTEM",
     );
+    await synchronize(assignedChecklist, { sourceVersion: 2, sourceType: "REFILL", requesterName: "Staff Requester", storage: storage as never, env });
+    expect(storage.enqueueRequest).toHaveBeenLastCalledWith(
+      expect.objectContaining({ requesterName: "Staff Requester", sourceType: "REFILL" }),
+      expect.objectContaining({ requesterName: "Staff Requester" }),
+      "SYSTEM",
+    );
+    expect(assignedChecklist.foodRunners).toEqual(foodRunner ? [foodRunner] : []);
+    expect(assignedChecklist.pocs).toEqual(["Ryan", "Diana"]);
+    await synchronize(assignedChecklist, { sourceVersion: 3, requesterName: "Not a contract Food Runner override", storage: storage as never, env });
+    expect(storage.enqueueRequest).toHaveBeenLastCalledWith(expect.objectContaining({ requesterName: foodRunner }), expect.objectContaining({ requesterName: foodRunner }), "SYSTEM");
   });
 
   it("queues only the changed VIP live add-on with the VIP ticket label", async () => {

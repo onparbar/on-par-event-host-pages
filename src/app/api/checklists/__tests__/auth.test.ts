@@ -6,6 +6,7 @@ import {
 } from "@/lib/checklist-model";
 import {
   listChecklistRecords,
+  getChecklistRecord,
   saveChecklist,
 } from "@/lib/checklist-storage";
 import { synchronizeChecklistFoodAddOns } from "@/lib/gotab/sync-checklist-addons";
@@ -17,6 +18,7 @@ import { POST } from "../submit/route";
 
 vi.mock("@/lib/checklist-storage", () => ({
   listChecklistRecords: vi.fn(),
+  getChecklistRecord: vi.fn(),
   saveChecklist: vi.fn(),
 }));
 
@@ -55,11 +57,21 @@ function checklistFixture() {
 }
 
 describe("Event Host checklist operational access", () => {
+  it("reads only the selected event for shared-tablet polling without creating a checklist", async () => {
+    const { record } = checklistFixture();
+    vi.mocked(getChecklistRecord).mockResolvedValue(record);
+    const response = await GET(new Request(`https://example.test/api/checklists?eventId=${record.eventId}`));
+    expect(response.status).toBe(200);
+    expect(getChecklistRecord).toHaveBeenCalledWith(record.eventId);
+    expect(listChecklistRecords).not.toHaveBeenCalled();
+    expect(saveChecklist).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({ records: [record] });
+  });
   it("allows anonymous operational reads", async () => {
     const { record } = checklistFixture();
     vi.mocked(listChecklistRecords).mockResolvedValue([record]);
 
-    const response = await GET();
+    const response = await GET(new Request("https://example.test/api/checklists"));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ records: [record] });
@@ -103,6 +115,51 @@ describe("Event Host checklist operational access", () => {
 });
 
 describe("Event Host checklist add-on routing", () => {
+  it("rejects overlong order notes before saving or sending food", async () => {
+    const { checklist, event } = checklistFixture();
+    checklist.food.wings.notes = "a".repeat(501);
+    const response = await PUT(new Request("https://example.test/api/checklists", { method: "PUT", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null, syncFoodAddOns: true }) }));
+    expect(response.status).toBe(400);
+    expect(saveChecklist).not.toHaveBeenCalled();
+    expect(synchronizeChecklistFoodAddOns).not.toHaveBeenCalled();
+  });
+  it("records the staff requester separately from the manually assigned BWA and POC", async () => {
+    const { checklist, event, record } = checklistFixture();
+    checklist.poc = "Manual POC";
+    vi.mocked(saveChecklist).mockResolvedValue(record);
+    vi.mocked(synchronizeChecklistFoodAddOns).mockRejectedValue(new Error("No real sending in tests"));
+    const response = await PUT(new Request("https://example.test/api/checklists", { method: "PUT", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null, syncFoodAddOns: true, syncFoodAddOnKeys: ["wing-refill-wings"], sourceType: "REFILL", requesterName: "  Carlos  " }) }));
+    expect(response.status).toBe(200);
+    expect(synchronizeChecklistFoodAddOns).toHaveBeenCalledWith(String(event.id), checklist.food, ["wing-refill-wings"], "REFILL", { requesterName: "Carlos" });
+    expect(vi.mocked(saveChecklist).mock.calls[0][0].checklist).toMatchObject({ bwa: checklist.bwa, poc: "Manual POC" });
+  });
+
+  it.each(["A\nB", "a".repeat(121)])("rejects an invalid requester before saving or dispatching", async (requesterName) => {
+    const { checklist, event } = checklistFixture();
+    const response = await PUT(new Request("https://example.test/api/checklists", { method: "PUT", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null, syncFoodAddOns: true, requesterName }) }));
+    expect(response.status).toBe(400);
+    expect(saveChecklist).not.toHaveBeenCalled();
+    expect(synchronizeChecklistFoodAddOns).not.toHaveBeenCalled();
+  });
+  it("saves the explicit staff POC and never supplies a source/customer POC override", async () => {
+    const { checklist, event, record } = checklistFixture();
+    checklist.poc = "Lex";
+    vi.mocked(saveChecklist).mockResolvedValue({ ...record, poc: "Lex" });
+    const response = await PUT(new Request("https://example.test/api/checklists", { method: "PUT", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: null }) }));
+    expect(response.status).toBe(200);
+    expect(vi.mocked(saveChecklist).mock.calls[0][0]).toMatchObject({ checklist: { poc: "Lex" } });
+    expect(vi.mocked(saveChecklist).mock.calls[0][0]).not.toHaveProperty("poc");
+  });
+
+  it("keeps an omitted POC omitted on legacy final submissions so storage can retain it", async () => {
+    const { checklist, event, record } = checklistFixture();
+    delete checklist.poc;
+    vi.mocked(saveChecklist).mockResolvedValue({ ...record, status: "submitted", poc: "Previously saved staff" });
+    vi.mocked(synchronizeChecklistFoodAddOns).mockRejectedValue(new Error("No test food sending"));
+    const response = await POST(new Request("https://example.test/api/checklists/submit", { method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ eventId: event.id, checklist, expectedUpdatedAt: "2026-10-23T17:00:00Z" }) }));
+    expect(response.status).toBe(200);
+    expect(vi.mocked(saveChecklist).mock.calls[0][0].checklist).not.toHaveProperty("poc");
+  });
   it("mirrors Food to Kitchen only when the live-sync flag is set", async () => {
     const { checklist, event, record } = checklistFixture();
     vi.mocked(saveChecklist).mockResolvedValue(record);

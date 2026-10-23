@@ -1,5 +1,6 @@
 import {
   KITCHEN_EVENT_ADD_ON_FIELDS,
+  normalizeKitchenOrderNotes,
   type KitchenEventAddOnFood,
 } from "./addons";
 import { activeKitchenChecklists } from "./lifecycle";
@@ -711,9 +712,11 @@ export function normalizeKitchenEventAddOnFood(
         (rawValue.panSize === "1/3" || rawValue.panSize === "1/2")
           ? rawValue.panSize
           : undefined;
+      const notes = normalizeKitchenOrderNotes(isRecord(rawValue) ? rawValue.notes : undefined);
       normalized[field.sourceKey] = {
         quantity,
         ...(panSize ? { panSize } : {}),
+        ...(notes ? { notes } : {}),
       };
     }
   }
