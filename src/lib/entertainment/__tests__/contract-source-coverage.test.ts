@@ -164,13 +164,29 @@ describe("contract entertainment source coverage", () => {
     expect(event.items.map((item) => item.name)).toContain("1 pool table for 1 hour");
   });
 
-  it("does not duplicate a known Mini Golf quantity with its non-priced generic child label", async () => {
+  it.each([
+    { price: 0 },
+    { price: 9, unit_price: 9, total: 9 },
+    { price: "", unit_price: "$9.00" },
+    { start_at: "", start_time: "", end_at: "", end_time: "", duration: "" },
+    { start_at: `${DATE}T17:00:00-05:00`, end_at: `${DATE}T18:00:00-05:00`, duration: 60 },
+    { description: "Mini Golf per person, per 9 holes", long_description: "One course includes 9 holes of open-play Mini Golf.", price: 9 },
+    { category: { name: "Mini Golf" }, price: 9 },
+    { description: "Mini Golf for 1 guest", long_description: "Tickets: 1", price: 9 },
+    { description: "1 participant", long_description: "Headcount is 1", price: 9 },
+    { guest_count: "", player_count: " ", participant_count: null, price: 9 },
+  ])("keeps a known Mini Golf course option within its parent purchase: %j", async (option) => {
     const test = fixture({ menu: [{ id: 30, display_name: "Mini Golf", quantity: 1,
-      menu_modifier_selections: [{ id: 31, display_name: "Mini Golf-1 Course", quantity: null, price: 0 }] }] });
+      menu_modifier_selections: [{ id: 31, display_name: "Mini Golf-1 Course", quantity: null, ...option }] }] });
     const [event] = await test.adapter.fetchEntertainmentEventsForDate(DATE);
     expect(event.items.filter((item) => /Mini Golf/i.test(item.name))).toEqual([expect.objectContaining({ name: "Mini Golf", quantity: 1 })]);
     const [plan] = await test.adapter.fetchEventPlansForRange(DATE, DATE);
     expect(plan.selections.filter((item) => /Mini Golf/i.test(item.name))).toEqual([expect.objectContaining({ name: "Mini Golf", quantity: 1 })]);
+    const built = buildEventPlan(plan);
+    expect(built.entertainment).toEqual([{ name: "Mini Golf", quantity: "1 guest", time: "", duration: "" }]);
+    const schedule = buildEntertainmentSchedule({ sourceEvents: [event], localEvents: [] });
+    expect(schedule.reservations).toEqual([]);
+    expect(applyEntertainmentDayToItinerary(built, { date: DATE, ...schedule }).entertainment).toEqual(built.entertainment);
   });
 
   it("assigns a bare extension only to its proven raw menu-parent category", async () => {
@@ -181,10 +197,23 @@ describe("contract entertainment source coverage", () => {
   });
 
   it.each([
-    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, price: 9 },
     { id: 31, display_name: "Mini Golf", quantity: 5, price: 0 },
     { id: 31, display_name: "Mini Golf 20 guests", quantity: null, price: 0 },
-    { id: 31, display_name: "Mini Golf", quantity: null, start_at: `${DATE}T17:00:00-05:00` },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "Mini Golf for 20 guests", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, long_description: "Quantity: 20", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, long_description: "20 mini-golf guests", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "Guests: 20", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "20 tickets", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "20 participants", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "Guest count is 20", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "Guests - 20", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "20 golfers", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "Headcount: 20", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "Mini Golf for -1 guest", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, description: "Mini Golf for 1/2 guest", price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, guest_count: 20, price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, category: { name: "Bowling" }, price: 9 },
+    { id: 31, display_name: "Mini Golf-1 Course", quantity: null, category: { name: "Food Packages" }, price: 9 },
   ])("retains meaningful Mini Golf modifiers for review: %j", async (modifier) => {
     const test = fixture({ menu: [{ id: 30, display_name: "Mini Golf", quantity: 1, menu_modifier_selections: [modifier] }] });
     const [event] = await test.adapter.fetchEntertainmentEventsForDate(DATE);
@@ -196,5 +225,14 @@ describe("contract entertainment source coverage", () => {
       menu_modifier_selections: [{ id: 31, display_name: "Mini Golf-1 Course", quantity: null }] }] });
     const [event] = await test.adapter.fetchEntertainmentEventsForDate(DATE);
     expect(event.items.filter((item) => /Mini Golf/i.test(item.name))).toHaveLength(2);
+  });
+
+  it("does not borrow a separate Mini Golf purchase's quantity without a parent/modifier relationship", async () => {
+    const test = fixture({ menu: [{ id: 30, display_name: "Mini Golf", quantity: 1 },
+      { id: 31, display_name: "Mini Golf-1 Course", quantity: null, price: 9 }] });
+    const [event] = await test.adapter.fetchEntertainmentEventsForDate(DATE);
+    expect(event.items.filter((item) => /Mini Golf/i.test(item.name))).toHaveLength(2);
+    const [source] = await test.adapter.fetchEventPlansForRange(DATE, DATE);
+    expect(buildEventPlan(source).entertainment).toHaveLength(2);
   });
 });

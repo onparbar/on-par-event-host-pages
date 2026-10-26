@@ -3,7 +3,7 @@ import type { KitchenSourceSelection } from "@/lib/kitchen/types";
 import type { ItineraryEdit } from "@/lib/itineraries/edits";
 
 export const EVENT_PLAN_TIME_ZONE = "America/New_York" as const;
-export const EVENT_PLAN_RULE_VERSION = "event-plan-v1.2.0" as const;
+export const EVENT_PLAN_RULE_VERSION = "event-plan-v1.2.1" as const;
 
 export type EventPlanOperationalNote = {
   source: "event-note";

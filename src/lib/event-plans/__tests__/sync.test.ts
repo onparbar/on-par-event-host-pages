@@ -350,7 +350,7 @@ describe("rolling Event Host plan synchronization", () => {
       id: 62000001,
       date: "2026-08-15",
       guest_count: 40,
-      rule_version: "event-plan-v1.2.0",
+      rule_version: "event-plan-v1.2.1",
       synced_at: "2026-07-30T16:00:00.000Z",
       operational_notes: [
         expect.objectContaining({

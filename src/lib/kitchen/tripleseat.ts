@@ -520,11 +520,22 @@ function normalizeMenuSelection(value: unknown): KitchenSourceSelection[] {
     const normalized = normalizeMenuSelectionRecord(modifier);
     const rawModifier = asRecord(modifier);
     const plainMiniGolf = (value: string) => /^mini golf(?:\s*[-–]\s*1 course)?$/i.test(value.trim());
+    const miniGolfCategory = (value: string | null | undefined) => !value ||
+      /^(?:entertainment|activities|activity)$/i.test(value) ||
+      (!isFoodDocumentCategory(value) && !/\b(?:beverages?|drinks?)\b/i.test(value) && canonicalCategoryForText(value) === "mini-golf");
+    const guestCountText = rawModifier ? [rawModifier.description, rawModifier.long_description]
+      .map((value) => stripMarkup(asString(value) ?? "")).join(" ") : "";
+    const guestCounts = [
+      ...guestCountText.matchAll(/(?<![\w/])(-?(?:\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?))\s*(?:mini[\s-]+golf\s+)?(?:guests?|people|persons?|players?|participants?|golfers?|passes?|tickets?|admissions?|headcount)\b/gi),
+      ...guestCountText.matchAll(/\b(?:qty|quantity|guests?\s*count|player\s*count|participant\s*count|head\s*count|guests?|players?|participants?|golfers?|passes?|tickets?)\s*(?:(?:is|of)\s+)?(?:[:=–—]\s*|-\s+)?(-?(?:\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?))\b/gi),
+    ].map((match) => Number(match[1]));
     if (normalized && rawModifier && selection && plainMiniGolf(selection.name) &&
       Number.isSafeInteger(selection.quantity) && selection.quantity! > 0 && normalized.quantity == null && plainMiniGolf(normalized.name) &&
-      [rawModifier.description, rawModifier.long_description].every((value) => !asString(value) || plainMiniGolf(stripMarkup(asString(value)!))) &&
-      ["start_at", "start_time", "end_at", "end_time", "event_start_iso8601", "event_end_iso8601", "duration"].every((field) => rawModifier[field] == null) &&
-      ["price", "unit_price", "price_per_person", "amount", "subtotal", "total"].every((field) => rawModifier[field] == null || asNumber(rawModifier[field]) === 0)) {
+      miniGolfCategory(selection.sourceCategory) && miniGolfCategory(normalized.sourceCategory) &&
+      guestCounts.every((count) => Number.isSafeInteger(count) && count === selection.quantity) &&
+      ["guest_count", "player_count", "participant_count"].every((field) => rawModifier[field] == null ||
+        typeof rawModifier[field] === "string" && !rawModifier[field].trim())) {
+      // This option belongs to the counted purchase; its price/course details are not another guest count.
       return [];
     }
     if (normalized && !normalized.sourceCategory && selection && /^extra\s+hours?$/i.test(normalized.name) &&
