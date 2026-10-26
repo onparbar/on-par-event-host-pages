@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseSecret } from "../kitchen/storage";
+import { entertainmentSupabaseBaseUrl } from "./configuration";
 import type {
   EntertainmentAuditEntry,
   EntertainmentEventSnapshot,
   EntertainmentReservation,
   EntertainmentSyncState,
 } from "./types";
-
-const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 
 type FetchImplementation = typeof fetch;
 
@@ -305,10 +304,6 @@ function auditFromRow(row: AuditRow): EntertainmentAuditEntry {
   };
 }
 
-function cleanBaseUrl(value: string) {
-  return value.replace(/\/+$/, "");
-}
-
 function isJwt(value: string) {
   return /^eyJ[^.]*\.[^.]+\.[^.]+$/.test(value);
 }
@@ -352,9 +347,7 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
   }
 
   private tableUrl(table: string, params?: URLSearchParams) {
-    const baseUrl = cleanBaseUrl(
-      this.env.SUPABASE_URL?.trim() || DEFAULT_SUPABASE_URL,
-    );
+    const baseUrl = entertainmentSupabaseBaseUrl(this.env);
     const query = params?.toString();
     return `${baseUrl}/rest/v1/${table}${query ? `?${query}` : ""}`;
   }
@@ -405,24 +398,82 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
     }
   }
 
+  private async allRows<T>(
+    table: string,
+    params: URLSearchParams,
+    identity: keyof T,
+  ): Promise<T[]> {
+    const rows: T[] = [];
+    const seen = new Set<unknown>();
+    let total: number | null = null;
+    do {
+      const query = new URLSearchParams(params);
+      query.set("offset", String(rows.length));
+      query.set("limit", "500");
+      const response = await this.request(table, query, {
+        headers: { Prefer: "count=exact" },
+      });
+      if (!response.ok)
+        throw new Error(
+          `Entertainment database request failed (${response.status}).`,
+        );
+      const range = response.headers
+        .get("content-range")
+        ?.match(/^(?:(\d+)-(\d+)|\*)\/(\d+)$/);
+      const page = (await response.json()) as T[];
+      const count = range ? Number(range[3]) : NaN;
+      if (
+        !range ||
+        !Array.isArray(page) ||
+        !Number.isSafeInteger(count) ||
+        count > 10_000 ||
+        (total != null && total !== count) ||
+        (count === 0
+          ? page.length !== 0
+          : Number(range[1]) !== rows.length ||
+            Number(range[2]) !== rows.length + page.length - 1 ||
+            page.length === 0) ||
+        rows.length + page.length > count
+      ) {
+        throw new Error(
+          "Entertainment database pagination could not be verified.",
+        );
+      }
+      total = count;
+      for (const row of page) {
+        const id = row?.[identity];
+        if (typeof id !== "string" || !id || seen.has(id)) {
+          throw new Error(
+            "Entertainment database pagination could not be verified.",
+          );
+        }
+        seen.add(id);
+        rows.push(row);
+      }
+    } while (rows.length < total);
+    return rows;
+  }
+
   async getDay(date: string): Promise<StoredEntertainmentDay> {
     const [eventRows, reservationRows, syncRows] = await Promise.all([
-      this.jsonRequest<EventRow[]>(
+      this.allRows<EventRow>(
         "entertainment_event_snapshots",
         new URLSearchParams({
           select: "*",
           operating_date: `eq.${date}`,
           active: "eq.true",
-          order: "event_start_at.asc.nullslast,event_name.asc",
+          order: "event_start_at.asc.nullslast,event_id.asc",
         }),
+        "event_id",
       ),
-      this.jsonRequest<ReservationRow[]>(
+      this.allRows<ReservationRow>(
         "entertainment_reservations",
         new URLSearchParams({
           select: "*",
           operating_date: `eq.${date}`,
-          order: "start_at.asc,resource_id.asc",
+          order: "start_at.asc,resource_id.asc,id.asc",
         }),
+        "id",
       ),
       this.jsonRequest<SyncRow[]>(
         "entertainment_sync_runs",
@@ -439,6 +490,40 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
       reservations: reservationRows.map(reservationFromRow),
       sync: syncFromRow(syncRows[0]),
     };
+  }
+
+  /** One SQL statement gives a consistent saved-data snapshot, without REST pagination. */
+  async getInterval(startAt: string, endAt: string) {
+    const value = await this.jsonRequest<{
+      read_at: string;
+      events: EventRow[];
+      reservations: ReservationRow[];
+    }>("rpc/final_call_read_entertainment_interval", undefined, {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      redirect: "error",
+      body: JSON.stringify({ p_start: startAt, p_end: endAt }),
+    });
+    if (!Array.isArray(value.events) || !Array.isArray(value.reservations) ||
+      value.events.length > 10_000 || value.reservations.length > 10_000 ||
+      !Number.isFinite(Date.parse(value.read_at))) {
+      throw new Error("Entertainment interval snapshot could not be verified.");
+    }
+    return {
+      readAt: value.read_at,
+      events: value.events.map(eventFromRow),
+      reservations: value.reservations.map(reservationFromRow),
+    };
+  }
+
+  async recordIntervalEvidence(id: string, payload: unknown) {
+    await this.emptyRequest("entertainment_source_reads", undefined, {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      redirect: "error",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ id, payload }),
+    });
   }
 
   async getReservation(reservationId: string) {
