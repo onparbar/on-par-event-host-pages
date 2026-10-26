@@ -9241,6 +9241,11 @@ a {
 
 @media screen and (min-width: 721px) {
   .kitchen-sheet-viewport[data-fit="true"] { overflow: hidden; }
+  .kitchen-sheet-viewport[data-fit="true"] .kitchen-sheet-canvas { display: flex; min-height: calc(100% - 2px); flex-direction: column; }
+  .kitchen-sheet-viewport[data-fit="true"] .kitchen-sheet-canvas > .kitchen-checklist { display: flex; flex: 1 0 auto; flex-direction: column; }
+  .kitchen-sheet-viewport[data-fit="true"] .kitchen-checklist > * { flex-shrink: 0; }
+  .kitchen-sheet-viewport[data-fit="true"] .kitchen-table-scroll { display: flex; flex: 1 0 auto; }
+  .kitchen-sheet-viewport[data-fit="true"] .kitchen-category-heading { height: 1px; }
   .kitchen-sheet-viewport[data-fit="true"] .kitchen-sheet-canvas { transform: scale(var(--kitchen-sheet-scale, 1)); }
   .kitchen-sheet-canvas .kitchen-bwa-field { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 5px; }
   .kitchen-sheet-canvas .kitchen-staff-select summary { min-height: 40px; padding-block: 4px; }

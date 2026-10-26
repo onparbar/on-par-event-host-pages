@@ -195,27 +195,29 @@ describe("kitchen checklist day layout", () => {
     expect(html.indexOf("Expanded prep list")).toBeGreaterThan(summaryEnd);
   });
 
-  it("uses a native party toggle without intercepting its heading click", () => {
+  it("opens the fitted event view without expanding a long inline sheet", () => {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
-    const onToggle = vi.fn();
-    const element = KitchenEventAccordion({ checklist, onToggle });
-    const details = { open: true };
-    expect(element.props.children[0].props.onClick).toBeUndefined();
-    element.props.onToggle({ target: details, currentTarget: details });
-    expect(onToggle).toHaveBeenCalledExactlyOnceWith(true);
-    element.props.onToggle({ target: { open: true }, currentTarget: details });
-    expect(onToggle).toHaveBeenCalledOnce();
+    const onOpen = vi.fn();
+    const element = KitchenEventAccordion({ checklist, onOpen });
+    const summary = element.props.children[0];
+    const trigger = {};
+    const preventDefault = vi.fn();
+    expect(summary.props["aria-haspopup"]).toBe("dialog");
+    summary.props.onClick({ preventDefault, currentTarget: trigger });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith(trigger);
+    expect(element.props.open).toBeUndefined();
   });
 
-  it("allows more than one party accordion to be open without a shared exclusive group", () => {
+  it("keeps the party picker collapsed when events open in a fitted dialog", () => {
     const html = renderToStaticMarkup(createElement("section", null,
       ...MOCK_KITCHEN_EVENTS.slice(0, 2).map((source) => createElement(KitchenEventAccordion, {
-        key: source.eventId, checklist: generateKitchenChecklist(source), open: true,
+        key: source.eventId, checklist: generateKitchenChecklist(source), onOpen: noop,
       })),
     ));
     expect(html.match(/data-kitchen-event-accordion=/g)).toHaveLength(2);
-    expect(html.match(/open=""/g)).toHaveLength(2);
-    expect(html).not.toMatch(/<details[^>]* name=/);
+    expect(html).not.toContain('open=""');
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(2);
   });
 
   it("does not repeat event identity inside expanded accordion content", () => {

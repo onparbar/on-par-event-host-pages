@@ -428,7 +428,7 @@ export default function KitchenDashboard() {
   const [bookingSyncMessage, setBookingSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | number | null>(null);
-  const [expandedEventIds, setExpandedEventIds] = useState<string[]>([]);
+  const checklistTriggerRef = useRef<HTMLElement | null>(null);
   const [pendingPrintId, setPendingPrintId] = useState<string | number | null>(null);
   const [staffDrafts, setStaffDrafts] = useState<
     Record<string, StaffAssignmentDraft>
@@ -483,7 +483,8 @@ export default function KitchenDashboard() {
     selectedDateRef.current = nextDate;
     dayLoadGenerationRef.current += 1;
     setAddOnAlertQueue([]);
-    setExpandedEventIds([]);
+    setSelectedEventId(null);
+    checklistTriggerRef.current = null;
     setSelectedDate(nextDate);
     setSyncState("idle");
     setBookingSyncState("idle");
@@ -696,8 +697,8 @@ export default function KitchenDashboard() {
       openedContextEventRef.current = null;
     } else if (focusedEvent && openedContextEventRef.current !== eventContext.preferredEventId) {
       openedContextEventRef.current = eventContext.preferredEventId;
-      const eventId = String(focusedEvent.event.eventId);
-      setExpandedEventIds((current) => current.includes(eventId) ? current : [...current, eventId]);
+      checklistTriggerRef.current = null;
+      setSelectedEventId(focusedEvent.event.eventId);
     }
   }, [eventContext.preferredEventId, focusedEvent]);
   const retainedStaffDraftCount = Object.keys(staffDrafts).filter((eventId) =>
@@ -875,6 +876,7 @@ export default function KitchenDashboard() {
 
   const closeChecklist = useCallback(() => {
     setSelectedEventId(null);
+    window.requestAnimationFrame(() => checklistTriggerRef.current?.focus({ preventScroll: true }));
   }, []);
 
   function printChecklist(eventId: string | number) {
@@ -1617,11 +1619,7 @@ export default function KitchenDashboard() {
         {loadState === "ready" && operationsView === "expo" ? <KitchenExpoPanel events={visibleKitchenEvents} /> : null}
         {loadState === "ready" && sortedEvents.length > 0 && operationsView === "events" ? (
           <div className="kitchen-party-controls" aria-label="Party sheet controls">
-            <p>Click a party to open or close its sheet. Multiple parties can stay open.</p>
-            <div>
-              <button className="kitchen-secondary-button" disabled={sortedEvents.every((event) => expandedEventIds.includes(String(event.event.eventId)))} onClick={() => setExpandedEventIds(sortedEvents.map((event) => String(event.event.eventId)))} type="button">Expand all parties</button>
-              <button className="kitchen-secondary-button" disabled={!sortedEvents.some((event) => expandedEventIds.includes(String(event.event.eventId)))} onClick={() => setExpandedEventIds([])} type="button">Collapse all parties</button>
-            </div>
+            <p>Select a party to automatically fit its entire kitchen sheet to the screen. Close the sheet to choose another party.</p>
           </div>
         ) : null}
         {loadState === "ready" && sortedEvents.length && operationsView === "events" ? (
@@ -1635,11 +1633,10 @@ export default function KitchenDashboard() {
                 <KitchenEventAccordion
                   checklist={checklist}
                   key={eventKey}
-                  open={expandedEventIds.includes(eventKey)}
-                  onToggle={(open) => setExpandedEventIds((current) => {
-                    if (current.includes(eventKey) === open) return current;
-                    return open ? [...current, eventKey] : current.filter((id) => id !== eventKey);
-                  })}
+                  onOpen={(trigger) => {
+                    checklistTriggerRef.current = trigger;
+                    setSelectedEventId(checklist.event.eventId);
+                  }}
                 >
                   <KitchenChecklistSheet
                     staffDraft={
@@ -1699,6 +1696,7 @@ export default function KitchenDashboard() {
 
       {selectedChecklist && !activeAlert ? (
         <ChecklistPanel
+          key={String(selectedChecklist.event.eventId)}
           staffDraft={
             staffDrafts[String(selectedChecklist.event.eventId)] ?? {
               setup: [],
@@ -1898,13 +1896,11 @@ function ChecklistPanel({
 export function KitchenEventAccordion({
   checklist,
   children,
-  open,
-  onToggle,
+  onOpen,
 }: {
   checklist: KitchenChecklist;
   children?: ReactNode;
-  open?: boolean;
-  onToggle?: (open: boolean) => void;
+  onOpen?: (trigger: HTMLElement) => void;
 }) {
   const progress = kitchenProgress(checklist);
   const startTime = formatTime(
@@ -1918,12 +1914,15 @@ export function KitchenEventAccordion({
     <details
       className="kitchen-event-accordion"
       data-kitchen-event-accordion={String(checklist.event.eventId)}
-      open={open}
-      onToggle={(event) => {
-        if (event.target === event.currentTarget) onToggle?.(event.currentTarget.open);
-      }}
     >
-      <summary className="kitchen-event-accordion-summary">
+      <summary
+        aria-haspopup={onOpen ? "dialog" : undefined}
+        className="kitchen-event-accordion-summary"
+        onClick={onOpen ? (event) => {
+          event.preventDefault();
+          onOpen(event.currentTarget);
+        } : undefined}
+      >
         <span className="kitchen-event-accordion-identity">
           <strong>{checklist.event.name}</strong>
           <span className="kitchen-event-area">Area reserved: {checklist.event.room || "Area not listed"}</span>
