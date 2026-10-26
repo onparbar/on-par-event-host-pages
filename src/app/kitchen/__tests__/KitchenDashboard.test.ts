@@ -6,6 +6,7 @@ import { quantityAwareReadinessKey } from "../../../lib/kitchen/readiness";
 import { generateKitchenChecklist } from "../../../lib/kitchen/rules";
 import {
   clockParts,
+  ChecklistPanel,
   clampKitchenZoom,
   ensureAudioContextRunning,
   formatPreppedTimestamp,
@@ -218,6 +219,26 @@ describe("kitchen checklist day layout", () => {
     expect(html.match(/data-kitchen-event-accordion=/g)).toHaveLength(2);
     expect(html).not.toContain('open=""');
     expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(2);
+  });
+
+  it("uses the open event heading as the collapse control, separate from Fit and Print", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const html = renderToStaticMarkup(createElement(ChecklistPanel, {
+      checklist, staffDraft: { setup: [], foodRunners: [], pocs: [], preppedBy: "", verifiedBy: "" },
+      bwaOptions: [], bwaSaveState: "idle", onStaffChange: noop, onClose: noop,
+      onOpenDescription: noop, onPrint: noop, onReadyChange: noop, onSaveStaff: noop, readinessPending: new Set<string>(),
+    }));
+    const heading = html.slice(html.indexOf('class="kitchen-event-collapse-toggle"'), html.indexOf("</button>"));
+    expect(html).toContain('aria-label="Collapse Redacted Taco Package kitchen sheet"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(heading).toContain('id="kitchen-focus-view-title">Redacted Taco Package');
+    expect(heading).toContain("11:30 AM–1:30 PM · Mock Room A");
+    expect(heading).toContain('aria-hidden="true">⌃');
+    expect(heading).not.toContain("Print this event");
+    expect(heading).not.toContain("Fit entire sheet");
+    expect(html).toContain("Fit entire sheet ✓");
+    expect(html).toContain("Print this event");
+    expect(html).not.toContain("Close checklist");
   });
 
   it("does not repeat event identity inside expanded accordion content", () => {

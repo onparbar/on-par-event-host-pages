@@ -1619,7 +1619,7 @@ export default function KitchenDashboard() {
         {loadState === "ready" && operationsView === "expo" ? <KitchenExpoPanel events={visibleKitchenEvents} /> : null}
         {loadState === "ready" && sortedEvents.length > 0 && operationsView === "events" ? (
           <div className="kitchen-party-controls" aria-label="Party sheet controls">
-            <p>Select a party to automatically fit its entire kitchen sheet to the screen. Close the sheet to choose another party.</p>
+            <p>Select a party to automatically fit its entire kitchen sheet to the screen. Click the event heading to collapse it and choose another party.</p>
           </div>
         ) : null}
         {loadState === "ready" && sortedEvents.length && operationsView === "events" ? (
@@ -1784,7 +1784,7 @@ function StateCard({
   );
 }
 
-function ChecklistPanel({
+export function ChecklistPanel({
   staffDraft,
   bwaOptions,
   bwaSaveState,
@@ -1847,7 +1847,22 @@ function ChecklistPanel({
       role="dialog"
     >
       <div className="kitchen-checklist-toolbar">
-        <h2 id="kitchen-focus-view-title">Kitchen event view</h2>
+        <h2>
+          <button
+            aria-expanded="true"
+            aria-label={`Collapse ${checklist.event.name} kitchen sheet`}
+            className="kitchen-event-collapse-toggle"
+            onClick={onClose}
+            ref={closeButtonRef}
+            type="button"
+          >
+            <span className="kitchen-event-collapse-identity">
+              <strong id="kitchen-focus-view-title">{checklist.event.name}</strong>
+              <span>{formatTime(checklist.timing.startTime ?? checklist.event.startTime)}{checklist.event.endTime ? `–${formatTime(checklist.event.endTime)}` : ""} · {checklist.event.room || "Area not listed"}</span>
+            </span>
+            <span className="kitchen-event-collapse-action">Collapse <span aria-hidden="true">⌃</span></span>
+          </button>
+        </h2>
         <div className="kitchen-checklist-toolbar-actions">
           <button
             aria-pressed={fitSheet}
@@ -1856,14 +1871,6 @@ function ChecklistPanel({
             type="button"
           >
             {fitSheet ? "Fit entire sheet ✓" : "Fit entire sheet"}
-          </button>
-          <button
-            className="kitchen-secondary-button"
-            onClick={onClose}
-            ref={closeButtonRef}
-            type="button"
-          >
-            Close checklist
           </button>
           <button className="kitchen-primary-button" onClick={onPrint} type="button">
             Print this event
