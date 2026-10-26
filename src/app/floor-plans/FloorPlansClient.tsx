@@ -693,7 +693,7 @@ export default function FloorPlansClient({
     >
       {focusedWorkspace ? <>
         <PortalPageHeader description="Reserved seating and entertainment for your selected event only. Use Switch Event in the header to choose another party." eyebrow="My event workspace" title="Floor Plan" />
-        <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 30 minutes after the event. Entertainment uses booked times only, with no buffer.</p>
+        <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 0.5 hour after the event. Entertainment uses booked times only, with no buffer.</p>
         {!eventContext.ready ? <p role="status">Loading the selected event floor plan…</p> : <SelectedEventFloorPlan date={focusedDate} eventId={eventContext.requestedEventId!} payload={focusedPayload} zoom={planZoom} />}
       </> : <>
       <PortalPageHeader
@@ -736,7 +736,7 @@ export default function FloorPlansClient({
       />
 
       <section aria-labelledby="upcoming-floor-plans" className="floor-plan-group">
-        <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 30 minutes after the event. Entertainment uses its booked times only, with no buffer. Displayed event times stay unchanged.</p>
+        <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 0.5 hour after the event. Entertainment uses its booked times only, with no buffer. Displayed event times stay unchanged.</p>
         <div className="floor-plan-group-heading">
           <div>
             <span className="portal-eyebrow">Current workspace</span>

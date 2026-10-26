@@ -17,6 +17,7 @@ import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import {
   AREAS,
   DISPLAY_AREAS,
+  areaUsesSeatingBuffer,
   floorPlanAreaAssignmentType,
   getAreaForEntertainmentResource,
   getFloorPlanArea,
@@ -26,10 +27,13 @@ import {
   floorPlanEventColorsAreDistinct,
   readableOverlayText,
 } from "@/lib/floor-plans/configuration/colors";
-import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
+import { detectFloorPlanConflicts, floorPlanAreaTimeOverlap, timeRangesOverlap } from "@/lib/floor-plans/conflicts";
 import { buildFloorPlanExportModel } from "@/lib/floor-plans/export";
 import { floorPlanEventView, floorPlanLocalReservationOutlines } from "@/lib/floor-plans/event-view";
-import { reservedSeatingCapacity } from "@/lib/floor-plans/generator";
+import { seatingCoverageMessage, summarizeEventSeating } from "@/lib/floor-plans/seating-summary";
+import { reservationTimingSource } from "@/lib/floor-plans/reservation-state";
+import { formatEntertainmentDurationHours, normalizeEntertainmentDurationHours } from "@/lib/entertainment/duration";
+import { reservationOccupancy, RESERVATION_CLEANUP_MINUTES, RESERVATION_SETUP_MINUTES } from "@/lib/operations/reservation-buffer";
 import { entertainmentReservationMatchesFloorPlanEvent, floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
 import {
   displayEventForFloorPlanArea,
@@ -87,6 +91,9 @@ function eventStatusClass(event: FloorPlanEvent) {
 }
 
 function eventTime(event: Pick<FloorPlanEvent, "startAt" | "endAt">) {
+  const day = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric" });
+  if (!event.startAt || !event.endAt || !Number.isFinite(Date.parse(event.startAt)) || !Number.isFinite(Date.parse(event.endAt))) return "Time needs review";
+  if (event.startAt && event.endAt && day.format(new Date(event.startAt)) !== day.format(new Date(event.endAt))) return datedInterval(event.startAt, event.endAt);
   return event.startAt && event.endAt
     ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}`
     : "Time needs review";
@@ -139,6 +146,114 @@ function isoFromDateTimeInput(value: string) {
     Number(match[4]),
     Number(match[5]),
   );
+}
+
+function datedInterval(startAt: string | null, endAt: string | null) {
+  if (!startAt || !endAt || !Number.isFinite(Date.parse(startAt)) || !Number.isFinite(Date.parse(endAt))) return "Time needs review";
+  const zone = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", timeZoneName: "short" });
+  const offsetChanges = zone.formatToParts(new Date(startAt)).find((part) => part.type === "timeZoneName")?.value !== zone.formatToParts(new Date(endAt)).find((part) => part.type === "timeZoneName")?.value;
+  const format = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+    ...(offsetChanges ? { timeZoneName: "short" } as const : {}),
+  });
+  return `${format.format(new Date(startAt))} – ${format.format(new Date(endAt))}`;
+}
+
+export function floorPlanGenerationRequest(
+  plan: FloorPlanDocument,
+  mode: FloorPlanGenerationMode,
+  selectedEventId?: string,
+) {
+  return { action: "generate", expectedVersion: plan.version, mode,
+    ...(selectedEventId ? { selectedEventId } : {}) };
+}
+
+export function editFloorPlanReservation(
+  reservation: FloorPlanReservation,
+  patch: Partial<FloorPlanReservation>,
+): FloorPlanReservation {
+  const placementChanged = patch.areaId !== undefined && patch.areaId !== reservation.areaId ||
+    patch.reservationType !== undefined && patch.reservationType !== reservation.reservationType;
+  const timeChanged = patch.startAt !== undefined && patch.startAt !== reservation.startAt ||
+    patch.endAt !== undefined && patch.endAt !== reservation.endAt;
+  return {
+    ...reservation, ...patch,
+    ...(placementChanged ? { source: "manual", placementOverride: true } : {}),
+    ...(timeChanged && patch.timingSource !== "event-default" ? { timingSource: "staff-override" } : {}),
+  };
+}
+
+export function FloorPlanSeatingSummary({ plan, event, dirty, saveConflict, disabled, onGenerate }: {
+  plan: FloorPlanDocument;
+  event: FloorPlanEvent;
+  dirty: boolean;
+  saveConflict: boolean;
+  disabled: boolean;
+  onGenerate: (mode: FloorPlanGenerationMode) => void;
+}) {
+  const summary = summarizeEventSeating(event, plan.reservations.filter((reservation) => reservation.floorPlanEventId === event.id), { allReservations: plan.reservations });
+  return <section className="floor-plan-seating-summary" aria-label={`Seating summary for ${event.name}`}>
+    <h3>Seating for {event.name}</h3>
+    <dl className="floor-plan-detail-list">
+      <div><dt>Contracted guests</dt><dd>{event.guestCount}</dd></div>
+      <div><dt>Assigned seats</dt><dd>{summary.assignedCapacity}</dd></div>
+      <div><dt>Full-event seats</dt><dd>{summary.coveredCapacity}</dd></div>
+      <div><dt>Seats still needed</dt><dd>{summary.seatsNeeded}</dd></div>
+      <div><dt>Spare seats</dt><dd>{summary.spareSeats} — held for this event</dd></div>
+      <div><dt>Full-event coverage</dt><dd>{summary.fullEventCoverage ? "Complete" : "Needs attention"}</dd></div>
+      <div><dt>Food tables</dt><dd>{summary.foodAssigned} assigned / {summary.foodRequired} required</dd></div>
+      <div><dt>Contracted area</dt><dd>{event.source.rooms.join(", ") || "Needs review"}</dd></div>
+      <div><dt>Required seating interval</dt><dd>{datedInterval(event.startAt, event.endAt)}</dd></div>
+      <div><dt>Save state</dt><dd>{saveConflict ? "Newer saved version exists — your draft is retained" : dirty ? "Unsaved draft" : `Saved version ${plan.version}`}</dd></div>
+    </dl>
+    <p>Seating setup: {formatEntertainmentDurationHours(RESERVATION_SETUP_MINUTES)}; cleanup: {formatEntertainmentDurationHours(RESERVATION_CLEANUP_MINUTES)}. Entertainment uses its own purchased interval, without these buffers.</p>
+    {!summary.fullEventCoverage ? <p className="floor-plan-warning-copy">{seatingCoverageMessage(event, summary)}</p> : null}
+    {summary.issues.length ? <ul className="floor-plan-warning-copy">{summary.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
+    <div className="floor-plan-inspector-actions">
+      <button disabled={disabled || dirty || saveConflict} onClick={() => onGenerate("fill-missing")} type="button">Fill remaining seats</button>
+      <button disabled={disabled || dirty || saveConflict} onClick={() => onGenerate("replace-generated")} type="button">Rework generated seating</button>
+    </div>
+    <small>Selected event only. Staff-selected and locked tables stay in place. Save your draft before running a repair. Saving does not prove that capacity or conflicts are resolved.</small>
+  </section>;
+}
+
+export function FloorPlanTableDetails({ plan, event, area, reservation, entertainmentReservation = null, allEntertainmentReservations = [] }: {
+  plan: FloorPlanDocument; event: FloorPlanEvent; area: FloorPlanArea;
+  reservation: FloorPlanReservation | null;
+  entertainmentReservation?: EntertainmentReservation | null;
+  allEntertainmentReservations?: readonly EntertainmentReservation[];
+}) {
+  const physicalId = getPhysicalFloorPlanAreaId(area.id);
+  const physical = getFloorPlanArea(physicalId) ?? area;
+  const assignments = plan.reservations.filter((item) => item.reservationType !== "custom" && getPhysicalFloorPlanAreaId(item.areaId) === physicalId);
+  const blockers = assignments.filter((item) => item.floorPlanEventId !== event.id && floorPlanAreaTimeOverlap(physicalId, event.startAt, event.endAt, item.startAt, item.endAt));
+  const entertainmentBlockers = allEntertainmentReservations.filter((item) => item.active && item.resourceId === area.entertainmentResourceId && !entertainmentReservationMatchesFloorPlanEvent(item, event) && timeRangesOverlap(event.startAt, event.endAt, item.startAt, item.endAt));
+  const displayed = reservation ?? entertainmentReservation;
+  const timingSource = reservation ? reservationTimingSource(reservation, event) : null;
+  const occupancy = reservation && areaUsesSeatingBuffer(physicalId) ? reservationOccupancy(reservation.startAt, reservation.endAt) : displayed;
+  const unavailable = [...blockers.map((item) => `${plan.events.find((candidate) => candidate.id === item.floorPlanEventId)?.name ?? "Another event"} holds ${datedInterval(item.startAt, item.endAt)}${areaUsesSeatingBuffer(physicalId) ? " plus seating setup/cleanup" : ""}`), ...entertainmentBlockers.map((item) => `${item.eventName} has entertainment reserved ${datedInterval(item.startAt, item.endAt)}`)];
+  for (const hold of assignments.filter((item) => item.floorPlanEventId !== event.id && (!item.startAt || !item.endAt || !Number.isFinite(Date.parse(item.startAt)) || !Number.isFinite(Date.parse(item.endAt))))) unavailable.push(`${plan.events.find((candidate) => candidate.id === hold.floorPlanEventId)?.name ?? "Another event"} has an incomplete reservation time; availability needs review`);
+  for (const hold of plan.reservations.filter((item) => item.areaId === "facility" && item.floorPlanEventId !== event.id && floorPlanAreaTimeOverlap(physicalId, event.startAt, event.endAt, item.startAt, item.endAt))) unavailable.push(`${plan.events.find((candidate) => candidate.id === hold.floorPlanEventId)?.name ?? "Another event"} has a full-facility reservation ${datedInterval(hold.startAt, hold.endAt)}`);
+  if (reservation?.reservationType === "seating" && assignments.some((item) => item.floorPlanEventId === event.id && item.reservationType === "food-table" && timeRangesOverlap(reservation.startAt, reservation.endAt, item.startAt, item.endAt))) unavailable.push("This event also uses the same physical table for food during its seating interval; those seats cannot be counted");
+  return <section aria-label={`Table details for ${area.name}`}>
+    <dl className="floor-plan-detail-list">
+      <div><dt>Physical table ID</dt><dd>{physicalId}</dd></div>
+      <div><dt>Display name</dt><dd>{physical.name}</dd></div>
+      <div><dt>Type</dt><dd>{physical.type}</dd></div>
+      <div><dt>Verified capacity</dt><dd>{physical.capacity > 0 ? `${physical.capacity} seats` : "Not counted — no verified seating capacity"}</dd></div>
+      <div><dt>Assignment purpose</dt><dd>{reservation?.reservationType ?? (entertainmentReservation ? "entertainment" : "Unassigned for selected event")}{reservation?.reservationType === "food-table" ? " — 0 guest seats" : ""}</dd></div>
+      <div><dt>Assigned event</dt><dd>{displayed ? event.name : "Unassigned for selected event"}</dd></div>
+      <div><dt>Reservation interval</dt><dd>{displayed ? datedInterval(displayed.startAt, displayed.endAt) : "Not assigned"}</dd></div>
+      <div><dt>Occupied interval</dt><dd>{occupancy ? datedInterval(occupancy.startAt, occupancy.endAt) : "Not assigned"}</dd></div>
+      <div><dt>Placement</dt><dd>{!displayed ? "Not assigned" : reservation ? reservation.placementOverride || reservation.source === "manual" ? "Staff-selected" : "Generated" : entertainmentReservation?.manualOverride ? "Staff-selected entertainment" : "Shared entertainment assignment"}{reservation?.lockedByUser ? " · Locked" : ""}</dd></div>
+      <div><dt>Timing</dt><dd>{!displayed ? "Not assigned" : reservation ? timingSource === "staff-override" ? reservation.timingSource ? "Staff time override" : "Distinct legacy times preserved as a staff override — review" : reservation.timingSource ? "Follows event time" : "Follows event time by legacy inference — source metadata not yet recorded" : entertainmentReservation?.startTimeSource === "staff-override" ? "Staff entertainment time override" : entertainmentReservation?.startTimeSource === "event-start-default" ? "Entertainment starts with event; purchased duration" : "Explicit or legacy entertainment time"}</dd></div>
+      {reservation && entertainmentReservation ? <div><dt>Separate entertainment interval</dt><dd>{datedInterval(entertainmentReservation.startAt, entertainmentReservation.endAt)} — does not release seating</dd></div> : null}
+      {reservation?.changeDetails ? <div><dt>Latest change</dt><dd>{reservation.changeDetails.reason} Fields: {reservation.changeDetails.fields.join(", ")}</dd></div> : null}
+    </dl>
+    <p className={unavailable.length || !area.isReservable ? "floor-plan-warning-copy" : undefined}>{!area.isReservable ? "Unavailable: this is a reference-only permanent map object." : !event.startAt || !event.endAt ? "Availability needs review: the event interval is missing." : unavailable.length ? `Unavailable for this event: ${unavailable.join("; ")}.` : "No other event occupies this object during the required interval and applicable buffers."}</p>
+    {assignments.length ? <details><summary>All assignments for this physical object ({assignments.length})</summary><ul>{assignments.map((item) => <li key={item.id}>{plan.events.find((candidate) => candidate.id === item.floorPlanEventId)?.name ?? "Unknown event"} · {item.reservationType} · {datedInterval(item.startAt, item.endAt)}</li>)}</ul></details> : null}
+  </section>;
 }
 
 class FloorPlanSaveConflict extends Error {}
@@ -378,6 +493,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   async function runAction(
     action: "refresh" | "generate" | "save" | "validate" | "approve",
+    generation?: { mode: FloorPlanGenerationMode; selectedEventId: string },
   ) {
     if (!plan && action !== "refresh") return;
     if (saveConflict) {
@@ -387,7 +503,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (dirty && action !== "save" && !window.confirm("Discard this unsaved draft before updating the saved plan?")) return;
     if (
       action === "generate" &&
-      generationMode === "reset-event" &&
+      (generation?.mode ?? generationMode) === "reset-event" &&
       !window.confirm("Reset the entire date plan? This removes generated and manual floor-plan assignments before rebuilding suggestions.")
     ) {
       return;
@@ -416,9 +532,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     );
     try {
       const next = await floorPlanRequest(date, {
-        action,
-        ...(plan ? { expectedVersion: plan.version } : {}),
-        ...(action === "generate" ? { mode: generationMode } : {}),
+        ...(action === "generate" && plan
+          ? floorPlanGenerationRequest(plan, generation?.mode ?? generationMode, generation?.selectedEventId)
+          : { action, ...(plan ? { expectedVersion: plan.version } : {}) }),
         ...(action === "save" ? { plan } : {}),
         ...(action === "approve" ? { acknowledgeWarnings: warningCount > 0 } : {}),
       });
@@ -439,10 +555,12 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         action === "approve"
           ? "Floor plan approved and published to the main Floor Plans page."
           : action === "save"
-            ? `Floor plan saved as version ${next.plan.version} and published to the main Floor Plans page.`
+            ? `Floor plan saved as version ${next.plan.version} and published to the main Floor Plans page. ${next.validation.some((entry) => entry.status === "Failed" || entry.status === "Warning") ? "Unresolved seating or validation alerts remain; saving is not approval." : "Review validation before approval."}`
           : action === "refresh"
             ? "Live Tripleseat sync complete and saved. Review highlighted changes before approval."
-            : `Floor plan ${action === "generate" ? "generated" : `${action}d`} and saved as version ${next.plan.version}.`,
+            : action === "generate" && generation
+              ? `${generation.mode === "fill-missing" ? "Remaining seating filled" : "Unlocked generated seating reworked"} for ${activeEvent?.name ?? "the selected event"} and saved as version ${next.plan.version}. Review additions and any remaining shortages below.`
+              : `Floor plan ${action === "generate" ? "generated for the entire date" : `${action}d`} and saved as version ${next.plan.version}.`,
       );
     } catch (error) {
       if (error instanceof FloorPlanSaveConflict) setSaveConflict(true);
@@ -610,10 +728,18 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       ...plan,
       reservations: plan.reservations.map((reservation) =>
         reservation.id === activePlanReservation.id
-          ? { ...reservation, ...patch, source: "manual", lockedByUser: true }
+          ? editFloorPlanReservation(reservation, patch)
           : reservation,
       ),
     });
+  }
+
+  function updateSeatingTime(field: "startAt" | "endAt", value: string) {
+    try {
+      updateReservation({ [field]: isoFromDateTimeInput(value) });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Choose a valid seating time.");
+    }
   }
 
   function addCustomHighlight() {
@@ -803,13 +929,6 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     () => payload?.validation.filter((entry) => entry.eventId === activeEventId) ?? [],
     [activeEventId, payload?.validation],
   );
-  const reservedSeats = useMemo(() => {
-    if (!plan || !activeEvent) return 0;
-    return reservedSeatingCapacity(plan.reservations.filter(
-      (reservation) => reservation.floorPlanEventId === activeEvent.id,
-    ));
-  }, [activeEvent, plan]);
-
   return (
     <PortalShell
       actions={plan ? <PortalStatusBadge tone={statusTone(plan.status)}>{plan.status}</PortalStatusBadge> : null}
@@ -830,12 +949,12 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         <div className="floor-plan-primary-actions">
           <button disabled={requestState === "saving"} onClick={() => void runAction("refresh")} type="button">Sync Live from Tripleseat</button>
           {requestState === "error" && message.includes("Reconnect Tripleseat") ? <a className="button-link" href="/api/kitchen/oauth/start">Reconnect Tripleseat</a> : null}
-          <select aria-label="Regeneration mode" onChange={(event) => setGenerationMode(event.target.value as FloorPlanGenerationMode)} value={generationMode}>
-            <option value="fill-missing">Keep manual edits; fill missing</option>
-            <option value="replace-generated">Replace generated only</option>
-            <option value="reset-event">Reset the entire event plan</option>
+          <select aria-label="Entire date regeneration mode" onChange={(event) => setGenerationMode(event.target.value as FloorPlanGenerationMode)} value={generationMode}>
+            <option value="fill-missing">Entire date: keep edits; fill missing</option>
+            <option value="replace-generated">Entire date: rework generated only</option>
+            <option value="reset-event">Reset the entire date plan</option>
           </select>
-          <button disabled={!plan || requestState === "saving"} onClick={() => void runAction("generate")} type="button">Generate Floor Plan</button>
+          <button disabled={!plan || saveConflict || requestState === "saving"} onClick={() => void runAction("generate")} type="button">Generate entire date</button>
           <button disabled={!dirty || saveConflict || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
@@ -1018,13 +1137,21 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 <small>Updates this party&apos;s event name and every highlight. Each party must use a different color.</small>
               </label>
             ) : null}
+            {activeEvent ? <FloorPlanSeatingSummary plan={plan} event={activeEvent} dirty={dirty} saveConflict={saveConflict} disabled={requestState === "saving"} onGenerate={(mode) => void runAction("generate", { mode, selectedEventId: activeEvent.id })} /> : null}
+            {activeEvent && payload.sourceChanges?.some((change) => change.eventId === activeEvent.id) ? <section className="floor-plan-source-changes" aria-label="Contract changes needing attention"><h3>Contract changes</h3><ul>{payload.sourceChanges.filter((change) => change.eventId === activeEvent.id).map((change) => <li key={`${change.eventId}:${change.field}`}><strong>{change.field}</strong>: {change.message}</li>)}</ul><p>Review the saved seating after contract changes. Staff-selected tables and explicit timing overrides are not silently replaced.</p></section> : null}
             {selectedArea && activeEvent ? (
               <div className="floor-plan-inspector-body">
-                <dl className="floor-plan-detail-list"><div><dt>Type</dt><dd>{selectedArea.type}</dd></div><div><dt>Capacity</dt><dd>{selectedArea.capacity || "Not counted"}</dd></div><div><dt>Parent</dt><dd>{selectedArea.parentAreaId ? getFloorPlanArea(selectedArea.parentAreaId)?.name ?? selectedArea.parentAreaId : "—"}</dd></div><div><dt>Assigned event</dt><dd>{activePlanReservation || activeEntertainmentReservation ? activeEvent.name : "Unassigned for selected event"}</dd></div></dl>
+                <FloorPlanTableDetails plan={plan} event={activeEvent} area={selectedArea} reservation={activePlanReservation} entertainmentReservation={activeEntertainmentReservation} allEntertainmentReservations={payload.entertainmentReservations} />
                 {selectedArea.entertainmentResourceId && selectedArea.type !== "mini-golf" ? <><label className="floor-plan-toggle-field"><input checked={entertainmentMode} disabled={selectedArea.type !== "room"} onChange={(event) => setEntertainmentMode(event.target.checked)} type="checkbox" />{selectedArea.type === "room" ? "Also reserve on Entertainment Schedule" : "Shared Entertainment Schedule reservation"}</label><div className="floor-plan-field-group"><label>Reservation start<input onChange={(event) => setEntStart(event.target.value)} type="datetime-local" value={entStart} /></label><label>Reservation end<input onChange={(event) => setEntEnd(event.target.value)} type="datetime-local" value={entEnd} /></label></div></> : null}
                 {selectedArea.type === "mini-golf" ? <p className="floor-plan-warning-copy">Mini golf is open play and is not reserved on the Entertainment Schedule.</p> : null}
                 {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} disabled={selectedArea.capacity === 0} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />{selectedArea.capacity === 0 ? "Food-only table — always marked F" : "Mark as food table and label F"}</label> : null}
                 {activePlanReservation ? <div className="floor-plan-field-group"><label>Highlight label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label></div> : null}
+                {activePlanReservation && activePlanReservation.reservationType !== "custom" ? <section aria-label="Seating placement and timing">
+                  <label className="floor-plan-toggle-field"><input checked={activePlanReservation.lockedByUser} onChange={(event) => updateReservation({ lockedByUser: event.target.checked })} type="checkbox" />Lock table placement</label>
+                  <label className="floor-plan-toggle-field"><input checked={reservationTimingSource(activePlanReservation, activeEvent) === "event-default"} onChange={(event) => updateReservation(event.target.checked ? { timingSource: "event-default", startAt: activeEvent.startAt, endAt: activeEvent.endAt } : { timingSource: "staff-override" })} type="checkbox" />Follow event time</label>
+                  <small>Placement and timing are separate. Locking tables does not freeze their seating times. Unchecking Follow event time records an explicit staff timing override.</small>
+                  <div className="floor-plan-field-group"><label>Seating reservation start<input disabled={reservationTimingSource(activePlanReservation, activeEvent) !== "staff-override"} onChange={(event) => updateSeatingTime("startAt", event.target.value)} type="datetime-local" value={dateTimeInput(activePlanReservation.startAt)} /></label><label>Seating reservation end<input disabled={reservationTimingSource(activePlanReservation, activeEvent) !== "staff-override"} onChange={(event) => updateSeatingTime("endAt", event.target.value)} type="datetime-local" value={dateTimeInput(activePlanReservation.endAt)} /></label></div>
+                </section> : null}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}
                 <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">{activePlanReservation ? "Update" : "Add"} highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>
                 {activePlanReservation?.reservationType === "custom" && activePlanReservation.customGeometry ? <div className="floor-plan-geometry-grid">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key}<input min={0} onChange={(event) => updateReservation({ customGeometry: { ...activePlanReservation.customGeometry!, [key]: Number(event.target.value) } })} type="number" value={activePlanReservation.customGeometry![key]} /></label>)}</div> : null}
@@ -1032,10 +1159,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
               </div>
             ) : activeEvent ? (
               <div className="floor-plan-inspector-body">
-                <dl className="floor-plan-detail-list"><div><dt>BEO guests</dt><dd>{activeEvent.guestCount}</dd></div><div><dt>Reserved seating</dt><dd>{reservedSeats}</dd></div><div><dt>Difference</dt><dd>{reservedSeats - activeEvent.guestCount}</dd></div><div><dt>Food table</dt><dd>{plan.reservations.some((item) => item.floorPlanEventId === activeEvent.id && item.reservationType === "food-table") ? "Assigned" : "Missing"}</dd></div></dl>
-                <section><h3>Tripleseat fields used</h3><p><strong>Contracted:</strong> {activeEvent.source.rooms.join(", ") || "Missing"}</p><p><strong>Food service:</strong> {activeEvent.source.food?.join(" · ") || "None listed"}</p><p><strong>Entertainment:</strong> {activeEvent.source.entertainment.map((item) => /mini\s+golf/i.test(item.name) ? `${item.name} — ${item.quantity}` : `${item.name} — ${item.quantity} — ${item.time}`).join(" · ") || "None listed"}</p><p><strong>Setup and placement notes:</strong> {activeEvent.source.operationalNotes?.map((note) => note.text).join(" · ") || "None listed"}</p>{activeEvent.source.reviewReasons.length ? <p className="floor-plan-warning-copy">{activeEvent.source.reviewReasons.join(" ")}</p> : null}</section>
+                <section><h3>Tripleseat fields used</h3><p><strong>Contracted:</strong> {activeEvent.source.rooms.join(", ") || "Missing"}</p><p><strong>Food service:</strong> {activeEvent.source.food?.join(" · ") || "None listed"}</p><p><strong>Entertainment:</strong> {activeEvent.source.entertainment.map((item) => /mini\s+golf/i.test(item.name) ? `${item.name} — ${item.quantity}` : `${item.name} — ${item.quantity} — ${item.time}${item.duration ? ` — ${normalizeEntertainmentDurationHours(item.duration)}` : ""}`).join(" · ") || "None listed"}</p><p><strong>Setup and placement notes:</strong> {activeEvent.source.operationalNotes?.map((note) => note.text).join(" · ") || "None listed"}</p>{activeEvent.source.reviewReasons.length ? <p className="floor-plan-warning-copy">{activeEvent.source.reviewReasons.join(" ")}</p> : null}</section>
                 <section><h3>Verification checklist</h3><div className="floor-plan-validation-list">{activeEventValidation.map((entry) => <div className={`is-${entry.status.toLowerCase().replace(" ", "-")}`} key={`${entry.code}:${entry.eventId}`}><span>{entry.status}</span><p><strong>{entry.label}</strong>{entry.message}</p></div>)}</div></section>
-                <button className="floor-plan-regenerate-button" onClick={() => void runAction("generate")} type="button">Regenerate suggestions</button>
               </div>
             ) : <p className="floor-plan-empty-copy">Select an event to review BEO details and validation.</p>}
             {payload.revisions.length ? <details className="floor-plan-history"><summary>Revision history ({payload.revisions.length})</summary>{payload.revisions.slice(0, 12).map((revision) => <div key={revision.id}><strong>Version {revision.version}</strong><span>{new Date(revision.changedAt).toLocaleString()}</span><p>{revision.description}</p></div>)}</details> : null}

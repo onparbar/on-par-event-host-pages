@@ -735,6 +735,32 @@
   min-width: 0;
 }
 
+.floor-plan-seating-summary,
+.floor-plan-source-changes {
+  padding: 14px;
+  border-bottom: 1px solid var(--portal-border);
+  font-size: 0.78rem;
+}
+
+.floor-plan-seating-summary > h3,
+.floor-plan-source-changes > h3 {
+  margin: 0 0 10px;
+}
+
+.floor-plan-seating-summary > .floor-plan-detail-list {
+  gap: 0 20px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.floor-plan-seating-summary > .floor-plan-inspector-actions {
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.floor-plan-seating-summary > small {
+  color: var(--portal-muted-text);
+}
+
 .floor-plan-detail-list {
   display: grid;
   gap: 0;

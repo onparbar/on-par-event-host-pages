@@ -43,7 +43,7 @@ import {
   ensureDistinctFloorPlanEventColors,
   floorPlanEventColorsAreDistinct,
 } from "./configuration/colors";
-import { getFloorPlanArea } from "./configuration/areas";
+import { getFloorPlanArea, requiredFoodTableCount } from "./configuration/areas";
 import { detectFloorPlanConflicts, timeRangesOverlap } from "./conflicts";
 import {
   entertainmentReservationMatchesFloorPlanEvent,
@@ -55,9 +55,13 @@ import {
 } from "./source-resolution";
 import {
   generateFloorPlanReservations,
+  generateFloorPlanReservationProposal,
   reservationAllowedForFloorPlanEvent,
   reservationForCurrentFloorPlanEvent,
+  isVipOnlyFloorPlanEvent,
 } from "./generator";
+import { reservationTimingSource, sameReservationInterval } from "./reservation-state";
+import { seatingCoverageMessage, summarizeEventSeating } from "./seating-summary";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
 import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
 import { StaleSaveError } from "@/lib/stale-save";
@@ -69,6 +73,7 @@ import {
   type FloorPlanGenerationMode,
   type FloorPlanReservation,
   type FloorPlanStatus,
+  type FloorPlanSourceChange,
 } from "./types";
 import { hasBlockingValidationFailures, validateFloorPlan } from "./validator";
 
@@ -331,13 +336,17 @@ function createPlan(date: string, events: FloorPlanEvent[]) {
 }
 
 function sourceChanged(previous: FloorPlanEvent, current: FloorPlanEvent) {
+  const sourceFacts = (event: FloorPlanEvent) => {
+    const { floorPlanChanges: _changes, seatingGenerationIssues: _issues, ...source } = event.source;
+    return source;
+  };
   return JSON.stringify({
     guestCount: previous.guestCount,
     startAt: previous.startAt,
     endAt: previous.endAt,
     contractedAreaIds: previous.contractedAreaIds,
     unresolvedAreaNames: previous.unresolvedAreaNames,
-    source: previous.source,
+    source: sourceFacts(previous),
     status: previous.status,
     fullBuyout: previous.fullBuyout,
     beoLastModifiedAt: previous.beoLastModifiedAt,
@@ -347,11 +356,29 @@ function sourceChanged(previous: FloorPlanEvent, current: FloorPlanEvent) {
     endAt: current.endAt,
     contractedAreaIds: current.contractedAreaIds,
     unresolvedAreaNames: current.unresolvedAreaNames,
-    source: current.source,
+    source: sourceFacts(current),
     status: current.status,
     fullBuyout: current.fullBuyout,
     beoLastModifiedAt: current.beoLastModifiedAt,
   });
+}
+
+function contractSeatingChanges(previous: FloorPlanEvent, current: FloorPlanEvent): FloorPlanSourceChange[] {
+  const changes: FloorPlanSourceChange[] = [];
+  const add = (field: FloorPlanSourceChange["field"], previousValue: string, currentValue: string, message: string) => {
+    if (previousValue !== currentValue) changes.push({ eventId: current.id, field, previousValue, currentValue, message });
+  };
+  add("guestCount", String(previous.guestCount), String(current.guestCount), `Guest count changed from ${previous.guestCount} to ${current.guestCount}; review full-event seating capacity.`);
+  const areaNames = (event: FloorPlanEvent) => event.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).sort().join(", ");
+  add("contractedArea", areaNames(previous), areaNames(current), `Contracted area changed from ${areaNames(previous) || "not listed"} to ${areaNames(current) || "not listed"}; existing staff choices are retained for review.`);
+  const interval = (event: FloorPlanEvent) => [event.startAt, event.endAt].map((time) => time && Number.isFinite(Date.parse(time))
+    ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(time)) : "not listed").join(" – ");
+  if (!sameReservationInterval(previous, current)) {
+    add("eventTime", interval(previous), interval(current), `Event time changed from ${interval(previous)} to ${interval(current)}. Event-following holds move; explicit seating-time overrides stay fixed and require coverage review.`);
+  }
+  const foodCount = (event: FloorPlanEvent) => isVipOnlyFloorPlanEvent(event) ? 0 : requiredFoodTableCount(event.guestCount);
+  add("foodTables", String(foodCount(previous)), String(foodCount(current)), `Food-table requirement changed from ${foodCount(previous)} to ${foodCount(current)}.`);
+  return changes;
 }
 
 export function reservationsForReconciledFloorPlanEvents(
@@ -400,9 +427,15 @@ export function reservationsForReconciledFloorPlanEvents(
       exactEvents[0] ??
       aliasEvents[0];
     if (!event) continue;
+    const followsChangedEvent = savedEvent && !sameReservationInterval(savedEvent, event);
+    const timingSource = savedEvent ? reservationTimingSource(reservation, savedEvent) : reservation.timingSource;
     const current = reservationForCurrentFloorPlanEvent(event, {
       ...reservation,
       floorPlanEventId: event.id,
+      ...(followsChangedEvent ? {
+        timingSource,
+        ...(timingSource === "event-default" ? { changeDetails: { fields: ["startAt", "endAt"], reason: "Contract event time changed; seating follows the event while physical placement is preserved." } } : {}),
+      } : {}),
     });
     if (!current) continue;
     const key = current.reservationType === "custom"
@@ -491,7 +524,16 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
   const currentEvents = floorPlanEventsWithSavedIdentity(
     normalizedEvents,
     saved?.events ?? [],
-  );
+  ).map((event) => {
+    const previous = saved?.events.find((candidate) => candidate.id === event.id);
+    if (!previous) return event;
+    const changes = contractSeatingChanges(previous, event);
+    const floorPlanChanges = changes.length ? changes : previous.source.floorPlanChanges;
+    return { ...event, source: { ...event.source,
+      ...(floorPlanChanges?.length ? { floorPlanChanges } : {}),
+      ...(previous.source.seatingGenerationIssues?.length ? { seatingGenerationIssues: previous.source.seatingGenerationIssues } : {}),
+    } };
+  });
   if (!saved) return createPlan(date, currentEvents);
   if (currentEvents.length === 0) {
     return sourceResult.sourceRowCount > 0
@@ -512,13 +554,27 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
     saved,
     currentEvents,
   );
+  const eventsWithSeatingAttention = currentEvents.map((event) => {
+    const previous = saved.events.find((candidate) => candidate.id === event.id);
+    if (!previous || !contractSeatingChanges(previous, event).length) return event;
+    const summary = summarizeEventSeating(event, retainedReservations, { allReservations: retainedReservations });
+    if (summary.fullEventCoverage && summary.foodAssigned >= summary.foodRequired && !summary.issues.length) return event;
+    const before = summarizeEventSeating(previous, saved.reservations, { allReservations: saved.reservations });
+    const change: FloorPlanSourceChange = {
+      eventId: event.id, field: "assignments",
+      previousValue: `${before.coveredCapacity} full-event seats; ${before.foodAssigned} food tables`,
+      currentValue: `${summary.coveredCapacity} full-event seats; ${summary.foodAssigned} food tables`,
+      message: `Existing assignments need attention after the contract change. ${seatingCoverageMessage(event, summary)} Food tables: ${summary.foodAssigned} assigned / ${summary.foodRequired} required.`,
+    };
+    return { ...event, source: { ...event.source, floorPlanChanges: [...(event.source.floorPlanChanges ?? []).filter((item) => item.field !== "assignments"), change] } };
+  });
   const changed = currentEvents.some((current) => {
     const previous = saved.events.find((event) => event.id === current.id);
     return !previous || sourceChanged(previous, current);
   }) || saved.events.some((event) => !currentIds.has(event.id));
   return {
     ...saved,
-    events: currentEvents,
+    events: eventsWithSeatingAttention,
     reservations: retainedReservations,
     status: floorPlanStatusAfterSourceChange(saved.status, changed),
   };
@@ -591,7 +647,8 @@ export async function getFloorPlanDay(
     revisions: await storage.revisions(effectivePlan.id).catch(() => []),
     persistence: storage.persistence,
     sourceMode: entertainment.sourceMode,
-    warnings: [...warnings, ...entertainment.warnings],
+    warnings: [...warnings, ...entertainment.warnings, ...effectivePlan.events.flatMap((event) => (event.source.seatingGenerationIssues ?? []).map((issue) => issue.message))],
+    sourceChanges: effectivePlan.events.flatMap((event) => event.source.floorPlanChanges ?? []),
   };
 }
 
@@ -599,9 +656,25 @@ async function generateFloorPlanFromStoredSources(
   date: string,
   mode: FloorPlanGenerationMode,
   storage: FloorPlanStorage,
+  selectedEventId?: string,
 ) {
   const savedBeforeGeneration = await storage.get(date);
-  const plan = await reconciledPlan(date, storage);
+  let plan = await reconciledPlan(date, storage);
+  if (selectedEventId) {
+    const selected = plan.events.find((event) => event.id === selectedEventId);
+    if (!selected || !savedBeforeGeneration?.events.some((event) => event.id === selectedEventId)) {
+      throw new Error("Load a saved event before repairing its seating.");
+    }
+    // Event-only repair must not retime or rewrite another party from a source refresh.
+    plan = {
+      ...savedBeforeGeneration,
+      events: savedBeforeGeneration.events.map((event) => event.id === selectedEventId ? selected : event),
+      reservations: [
+        ...savedBeforeGeneration.reservations.filter((row) => row.floorPlanEventId !== selectedEventId),
+        ...plan.reservations.filter((row) => row.floorPlanEventId === selectedEventId),
+      ],
+    };
+  }
   if (plan.events.length === 0) {
     if (
       savedBeforeGeneration &&
@@ -620,6 +693,19 @@ async function generateFloorPlanFromStoredSources(
     }
     throw new Error("No Tripleseat event plan is available for this date.");
   }
+  const proposal = generateFloorPlanReservationProposal(plan, mode, selectedEventId);
+  const generationWarnings = proposal.issues.map((issue) => issue.message);
+  if (selectedEventId && mode !== "fill-missing" && !proposal.complete) {
+    throw new Error(generationWarnings.join(" ") || "No valid replacement was found; the existing event assignments were not changed.");
+  }
+  const proposedPlan = { ...plan, reservations: proposal.reservations };
+  if (selectedEventId) {
+    const conflicts = detectFloorPlanConflicts(proposedPlan).filter((conflict) => conflict.eventIds.includes(selectedEventId));
+    const previousConflicts = new Set(detectFloorPlanConflicts(plan).map((conflict) => conflict.id));
+    if (conflicts.some((conflict) => !previousConflicts.has(conflict.id))) {
+      throw new Error("The proposed seating introduces a resource conflict. Existing assignments were not changed.");
+    }
+  }
   const generated = {
     ...plan,
     status:
@@ -627,10 +713,31 @@ async function generateFloorPlanFromStoredSources(
         ? ("Updated After Approval" as const)
         : ("Draft" as const),
     ruleVersion: FLOOR_PLAN_RULE_VERSION,
-    lastTripleseatSyncAt: new Date().toISOString(),
-    reservations: generateFloorPlanReservations(plan, mode),
+    lastTripleseatSyncAt: selectedEventId ? plan.lastTripleseatSyncAt : new Date().toISOString(),
+    events: plan.events.map((event) => {
+      if (selectedEventId && event.id !== selectedEventId) return event;
+      const { seatingGenerationIssues: _previousIssues, ...source } = event.source;
+      const issues = proposal.issues.filter((issue) => issue.blocking && (!issue.eventId || issue.eventId === event.id));
+      return { ...event, source: { ...source, ...(issues.length ? { seatingGenerationIssues: issues } : {}) } };
+    }),
+    reservations: proposal.reservations.map((row) => proposal.addedReservationIds.includes(row.id)
+      ? { ...row, changeDetails: { fields: ["created"], reason: proposal.issues.find((issue) => issue.eventId === row.floorPlanEventId && issue.code === "seating-selection")?.message
+        ?? "Generated from contracted inventory, required capacity, food-table rules and applicable availability buffers." } }
+      : row),
   };
-  await storage.save(generated, `Generated floor-plan suggestions (${mode}).`);
+  const savedGenerated = await storage.save(generated, `Generated ${selectedEventId ? `event ${selectedEventId}` : "entire-date"} suggestions (${mode}); added ${proposal.addedReservationIds.length}, replaced ${proposal.movedReservationIds.length}. ${generationWarnings.join(" ")}`);
+  if (selectedEventId) {
+    const payload = await getFloorPlanDay(date, storage);
+    const floorPlanConflicts = detectFloorPlanConflicts(savedGenerated);
+    return {
+      ...payload,
+      plan: savedGenerated,
+      floorPlanConflicts,
+      validation: validateFloorPlan(savedGenerated, payload.entertainmentReservations, floorPlanConflicts, payload.entertainmentConflicts),
+      sourceChanges: savedGenerated.events.flatMap((event) => event.source.floorPlanChanges ?? []),
+      warnings: [...payload.warnings, ...generationWarnings],
+    };
+  }
   let sharedReservations: EntertainmentReservation[] = [];
   try {
     sharedReservations = (await syncEntertainmentDay(date)).reservations;
@@ -645,7 +752,8 @@ async function generateFloorPlanFromStoredSources(
       ? error.message
       : "Entertainment reservations could not be aligned with the generated floor plan.";
   }
-  const payload = await getFloorPlanDay(date, storage);
+  const day = await getFloorPlanDay(date, storage);
+  const payload = { ...day, warnings: [...day.warnings, ...generationWarnings] };
   return alignmentWarning
     ? {
         ...payload,
@@ -662,16 +770,20 @@ export async function generateFloorPlan(
   mode: FloorPlanGenerationMode,
   storage: FloorPlanStorage = getFloorPlanStorage(),
   expectedVersion?: number,
+  selectedEventId?: string,
 ) {
   if (expectedVersion !== undefined) {
     storage = floorPlanStorageAtVersion(storage, expectedVersion);
     await storage.get(date);
   }
-  await syncEventPlanWindow(
-    { startDate: date, endDate: date },
-    { legacyPlans: [] },
-  );
-  return generateFloorPlanFromStoredSources(date, mode, storage);
+  if (selectedEventId && mode === "reset-event") throw new Error("Reset is an entire-date action; use event-only rework to preserve staff choices.");
+  if (!selectedEventId) {
+    await syncEventPlanWindow(
+      { startDate: date, endDate: date },
+      { legacyPlans: [] },
+    );
+  }
+  return generateFloorPlanFromStoredSources(date, mode, storage, selectedEventId);
 }
 
 export async function maintainTwoWeekFloorPlanHorizon(
@@ -968,6 +1080,7 @@ export async function alignGeneratedEntertainment(
 function sanitizeReservations(
   plan: FloorPlanDocument,
   requested: unknown,
+  saved: FloorPlanDocument | null,
 ) {
   if (!Array.isArray(requested)) throw new Error("Reservations must be an array.");
   const eventIds = new Set(plan.events.map((event) => event.id));
@@ -1001,27 +1114,63 @@ function sanitizeReservations(
       throw new Error(`${area.name} (${event.name}) cannot be used as ${reservationType === "food-table" ? "a food table" : "guest seating"}. Choose a seating table or an authorized food table for this assignment.`);
     }
     seen.add(id);
-    return {
+    const baseline = saved?.reservations.find((item) => item.id === id);
+    const current = plan.reservations.find((item) => item.id === id);
+    const previousEvent = saved?.events.find((item) => item.id === baseline?.floorPlanEventId) ?? event;
+    const submittedInterval = {
+      startAt: sourceValue(row, "startAt") ?? event.startAt,
+      endAt: sourceValue(row, "endAt") ?? event.endAt,
+    };
+    if ((submittedInterval.startAt || submittedInterval.endAt) && !(submittedInterval.startAt && submittedInterval.endAt && validEntertainmentInterval(submittedInterval.startAt, submittedInterval.endAt))) {
+      throw new Error(`${area.name} (${event.name}) needs a valid seating interval with a time zone and an end after its start.`);
+    }
+    const geometry = reservationType === "custom" && asRecord(row?.customGeometry)
+      ? {
+          x: Math.max(0, Math.min(1920, Number(asRecord(row?.customGeometry)?.x) || 0)),
+          y: Math.max(0, Math.min(1080, Number(asRecord(row?.customGeometry)?.y) || 0)),
+          width: Math.max(20, Math.min(1920, Number(asRecord(row?.customGeometry)?.width) || 160)),
+          height: Math.max(20, Math.min(1080, Number(asRecord(row?.customGeometry)?.height) || 60)),
+        } : undefined;
+    const legacySectionNormalization = baseline && baseline.reservationType === requestedType && requestedType === "seating" && reservationType === "room";
+    const placementChanged = !baseline || baseline.floorPlanEventId !== floorPlanEventId || baseline.areaId !== areaId ||
+      (!legacySectionNormalization && baseline.reservationType !== reservationType) || JSON.stringify(baseline.customGeometry ?? undefined) !== JSON.stringify(geometry);
+    const intervalChanged = baseline
+      ? !sameReservationInterval(submittedInterval, baseline) && !(current && sameReservationInterval(submittedInterval, current))
+      : !sameReservationInterval(submittedInterval, event);
+    const previousTimingSource = baseline ? reservationTimingSource(baseline, previousEvent) : "event-default";
+    const requestedTimingSource = sourceValue(row, "timingSource");
+    const timingSource = requestedTimingSource === "event-default" ? "event-default"
+      : requestedTimingSource === "staff-override" || intervalChanged ? "staff-override" : previousTimingSource;
+    const preserveUnknownMetadata = baseline && !intervalChanged && requestedTimingSource === null && baseline.timingSource === undefined && sameReservationInterval(previousEvent, event);
+    const explicitlyPinnedCurrentTime = requestedTimingSource === "staff-override" && previousTimingSource !== "staff-override";
+    const interval = timingSource === "event-default" ? { startAt: event.startAt, endAt: event.endAt }
+      : intervalChanged || explicitlyPinnedCurrentTime || !baseline ? submittedInterval : { startAt: baseline.startAt, endAt: baseline.endAt };
+    const sanitized: FloorPlanReservation = {
       id,
       floorPlanEventId,
       areaId,
       reservationType,
-      startAt: sourceValue(row, "startAt") ?? event.startAt,
-      endAt: sourceValue(row, "endAt") ?? event.endAt,
+      ...interval,
       label: (sourceValue(row, "label") ?? "").slice(0, 80),
-      source: "manual",
-      lockedByUser: row?.lockedByUser !== false,
-      ...(reservationType === "custom" && asRecord(row?.customGeometry)
-        ? {
-            customGeometry: {
-              x: Math.max(0, Math.min(1920, Number(asRecord(row?.customGeometry)?.x) || 0)),
-              y: Math.max(0, Math.min(1080, Number(asRecord(row?.customGeometry)?.y) || 0)),
-              width: Math.max(20, Math.min(1920, Number(asRecord(row?.customGeometry)?.width) || 160)),
-              height: Math.max(20, Math.min(1080, Number(asRecord(row?.customGeometry)?.height) || 60)),
-            },
-          }
-        : {}),
+      source: placementChanged ? "manual" : baseline!.source,
+      lockedByUser: typeof row?.lockedByUser === "boolean" ? row.lockedByUser : baseline?.lockedByUser ?? true,
+      ...(!preserveUnknownMetadata ? { timingSource } : {}),
+      ...(placementChanged ? { placementOverride: true } : baseline?.placementOverride !== undefined ? { placementOverride: baseline.placementOverride } : {}),
+      ...(geometry ? { customGeometry: geometry } : {}),
+      ...(baseline?.changeDetails ? { changeDetails: baseline.changeDetails } : {}),
     };
+    const fields = baseline ? (["floorPlanEventId", "areaId", "reservationType", "label", "lockedByUser", "customGeometry", "timingSource"] as const)
+      .filter((key) => JSON.stringify(sanitized[key]) !== JSON.stringify(baseline[key])) : ["created"];
+    if (baseline && !sameReservationInterval(sanitized, baseline)) fields.push("startAt", "endAt");
+    if (fields.length) sanitized.changeDetails = {
+      fields,
+      reason: legacySectionNormalization ? "Normalized a legacy zero-capacity section to a non-counted room highlight; physical placement and timing are unchanged."
+        : placementChanged ? "Staff selected or changed this physical assignment."
+        : timingSource === "event-default" && baseline && !intervalChanged && !sameReservationInterval(baseline, sanitized) ? "Contract event time changed; seating follows the event while physical placement is preserved."
+        : intervalChanged || requestedTimingSource !== null && timingSource !== previousTimingSource ? "Staff changed whether this seating interval follows the event or uses explicit times."
+        : "Staff changed the listed assignment fields; unrelated placement and timing are preserved.",
+    };
+    return sanitized;
   });
 }
 
@@ -1089,7 +1238,7 @@ export async function saveFloorPlanEdits(
     ...plan,
     version: Number(body.version),
     events,
-    reservations: sanitizeReservations(plan, requestedReservations),
+    reservations: sanitizeReservations(plan, requestedReservations, saved),
     status:
       plan.status === "Approved"
         ? ("Updated After Approval" as const)
@@ -1098,7 +1247,16 @@ export async function saveFloorPlanEdits(
   // Persist the floor-plan edit before updating the shared entertainment
   // overlays. A stale/deleted entertainment reservation must not prevent the
   // seating, room, or custom highlight changes from being saved.
-  await storage.save(next, "Saved manual floor-plan edits.");
+  const changedRows = next.reservations.filter((row) => JSON.stringify(row) !== JSON.stringify(saved?.reservations.find((previous) => previous.id === row.id)));
+  const removed = saved?.reservations.filter((row) => !next.reservations.some((current) => current.id === row.id)) ?? [];
+  const colorChanges = events.filter((event) => saved?.events.find((previous) => previous.id === event.id)?.color !== event.color);
+  const description = [
+    "Saved floor-plan edits.",
+    ...changedRows.map((row) => `${row.areaId}: ${row.changeDetails?.fields.join(", ") || "event-following refresh"}.`),
+    ...removed.map((row) => `${row.areaId}: removed by staff.`),
+    ...colorChanges.map((event) => `${event.id}: color.`),
+  ].join(" ");
+  await storage.save(next, description);
   const entertainmentWarnings: string[] = [];
   const entertainmentDay = await getEntertainmentDay(date).catch(() => null);
   if (entertainmentDay) {

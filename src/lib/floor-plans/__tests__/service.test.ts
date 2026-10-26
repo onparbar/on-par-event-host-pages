@@ -139,7 +139,10 @@ describe("Floor Plan Tripleseat source enforcement", () => {
     await saveFloorPlanEdits("2026-08-06", requested, storage);
     const reopened = await getFloorPlanDay("2026-08-06", storage);
 
-    expect(reopened.plan.reservations).toEqual(requested.reservations);
+    expect(reopened.plan.reservations).toEqual(requested.reservations.map((row) => ({
+      ...row, timingSource: "event-default", placementOverride: true,
+      changeDetails: { fields: ["created"], reason: "Staff selected or changed this physical assignment." },
+    })));
     expect(reopened.validation).toContainEqual(expect.objectContaining({ code: "SEATING_CAPACITY", status: "Passed" }));
     expect(reopened.validation).toContainEqual(expect.objectContaining({ code: "FOOD_TABLE", status: "Passed" }));
   });
@@ -176,10 +179,12 @@ describe("Floor Plan Tripleseat source enforcement", () => {
 
     expect(requested).toEqual(unchanged);
     expect(reopened.plan.reservations).toEqual(reservations.map((reservation) =>
-      reservation.id === "legacy-section" ? { ...reservation, reservationType: "room" } : reservation,
+      reservation.id === "legacy-section" ? { ...reservation, reservationType: "room",
+        changeDetails: { fields: ["reservationType"], reason: "Normalized a legacy zero-capacity section to a non-counted room highlight; physical placement and timing are unchanged." },
+      } : reservation,
     ));
     expect(reopened.plan.version).toBe(legacy.version + 1);
-    expect(reopened.validation).toContainEqual(expect.objectContaining({ eventId: event.id, code: "FOOD_TABLE", status: "Passed" }));
+    expect(reopened.validation).toContainEqual(expect.objectContaining({ eventId: event.id, code: "FOOD_TABLE", status: "Failed" }));
   });
 
   it("still rejects a stale version when a legacy seating section needs normalization", async () => {
@@ -531,8 +536,9 @@ describe("Floor Plan Tripleseat source enforcement", () => {
         }),
         expect.objectContaining({
           id: manualStale.id,
-          startAt: staleTimeEvent.startAt,
-          endAt: staleTimeEvent.endAt,
+          startAt: authoritativeEvent.startAt,
+          endAt: authoritativeEvent.endAt,
+          timingSource: "event-default",
         }),
       ]),
     );

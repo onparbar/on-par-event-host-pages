@@ -72,9 +72,11 @@ export function detectFloorPlanConflicts(plan: FloorPlanDocument) {
       const right = reservations[rightIndex];
       const physicalId = getPhysicalFloorPlanAreaId(left.areaId);
       const sameEvent = left.floorPlanEventId === right.floorPlanEventId;
+      const guestSeating = (reservation: FloorPlanReservation) => reservation.reservationType === "seating" ||
+        (reservation.reservationType === "room" && (getFloorPlanArea(reservation.areaId)?.capacity ?? 0) > 0);
       const foodAndSeating =
-        (left.reservationType === "food-table" && right.reservationType === "seating") ||
-        (right.reservationType === "food-table" && left.reservationType === "seating");
+        (left.reservationType === "food-table" && guestSeating(right)) ||
+        (right.reservationType === "food-table" && guestSeating(left));
       if (
         (sameEvent && !foodAndSeating) ||
         physicalId !== getPhysicalFloorPlanAreaId(right.areaId) ||

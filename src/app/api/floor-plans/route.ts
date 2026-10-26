@@ -70,7 +70,11 @@ export async function POST(request: Request) {
       if (!["fill-missing", "replace-generated", "reset-event"].includes(mode)) {
         throw new Error("Choose how generated reservations should be replaced.");
       }
-      return NextResponse.json(await generateFloorPlan(date, mode, undefined, expectedVersion));
+      if ("selectedEventId" in body && (typeof body.selectedEventId !== "string" || !body.selectedEventId.trim())) {
+        throw new Error("Choose a valid selected event for event-only seating repair.");
+      }
+      const selectedEventId = typeof body.selectedEventId === "string" ? body.selectedEventId.trim() : undefined;
+      return NextResponse.json(await generateFloorPlan(date, mode, undefined, expectedVersion, selectedEventId));
     }
     if (action === "save") {
       return NextResponse.json(await saveFloorPlanEdits(date, body.plan));

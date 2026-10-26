@@ -136,4 +136,19 @@ describe("floor-plan live-sync route", () => {
     expect(response.status).toBe(200);
     expect(approveFloorPlan).toHaveBeenCalledWith("2026-08-06", true, undefined, 7);
   });
+
+  it("passes only the selected event and reviewed revision to seating repair", async () => {
+    hasAdminSession.mockReturnValue(true);
+    generateFloorPlan.mockResolvedValue({ plan: { version: 8 } });
+    const response = await POST(new Request("https://example.test/api/floor-plans", { method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ date: "2026-08-06", action: "generate", mode: "fill-missing", selectedEventId: "event-1", expectedVersion: 7 }) }));
+    expect(response.status).toBe(200);
+    expect(generateFloorPlan).toHaveBeenCalledWith("2026-08-06", "fill-missing", undefined, 7, "event-1");
+  });
+
+  it.each(["", " ", null, 12])("rejects invalid event-only scope %j rather than generating for the whole date", async (selectedEventId) => {
+    hasAdminSession.mockReturnValue(true);
+    const response = await POST(new Request("https://example.test/api/floor-plans", { method: "POST", headers: { "content-type": "application/json", origin: "https://example.test" }, body: JSON.stringify({ date: "2026-08-06", action: "generate", mode: "fill-missing", selectedEventId, expectedVersion: 7 }) }));
+    expect(response.status).toBe(400);
+    expect(generateFloorPlan).not.toHaveBeenCalled();
+  });
 });

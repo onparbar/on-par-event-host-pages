@@ -1,5 +1,6 @@
 import { getSupabaseSecret } from "@/lib/kitchen/storage";
 import { StaleSaveError } from "@/lib/stale-save";
+import { decodeFloorPlanReservationState, encodeFloorPlanReservationState } from "./reservation-state";
 import type {
   FloorPlanDocument,
   FloorPlanRevision,
@@ -82,23 +83,29 @@ export class SupabaseFloorPlanStorage implements FloorPlanStorage {
   }
 
   async get(date: string) {
-    return this.rpc<FloorPlanDocument | null>("event_host_floor_plan_document", {
+    const plan = await this.rpc<FloorPlanDocument | null>("event_host_floor_plan_document", {
       p_event_date: date,
     });
+    return plan ? decodeFloorPlanReservationState(plan) : null;
   }
 
   async save(plan: FloorPlanDocument, description: string) {
-    return this.rpc<FloorPlanDocument>("save_event_host_floor_plan_checked", {
-      p_document: plan,
+    return decodeFloorPlanReservationState(await this.rpc<FloorPlanDocument>("save_event_host_floor_plan_checked", {
+      p_document: encodeFloorPlanReservationState(plan),
       p_changed_by: "authenticated-event-host-staff",
       p_description: description.slice(0, 500),
-    });
+    }));
   }
 
   async revisions(planId: string) {
-    return this.rpc<FloorPlanRevision[]>("event_host_floor_plan_revisions", {
+    const revisions = await this.rpc<FloorPlanRevision[]>("event_host_floor_plan_revisions", {
       p_floor_plan_id: planId,
     });
+    return revisions.map((revision) => ({
+      ...revision,
+      previousValue: revision.previousValue ? decodeFloorPlanReservationState(revision.previousValue) : null,
+      newValue: decodeFloorPlanReservationState(revision.newValue),
+    }));
   }
 }
 

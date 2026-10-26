@@ -3,7 +3,7 @@ import type {
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
 
-export const FLOOR_PLAN_RULE_VERSION = "floor-plan-v1.4.2" as const;
+export const FLOOR_PLAN_RULE_VERSION = "floor-plan-v1.5.0" as const;
 export const FLOOR_PLAN_BASE_WIDTH = 1920;
 export const FLOOR_PLAN_BASE_HEIGHT = 1080;
 
@@ -65,6 +65,16 @@ export type FloorPlanEventSource = {
     text: string;
   }>;
   reviewReasons: string[];
+  floorPlanChanges?: FloorPlanSourceChange[];
+  seatingGenerationIssues?: Array<{ code: string; message: string; blocking: boolean }>;
+};
+
+export type FloorPlanSourceChange = {
+  eventId: string;
+  field: "guestCount" | "contractedArea" | "eventTime" | "foodTables" | "assignments";
+  previousValue: string;
+  currentValue: string;
+  message: string;
 };
 
 export type FloorPlanEvent = {
@@ -100,6 +110,9 @@ export type FloorPlanReservation = {
   label: string;
   source: "generated" | "manual";
   lockedByUser: boolean;
+  placementOverride?: boolean;
+  timingSource?: "event-default" | "staff-override";
+  changeDetails?: { fields: string[]; reason: string };
   customGeometry?: {
     x: number;
     y: number;
@@ -146,6 +159,7 @@ export type FloorPlanValidationCode =
   | "CONTRACTED_AREA"
   | "SEATING_CAPACITY"
   | "SEATING_LOCATION"
+  | "SEATING_SEARCH"
   | "FOOD_TABLE"
   | "FOOD_TABLE_ADA"
   | "ENTERTAINMENT_QUANTITY"
@@ -192,6 +206,7 @@ export type FloorPlanDayPayload = {
   persistence: "database" | "memory";
   sourceMode: "live" | "mock";
   warnings: string[];
+  sourceChanges?: FloorPlanSourceChange[];
 };
 
 export type FloorPlanGenerationMode =

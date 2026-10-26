@@ -9,14 +9,14 @@ import { selectEntertainmentResources } from "./configuration/adjacency";
 import {
   getAreaForEntertainmentResource,
   getFloorPlanArea,
-  getPhysicalFloorPlanAreaId,
   requiredFoodTableCount,
 } from "./configuration/areas";
 import { floorPlanEventColorsAreDistinct } from "./configuration/colors";
 import { entertainmentReservationMatchesFloorPlanEvent } from "./identity";
 import { timeRangesOverlap } from "./conflicts";
 import { reservationOccupancy } from "@/lib/operations/reservation-buffer";
-import { isVipOnlyFloorPlanEvent, reservedSeatingCapacity } from "./generator";
+import { isVipOnlyFloorPlanEvent } from "./generator";
+import { seatingCoverageMessage, summarizeEventSeating } from "./seating-summary";
 import type {
   FloorPlanConflict,
   FloorPlanDocument,
@@ -72,13 +72,13 @@ export function validateFloorPlan(
         (reservation.reservationType === "room" &&
           (getFloorPlanArea(reservation.areaId)?.capacity ?? 0) > 0),
     );
-    const seatingCapacity = reservedSeatingCapacity(reservations);
+    const seatingSummary = summarizeEventSeating(event, reservations, { allReservations: plan.reservations });
     const vipOnly = isVipOnlyFloorPlanEvent(event);
     const food = reservations.filter(
       (reservation) => reservation.reservationType === "food-table",
     );
     const foodTableCount = requiredFoodTableCount(event.guestCount);
-    const foodPhysicalCount = new Set(food.map((reservation) => getPhysicalFloorPlanAreaId(reservation.areaId))).size;
+    const foodPhysicalCount = seatingSummary.foodAssigned;
     const foodTableCountPasses = foodPhysicalCount >= foodTableCount;
     const foodTableLabelsPass = food.every(
       (reservation) => reservation.label === "F",
@@ -125,14 +125,22 @@ export function validateFloorPlan(
       ),
     );
 
-    const seatingPasses = seatingCapacity >= event.guestCount;
+    const seatingPasses = seatingSummary.fullEventCoverage;
+    const searchIssues = event.source.seatingGenerationIssues ?? [];
+    const searchNeedsReview = searchIssues.some((issue) => issue.blocking);
+    result.push(item(
+      "SEATING_SEARCH", event.id, "Seating search",
+      searchNeedsReview ? seatingPasses && seatingSummary.foodAssigned >= seatingSummary.foodRequired ? "Warning" : "Failed" : "Passed",
+      searchIssues.length ? `Latest generation: ${searchIssues.map((issue) => issue.message).join(" ")}` : "No unresolved seating search limitation is recorded.",
+      searchNeedsReview && !(seatingPasses && seatingSummary.foodAssigned >= seatingSummary.foodRequired),
+    ));
     result.push(
       item(
         "SEATING_CAPACITY",
         event.id,
         "Seating capacity",
         seatingPasses ? "Passed" : "Failed",
-        `${seatingCapacity} verified reserved seats for ${event.guestCount} guests.${seatingPasses ? "" : " Confirm the contracted seating inventory; unknown-capacity areas are not counted."}`,
+        seatingCoverageMessage(event, seatingSummary),
       ),
     );
     const seatingInsideContract = seating.every((reservation) => {
@@ -172,7 +180,7 @@ export function validateFloorPlan(
           ? foodTableLabelsPass
             ? `${foodPhysicalCount} authorized food table${foodPhysicalCount === 1 ? " is" : "s are"} assigned and labeled F.`
             : "Every food table must be labeled F."
-          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${foodPhysicalCount} assigned.`,
+          : `${foodTableCount} food table${foodTableCount === 1 ? " is" : "s are"} required for ${event.guestCount} guests; ${foodPhysicalCount} assigned with authorized inventory covering the full event interval and required occupancy.`,
         !vipOnly && !(foodTableCountPasses && foodTableLabelsPass),
       ),
     );
