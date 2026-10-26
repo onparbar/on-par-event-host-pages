@@ -17,6 +17,7 @@ import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import {
   AREAS,
   DISPLAY_AREAS,
+  floorPlanAreaAssignmentType,
   getAreaForEntertainmentResource,
   getFloorPlanArea,
   getPhysicalFloorPlanAreaId,
@@ -287,9 +288,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }, [activeEntertainmentReservation, activeEvent]);
 
   useEffect(() => {
-    setFoodTableMode(activePlanReservation
-      ? activePlanReservation.reservationType === "food-table"
-      : Boolean(selectedArea?.canBeFoodTable && selectedArea.capacity === 0));
+    setFoodTableMode(Boolean(selectedArea?.canBeFoodTable && selectedArea.capacity === 0) ||
+      activePlanReservation?.reservationType === "food-table");
     setEntertainmentMode(
       Boolean(
         selectedArea?.entertainmentResourceId &&
@@ -519,11 +519,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           await saveEntertainmentAssignment(area, activeEvent);
           if (area.type !== "room") continue;
         }
-        const reservationType = area.canBeFoodTable && foodTableMode
-          ? "food-table"
-          : area.type === "rectangle-table" || area.type === "square-table"
-            ? "seating"
-            : "room";
+        const reservationType = floorPlanAreaAssignmentType(area, foodTableMode);
         nextPlan = assignLocalFloorPlanArea(nextPlan, activeEvent, area, reservationType);
       }
       if (nextPlan !== plan) commitPlan(nextPlan);
@@ -1027,7 +1023,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                 <dl className="floor-plan-detail-list"><div><dt>Type</dt><dd>{selectedArea.type}</dd></div><div><dt>Capacity</dt><dd>{selectedArea.capacity || "Not counted"}</dd></div><div><dt>Parent</dt><dd>{selectedArea.parentAreaId ? getFloorPlanArea(selectedArea.parentAreaId)?.name ?? selectedArea.parentAreaId : "—"}</dd></div><div><dt>Assigned event</dt><dd>{activePlanReservation || activeEntertainmentReservation ? activeEvent.name : "Unassigned for selected event"}</dd></div></dl>
                 {selectedArea.entertainmentResourceId && selectedArea.type !== "mini-golf" ? <><label className="floor-plan-toggle-field"><input checked={entertainmentMode} disabled={selectedArea.type !== "room"} onChange={(event) => setEntertainmentMode(event.target.checked)} type="checkbox" />{selectedArea.type === "room" ? "Also reserve on Entertainment Schedule" : "Shared Entertainment Schedule reservation"}</label><div className="floor-plan-field-group"><label>Reservation start<input onChange={(event) => setEntStart(event.target.value)} type="datetime-local" value={entStart} /></label><label>Reservation end<input onChange={(event) => setEntEnd(event.target.value)} type="datetime-local" value={entEnd} /></label></div></> : null}
                 {selectedArea.type === "mini-golf" ? <p className="floor-plan-warning-copy">Mini golf is open play and is not reserved on the Entertainment Schedule.</p> : null}
-                {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />Mark as food table and label F</label> : null}
+                {selectedArea.canBeFoodTable ? <label className="floor-plan-toggle-field"><input checked={foodTableMode} disabled={selectedArea.capacity === 0} onChange={(event) => setFoodTableMode(event.target.checked)} type="checkbox" />{selectedArea.capacity === 0 ? "Food-only table — always marked F" : "Mark as food table and label F"}</label> : null}
                 {activePlanReservation ? <div className="floor-plan-field-group"><label>Highlight label<input maxLength={80} onChange={(event) => updateReservation({ label: event.target.value })} value={activePlanReservation.label} /></label></div> : null}
                 {!selectedArea.isReservable ? <p className="floor-plan-warning-copy">This permanent map object is reference-only and cannot be reserved.</p> : null}
                 <div className="floor-plan-inspector-actions"><button disabled={!selectedArea.isReservable} onClick={() => void assignSelected()} type="button">{activePlanReservation ? "Update" : "Add"} highlight for {activeEvent.name}</button><button className="is-danger" disabled={!activePlanReservation && !activeEntertainmentReservation} onClick={() => void removeSelected()} type="button">Delete highlight</button><button onClick={addCustomHighlight} type="button">Add custom highlight here</button></div>

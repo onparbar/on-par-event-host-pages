@@ -974,8 +974,11 @@ function sanitizeReservations(
     const id = sourceValue(row, "id") ?? "";
     const floorPlanEventId = sourceValue(row, "floorPlanEventId") ?? "";
     const areaId = sourceValue(row, "areaId") ?? "";
-    const reservationType = sourceValue(row, "reservationType") as FloorPlanReservation["reservationType"] | null;
+    const requestedType = sourceValue(row, "reservationType") as FloorPlanReservation["reservationType"] | null;
     const area = getFloorPlanArea(areaId);
+    // Older plans used seating for section highlights that do not count as seats.
+    const reservationType = requestedType === "seating" && area?.type === "seating-section" && area.capacity === 0
+      ? "room" : requestedType;
     if (
       !/^[A-Za-z0-9:_-]{1,240}$/.test(id) ||
       seen.has(id) ||
@@ -987,14 +990,14 @@ function sanitizeReservations(
     ) {
       throw new Error("A floor-plan reservation is invalid.");
     }
+    const event = plan.events.find((candidate) => candidate.id === floorPlanEventId)!;
     if (
       (reservationType === "food-table" && !area.canBeFoodTable) ||
       (reservationType === "seating" && area.capacity <= 0)
     ) {
-      throw new Error("Choose a seating table or an authorized food table for this assignment.");
+      throw new Error(`${area.name} (${event.name}) cannot be used as ${reservationType === "food-table" ? "a food table" : "guest seating"}. Choose a seating table or an authorized food table for this assignment.`);
     }
     seen.add(id);
-    const event = plan.events.find((candidate) => candidate.id === floorPlanEventId)!;
     return {
       id,
       floorPlanEventId,

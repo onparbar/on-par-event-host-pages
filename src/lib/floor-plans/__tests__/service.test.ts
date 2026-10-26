@@ -125,7 +125,66 @@ describe("Floor Plan Tripleseat source enforcement", () => {
     expect(reopened.validation).toContainEqual(expect.objectContaining({ code: "FOOD_TABLE", status: "Passed" }));
   });
 
-  it.each([["wat-table-1", "food-table"], ["main-food-1", "seating"]] as const)("rejects %s assigned as unsupported %s", async (areaId, reservationType) => {
+  it("saves legacy zero-capacity seating sections as room highlights without changing food or other parties", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source(), source({
+      eventId: "62001002", bookingId: "71001002", eventName: "Redacted Second Event", rooms: ["VIP 2"],
+    })]));
+    const initial = await generateFloorPlan("2026-08-06", "fill-missing", storage);
+    const event = initial.plan.events.find((item) => item.tripleseatEventId === "62001001")!;
+    const other = initial.plan.events.find((item) => item.tripleseatEventId === "62001002")!;
+    const row = (id: string, areaId: string, reservationType: FloorPlanReservation["reservationType"], label: string): FloorPlanReservation => ({
+      id, floorPlanEventId: event.id, areaId, reservationType,
+      startAt: "2026-08-06T17:00:00-04:00", endAt: "2026-08-06T18:00:00-04:00", label,
+      source: "manual", lockedByUser: true,
+    });
+    const reservations = [
+      row("legacy-section", "vip1-extra-convo", "seating", "Reserved conversation seating"),
+      row("valid-food", "vip1-food-table", "food-table", "F"),
+      row("valid-seat", "vip1-extra-front-1", "seating", "Reserved table"),
+      row("valid-wall", "vip1-conversation-wall", "seating", "CONVO"),
+      { ...row("custom-note", "vip-1", "custom", "Welcome table"), customGeometry: { x: 10, y: 20, width: 100, height: 40 } },
+      { ...row("other-party", "vip-2", "room", "VIP 2"), floorPlanEventId: other.id },
+    ];
+    const legacy = await storage.save({ ...initial.plan, reservations }, "Seed redacted legacy seating section.");
+    const requested = structuredClone(legacy);
+    const unchanged = structuredClone(requested);
+
+    await saveFloorPlanEdits("2026-08-06", requested, storage);
+    const reopened = await getFloorPlanDay("2026-08-06", storage);
+
+    expect(requested).toEqual(unchanged);
+    expect(reopened.plan.reservations).toEqual(reservations.map((reservation) =>
+      reservation.id === "legacy-section" ? { ...reservation, reservationType: "room" } : reservation,
+    ));
+    expect(reopened.plan.version).toBe(legacy.version + 1);
+    expect(reopened.validation).toContainEqual(expect.objectContaining({ eventId: event.id, code: "FOOD_TABLE", status: "Passed" }));
+  });
+
+  it("still rejects a stale version when a legacy seating section needs normalization", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source()]));
+    const initial = await generateFloorPlan("2026-08-06", "fill-missing", storage);
+    const event = initial.plan.events[0];
+    const legacy = await storage.save({ ...initial.plan, reservations: [{
+      id: "legacy-section", floorPlanEventId: event.id, areaId: "vip1-extra-convo", reservationType: "seating",
+      startAt: event.startAt, endAt: event.endAt, label: "VIP 1", source: "manual", lockedByUser: true,
+    }] }, "Seed redacted legacy seating section.");
+    const newer = await storage.save(legacy, "Another staff member saved first.");
+
+    await expect(saveFloorPlanEdits("2026-08-06", legacy, storage)).rejects.toThrow("newer");
+    expect(await storage.get("2026-08-06")).toEqual(newer);
+  });
+
+  it.each([
+    ["wat-table-1", "food-table", "WAT Table 1"],
+    ["main-food-1", "seating", "Main Dining ADA Food Table 1"],
+    ["vip1-food-table", "seating", "VIP 1 ADA Food Table"],
+  ] as const)("rejects %s assigned as unsupported %s and identifies the table", async (areaId, reservationType, tableName) => {
     const storage = new MemoryFloorPlanStorage();
     setEventPlanStorageForTests(createMemoryEventPlanStorage());
     setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
@@ -133,10 +192,12 @@ describe("Floor Plan Tripleseat source enforcement", () => {
     const initial = await generateFloorPlan("2026-08-06", "fill-missing", storage);
     const event = initial.plan.events[0];
 
-    await expect(saveFloorPlanEdits("2026-08-06", { ...initial.plan, reservations: [{
+    const save = saveFloorPlanEdits("2026-08-06", { ...initial.plan, reservations: [{
       id: "invalid-role", floorPlanEventId: event.id, areaId, reservationType,
       startAt: event.startAt, endAt: event.endAt, label: "F", source: "manual", lockedByUser: true,
-    }] }, storage)).rejects.toThrow("authorized food table");
+    }] }, storage);
+    await expect(save).rejects.toThrow(tableName);
+    expect((await storage.get("2026-08-06"))?.version).toBe(initial.plan.version);
   });
 
   it("migrates three saved source highlights onto one merged floor-plan event", () => {

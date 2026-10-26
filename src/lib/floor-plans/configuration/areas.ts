@@ -1,4 +1,4 @@
-import type { FloorPlanArea, FloorPlanAreaType } from "../types";
+import type { FloorPlanArea, FloorPlanAreaType, FloorPlanReservation } from "../types";
 
 type AreaInput = Omit<
   FloorPlanArea,
@@ -224,6 +224,15 @@ const AREA_BY_ENTERTAINMENT_RESOURCE = new Map(
 
 export function getFloorPlanArea(areaId: string) {
   return AREA_BY_ID.get(areaId) ?? null;
+}
+
+export function floorPlanAreaAssignmentType(
+  area: FloorPlanArea,
+  markAsFoodTable: boolean,
+): Exclude<FloorPlanReservation["reservationType"], "custom"> {
+  if (area.canBeFoodTable && (markAsFoodTable || area.capacity === 0)) return "food-table";
+  if (area.capacity > 0 && (area.type === "rectangle-table" || area.type === "square-table")) return "seating";
+  return "room";
 }
 
 /** These rooms are event seating even though they also have booking resources. */
