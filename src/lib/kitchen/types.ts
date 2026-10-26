@@ -1,3 +1,5 @@
+import type { VipPrepReservation } from "@/lib/vip-prep/types";
+
 export const KITCHEN_TIME_ZONE = "America/New_York" as const;
 
 export type KitchenSourceSelection = {
@@ -40,6 +42,7 @@ export type KitchenSourceEvent = {
   specialNotes?: readonly string[];
   sourceUpdatedAt?: string | null;
   sourceState?: "fresh" | "stale" | "sync-failed";
+  vipBooking?: VipPrepReservation;
 };
 
 export type PackageMarker =
@@ -257,11 +260,20 @@ export type KitchenChecklist = {
     status: string | null;
     room: string | null;
     sourceUpdatedAt: string | null;
+    vipBooking?: VipPrepReservation;
     foodNotes?: KitchenFoodNote[];
     specialNotes: string[];
   };
   /** Legacy single-value assignment retained while older snapshots migrate. */
   foodRunnerOrBwa: string;
+  /** Read-only Event Host check-in evidence; never inferred from booking status. */
+  vipArrival?: {
+    checkedInAt: string | null;
+    checkedInBy: string | null;
+    foodStatus: string;
+    scheduledReleaseAt: string | null;
+    itemIssues: string[];
+  };
   assignmentUpdatedAt?: string | null;
   foodRunners?: string[];
   pocs?: string[];

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isPreviewReviewOnly } from "../operations/preview-review";
 import {
   getMissingTripleseatEnvironmentVariables,
   getTripleseatAdapter,
@@ -43,6 +44,7 @@ import {
   VipPrepClient,
   vipPrepEntertainmentEvents,
 } from "../vip-prep/client";
+import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "../vip-prep/known-inactive";
 import {
   confirmedContractEntertainmentSourcesForDate,
   eventMatchesConfirmedContract,
@@ -54,6 +56,7 @@ export type EntertainmentDependencies = {
   storage?: EntertainmentStorage;
   localEvents?: LocalEntertainmentEvent[];
   vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
+  readOnly?: boolean;
 };
 
 export type ReservationMutationInput = {
@@ -298,7 +301,7 @@ function dedupeConfirmedContractEntertainmentEvents(
   );
   if (!contractEvent) return events;
   const matching = events.filter((event) =>
-    eventMatchesConfirmedContract(
+    !isVipEntertainmentEvent(event) && eventMatchesConfirmedContract(
       event.operatingDate,
       event.eventName,
       contractEvent.operatingDate,
@@ -318,7 +321,7 @@ function dedupeConfirmedContractEntertainmentEvents(
   })[0];
   return events.filter(
     (event) =>
-      event === winner ||
+      event === winner || isVipEntertainmentEvent(event) ||
       !eventMatchesConfirmedContract(
         event.operatingDate,
         event.eventName,
@@ -326,15 +329,6 @@ function dedupeConfirmedContractEntertainmentEvents(
         contractEvent.eventName,
       ),
   );
-}
-
-function comparableVipEventName(value: string) {
-  return value
-    .normalize("NFKC")
-    .replace(/\s+VIP(?:\s+[12])?\s*$/i, "")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .toLocaleLowerCase("en-US");
 }
 
 function isVipEntertainmentEvent(event: EntertainmentEventSnapshot) {
@@ -360,50 +354,14 @@ function isVipEntertainmentReservation(reservation: EntertainmentReservation) {
   );
 }
 
-function dedupeVipNamedEvents(events: EntertainmentEventSnapshot[]) {
-  return events.filter(
-    (event) => {
-      if (!isVipEntertainmentEvent(event)) return true;
-      const key = `${event.operatingDate}|${comparableVipEventName(event.eventName)}`;
-      return !events.some(
-        (candidate) =>
-          !isVipEntertainmentEvent(candidate) &&
-          `${candidate.operatingDate}|${comparableVipEventName(candidate.eventName)}` === key,
-      );
-    },
-  );
-}
-
-function dedupeVipNamedReservations(reservations: EntertainmentReservation[]) {
-  return reservations.filter(
-    (reservation) => {
-      if (!isVipEntertainmentReservation(reservation)) return true;
-      const key = `${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`;
-      return !reservations.some(
-        (candidate) =>
-          !isVipEntertainmentReservation(candidate) &&
-          `${candidate.operatingDate}|${comparableVipEventName(candidate.eventName)}` === key,
-      );
-    },
-  );
-}
-
-function existingReservationsForSourceEvents(
-  reservations: readonly EntertainmentReservation[],
-  sourceEvents: readonly EntertainmentSourceEvent[],
-) {
-  const mainEventKeys = new Set(
-    sourceEvents
-      .filter((event) => !isVipEntertainmentSourceEvent(event))
-      .map((event) => `${event.localDate}|${comparableVipEventName(event.eventName)}`),
-  );
-  return reservations.filter(
-    (reservation) =>
-      !isVipEntertainmentReservation(reservation) ||
-      !mainEventKeys.has(
-        `${reservation.operatingDate}|${comparableVipEventName(reservation.eventName)}`,
-      ),
-  );
+/** One physical room occupancy may be evidenced by two explicitly linked sources. */
+function representedEntertainmentReservations(events: readonly EntertainmentEventSnapshot[], reservations: EntertainmentReservation[]) {
+  const vipRooms = reservations.filter((row) => row.active && row.source === "vip-prep" && row.resourceCategory === "private-rooms");
+  return reservations.filter((row) => row.source !== "tripleseat" || row.manualOverride || !vipRooms.some((vip) => {
+    const source = events.find((event) => event.tripleseatEventId === vip.tripleseatEventId)?.sourceSnapshot;
+    return Boolean(row.tripleseatEventId && source?.linkedTripleseatEventIds?.includes(row.tripleseatEventId) &&
+      row.resourceId === vip.resourceId && Date.parse(row.startAt) === Date.parse(vip.startAt) && Date.parse(row.endAt) === Date.parse(vip.endAt));
+  }));
 }
 
 export async function getEntertainmentDay(
@@ -423,10 +381,14 @@ export async function getEntertainmentDay(
         )
       : Promise.resolve({ events: [], error: null, refreshed: false }),
   ]);
+  const knownInactive = vipResult.error ? await knownInactiveVipBookings(date) : { ids: new Set<string>(), observations: new Map<string, string>(), warnings: [] };
+  const inactiveEventIds = new Set(stored.events.filter((event) => inactiveVipIsNewer(knownInactive.observations,
+    event.tripleseatEventId, event.sourceSnapshot.sourceObservedAt ?? event.sourceUpdatedAt)).map((event) => event.tripleseatEventId));
   const diagnostics = adapter.getDiagnostics();
   const storedReservations = stored.reservations.filter(
     (reservation) =>
-      reservation.active && reservation.resourceCategory !== "mini-golf",
+      reservation.active && reservation.resourceCategory !== "mini-golf" &&
+      ![reservation.tripleseatEventId, reservation.localEventId].some((id) => id && inactiveEventIds.has(id)),
   );
   const builtVip = buildEntertainmentSchedule({
     sourceEvents: vipResult.events,
@@ -449,7 +411,7 @@ export async function getEntertainmentDay(
     (source) =>
       !stored.events.some(
         (event) =>
-          eventMatchesConfirmedContract(
+          !isVipEntertainmentEvent(event) && eventMatchesConfirmedContract(
             event.operatingDate,
             event.eventName,
             source.localDate,
@@ -480,8 +442,8 @@ export async function getEntertainmentDay(
   const replacedConfirmedIds = new Set(existingConfirmed.map((reservation) => reservation.id));
   let contractPersistenceWarning: string | null = null;
   if (
-    confirmedSchedule.events.length > 0 ||
-    confirmedSchedule.reservations.length > 0
+    !options.readOnly && !isPreviewReviewOnly() && (confirmedSchedule.events.length > 0 ||
+    confirmedSchedule.reservations.length > 0)
   ) {
     try {
       await storage.saveContractEvidence({
@@ -503,7 +465,7 @@ export async function getEntertainmentDay(
   ];
   const combinedEvents = [
     ...stored.events.filter(
-      (event) => event.sourceSnapshot.sourceSystem !== "vip-prep",
+      (event) => !inactiveEventIds.has(event.tripleseatEventId) && (!vipResult.refreshed || !isVipEntertainmentEvent(event)),
     ),
     ...liveVip.events,
     ...confirmedSchedule.events,
@@ -513,9 +475,7 @@ export async function getEntertainmentDay(
       ...confirmedSchedule.events,
     ]),
   ];
-  const events = dedupeVipNamedEvents(
-    dedupeConfirmedContractEntertainmentEvents(combinedEvents),
-  ).sort((left, right) =>
+  const events = dedupeConfirmedContractEntertainmentEvents(combinedEvents).sort((left, right) =>
     (left.eventStartAt ?? "").localeCompare(right.eventStartAt ?? ""),
   );
   const visibleEventIds = new Set(
@@ -530,9 +490,9 @@ export async function getEntertainmentDay(
       "sourceSystem" in event.sourceSnapshot &&
       event.sourceSnapshot.sourceSystem === "contract-evidence",
   );
-  const reservations = dedupeVipNamedReservations(combinedReservations).filter(
+  const reservations = representedEntertainmentReservations(events, combinedReservations.filter(
     (reservation) =>
-      !contractIdentity ||
+      isVipEntertainmentReservation(reservation) || !contractIdentity ||
       !eventMatchesConfirmedContract(
         reservation.operatingDate,
         reservation.eventName,
@@ -542,8 +502,10 @@ export async function getEntertainmentDay(
       [reservation.tripleseatEventId, reservation.localEventId]
         .filter((value): value is string => Boolean(value))
         .some((value) => visibleEventIds.has(value)),
-  );
+  ));
   const warnings = [...diagnostics.warnings];
+  warnings.push(...knownInactive.warnings);
+  if (inactiveEventIds.size) warnings.push(KNOWN_INACTIVE_VIP_WARNING);
   if (vipResult.error) warnings.push(vipResult.error);
   if (contractPersistenceWarning) warnings.push(contractPersistenceWarning);
   if (stored.sync?.status === "error" && stored.sync.errorSummary) {
@@ -618,7 +580,8 @@ export async function syncEntertainmentDay(
   assertEntertainmentDate(date);
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEntertainmentStorage();
-  if (adapter.sourceMode === "mock" && storage.persistence === "database") {
+  const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
+  if (adapter.sourceMode === "mock" && storage.persistence === "database" && !vipPrepClient.configured) {
     throw new EntertainmentSyncError(
       "Mock Tripleseat data cannot be persisted to the entertainment database.",
     );
@@ -630,16 +593,31 @@ export async function syncEntertainmentDay(
       storage.getDay(date),
       floorPlanContext(options),
     ]);
-    if (!adapter.fetchEntertainmentEventsForDate) {
-      throw new Error(
-        "The existing Tripleseat adapter does not expose entertainment reads.",
-      );
-    }
-    const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
-    const [tripleseatSourceEvents, vipPayload] = await Promise.all([
-      adapter.fetchEntertainmentEventsForDate(date),
+    const [tripleseatResult, vipResult] = await Promise.allSettled([
+      adapter.sourceMode === "mock" && storage.persistence === "database"
+        ? Promise.reject(new Error("Mock Tripleseat data cannot be persisted to the entertainment database."))
+        : adapter.fetchEntertainmentEventsForDate?.(date) ?? Promise.reject(new Error("The existing Tripleseat adapter does not expose entertainment reads.")),
       vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
     ]);
+    const vipPayload = vipResult.status === "fulfilled" ? vipResult.value : null;
+    if (tripleseatResult.status === "rejected") {
+      if (!vipPayload) throw tripleseatResult.reason;
+      const now = new Date().toISOString();
+      const built = preserveManualEventColors(buildEntertainmentSchedule({
+        sourceEvents: vipPrepEntertainmentEvents(vipPayload.reservations), localEvents: context.localEvents,
+        existingReservations: stored.reservations.filter(isVipEntertainmentReservation), now,
+      }), stored.events);
+      const reservations = mergeReservationsForSync(stored.reservations.filter(isVipEntertainmentReservation), built.reservations, now, built.events);
+      const activeIds = new Set(built.events.map((event) => event.eventId));
+      await storage.saveContractEvidence({
+        reservations,
+        events: [...built.events, ...stored.events.filter((event) => isVipEntertainmentEvent(event) && !activeIds.has(event.eventId)).map((event) => ({ ...event, active: false, syncedAt: now }))],
+      });
+      await storage.failSync(date, safeSyncError(tripleseatResult.reason));
+      const payload = await getEntertainmentDay(date, { ...options, adapter, storage, vipPrepClient: { configured: true, fetchRange: async () => vipPayload } });
+      return { ...payload, warnings: unique([...payload.warnings, "On Par Bookings refreshed independently; Tripleseat is unavailable and its saved reservations were retained."]) };
+    }
+    const tripleseatSourceEvents = tripleseatResult.value;
     let allSourceEvents = [
       ...tripleseatSourceEvents,
       ...vipPrepEntertainmentEvents(vipPayload?.reservations ?? []),
@@ -661,7 +639,7 @@ export async function syncEntertainmentDay(
         const matchingSource = allSourceEvents.find(
           (candidate) =>
             candidate.tripleseatEventId === source.tripleseatEventId ||
-            eventMatchesConfirmedContract(
+            !isVipEntertainmentSourceEvent(candidate) && eventMatchesConfirmedContract(
               candidate.localDate,
               candidate.eventName,
               source.localDate,
@@ -683,7 +661,7 @@ export async function syncEntertainmentDay(
         (candidate) =>
           !confirmedSources.some((source) =>
             candidate.tripleseatEventId === source.tripleseatEventId ||
-            eventMatchesConfirmedContract(
+            !isVipEntertainmentSourceEvent(candidate) && eventMatchesConfirmedContract(
               candidate.localDate,
               candidate.eventName,
               source.localDate,
@@ -698,21 +676,22 @@ export async function syncEntertainmentDay(
       buildEntertainmentSchedule({
         sourceEvents,
         localEvents: context.localEvents,
-        existingReservations: existingReservationsForSourceEvents(
-          stored.reservations,
-          sourceEvents,
-        ),
+        existingReservations: [...stored.reservations],
         now,
       }),
       stored.events,
     );
     const merged = mergeReservationsForSync(
-      stored.reservations,
+      !vipPayload ? stored.reservations.filter((reservation) => !isVipEntertainmentReservation(reservation)) : stored.reservations,
       built.reservations,
       now,
       built.events,
     );
-    const conflicts = detectEntertainmentConflicts(merged);
+    if (!vipPayload) {
+      merged.push(...stored.reservations.filter(isVipEntertainmentReservation));
+      built.events.push(...stored.events.filter(isVipEntertainmentEvent));
+    }
+    const conflicts = detectEntertainmentConflicts(representedEntertainmentReservations(built.events, merged));
     const counts = reservationCounts(stored.reservations, merged);
     const stats = {
       eventsProcessed: built.events.length,
@@ -931,7 +910,10 @@ async function assertNoUnconfirmedConflict(
   forceConflict: boolean,
 ) {
   const day = await storage.getDay(reservation.operatingDate);
-  const conflicts = conflictForCandidate(reservation, day.reservations);
+  const represented = representedEntertainmentReservations(day.events, [
+    ...day.reservations.filter((row) => row.id !== reservation.id), reservation,
+  ]);
+  const conflicts = conflictForCandidate(reservation, represented);
   if (conflicts.length > 0 && !forceConflict) {
     throw new EntertainmentConflictError(conflicts);
   }

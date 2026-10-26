@@ -49,11 +49,13 @@ export function buildOperationalEventSummaries(
   sync: EventPlanSyncState | null,
 ) {
   const recordById = new Map(records?.map((record) => [record.eventId, record]));
+  const ambiguousIds = new Set(plans.filter((plan, index) => plans.some((other, otherIndex) => otherIndex !== index && other.id === plan.id)).map((plan) => plan.id));
   return plans.map((plan): OperationalEventSummary => {
     const saved = recordById.get(plan.id);
-    const record = saved?.eventDate === plan.date ? saved : undefined;
+    const record = !ambiguousIds.has(plan.id) && saved?.eventDate === plan.date ? saved : undefined;
     const window = operationalEventWindow(plan);
     const attention: string[] = [];
+    if (ambiguousIds.has(plan.id)) attention.push("Legacy numeric checklist identity is ambiguous; staff records are not attached. Use the canonical source view.");
     if (plan.needs_review || /needs\s+review/i.test(plan.verification_status)) attention.push("Contract needs review");
     if (!plan.rooms.length) attention.push("Reserved area missing");
     if (!Number.isFinite(plan.guest_count) || plan.guest_count <= 0) attention.push("Guest count needs review");
@@ -73,7 +75,7 @@ export function buildOperationalEventSummaries(
       attention,
       sourceSyncedAt,
       sourceUpdatedAt,
-      checklistStatus: records === null ? "unavailable" : record?.status === "submitted" ? "submitted" : record ? "in-progress" : "not-started",
+      checklistStatus: records === null || ambiguousIds.has(plan.id) ? "unavailable" : record?.status === "submitted" ? "submitted" : record ? "in-progress" : "not-started",
       checklistCompleted: readiness.completed,
       checklistTotal: readiness.total,
       hostAssigned: Boolean(record?.bwa.trim()),

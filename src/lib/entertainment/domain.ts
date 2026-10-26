@@ -91,6 +91,8 @@ export function matchLocalEvent(
   if (byEventId) {
     return { event: byEventId, matchedBy: "tripleseat-event-id" as const };
   }
+  // VIP package contents belong to this source reservation, never a same-name BEO.
+  if (source.sourceSystem === "vip-prep" || source.tripleseatEventId.startsWith("vip-")) return null;
   if (source.tripleseatBookingId) {
     const byBookingId = localEvents.find(
       (event) => event.bookingId === source.tripleseatBookingId,

@@ -65,10 +65,55 @@ type KitchenDayResponse = {
   missingEnvironmentVariables: string[];
   foodDelivery?: EventFoodDelivery[];
   foodDeliveryError?: string | null;
+  vipBookingSync?: {
+    status: "success" | "error" | "unconfigured";
+    lastSuccessfulRefreshAt: string | null;
+    error: string | null;
+    reservationCount: number | null;
+  };
 };
 
 export function printableEventChecklists(events: readonly KitchenChecklist[]) {
-  return events.filter((event) => !String(event.event.eventId).startsWith("vip-"));
+  return [...events];
+}
+
+export function vipKitchenArrivalLabel(checklist: KitchenChecklist) {
+  if (!checklist.vipArrival || checklist.vipArrival.foodStatus === "STATUS_UNAVAILABLE") return "VIP check-in status unavailable — food release unverified.";
+  if (!checklist.vipArrival.checkedInAt) return "Awaiting VIP check-in — food not released.";
+  switch (checklist.vipArrival.foodStatus) {
+    case "FOOD_SENT": return "VIP checked in — preordered food accepted by GoTab.";
+    case "NO_FOOD_ITEMS": return "VIP checked in — no preordered food.";
+    case "FOOD_SCHEDULED": return `VIP checked in — food scheduled${checklist.vipArrival.scheduledReleaseAt ? ` for ${formatTime(checklist.vipArrival.scheduledReleaseAt)}` : "; release time needs verification"}.`;
+    case "FOOD_PARTIAL": return "VIP checked in — food partially accepted; remaining items need attention.";
+    case "FOOD_HELD": return "VIP checked in — food held; review the item-level issue before retrying.";
+    case "FOOD_UNCERTAIN": return "VIP checked in — food delivery uncertain; do not resubmit blindly.";
+    case "FOOD_SEND_FAILED": return "VIP checked in — food send failed; review before retrying.";
+    default: return "VIP checked in — food release pending; acceptance not yet confirmed.";
+  }
+}
+
+export function VipKitchenPreorder({ checklist }: { checklist: KitchenChecklist }) {
+  const booking = checklist.event.vipBooking;
+  if (!booking && !String(checklist.event.eventId).startsWith("vip-")) return null;
+  return <section className="kitchen-vip-preorder" aria-label="VIP booked food and arrival gate" style={{ border: "2px solid #18332F", padding: "12px 16px", margin: "8px 0", breakInside: "avoid" }}>
+    <strong>{vipKitchenArrivalLabel(checklist)}</strong>
+    {booking ? <>
+      <p>On Par Bookings · Confirmation {booking.confirmationCode} · Source updated {formatPreppedTimestamp(booking.updatedAt)}</p>
+      <h3>Purchased food — booking quantities</h3>
+      {booking.foodPrep.length ? <ul>{booking.foodPrep.map((item, index) => <li key={`${item.code}:${index}`}>{item.quantity} × {item.label}</li>)}</ul> : <p>No preordered food. This remains a valid VIP booking.</p>}
+      {booking.preorderChange ? <div role="note" aria-label="VIP preorder change" style={{ border: "1px solid currentColor", padding: "8px" }}>
+        <strong>Preorder changed · {formatPreppedTimestamp(booking.preorderChange.sourceUpdatedAt)}</strong>
+        <p>{booking.preorderChange.message}</p>
+        <p>Previous: {booking.preorderChange.previous.map((item) => `${item.quantity} × ${item.label}`).join("; ") || "No preordered food"}.</p>
+        <p>Current: {booking.preorderChange.current.map((item) => `${item.quantity} × ${item.label}`).join("; ") || "No preordered food"}.</p>
+        <p>Food is not released by this update. If the initial order was already released, use the correction/additional-order workflow; do not resend the original order.</p>
+      </div> : null}
+      {booking.mappingIssues?.length ? <ul aria-label="VIP food mapping issues">{booking.mappingIssues.map((issue, index) => <li key={`${issue.code}:${index}`}><strong>{issue.quantity} × {issue.label}:</strong> {issue.message}</li>)}</ul> : null}
+      <p>Preparation quantities below are calculated pieces, trays, bags and pans—not additional purchased platters. Preparing or printing this sheet does not release food.</p>
+    </> : <p>Refresh On Par Bookings to verify the exact purchased food. Preparation totals below must not be treated as booked platter quantities.</p>}
+    {checklist.vipArrival?.checkedInAt ? <p>Arrival confirmed in Event Host by {checklist.vipArrival.checkedInBy || "employee not recorded"} · {formatPreppedTimestamp(checklist.vipArrival.checkedInAt)}</p> : null}
+    {checklist.vipArrival?.itemIssues.length ? <ul aria-label="VIP food release issues">{checklist.vipArrival.itemIssues.map((issue, index) => <li key={`${issue}:${index}`}>{issue}</li>)}</ul> : null}
+  </section>;
 }
 
 type LoadState = "loading" | "ready" | "error";
@@ -265,6 +310,14 @@ export function timeSortValue(value: string | null) {
 
 function sameEventId(left: string | number | null, right: string | number) {
   return left !== null && String(left) === String(right);
+}
+
+export function focusedKitchenChecklist(events: readonly KitchenChecklist[], preferredEventId: string | null) {
+  if (!preferredEventId) return null;
+  const matches = events.filter((event) => preferredEventId.startsWith("vip-")
+    ? String(event.event.eventId) === preferredEventId
+    : operationalKitchenEventId(event.event.eventId) === preferredEventId);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function formatCount(value: number | null, singular: string, plural = `${singular}s`) {
@@ -634,9 +687,7 @@ export default function KitchenDashboard() {
 
   const selectedChecklist =
     sortedEvents.find((checklist) => sameEventId(selectedEventId, checklist.event.eventId)) ?? null;
-  const focusedEvent = eventContext.preferredEventId
-    ? sortedEvents.find((event) => operationalKitchenEventId(event.event.eventId) === eventContext.preferredEventId) ?? null
-    : null;
+  const focusedEvent = focusedKitchenChecklist(sortedEvents, eventContext.preferredEventId);
   const visibleKitchenEvents = operationsView === "events" || !eventContext.preferredEventId
     ? sortedEvents : focusedEvent ? [focusedEvent] : [];
   const openedContextEventRef = useRef<string | null>(null);
@@ -653,7 +704,7 @@ export default function KitchenDashboard() {
     dirtyStaffRef.current.has(eventId) && !sortedEvents.some((event) => String(event.event.eventId) === eventId),
   ).length;
   const eventSelection = (checklist: KitchenChecklist) => ({
-    eventId: operationalKitchenEventId(checklist.event.eventId), eventName: checklist.event.name,
+    eventId: String(checklist.event.eventId), eventName: checklist.event.name,
     date: checklist.event.localDate, area: checklist.event.room ?? "", guestCount: checklist.event.guestCount ?? undefined,
     foodRunner: checklist.foodRunners?.join(", ") || checklist.foodRunnerOrBwa,
     poc: checklist.pocs?.join(", "),
@@ -1435,6 +1486,9 @@ export default function KitchenDashboard() {
             <div className="kitchen-sync-copy" aria-live="polite">
               <strong>Last synced: {formatTimestamp(day?.lastSyncedAt ?? null)}</strong>
               <span className="kitchen-source-note">{sourceModeLabel(day?.sourceMode ?? "")}</span>
+              {day?.vipBookingSync ? <span className="kitchen-source-note" role="status">
+                On Par Bookings: {day.vipBookingSync.status === "success" ? `${day.vipBookingSync.reservationCount ?? 0} active reservation${day.vipBookingSync.reservationCount === 1 ? "" : "s"}` : day.vipBookingSync.status === "error" ? "source unavailable — saved bookings shown" : "not configured"} · Last successful refresh: {formatTimestamp(day.vipBookingSync.lastSuccessfulRefreshAt)}
+              </span> : null}
               {bookingSyncMessage ? <span className="kitchen-source-note" role="status">{bookingSyncMessage}</span> : null}
             </div>
             <button
@@ -1873,6 +1927,7 @@ export function KitchenEventAccordion({
         <span className="kitchen-event-accordion-identity">
           <strong>{checklist.event.name}</strong>
           <span className="kitchen-event-area">Area reserved: {checklist.event.room || "Area not listed"}</span>
+          {checklist.event.vipBooking || String(checklist.event.eventId).startsWith("vip-") ? <span className="kitchen-event-readiness">{vipKitchenArrivalLabel(checklist)}</span> : null}
           <span className="kitchen-event-readiness">Prepped {progress.prepped}/{progress.total} · Ready {progress.ready}/{progress.total}{checklist.needsReview ? " · Needs review" : ""}{!(checklist.foodRunners?.length || checklist.foodRunnerOrBwa) ? " · Food Runner unassigned" : ""}</span>
         </span>
         <span className="kitchen-event-accordion-time">{eventTime}</span>
@@ -2083,6 +2138,8 @@ export function KitchenChecklistSheet({
           ) : null}
         </div>
       </header>
+
+      <VipKitchenPreorder checklist={checklist} />
 
       <div className="kitchen-checklist-schedule">
         <div className="kitchen-checklist-bwa">

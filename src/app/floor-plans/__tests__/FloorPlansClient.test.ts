@@ -384,7 +384,7 @@ describe("floor-plan dashboard organization", () => {
       }),
     );
 
-    expect(html).toContain("Sync live from Tripleseat");
+    expect(html).toContain("Sync On Par + Tripleseat");
     expect(html).toContain(
       'href="/admin/floor-plans?date=2026-08-05"',
     );
@@ -607,6 +607,7 @@ describe("floor-plan dashboard organization", () => {
         ...interactivePlan.events[0].source,
         rooms: ["Main Dining Room", "VIP 1", "VIP 2"],
         sourceEventIds: ["60526047", "vip-primary", "vip-secondary"],
+        verifiedSourceEventIds: ["60526047", "vip-primary", "vip-secondary"],
         onParBookingAreaIds: ["vip-1", "vip-2"],
       },
     };
@@ -693,6 +694,7 @@ describe("individual event floor-plan view", () => {
     source: {
       ...interactivePlan.events[0].source,
       sourceEventIds: ["source-second", "vip-second"],
+      verifiedSourceEventIds: ["source-second", "vip-second"],
     },
   };
   const payload: FloorPlanDayPayload = {

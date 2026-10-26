@@ -27,9 +27,17 @@ describe("floor-plan operational identity", () => {
   it("refuses ambiguous source links instead of highlighting either event", () => {
     expect(findOperationalFloorPlanEvent([event, { ...event, id: "other" }], "linked-456")).toBeNull();
   });
-  it("uses the existing VIP saved-checklist ID", () => {
+  it("publishes the full canonical VIP ID and accepts a unique legacy saved-checklist alias", () => {
     const vip = { ...event, id: "vip-plan", tripleseatEventId: "vip-training" };
-    expect(operationalFloorPlanEventId(vip)).toBe(String(numericVipEventId("vip-training")));
+    expect(operationalFloorPlanEventId(vip)).toBe("vip-training");
     expect(findOperationalFloorPlanEvent([vip], String(numericVipEventId("vip-training")))).toBe(vip);
+  });
+  it("never hashes canonical IDs and refuses ambiguous legacy numeric collisions", () => {
+    const first = { ...event, id: "first", tripleseatEventId: "vip-test-h4l720-hfbtsa" };
+    const second = { ...event, id: "second", tripleseatEventId: "vip-test-1k212gj-1rfricb" };
+    expect(numericVipEventId(first.tripleseatEventId)).toBe(numericVipEventId(second.tripleseatEventId));
+    expect(findOperationalFloorPlanEvent([first, second], first.tripleseatEventId)).toBe(first);
+    expect(findOperationalFloorPlanEvent([first, second], second.tripleseatEventId)).toBe(second);
+    expect(findOperationalFloorPlanEvent([first, second], "527983760")).toBeNull();
   });
 });

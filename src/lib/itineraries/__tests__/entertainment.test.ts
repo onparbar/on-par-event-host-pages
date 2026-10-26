@@ -214,7 +214,7 @@ describe("itinerary entertainment projection", () => {
 
     const savedLink = {
       eventDate: oemPlan.date,
-      events: [{ tripleseatEventId: String(oemPlan.id), source: { sourceEventIds: ["vip-older-local-id"] } }],
+      events: [{ tripleseatEventId: String(oemPlan.id), source: { verifiedSourceEventIds: ["vip-older-local-id"] } }],
     } as FloorPlanDocument;
     const schedule = { ...day([staleVipReservation]), date: "2026-09-15", events: [] };
     expect(applyEntertainmentDayToItinerary(oemPlan, schedule)).toBe(oemPlan);

@@ -68,9 +68,11 @@ export type EntertainmentSourceEvent = {
   items: EntertainmentSourceItem[];
   categoryNames: string[];
   sourceUpdatedAt: string | null;
+  sourceObservedAt?: string | null;
   noteCount: number;
   timingNotes?: string[];
   sourceSystem?: "tripleseat" | "vip-prep" | "contract-evidence";
+  linkedTripleseatEventIds?: string[];
 };
 
 export type EntertainmentColorSource =

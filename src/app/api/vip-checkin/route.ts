@@ -3,7 +3,7 @@ import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { KITCHEN_STAFF_ROSTER } from "@/lib/kitchen/storage";
 import { assertKitchenDate } from "@/lib/kitchen/sync";
 import { isSameOriginOperationalRequest, operationalAccessDenied } from "@/lib/operational-access";
-import { confirmVipArrival, listVipCheckins } from "@/lib/vip-checkin/service";
+import { confirmVipArrival, listVipCheckinDay } from "@/lib/vip-checkin/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,9 +16,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "VIP check-in date must use YYYY-MM-DD." }, { status: 400 });
   }
   try {
+    const day = await listVipCheckinDay(date);
     return NextResponse.json({
       date,
-      reservations: await listVipCheckins(date),
+      ...day,
       employees: KITCHEN_STAFF_ROSTER,
     });
   } catch (error) {

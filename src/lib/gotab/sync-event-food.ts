@@ -9,6 +9,7 @@ import { buildGoTabKdsPreview, type EventFoodProductMapping, type EventFoodSourc
 import { projectKitchenChecklist } from "./project-kitchen";
 import { GoTabIntegrationStorage } from "./storage";
 import { KITCHEN_ROW_KEY_BY_VIP_CODE } from "@/lib/vip-prep/client";
+import type { VipInitialFoodSnapshot } from "@/lib/vip-checkin/release-snapshot";
 
 type EventFoodSyncStorage = Pick<
   GoTabIntegrationStorage,
@@ -64,6 +65,7 @@ export async function synchronizeKitchenChecklistToEventFood(
     bookedFoodQuantities?: ReadonlyMap<string, number>;
     submittedAt?: string;
     requesterName?: string;
+    vipReleaseSnapshot?: VipInitialFoodSnapshot;
   },
 ) {
   const storage = options.storage ?? new GoTabIntegrationStorage();
@@ -124,10 +126,10 @@ export async function synchronizeKitchenChecklistToEventFood(
   });
   const results = [];
   for (const request of requests) {
-    const preview = buildGoTabKdsPreview(request, checklist.event.name, {
+    const preview = { ...buildGoTabKdsPreview(request, checklist.event.name, {
       enabled: configuration.enabled,
       dryRun: configuration.dryRun,
-    });
+    }), ...(options.vipReleaseSnapshot ? { vipReleaseSnapshot: options.vipReleaseSnapshot } : {}) };
     results.push(options.dispatchImmediately
       ? await storage.enqueueRequest(
           request,
@@ -170,6 +172,7 @@ export async function synchronizeVipBookingFoodToEventFood(
   options: {
     storage?: VipBookingFoodSyncStorage;
     env?: Readonly<Record<string, string | undefined>>;
+    releaseSnapshot?: VipInitialFoodSnapshot;
   } = {},
 ) {
   const bookedFoodQuantities = vipBookedFoodQuantities(checklist);
@@ -179,11 +182,24 @@ export async function synchronizeVipBookingFoodToEventFood(
   const existingByKey = new Map(previous.map((item) => [item.source_record_id, item]));
   const newFoodQuantities = new Map<string, number>();
   const reviewExceptions: Array<{ itemKey: string; foodName: string; reason: string }> = [];
+  for (const selection of checklist.normalizedSelections) {
+    if (typeof selection.sourceId !== "string" || !selection.sourceId.startsWith("vip-prep:")) continue;
+    const code = selection.sourceId.split(":").at(-1) ?? "";
+    const sourceItem = checklist.event.vipBooking?.foodPrep.find((item) => item.code === code || encodeURIComponent(item.code) === code);
+    if (!KITCHEN_ROW_KEY_BY_VIP_CODE[code]) reviewExceptions.push({
+      itemKey: `unmapped:${code}`, foodName: sourceItem?.label ?? selection.originalName,
+      reason: `VIP preorder code ${sourceItem?.code ?? (code || "(missing)")} has no verified kitchen mapping. No replacement item was guessed.`,
+    });
+  }
   for (const [key, quantity] of bookedFoodQuantities) {
     const prior = existingByKey.get(key);
     const row = checklist.sections.flatMap((section) => section.rows)
       .find((item) => item.key === key);
-    if (!row) continue;
+    if (!row) {
+      reviewExceptions.push({ itemKey: key, foodName: key,
+        reason: "The purchased VIP item has no calculated kitchen row. Review its mapping before release." });
+      continue;
+    }
     const panSize = row.panSize === "1/3" ? "THIRD_PAN" :
       row.panSize === "1/2" ? "HALF_PAN" : "TRAY";
     if (!prior) {
@@ -224,19 +240,22 @@ export async function synchronizeVipBookingFoodToEventFood(
     });
   }
   if (newFoodQuantities.size === 0) {
-    return { eventId, requestCount: 0, exceptionCount: reviewExceptions.length, duplicateCount: 0 };
+    return { eventId, requestCount: 0, exceptionCount: reviewExceptions.length, duplicateCount: 0, requestIds: previous.map((item) => item.id) };
   }
   const result = await synchronizeKitchenChecklistToEventFood(checklist, {
     // A booking's food rows are queued once. Later edits need a reviewed
     // correction so a repeat sync cannot send a second full order.
     sourceVersion: 1,
     sourceType: "VIP_ADDON",
-    actor: "VIP_BOOKING_SYNC",
+    actor: options.releaseSnapshot ? `VIP_CHECK_IN:${options.releaseSnapshot.checkedInBy}` : "VIP_BOOKING_SYNC",
     bookedFoodQuantities: newFoodQuantities,
     storage,
     env: options.env,
+    vipReleaseSnapshot: options.releaseSnapshot,
   });
-  return { ...result, exceptionCount: result.exceptionCount + reviewExceptions.length };
+  return { ...result, exceptionCount: result.exceptionCount + reviewExceptions.length,
+    requestIds: [...new Set([...previous.map((item) => item.id), ...result.requestIds])],
+  };
 }
 
 export async function synchronizeKitchenLiveAddOnsToEventFood(

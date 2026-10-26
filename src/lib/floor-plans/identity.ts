@@ -3,9 +3,11 @@ import { floorPlanSourceNamesMatch } from "./source-resolution";
 import type { FloorPlanEvent } from "./types";
 
 export function floorPlanEventSourceIds(event: FloorPlanEvent) {
+  const vip = event.tripleseatEventId.startsWith("vip-");
   return new Set([
     event.tripleseatEventId,
-    ...(event.source.sourceEventIds ?? []),
+    ...(event.source.sourceEventIds ?? []).filter((id) => !vip && !id.startsWith("vip-")),
+    ...(event.source.verifiedSourceEventIds ?? []),
   ]);
 }
 
@@ -20,6 +22,7 @@ export function entertainmentReservationMatchesFloorPlanEvent(
       .some((value) => sourceIds.has(value)) ||
     reservation.localEventId === event.id;
   if (identityMatches) return true;
+  if (reservation.source === "vip-prep" || reservation.tripleseatEventId?.startsWith("vip-") || event.tripleseatEventId.startsWith("vip-")) return false;
 
   const eventStart = Date.parse(event.startAt ?? "");
   const eventEnd = Date.parse(event.endAt ?? "");

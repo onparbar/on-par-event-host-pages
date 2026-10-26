@@ -1495,6 +1495,7 @@ export function generateKitchenChecklist(
       status: sourceEvent.status,
       room: sourceEvent.room ?? null,
       sourceUpdatedAt: sourceEvent.sourceUpdatedAt ?? null,
+      ...(sourceEvent.vipBooking ? { vipBooking: structuredClone(sourceEvent.vipBooking) } : {}),
       foodNotes,
       specialNotes,
     },

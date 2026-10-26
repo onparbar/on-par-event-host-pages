@@ -51,6 +51,14 @@ export type FloorPlanArea = {
 export type FloorPlanEventSource = {
   rooms: string[];
   sourceEventIds?: string[];
+  verifiedSourceEventIds?: string[];
+  onParBooking?: {
+    reservationId: string;
+    confirmationCode: string;
+    sourceUpdatedAt: string;
+    refreshedAt: string | null;
+    linkedTripleseatEventIds: string[];
+  };
   onParBookingAreaIds?: string[];
   food: string[];
   entertainment: Array<{

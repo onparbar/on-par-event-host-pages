@@ -24,6 +24,8 @@ export type EventPlanEntertainmentItem = {
 
 export type EventPlan = {
   id: number;
+  /** Qualified source identity for navigation; numeric id remains legacy storage. */
+  source_event_id?: string;
   name: string;
   date: string;
   day: string;

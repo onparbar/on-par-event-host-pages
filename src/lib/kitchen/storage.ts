@@ -786,7 +786,9 @@ export class SupabaseKitchenStorage implements KitchenStorage {
 
     await Promise.all(
       existingRows
-        .filter((row) => !incomingIds.has(row.event_id))
+        // Missing VIPs may have moved or cancelled. Keep their staff-owned
+        // readiness/add-on history instead of cascading a snapshot deletion.
+        .filter((row) => !incomingIds.has(row.event_id) && !row.event_id.startsWith("vip-"))
         .map((row) =>
           this.emptyRequest(
             "kitchen_event_snapshots",
@@ -1318,6 +1320,10 @@ export class MemoryKitchenStorage implements KitchenStorage {
   }
 
   async replaceDay(date: string, events: readonly StoredKitchenEvent[]) {
+    const retainedVipHistory = (this.days.get(date) ?? []).filter(({ sourceEvent }) =>
+      String(sourceEvent.eventId).startsWith("vip-") &&
+      !events.some((incoming) => String(incoming.sourceEvent.eventId) === String(sourceEvent.eventId)),
+    );
     const previousEventIds = new Set(
       (this.days.get(date) ?? []).map(({ sourceEvent }) =>
         String(sourceEvent.eventId),
@@ -1339,7 +1345,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
       }
     }
     for (const eventId of previousEventIds) {
-      if (!nextEventIds.has(eventId)) {
+      if (!nextEventIds.has(eventId) && !eventId.startsWith("vip-")) {
         const stillStored = [...this.days.entries()].some(
           ([storedDate, storedEvents]) =>
             storedDate !== date &&
@@ -1356,7 +1362,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
         }
       }
     }
-    this.days.set(date, clone([...events]));
+    this.days.set(date, clone([...events, ...retainedVipHistory]));
   }
 
   async saveManualAssignments(

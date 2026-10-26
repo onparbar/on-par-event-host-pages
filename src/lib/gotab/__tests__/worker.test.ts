@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
+import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
+import { vipInitialFoodSnapshot } from "@/lib/vip-checkin/release-snapshot";
 
 vi.mock("server-only", () => ({}));
 
@@ -169,6 +172,7 @@ describe("GoTab dispatch worker", () => {
             product: "Chicken Tenders",
             gotabProductUuid: "prd_chicken",
             quantity: 1,
+            vipReleaseSnapshot: vipInitialFoodSnapshot(vipKdsTestReservation("2026-09-23")!, { employee_name: "Tina", checked_in_at: "2026-09-23T18:00:00Z" }),
           },
         }]),
         getDispatchRequestContext: vi.fn().mockResolvedValue({
@@ -178,8 +182,10 @@ describe("GoTab dispatch worker", () => {
         }),
         getVipCheckin: vi.fn().mockResolvedValue({
           reservation_id: "event-host-kds-retest-20260923", booking_date: "2026-09-23",
+          employee_name: "Tina", checked_in_at: "2026-09-23T18:00:00Z",
         }),
         getVipInitialFoodRelease: vi.fn().mockResolvedValue({ status: "PENDING" }),
+        listVipInitialFoodDispatches: vi.fn().mockResolvedValue([]),
         finishDispatch: vi.fn().mockResolvedValue(undefined),
       };
       const vipPrepClient = {
@@ -427,6 +433,7 @@ describe("GoTab dispatch worker", () => {
       }),
       getVipCheckin: vi.fn().mockResolvedValue({ reservation_id: "2", booking_date: "2026-09-23" }),
       getVipInitialFoodRelease: vi.fn().mockResolvedValue({ status: "PENDING" }),
+      listVipInitialFoodDispatches: vi.fn().mockResolvedValue([]),
       finishDispatch: vi.fn().mockResolvedValue(undefined),
     };
     const result = await processGoTabDispatches({
@@ -446,6 +453,8 @@ describe("GoTab dispatch worker", () => {
   });
 
   it("sends a checked-in VIP's food to GoTab with its saved ticket details", async () => {
+    const currentReservation = { ...vipPrepPayload.reservations[0], id: "3", operatingDate: "2026-09-23", startAt: "2026-09-23T22:00:00Z", endAt: "2026-09-24T00:00:00Z" };
+    const checkedIn = { reservation_id: "3", booking_date: "2026-09-23", employee_name: "Tina", checked_in_at: "2026-09-23T20:00:00Z" };
     const createEventFoodTab = vi.fn().mockResolvedValue({
       tabUuid: "vip-tab", orderUuid: "vip-order", itemUuid: "vip-item",
     });
@@ -465,13 +474,15 @@ describe("GoTab dispatch worker", () => {
           quantity: 2,
           eventArea: "VIP 2",
           notes: "Reservation time: 6:00 PM",
+          vipReleaseSnapshot: vipInitialFoodSnapshot(currentReservation, checkedIn),
         },
       }]),
       getDispatchRequestContext: vi.fn().mockResolvedValue({
         event_id: "vip-3", source_record_id: "platter-wings", food_service_time: "2026-09-23T18:00:00Z",
       }),
-      getVipCheckin: vi.fn().mockResolvedValue({ reservation_id: "3", booking_date: "2026-09-23" }),
+      getVipCheckin: vi.fn().mockResolvedValue(checkedIn),
       getVipInitialFoodRelease: vi.fn().mockResolvedValue({ status: "PENDING" }),
+      listVipInitialFoodDispatches: vi.fn().mockResolvedValue([]),
       finishDispatch: vi.fn().mockResolvedValue(undefined),
     };
     const result = await processGoTabDispatches({
@@ -480,7 +491,7 @@ describe("GoTab dispatch worker", () => {
       client: { createEventFoodTab },
       vipPrepClient: {
         configured: true,
-        fetchRange: vi.fn().mockResolvedValue({ reservations: [{ id: "3" }] }),
+        fetchRange: vi.fn().mockResolvedValue({ reservations: [currentReservation] }),
       },
     });
     expect(result.sent).toBe(1);

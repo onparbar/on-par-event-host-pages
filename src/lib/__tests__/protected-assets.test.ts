@@ -14,8 +14,8 @@ describe("operational asset access", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
-  it("only runs the proxy for the private fallback event JSON", () => {
-    expect(config.matcher).toEqual(["/data/event-plan-data.json"]);
+  it("runs the proxy for private fallback JSON and review-protected APIs, not public assets", () => {
+    expect(config.matcher).toEqual(["/data/event-plan-data.json", "/api/:path*"]);
   });
 
   it("never serves the build-time fallback event JSON directly", () => {

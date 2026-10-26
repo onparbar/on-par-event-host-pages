@@ -320,7 +320,7 @@ describe("persistent entertainment synchronization", () => {
     });
   });
 
-  it("prefers the main event when a matching VIP record is also present", async () => {
+  it("keeps distinct same-name VIP and Tripleseat source identities visible", async () => {
     const event = {
       ...sourceEvent(),
       eventName: "Adare Pharma Solutions",
@@ -353,7 +353,7 @@ describe("persistent entertainment synchronization", () => {
         }),
       ]),
     );
-    expect(day.events).not.toEqual(
+    expect(day.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ eventName: "Adare Pharma Solutions VIP" }),
       ]),
@@ -366,14 +366,14 @@ describe("persistent entertainment synchronization", () => {
         }),
       ]),
     );
-    expect(day.reservations).not.toEqual(
+    expect(day.reservations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ eventName: "Adare Pharma Solutions VIP" }),
       ]),
     );
   });
 
-  it("hides manually assigned VIP reservations when the main event exists", async () => {
+  it("retains manually assigned VIP reservations beside a same-name main event", async () => {
     const storage = new MemoryEntertainmentStorage();
     const event = {
       ...sourceEvent(),
@@ -428,7 +428,7 @@ describe("persistent entertainment synchronization", () => {
       vipPrepClient: dependencies.vipPrepClient,
     });
 
-    expect(day.reservations).not.toEqual(
+    expect(day.reservations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ eventName: "Redacted Sync Event VIP" }),
       ]),

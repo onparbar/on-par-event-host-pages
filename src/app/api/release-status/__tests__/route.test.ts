@@ -28,7 +28,7 @@ describe("safe release runtime proof", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     const value = await response.json();
-    expect(Object.keys(value).sort()).toEqual(["database", "deploymentEnvironment", "gotab", "releaseSha", "tripleseat"]);
+    expect(Object.keys(value).sort()).toEqual(["database", "deploymentEnvironment", "gotab", "releaseSha", "reviewOnly", "tripleseat"]);
     expect(value).toMatchObject({ deploymentEnvironment: "preview", releaseSha: "a".repeat(40), database: { targetMatchesEventHost: true, credentialsConfigured: true } });
     expect(JSON.stringify(value)).not.toMatch(/supabase\.co|sensitive-database-key|private-guest|test-phone/);
     expect(fetch).not.toHaveBeenCalled();

@@ -2,10 +2,12 @@ import type { EntertainmentSourceEvent } from "@/lib/entertainment/types";
 import type { EventPlan } from "@/lib/event-plans/types";
 import type { KitchenSourceEvent } from "@/lib/kitchen/types";
 import { numericVipEventId, vipPrepExternalId } from "./identity";
+import type { VipPrepPayload, VipPrepReservation, VipPrepExtra } from "./types";
 export { numericVipEventId, vipPrepExternalId } from "./identity";
+export type { VipPrepFoodItem, VipPrepPayload, VipPrepReservation, VipPrepExtra, VipPrepMappingIssue } from "./types";
 
 const DEFAULT_VIP_PREP_API_URL = "https://onparbookings.com/api/vip-prep";
-const KITCHEN_SELECTION_NAME_BY_VIP_CODE: Readonly<Record<string, string>> = {
+const KITCHEN_SELECTION_NAME_BY_VIP_CODE: Readonly<Record<string, string>> = Object.freeze(Object.assign(Object.create(null) as Record<string, string>, {
   wings: "Wing Platter",
   "mozzarella-sticks": "Mozzarella Stick Platter",
   "tater-kegs": "Tater Keg Platter",
@@ -13,8 +15,8 @@ const KITCHEN_SELECTION_NAME_BY_VIP_CODE: Readonly<Record<string, string>> = {
   "chicken-tenders": "Chicken Tender Platter",
   "veggie-tray": "Veggie Tray",
   "dessert-platter": "Dessert Platter",
-};
-export const KITCHEN_ROW_KEY_BY_VIP_CODE: Readonly<Record<string, string>> = {
+}));
+export const KITCHEN_ROW_KEY_BY_VIP_CODE: Readonly<Record<string, string>> = Object.freeze(Object.assign(Object.create(null) as Record<string, string>, {
   wings: "platter-wings",
   "mozzarella-sticks": "platter-mozzarella-sticks",
   "tater-kegs": "platter-tater-kegs",
@@ -22,43 +24,7 @@ export const KITCHEN_ROW_KEY_BY_VIP_CODE: Readonly<Record<string, string>> = {
   "chicken-tenders": "platter-chicken-tenders",
   "veggie-tray": "platter-veggie-tray",
   "dessert-platter": "dessert-platter",
-};
-
-export type VipPrepFoodItem = {
-  code: string;
-  label: string;
-  quantity: number;
-  unitPriceCents: number;
-  totalCents: number;
-};
-
-export type VipPrepReservation = {
-  id: string;
-  confirmationCode: string;
-  operatingDate: string;
-  resource: {
-    code: "VIPS" | "VIPL";
-    name: string;
-  };
-  eventName: string;
-  guestName: string;
-  partySize: number;
-  startAt: string;
-  endAt: string;
-  status: "confirmed" | "checked_in";
-  foodPrep: VipPrepFoodItem[];
-  extras: unknown[];
-  updatedAt: string;
-};
-
-export type VipPrepPayload = {
-  from: string;
-  to: string;
-  timeZone: "America/New_York";
-  generatedAt: string;
-  reservationCount: number;
-  reservations: VipPrepReservation[];
-};
+}));
 
 type VipPrepClientOptions = {
   env?: Readonly<Record<string, string | undefined>>;
@@ -81,7 +47,7 @@ function validDate(value: unknown): value is string {
 }
 
 function validTimestamp(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+  return typeof value === "string" && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) && Number.isFinite(Date.parse(value));
 }
 
 function parseReservation(value: unknown): VipPrepReservation {
@@ -106,7 +72,7 @@ function parseReservation(value: unknown): VipPrepReservation {
     !validTimestamp(row.startAt) ||
     !validTimestamp(row.endAt) ||
     Date.parse(row.endAt) <= Date.parse(row.startAt) ||
-    (row.status !== "confirmed" && row.status !== "checked_in") ||
+    !["confirmed", "checked_in", "cancelled", "canceled"].includes(String(row.status)) ||
     !foodPrep ||
     !validTimestamp(row.updatedAt)
   ) {
@@ -133,6 +99,7 @@ function parseReservation(value: unknown): VipPrepReservation {
       quantity: Number(food.quantity),
       unitPriceCents: Number(food.unitPriceCents),
       totalCents: Number(food.totalCents),
+      ...(typeof food.sourceId === "string" && food.sourceId.trim() ? { sourceId: food.sourceId.trim() } : {}),
     };
   });
   return {
@@ -145,10 +112,11 @@ function parseReservation(value: unknown): VipPrepReservation {
     partySize: Number(row.partySize),
     startAt: row.startAt,
     endAt: row.endAt,
-    status: row.status,
+    status: row.status as VipPrepReservation["status"],
     foodPrep: parsedFood,
     extras: Array.isArray(row.extras) ? row.extras : [],
     updatedAt: row.updatedAt,
+    ...(Array.isArray(row.linkedTripleseatEventIds) ? { linkedTripleseatEventIds: [...new Set(row.linkedTripleseatEventIds.filter((id): id is string => typeof id === "string" && /^\d+$/.test(id)))] } : {}),
   };
 }
 
@@ -192,13 +160,17 @@ export class VipPrepClient {
       value.to !== to ||
       value.timeZone !== "America/New_York" ||
       !validTimestamp(value.generatedAt) ||
-      !Array.isArray(value.reservations)
+      !Array.isArray(value.reservations) ||
+      !Number.isSafeInteger(value.reservationCount) || value.reservationCount !== value.reservations.length
     ) {
       throw new VipPrepApiError("VIP Prep API returned an invalid response.");
     }
-    const reservations = value.reservations.map(parseReservation).filter(
+    const reservations = value.reservations.map(parseReservation).map((reservation) => ({ ...reservation, lastRefreshedAt: String(value.generatedAt), mappingIssues: vipPrepMappingIssues(reservation) })).filter(
       (reservation) => reservation.operatingDate >= from && reservation.operatingDate <= to,
     );
+    if (new Set(reservations.map((reservation) => reservation.id)).size !== reservations.length) {
+      throw new VipPrepApiError("VIP Prep API returned duplicate source reservation IDs.");
+    }
     return {
       from,
       to,
@@ -214,6 +186,44 @@ export function getMissingVipPrepEnvironmentVariables(env = process.env) {
   return env.VIP_PREP_API_TOKEN?.trim() ? [] : ["VIP_PREP_API_TOKEN"];
 }
 
+export function isActiveVipPrepReservation(reservation: VipPrepReservation) {
+  return reservation.activeInSource !== false && (reservation.status === "confirmed" || reservation.status === "checked_in");
+}
+
+export function vipPrepMappingIssues(reservation: VipPrepReservation) {
+  return reservation.foodPrep.filter((item) => !KITCHEN_ROW_KEY_BY_VIP_CODE[item.code]).map((item) => ({
+    code: item.code, label: item.label, quantity: item.quantity,
+    message: `Preordered ${item.label} (${item.code}) has no verified kitchen mapping.`,
+  }));
+}
+
+export function vipPrepExtras(reservation: VipPrepReservation): VipPrepExtra[] {
+  return reservation.extras.map((value) => {
+    if (typeof value === "string") return { code: null, label: value, quantity: null };
+    const row = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const label = [row.label, row.name, row.description, row.code].find((item) => typeof item === "string" && item.trim());
+    return { code: typeof row.code === "string" ? row.code : null,
+      label: typeof label === "string" ? label : "Purchased extra — details unavailable",
+      quantity: typeof row.quantity === "number" && Number.isSafeInteger(row.quantity) && row.quantity > 0 ? row.quantity : null };
+  });
+}
+
+function purchasedMiniGolf(reservation: VipPrepReservation) {
+  return vipPrepExtras(reservation).filter((extra) => extra.code === "mini-golf")
+    .reduce((quantity, extra) => quantity + (extra.quantity ?? 0), 0);
+}
+
+/** Exact semantic preorder evidence; timestamps are recorded separately, not guessed. */
+export function vipPreorderFingerprint(reservation: VipPrepReservation) {
+  return JSON.stringify({ reservationId: reservation.id, confirmationCode: reservation.confirmationCode,
+    resourceCode: reservation.resource.code, operatingDate: reservation.operatingDate, startAt: new Date(reservation.startAt).toISOString(),
+    endAt: new Date(reservation.endAt).toISOString(), partySize: reservation.partySize,
+    foodPrep: reservation.foodPrep.map((item) => ({ code: item.code, label: item.label, quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents, totalCents: item.totalCents, sourceId: item.sourceId ?? null }))
+      .sort((left, right) => JSON.stringify(left) < JSON.stringify(right) ? -1 : JSON.stringify(left) > JSON.stringify(right) ? 1 : 0),
+  });
+}
+
 
 function vipClock(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -227,6 +237,7 @@ export function vipPrepEventPlan(reservation: VipPrepReservation): EventPlan {
   const externalId = vipPrepExternalId(reservation);
   return {
     id: numericVipEventId(externalId),
+    source_event_id: externalId,
     name: `${reservation.eventName} · ${reservation.resource.name}`,
     date: reservation.operatingDate,
     day: new Intl.DateTimeFormat("en-US", {
@@ -239,7 +250,7 @@ export function vipPrepEventPlan(reservation: VipPrepReservation): EventPlan {
     color: reservation.resource.code === "VIPS" ? "#526D52" : "#297025",
     food: reservation.foodPrep.map((item) => `${item.quantity} ${item.label}`),
     drink_options: [],
-    entertainment: [],
+    entertainment: purchasedMiniGolf(reservation) > 0 ? [{ name: "Mini Golf", quantity: String(purchasedMiniGolf(reservation)), time: "Open play — no reserved time", duration: "" }] : [],
     verification_status: "Paid VIP reservation imported from the read-only VIP Prep API.",
     needs_review: false,
     review_reasons: [],
@@ -249,22 +260,26 @@ export function vipPrepEventPlan(reservation: VipPrepReservation): EventPlan {
 }
 
 export async function findVipPrepReservationByEventId(
-  eventId: number,
+  eventId: number | string,
   from: string,
   to: string,
   client = new VipPrepClient(),
 ) {
   if (!client.configured) return null;
   const payload = await client.fetchRange(from, to);
-  return payload.reservations.find(
-    (reservation) => numericVipEventId(vipPrepExternalId(reservation)) === eventId,
-  ) ?? null;
+  const matches = payload.reservations.filter(
+    (reservation) => isActiveVipPrepReservation(reservation) && (String(eventId).startsWith("vip-")
+      ? vipPrepExternalId(reservation) === eventId
+      : numericVipEventId(vipPrepExternalId(reservation)) === Number(eventId)),
+  );
+  if (matches.length > 1) throw new VipPrepApiError("VIP booking identity is ambiguous. Use the source reservation ID.");
+  return matches[0] ?? null;
 }
 
 export function vipPrepKitchenEvents(
   reservations: readonly VipPrepReservation[],
 ): KitchenSourceEvent[] {
-  return reservations.map((reservation) => ({
+  return reservations.filter(isActiveVipPrepReservation).map((reservation) => ({
     eventId: vipPrepExternalId(reservation),
     bookingId: reservation.confirmationCode,
     eventName: reservation.eventName,
@@ -276,10 +291,10 @@ export function vipPrepKitchenEvents(
     status: "DEFINITE",
     statusVerified: true,
     room: reservation.resource.name,
-    selections: reservation.foodPrep.map((item) => ({
-      name: KITCHEN_SELECTION_NAME_BY_VIP_CODE[item.code] ?? item.label,
+    selections: reservation.foodPrep.map((item, index) => ({
+      name: KITCHEN_SELECTION_NAME_BY_VIP_CODE[item.code] ?? "Unmapped VIP preorder item",
       quantity: item.quantity,
-      sourceId: `vip-prep:${reservation.id}:${item.code}`,
+      sourceId: `vip-prep:${reservation.id}:${reservation.foodPrep.slice(0, index).some((other) => other.code === item.code) ? `${index}:` : ""}${encodeURIComponent(item.code)}`,
       sourceCategory: "VIP Prep",
       isFood: true,
     })),
@@ -287,13 +302,14 @@ export function vipPrepKitchenEvents(
     specialNotes: [],
     sourceUpdatedAt: reservation.updatedAt,
     sourceState: "fresh",
+    vipBooking: { ...reservation, mappingIssues: vipPrepMappingIssues(reservation) },
   }));
 }
 
 export function vipPrepEntertainmentEvents(
   reservations: readonly VipPrepReservation[],
 ): EntertainmentSourceEvent[] {
-  return reservations.map((reservation) => ({
+  return reservations.filter(isActiveVipPrepReservation).map((reservation) => ({
     tripleseatEventId: vipPrepExternalId(reservation),
     tripleseatBookingId: reservation.confirmationCode,
     eventName: reservation.eventName,
@@ -302,10 +318,12 @@ export function vipPrepEntertainmentEvents(
     eventEndAt: reservation.endAt,
     status: "DEFINITE",
     rooms: [{ id: reservation.resource.code, name: reservation.resource.name }],
-    items: [],
+    items: purchasedMiniGolf(reservation) > 0 ? [{ sourceId: `vip-prep-extra:${reservation.id}:mini-golf`, name: "Mini Golf", description: "Purchased open-play Mini Golf", categoryName: "Mini Golf", quantity: purchasedMiniGolf(reservation), startAt: null, endAt: null }] : [],
     categoryNames: ["Private Rooms"],
     sourceUpdatedAt: reservation.updatedAt,
+    sourceObservedAt: reservation.lastRefreshedAt ?? null,
     noteCount: 0,
     sourceSystem: "vip-prep",
+    linkedTripleseatEventIds: reservation.linkedTripleseatEventIds ?? [],
   }));
 }

@@ -366,6 +366,8 @@ export function PublishedFloorPlanCard({
   const plan = payload?.plan ?? publication.plan;
   if (!payload) return null;
   const approved = plan.status === "Approved";
+  const bookingOnlyProjection = plan.version === 0 && plan.events.every((event) => event.tripleseatEventId.startsWith("vip-"));
+  const bookingRefresh = plan.events.flatMap((event) => event.source.onParBooking?.refreshedAt ? [event.source.onParBooking.refreshedAt] : []).sort().at(-1) ?? null;
   const date = dateBlock(plan.eventDate);
   const label = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -391,7 +393,7 @@ export function PublishedFloorPlanCard({
             <span>{plan.events.map((event) => event.name).join(" · ")}</span>
           </span>
           <PortalStatusBadge tone={approved ? "success" : "warning"}>
-            {approved ? "Approved" : "Saved edits"}
+            {bookingOnlyProjection ? "On Par Bookings" : approved ? "Approved" : "Saved edits"}
           </PortalStatusBadge>
           <span className="floor-plan-expand-label">
             <span className="when-closed">View plan</span>
@@ -403,10 +405,11 @@ export function PublishedFloorPlanCard({
           <div className="floor-plan-card-body">
             <div className="floor-plan-live-sync-bar">
               <div>
-                <strong>{approved ? "Approved" : "Saved"} Event Host floor plan</strong>
+                <strong>{bookingOnlyProjection ? "On Par Bookings reservation plan" : `${approved ? "Approved" : "Saved"} Event Host floor plan`}</strong>
+                {bookingRefresh ? <span>On Par Bookings · {syncTime(bookingRefresh)}</span> : null}
                 <span aria-live="polite">
                   {liveState?.status === "syncing"
-                    ? "Refreshing event details from Tripleseat…"
+                    ? "Refreshing On Par Bookings and Tripleseat…"
                     : liveState?.message || syncTime(plan.lastTripleseatSyncAt)}
                 </span>
               </div>
@@ -425,10 +428,11 @@ export function PublishedFloorPlanCard({
                 >
                   {liveState?.status === "syncing"
                     ? "Syncing…"
-                    : "Sync live from Tripleseat"}
+                    : "Sync On Par + Tripleseat"}
                 </button>
               </div>
             </div>
+            {payload.warnings.length ? <div className="floor-plan-live-sync-message is-error" role="status">{payload.warnings.join(" ")}</div> : null}
             <PublishedFloorPlanMap payload={payload} zoom={zoom} />
           </div>
         ) : null}
@@ -625,7 +629,6 @@ export default function FloorPlansClient({
           result.warning ??
           `${result.eventCount} event${result.eventCount === 1 ? "" : "s"} synced · ${generatedPlanCount} floor plan${generatedPlanCount === 1 ? "" : "s"} ready`,
       });
-      router.refresh();
     } catch (error) {
       setWindowSyncState({
         status: "error",
@@ -633,6 +636,9 @@ export default function FloorPlansClient({
           ? error.message
           : "Unable to sync upcoming floor plans from Tripleseat.",
       });
+    } finally {
+      // The page reads On Par Bookings independently even when Tripleseat fails.
+      router.refresh();
     }
   }
 
@@ -707,7 +713,7 @@ export default function FloorPlansClient({
             >
               {windowSyncState.status === "syncing"
                 ? "Syncing…"
-                : "Sync with Tripleseat"}
+                : "Sync On Par + Tripleseat"}
             </button>
             {windowSyncState.message ? (
               <PortalStatusBadge

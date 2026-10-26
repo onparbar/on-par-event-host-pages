@@ -13,7 +13,7 @@ import {
   PortalZoomControls,
 } from "@/app/_components/PortalShell";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
-import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
+import { findEntertainmentEventByIdentity } from "@/lib/entertainment/identity";
 import {
   ENTERTAINMENT_CATEGORY_LABELS,
   ENTERTAINMENT_RESOURCES,
@@ -454,10 +454,10 @@ export function ReservationModal({
 
         {value.reservation?.hasSourceUpdate ? (
           <div className="entertainment-modal-alert" role="status">
-            <strong>Tripleseat has newer information.</strong>
+            <strong>{value.reservation.source === "vip-prep" ? "On Par Bookings" : "Tripleseat"} has newer information.</strong>
             <span>
               The local manual value is still active. Compare it with the
-              Tripleseat value below, then keep or revert it explicitly.
+              source value below, then keep or revert it explicitly.
             </span>
           </div>
         ) : null}
@@ -792,12 +792,10 @@ export default function EntertainmentScheduleDashboard({
   const previousFitZoomRef = useRef(ENTERTAINMENT_ZOOM_DEFAULT);
   const ignoredRequestedDateRef = useRef<string | null>(null);
   const [now, setNow] = useState(() => new Date());
-  const preferredEvent = payload?.events.find((event) =>
-    operationalKitchenEventId(eventKey(event)) === eventContext.preferredEventId,
-  ) ?? null;
-  const selectedContextEvent = preferredEvent ?? payload?.events.find((event) => eventKey(event) === selectedEvent) ?? null;
+  const preferredEvent = findEntertainmentEventByIdentity(payload?.events ?? [], eventContext.preferredEventId);
+  const selectedContextEvent = preferredEvent ?? (!eventContext.preferredEventId ? payload?.events.find((event) => eventKey(event) === selectedEvent) : null) ?? null;
   const contextForEvent = (event: EntertainmentEventSnapshot) => ({
-    eventId: operationalKitchenEventId(eventKey(event)), eventName: event.eventName,
+    eventId: eventKey(event), eventName: event.eventName,
     date: event.operatingDate, area: event.sourceSnapshot.rooms.map((room) => room.name).join(" · "),
   });
 
@@ -1657,7 +1655,7 @@ export default function EntertainmentScheduleDashboard({
                             reservation.startAt,
                           )} to ${formatClock(reservation.endAt)}, ${duration}${
                             hasConflict ? ", overlap conflict" : ""
-                          }`}
+                          }, ${reservation.source === "vip-prep" ? "On Par Bookings" : reservation.source === "manual" ? "Manual" : "Tripleseat"}`}
                           className={[
                             "entertainment-reservation-block",
                             reservation.needsReview ? "needs-review" : "",
@@ -1700,7 +1698,7 @@ export default function EntertainmentScheduleDashboard({
                             reservation.startAt,
                           )} – ${formatClock(reservation.endAt)} · ${duration}\n${
                             reservation.eventName
-                          }\n${reservation.resourceName}`}
+                          }\n${reservation.resourceName}\n${reservation.source === "vip-prep" ? "On Par Bookings" : reservation.source === "manual" ? "Manual" : "Tripleseat"}`}
                           type="button"
                         >
                           {isEditing ? (
@@ -2045,11 +2043,12 @@ export default function EntertainmentScheduleDashboard({
                       <p>{eventTimes(event)}</p>
                       <dl>
                         <div>
-                          <dt>Tripleseat ID</dt>
+                          <dt>{event.sourceSnapshot.sourceSystem === "vip-prep" ? "On Par Bookings ID" : "Tripleseat ID"}</dt>
                           <dd>
                             {event.tripleseatEventId || "Manual event"}
                           </dd>
                         </div>
+                        <div><dt>Source</dt><dd>{event.sourceSnapshot.sourceSystem === "vip-prep" ? "On Par Bookings" : "Tripleseat"}</dd></div>
                         <div>
                           <dt>Resources</dt>
                           <dd>
@@ -2120,6 +2119,7 @@ export default function EntertainmentScheduleDashboard({
           </span>
           <span>✎ Manual override</span>
           <span>↻ Imported from Tripleseat</span>
+          <span>On Par Bookings · VIP reservations</span>
         </section>
       </main>
 

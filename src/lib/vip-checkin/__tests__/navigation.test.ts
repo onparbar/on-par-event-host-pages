@@ -21,4 +21,12 @@ describe("VIP navigation identity", () => {
     expect(vipCheckinNavigationRows([first, selected, otherDate], null, "2026-10-21")).toEqual([first, selected]);
     expect(vipCheckinNavigationRows([otherDate], vipPrepExternalId({ id: selected.reservationId }), "2026-10-21")).toEqual([]);
   });
+  it("keeps canonical source IDs distinct even when their legacy numeric hashes collide", () => {
+    const one = { reservationId: "test-h4l720-hfbtsa", reservationDate: first.reservationDate };
+    const two = { reservationId: "test-1k212gj-1rfricb", reservationDate: first.reservationDate };
+    const legacy = operationalKitchenEventId(vipPrepExternalId({ id: one.reservationId }));
+    expect(legacy).toBe(operationalKitchenEventId(vipPrepExternalId({ id: two.reservationId })));
+    expect(vipCheckinNavigationRows([one, two], vipPrepExternalId({ id: one.reservationId }), first.reservationDate)).toEqual([one]);
+    expect(vipCheckinNavigationRows([one, two], legacy, first.reservationDate)).toEqual([]);
+  });
 });

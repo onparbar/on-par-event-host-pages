@@ -70,11 +70,15 @@ function vipRow(
   );
 }
 
+function verifiedLink(row: FloorPlanSourceRow, ids = ["60526047"]) {
+  return { ...row, source: { ...row.source, linkedTripleseatEventIds: ids } };
+}
+
 describe("floor-plan source resolution", () => {
-  it("uses the BEO attendance instead of a larger matching VIP block", () => {
+  it("uses the BEO attendance for an explicitly verified linked VIP block", () => {
     const [resolved] = resolveFloorPlanSourceRows([
       row("60526047", plan({ guest_count: 25 }), "tripleseat"),
-      vipRow("vip-room", 2, "VIP 1", { guest_count: 60 }),
+      verifiedLink(vipRow("vip-room", 2, "VIP 1", { guest_count: 60 })),
     ]);
 
     expect(resolved.plan.guest_count).toBe(25);
@@ -91,7 +95,7 @@ describe("floor-plan source resolution", () => {
         needs_review: true,
         review_reasons: ["Guest count is missing or invalid."],
       }), "tripleseat"),
-      vipRow("vip-room", 2, "VIP 1", { guest_count: 20 }),
+      verifiedLink(vipRow("vip-room", 2, "VIP 1", { guest_count: 20 })),
     ]);
 
     expect(resolved.plan.guest_count).toBe(0);
@@ -115,11 +119,11 @@ describe("floor-plan source resolution", () => {
     ).toBe(true);
   });
 
-  it("uses one OnPar-referenced event for a matching Tripleseat block and both VIP rooms", () => {
+  it("uses one OnPar-referenced event for verified linked sources with the same interval", () => {
     const resolved = resolveFloorPlanSourceRows([
       row("60526047", plan({}), "tripleseat"),
-      vipRow("vip-af28fe8f", 2, "VIP 2"),
-      vipRow("vip-60cd18c0", 3, "VIP 1"),
+      verifiedLink(vipRow("vip-af28fe8f", 2, "VIP 2")),
+      verifiedLink(vipRow("vip-60cd18c0", 3, "VIP 1")),
     ]);
 
     expect(resolved).toHaveLength(1);
@@ -157,7 +161,7 @@ describe("floor-plan source resolution", () => {
     ).toHaveLength(2);
   });
 
-  it("uses the OnPar time when a matching Tripleseat block has a different time", () => {
+  it("preserves both physical intervals when verified linked sources have different times", () => {
     const tripleseat = row(
       "60526047",
       plan({ time: "5:00 PM - 9:00 PM" }),
@@ -171,17 +175,17 @@ describe("floor-plan source resolution", () => {
 
     const resolved = resolveFloorPlanSourceRows([
       tripleseat,
-      vipRow("vip-60cd18c0", 3, "VIP 1"),
+      verifiedLink(vipRow("vip-60cd18c0", 3, "VIP 1")),
     ]);
 
-    expect(resolved).toHaveLength(1);
-    expect(resolved[0]).toMatchObject({
+    expect(resolved).toHaveLength(2);
+    expect(resolved.find((row) => row.sourceEventId === "vip-60cd18c0")).toMatchObject({
       sourceEventId: "vip-60cd18c0",
       plan: { time: "6:00 PM - 10:00 PM" },
       source: {
         eventStartAt: START,
         eventEndAt: END,
-        sourceEventIds: ["60526047", "vip-60cd18c0"],
+        sourceEventIds: ["vip-60cd18c0"],
       },
     });
   });
@@ -199,10 +203,8 @@ describe("floor-plan source resolution", () => {
     );
     expect(onPar).toMatchObject({
       plan: {
-        needs_review: true,
-        review_reasons: [
-          "Multiple same-name source records match this OnPar reservation; floor-plan source needs review.",
-        ],
+        needs_review: false,
+        review_reasons: [],
       },
       source: { sourceEventIds: ["vip-60cd18c0"] },
     });
@@ -237,7 +239,20 @@ describe("floor-plan source resolution", () => {
     expect(
       resolved
         .filter((candidate) => candidate.sourceEventId.startsWith("vip-"))
-        .every((candidate) => candidate.plan.needs_review),
+        .every((candidate) => !candidate.plan.needs_review),
     ).toBe(true);
+  });
+
+  it("does not merge distinct same-name reservations without verified source IDs", () => {
+    const resolved = resolveFloorPlanSourceRows([row("60526047", plan({ guest_count: 25 }), "tripleseat"), vipRow("vip-one", 2, "VIP 1", { guest_count: 16 }), vipRow("vip-two", 3, "VIP 2", { guest_count: 18 })]);
+    expect(resolved).toHaveLength(3);
+    expect(resolved.find((row) => row.sourceEventId === "vip-one")?.plan.guest_count).toBe(16);
+    expect(resolved.find((row) => row.sourceEventId === "vip-two")?.plan.guest_count).toBe(18);
+  });
+
+  it("does not turn legacy name-derived source aliases into a verified relationship", () => {
+    const vip = vipRow("vip-one", 2, "VIP 1");
+    vip.source = { ...vip.source, sourceEventIds: ["60526047", "vip-one"] };
+    expect(resolveFloorPlanSourceRows([row("60526047", plan({}), "tripleseat"), vip])).toHaveLength(2);
   });
 });

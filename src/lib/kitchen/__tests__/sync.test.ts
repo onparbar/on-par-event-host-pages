@@ -318,7 +318,7 @@ describe("kitchen synchronization", () => {
     expect(day.events[0].normalizedSelections[0].originalName).toBe("Tater Keg Platter");
   });
 
-  it("uses the event booking instead of a same-name VIP reservation for prep", async () => {
+  it("keeps same-name event and VIP preorders distinct without a verified source link", async () => {
     const eventBooking: TripleseatKitchenSourceEvent = {
       eventId: "tripleseat-event-123",
       bookingId: "tripleseat-booking-123",
@@ -362,16 +362,17 @@ describe("kitchen synchronization", () => {
       now: viewingTime("2026-08-15"),
     });
 
-    expect(day.events).toHaveLength(1);
-    expect(day.events[0].event.eventId).toBe("tripleseat-event-123");
-    expect(day.events[0].sections.flatMap((section) => section.rows)).toEqual(
+    expect(day.events).toHaveLength(2);
+    const event = day.events.find((item) => item.event.eventId === "tripleseat-event-123")!;
+    expect(day.events.some((item) => item.event.eventId === "vip-reservation-uuid")).toBe(true);
+    expect(event.sections.flatMap((section) => section.rows)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ foodName: "Wings", quantity: 320 }),
       ]),
     );
   });
 
-  it("matches a VIP suffix to the event booking name", async () => {
+  it("does not suppress a VIP because its name has an event-booking suffix", async () => {
     const eventBooking: TripleseatKitchenSourceEvent = {
       eventId: "tripleseat-buyout-924",
       eventName: "Peoples Buy out",
@@ -406,7 +407,7 @@ describe("kitchen synchronization", () => {
       now: viewingTime("2026-09-24"),
     });
 
-    expect(day.events.filter((event) => event.event.eventId.startsWith("vip-"))).toEqual([]);
+    expect(day.events.filter((event) => String(event.event.eventId).startsWith("vip-"))).toHaveLength(1);
     expect(day.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

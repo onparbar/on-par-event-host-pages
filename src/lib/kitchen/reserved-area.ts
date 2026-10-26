@@ -1,4 +1,5 @@
 import { getFloorPlanArea } from "@/lib/floor-plans/configuration/areas";
+import { floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
 import type { FloorPlanDocument } from "@/lib/floor-plans/types";
 import type { KitchenChecklist } from "./types";
 
@@ -18,8 +19,7 @@ export function withKitchenReservedAreas(
     const eventId = String(checklist.event.eventId);
     const matches = plan.events.filter(
       (event) =>
-        event.tripleseatEventId === eventId ||
-        event.source.sourceEventIds?.includes(eventId),
+        floorPlanEventSourceIds(event).has(eventId),
     );
     if (matches.length !== 1) return checklist;
     const event = matches[0];

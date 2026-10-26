@@ -4,6 +4,7 @@ import { getSupabaseSecret, KITCHEN_ROLE_METADATA_PREFIX } from "@/lib/kitchen/s
 import type { GoTabCapabilityCheck } from "./client";
 import type { NormalizedEventFoodItem } from "./event-food";
 import type { EventFoodDelivery } from "./delivery";
+import { readVipInitialFoodSnapshot, type VipInitialFoodSnapshot } from "@/lib/vip-checkin/release-snapshot";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 
@@ -73,6 +74,20 @@ export type StoredVipBookingFoodRequest = {
   quantity: number;
   pan_size: string;
   dispatch_status: string;
+  display_name?: string;
+  prep_due_at?: string;
+};
+
+export type StoredVipFoodDispatch = {
+  request_id: string;
+  status: string;
+  scheduled_at?: string | null;
+  last_error?: string | null;
+  updated_at?: string;
+  source_record_id?: string;
+  food_name?: string;
+  source_quantity?: number | null;
+  source_fingerprint?: string | null;
 };
 
 export type StoredVipCheckin = {
@@ -402,7 +417,7 @@ export class GoTabIntegrationStorage {
     const response = await this.request(
       "event_food_requests",
       new URLSearchParams({
-        select: "id,source_record_id,quantity,pan_size,dispatch_status",
+        select: "id,source_record_id,quantity,pan_size,dispatch_status,display_name,prep_due_at",
         event_id: `eq.${eventId}`,
         source_type: "eq.VIP_ADDON",
       }),
@@ -510,12 +525,37 @@ export class GoTabIntegrationStorage {
     const response = await this.request(
       "event_food_dispatches",
       new URLSearchParams({
-        select: "request_id,status",
+        select: "request_id,status,scheduled_at,last_error,updated_at,sanitized_payload",
         request_id: `in.(${requests.map((request) => request.id).join(",")})`,
+        order: "updated_at.desc",
       }),
       { method: "GET" },
     );
-    return response.json() as Promise<Array<{ request_id: string; status: string }>>;
+    const rows = await response.json() as Array<StoredVipFoodDispatch & { sanitized_payload?: Record<string, unknown> }>;
+    return rows.map((row): StoredVipFoodDispatch => {
+      const request = requests.find((item) => item.id === row.request_id);
+      const snapshot = row.sanitized_payload?.vipReleaseSnapshot as Partial<VipInitialFoodSnapshot> | undefined;
+      return {
+        request_id: row.request_id, status: row.status, scheduled_at: row.scheduled_at,
+        last_error: row.last_error, updated_at: row.updated_at,
+        source_record_id: request?.source_record_id,
+        food_name: request?.display_name ?? request?.source_record_id,
+        source_quantity: request?.quantity ?? null,
+        source_fingerprint: typeof snapshot?.sourceFingerprint === "string" ? snapshot.sourceFingerprint : null,
+      };
+    });
+  }
+
+  async saveVipDispatchReleaseSnapshot(dispatchId: string, payload: Record<string, unknown>, snapshot: VipInitialFoodSnapshot) {
+    const response = await this.request("event_food_dispatches", new URLSearchParams({
+      id: `eq.${dispatchId}`, status: "eq.SENDING", "sanitized_payload->vipReleaseSnapshot": "is.null",
+      select: "id",
+    }), {
+      method: "PATCH", headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ sanitized_payload: { ...payload, vipReleaseSnapshot: snapshot } }),
+    });
+    const saved = await response.json() as Array<{ id: string }>;
+    return saved.some((row) => row.id === dispatchId);
   }
 
   async getDispatchRequestContext(requestId: string) {
@@ -660,7 +700,9 @@ export class GoTabIntegrationStorage {
       ? new Date().toISOString()
       : request.prepDueAt;
     const status = Date.parse(scheduledAt) <= Date.now() ? "QUEUED" : "SCHEDULED";
-    const response = await this.request("rpc/enqueue_event_food_request", null, {
+    let response: Response;
+    try {
+      response = await this.request("rpc/enqueue_event_food_request", null, {
       method: "POST",
       body: JSON.stringify({
         p_request: {
@@ -701,7 +743,31 @@ export class GoTabIntegrationStorage {
         p_actor: actor,
         p_reason: "Normalized from Event Host kitchen rules.",
       }),
-    });
+      });
+    } catch (error) {
+      const snapshot = readVipInitialFoodSnapshot(preview.vipReleaseSnapshot);
+      if (!(error instanceof Error) || error.message !== "GoTab integration database request failed (409)." ||
+          !request.eventId.startsWith("vip-") || request.sourceType !== "VIP_ADDON" || request.sourceRecordId.startsWith("addon:") || !snapshot) throw error;
+      // The RPC's unique constraint can choose another first-arrival writer.
+      // Recover only identical committed evidence; do not replay the RPC/order.
+      const rows = await (await this.request("event_food_requests", new URLSearchParams({
+        select: "id,event_id,source_type,source_record_id,source_version,quantity,pan_size,event_area,food_service_time,prep_due_at,gotab_product_uuid",
+        idempotency_key: `eq.${request.idempotencyKey}`,
+      }), { method: "GET" })).json() as Array<Record<string, unknown>>;
+      const prior = rows.length === 1 ? rows[0] : null;
+      if (!prior || typeof prior.id !== "string" || prior.event_id !== request.eventId || prior.source_type !== request.sourceType ||
+          prior.source_record_id !== request.sourceRecordId || prior.source_version !== request.sourceVersion || prior.quantity !== request.quantity ||
+          prior.pan_size !== request.panSize || prior.event_area !== request.eventArea || prior.gotab_product_uuid !== request.gotabProductUuid ||
+          Date.parse(String(prior.food_service_time)) !== Date.parse(request.foodServiceAt) || Date.parse(String(prior.prep_due_at)) !== Date.parse(request.prepDueAt)) throw error;
+      const dispatches = await (await this.request("event_food_dispatches", new URLSearchParams({
+        select: "id,sanitized_payload", request_id: `eq.${prior.id}`, action: "eq.DISPATCH", idempotency_key: `eq.${request.idempotencyKey}`,
+      }), { method: "GET" })).json() as Array<{ id: string; sanitized_payload?: Record<string, unknown> }>;
+      const dispatch = dispatches.length === 1 ? dispatches[0] : null;
+      const savedSnapshot = readVipInitialFoodSnapshot(dispatch?.sanitized_payload?.vipReleaseSnapshot);
+      if (!dispatch || typeof dispatch.id !== "string" || !savedSnapshot || savedSnapshot.sourceFingerprint !== snapshot.sourceFingerprint ||
+          savedSnapshot.reservationId !== snapshot.reservationId || savedSnapshot.checkedInBy !== snapshot.checkedInBy || savedSnapshot.checkedInAt !== snapshot.checkedInAt) throw error;
+      return { request_id: prior.id, dispatch_id: dispatch.id, duplicate: true };
+    }
     return response.json() as Promise<{ request_id: string; dispatch_id: string; duplicate: boolean }>;
   }
 

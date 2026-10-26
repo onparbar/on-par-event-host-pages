@@ -811,9 +811,8 @@ describe("Floor Plan Tripleseat source enforcement", () => {
       adapter(async () => [source({ status: "LOST" })]),
     );
 
-    await expect(
-      refreshFloorPlanSources("2026-08-06", floorPlanStorage),
-    ).rejects.toThrow("No Tripleseat event plan is available for this date.");
+    const refreshed = await refreshFloorPlanSources("2026-08-06", floorPlanStorage);
+    expect(refreshed.plan.events).toEqual([]);
     expect(await floorPlanStorage.get("2026-08-06")).toMatchObject({
       events: [],
       reservations: [],

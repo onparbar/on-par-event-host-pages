@@ -178,7 +178,7 @@ describe("itinerary readiness and revision evidence", () => {
 
   it("accepts an alternate source ID only from a unique persisted floor-plan link", () => {
     const sourcePlan = { ...plan, entertainment: [{ name: "Bowling", quantity: "1 lane", time: "6:00 PM - 7:00 PM", duration: "1 hour" }] };
-    const linkedFloorPlan = { ...floorPlan, events: [{ ...floorPlan.events[0], source: { ...floorPlan.events[0].source, sourceEventIds: ["vip-linked-source"] } }] };
+    const linkedFloorPlan = { ...floorPlan, events: [{ ...floorPlan.events[0], source: { ...floorPlan.events[0].source, verifiedSourceEventIds: ["vip-linked-source"] } }] };
     const linkedReservation = { ...reservation, localEventId: "vip-linked-source", tripleseatEventId: null };
     expect(revision({ sourcePlan, floorPlan: linkedFloorPlan, entertainmentDay: { ...entertainmentDay, reservations: [linkedReservation] } }).ready).toBe(true);
   });

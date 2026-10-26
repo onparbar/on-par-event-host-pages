@@ -6,14 +6,19 @@ import { EventSelectionBridge, useEventContext } from "@/app/_components/EventCo
 import { isValidEntertainmentDate, todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import type { VipCheckinRow, VipFoodStatus } from "@/lib/vip-checkin/service";
 import { vipCheckinNavigationRows } from "@/lib/vip-checkin/navigation";
+import VipSyncHealth from "./VipSyncHealth";
 
 const EMPLOYEE_STORAGE_KEY = "event-host-vip-check-in-employee";
-const statusLabels: Record<VipFoodStatus, string> = {
-  NOT_CHECKED_IN: "Waiting for check-in",
+export const vipFoodStatusLabels: Record<VipFoodStatus, string> = {
+  NOT_CHECKED_IN: "Awaiting VIP check-in — food not released.",
   FOOD_SCHEDULED: "Scheduled for Kitchen Prep",
-  SENDING_FOOD: "Sending Food",
-  FOOD_SENT: "Food Sent",
+  SENDING_FOOD: "Sending — awaiting acceptance",
+  FOOD_SENT: "Sent to KDS — GoTab accepted",
   FOOD_SEND_FAILED: "Food Send Failed",
+  FOOD_PARTIAL: "Partially accepted — review remaining food",
+  FOOD_HELD: "Held — review required",
+  FOOD_UNCERTAIN: "Delivery uncertain — do not retry blindly",
+  FOOD_PENDING: "Pending food release — acceptance not confirmed",
   NO_FOOD_ITEMS: "No Food Items",
 };
 
@@ -35,6 +40,49 @@ function easternTime(value: string) {
   }).format(new Date(value));
 }
 
+function easternTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(value));
+}
+
+export function VipCheckinCard({ row, employeeName, pendingId, disabled = false, onConfirm }: {
+  row: VipCheckinRow; employeeName: string; pendingId: string | null; disabled?: boolean; onConfirm: (reservationId: string) => void;
+}) {
+  const warning = ["FOOD_SEND_FAILED", "FOOD_PARTIAL", "FOOD_HELD", "FOOD_UNCERTAIN"].includes(row.foodStatus);
+  return <article className="vip-checkin-card" key={row.reservationId}>
+    <div className="vip-checkin-card-main">
+      <h2>{row.vipName}</h2>
+      <p>On Par Bookings · {row.confirmationCode}</p>
+      <dl>
+        <div><dt>Reservation Date</dt><dd>{easternDate(row.reservationDate)}</dd></div>
+        <div><dt>Reservation Time</dt><dd>{easternTimestamp(row.reservationTime)} – {easternTimestamp(row.endAt)} · {row.duration}</dd></div>
+        <div><dt>Customer Name</dt><dd>{row.customerName}</dd></div>
+        <div><dt>Reserved VIP Area</dt><dd>{row.vipArea}</dd></div>
+        <div><dt>Party Size</dt><dd>{row.partySize} guests</dd></div>
+        <div><dt>Food Release Time</dt><dd>{row.scheduledReleaseAt ? `${easternTimestamp(row.scheduledReleaseAt)} — requires Event Host check-in` : row.foodItems.length ? "Prep timing needs review" : "No food order"}</dd></div>
+      </dl>
+      <h3>Exact preordered food</h3>
+      {row.foodItems.length ? <ul>{row.foodItems.map((item, index) => <li key={`${item.code}:${index}`}>{item.quantity} × {item.label}</li>)}</ul> : <p>No preordered food.</p>}
+      <h3>Purchased non-food extras</h3>
+      {row.extras.length ? <ul>{row.extras.map((extra, index) => <li key={`${extra.code ?? "extra"}:${index}`}>{extra.quantity == null ? "Quantity not supplied · " : `${extra.quantity} × `}{extra.label}</li>)}</ul> : <p>No non-food extras listed.</p>}
+      {row.preorderChange ? <div role="note" aria-label="VIP preorder change">
+        <strong>Preorder changed · {easternTimestamp(row.preorderChange.sourceUpdatedAt)}</strong>
+        <p>{row.preorderChange.message}</p>
+        <p>Previous: {row.preorderChange.previous.map((item) => `${item.quantity} × ${item.label}`).join("; ") || "No preordered food"}.</p>
+        <p>Current: {row.preorderChange.current.map((item) => `${item.quantity} × ${item.label}`).join("; ") || "No preordered food"}.</p>
+      </div> : null}
+      {row.itemIssues.length ? <div className="vip-checkin-error" role="alert"><strong>Food item issues</strong><ul>{row.itemIssues.map((issue, index) => <li key={`${index}:${issue}`}>{issue}</li>)}</ul></div> : null}
+      <small>Booking updated {easternTimestamp(row.sourceUpdatedAt)}. Last successful booking refresh {row.lastSuccessfulBookingRefresh ? easternTimestamp(row.lastSuccessfulBookingRefresh) : "not recorded"}.</small>
+      <VipSyncHealth key={JSON.stringify([row.reservationDate, row.sourceUpdatedAt, row.foodItems, row.vipArea, row.reservationTime, row.endAt, row.partySize, row.checkedInAt, row.foodStatus, row.acceptedItemCount, disabled])} date={row.reservationDate} reservationId={row.reservationId} />
+    </div>
+    <div className="vip-checkin-card-action">
+      <div className="vip-checkin-status-group"><span className="vip-checkin-status-label">Arrival status</span><span className="vip-checkin-status">{row.checkedInAt ? "Checked In" : "Not Checked In"}</span></div>
+      <div className="vip-checkin-status-group"><span className="vip-checkin-status-label">Food release status</span><span className={`vip-checkin-status ${warning ? "is-failed" : ""}`}>{vipFoodStatusLabels[row.foodStatus]}</span></div>
+      {row.checkedInAt && row.expectedItemCount > 0 ? <p>{row.acceptedItemCount} of {row.expectedItemCount} initial food items accepted by GoTab.</p> : null}
+      {row.checkedInAt ? <p className="vip-checkin-confirmed">Checked in by {row.checkedInBy} at {easternTimestamp(row.checkedInAt)}</p> : <button className="vip-checkin-primary" disabled={disabled || !employeeName || pendingId !== null} onClick={() => onConfirm(row.reservationId)} type="button">{pendingId === row.reservationId ? "CHECKING IN…" : "CONFIRM CHECK-IN"}</button>}
+    </div>
+  </article>;
+}
+
 export default function VipCheckInClient() {
   const eventContext = useEventContext();
   const [manualDate, setManualDate] = useState(todayInEntertainmentTimeZone);
@@ -48,7 +96,9 @@ export default function VipCheckInClient() {
   const [employeeName, setEmployeeName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [bookingSourceError, setBookingSourceError] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [lastSuccessfulRefresh, setLastSuccessfulRefresh] = useState<string | null>(null);
   const pendingRef = useRef<string | null>(null);
   const dateRef = useRef(date);
   const refreshSeq = useRef(0);
@@ -64,6 +114,8 @@ export default function VipCheckInClient() {
         reservations?: VipCheckinRow[];
         employees?: string[];
         error?: string;
+        lastSuccessfulBookingRefresh?: string | null;
+        sourceError?: string | null;
       };
       if (!response.ok || !payload.reservations) {
         throw new Error(payload.error || "VIP reservations could not be loaded.");
@@ -72,10 +124,11 @@ export default function VipCheckInClient() {
       setRows(payload.reservations);
       setLoadedDate(selectedDate);
       setEmployees(payload.employees ?? []);
-      setError("");
+      setLastSuccessfulRefresh(payload.lastSuccessfulBookingRefresh ?? payload.reservations[0]?.lastSuccessfulBookingRefresh ?? null);
+      setBookingSourceError(payload.sourceError ?? "");
     } catch (loadError) {
       if (selectedDate === dateRef.current && sequence === refreshSeq.current) {
-        setError(loadError instanceof Error ? loadError.message : "VIP reservations could not be loaded.");
+        setBookingSourceError(loadError instanceof Error ? loadError.message : "VIP reservations could not be loaded.");
       }
     } finally {
       if (selectedDate === dateRef.current && sequence === refreshSeq.current) setLoading(false);
@@ -121,7 +174,7 @@ export default function VipCheckInClient() {
       setRows((current) => current.map((row) =>
         row.reservationId === reservationId ? payload.reservation! : row,
       ));
-      if (payload.reservation.foodStatus === "FOOD_SEND_FAILED") {
+      if (["FOOD_SEND_FAILED", "FOOD_PARTIAL", "FOOD_HELD", "FOOD_UNCERTAIN"].includes(payload.reservation.foodStatus)) {
         setError("Check-in was saved, but the food order needs review. Do not submit it again blindly.");
       }
     } catch (checkinError) {
@@ -191,51 +244,15 @@ export default function VipCheckInClient() {
       </div>
 
       {error ? <p className="vip-checkin-error" role="alert">{error}</p> : null}
+      {bookingSourceError ? <p className="vip-checkin-error" role="alert">{bookingSourceError}</p> : null}
+      {lastSuccessfulRefresh ? <p className="vip-checkin-empty">Last successful booking refresh: {easternTimestamp(lastSuccessfulRefresh)}{bookingSourceError ? loadedDate === date && rows.length ? " · Showing the last successful result; source refresh is unavailable." : " · Source refresh unavailable; no current reservation list is verified." : ""}</p> : null}
       {loading ? <p className="vip-checkin-empty">Loading VIP reservations…</p> : null}
-      {!loading && !visibleRows.length ? (
+      {!loading && !bookingSourceError && loadedDate === date && !visibleRows.length ? (
         <p className="vip-checkin-empty">{preferredEventId ? "The selected event has no matching VIP reservation on this date. No other party has been substituted. Use Show all VIPs to see this day’s reservations." : `No active VIP reservations found for ${easternDate(date)}.`}</p>
       ) : null}
 
       <div className="vip-checkin-list">
-        {visibleRows.map((row) => (
-          <article className="vip-checkin-card" key={row.reservationId}>
-            <div className="vip-checkin-card-main">
-              <h2>{row.vipName}</h2>
-              <dl>
-                <div><dt>Reservation Date</dt><dd>{easternDate(row.reservationDate)}</dd></div>
-                <div><dt>Reservation Time</dt><dd>{easternTime(row.reservationTime)}</dd></div>
-                <div><dt>Customer Name</dt><dd>{row.customerName}</dd></div>
-                <div><dt>Reserved VIP Area</dt><dd>{row.vipArea}</dd></div>
-              </dl>
-            </div>
-            <div className="vip-checkin-card-action">
-              <div className="vip-checkin-status-group">
-                <span className="vip-checkin-status-label">Check-in status</span>
-                <span className="vip-checkin-status">{row.checkedInAt ? "Checked In" : "Not Checked In"}</span>
-              </div>
-              <div className="vip-checkin-status-group">
-                <span className="vip-checkin-status-label">Food status</span>
-                <span className={`vip-checkin-status ${row.foodStatus === "FOOD_SEND_FAILED" ? "is-failed" : ""}`}>
-                  {statusLabels[row.foodStatus]}
-                </span>
-              </div>
-              {row.checkedInAt ? (
-                <p className="vip-checkin-confirmed">
-                  Checked in by {row.checkedInBy} at {easternTime(row.checkedInAt)}
-                </p>
-              ) : (
-                <button
-                  className="vip-checkin-primary"
-                  disabled={!employeeName || pendingId !== null}
-                  onClick={() => void confirmCheckIn(row.reservationId)}
-                  type="button"
-                >
-                  {pendingId === row.reservationId ? "CHECKING IN…" : "CONFIRM CHECK-IN"}
-                </button>
-              )}
-            </div>
-          </article>
-        ))}
+        {visibleRows.map((row) => <VipCheckinCard key={row.reservationId} row={row} employeeName={employeeName} pendingId={pendingId} disabled={loading || Boolean(bookingSourceError)} onConfirm={(reservationId) => void confirmCheckIn(reservationId)} />)}
       </div>
     </PortalShell>
   );

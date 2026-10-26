@@ -25,10 +25,12 @@ import type {
 } from "@/lib/event-plans/types";
 import {
   VipPrepClient,
+  isActiveVipPrepReservation,
   type VipPrepReservation,
   vipPrepExternalId,
   numericVipEventId,
 } from "@/lib/vip-prep/client";
+import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "@/lib/vip-prep/known-inactive";
 import {
   confirmedContractDatesInWindow,
   confirmedContractEventPlans,
@@ -61,6 +63,7 @@ import {
   isVipOnlyFloorPlanEvent,
 } from "./generator";
 import { reservationTimingSource, sameReservationInterval } from "./reservation-state";
+import { floorPlanPublicationDates } from "./publication";
 import { seatingCoverageMessage, summarizeEventSeating } from "./seating-summary";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
 import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
@@ -138,12 +141,13 @@ function normalizedFloorPlanEvent(
       ...sourceStrings(sourceSnapshot, "sourceEventIds"),
     ]),
   ];
+  const verifiedSourceEventIds = sourceStrings(sourceSnapshot, "verifiedSourceEventIds");
   const onParBookingAreaIds = sourceStrings(
     sourceSnapshot,
     "onParBookingRooms",
   ).flatMap((room) => resolveAreaAlias(room) ?? []);
   return {
-    id: `floor-plan-event-${plan.id}`,
+    id: `floor-plan-event-${sourceEventId.startsWith("vip-") ? sourceEventId : plan.id}`,
     floorPlanId,
     tripleseatEventId: sourceEventId,
     name: plan.name,
@@ -166,6 +170,8 @@ function normalizedFloorPlanEvent(
     source: {
       rooms,
       ...(sourceEventIds.length > 1 ? { sourceEventIds } : {}),
+      ...(verifiedSourceEventIds.length ? { verifiedSourceEventIds } : {}),
+      ...(sourceSnapshot?.onParBooking && asRecord(sourceSnapshot.onParBooking) ? { onParBooking: sourceSnapshot.onParBooking as NonNullable<FloorPlanEvent["source"]["onParBooking"]> } : {}),
       ...(onParBookingAreaIds.length > 0 ? { onParBookingAreaIds } : {}),
       food: [...plan.food],
       entertainment: plan.entertainment.map((item) => ({ ...item })),
@@ -203,13 +209,16 @@ function vipEventPlan(reservation: VipPrepReservation): EventPlan {
   };
 }
 
-async function sourceEventsForDate(date: string) {
+type FloorPlanReadOptions = { vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">; readOnly?: boolean };
+
+async function sourceEventsForDate(date: string, options: FloorPlanReadOptions = {}) {
   const eventPlanStorage = getEventPlanStorage();
-  const vipPrepClient = new VipPrepClient();
+  const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
   let stored: Awaited<ReturnType<typeof eventPlanStorage.plansForWindow>> = [];
   let sourceWindowWasSynchronized = false;
   let lastSuccessfulSyncAt: string | null = null;
   let synchronizedWindow: { startDate: string; endDate: string } | null = null;
+  const warnings: string[] = [];
   try {
     const [rows, syncState] = await Promise.all([
       eventPlanStorage.plansForWindow({ startDate: date, endDate: date }),
@@ -229,7 +238,7 @@ async function sourceEventsForDate(date: string) {
         }
       : null;
   } catch {
-    // Exact-date redacted Event Host plans remain available before migration.
+    warnings.push("Tripleseat source could not be loaded; its saved floor-plan assignments are retained.");
   }
   const tripleseatRows: FloorPlanSourceRow[] = stored.length
     ? stored.map((row) => ({
@@ -241,12 +250,22 @@ async function sourceEventsForDate(date: string) {
         sourceEventId: row.eventId,
       }))
     : [];
-  const vipPayload = vipPrepClient.configured
-    ? await vipPrepClient.fetchRange(date, date)
-    : null;
+  let vipPayload: Awaited<ReturnType<VipPrepClient["fetchRange"]>> | null = null;
+  let knownInactiveVipIds = new Set<string>();
+  let knownInactiveVipObservations = new Map<string, string>();
+  if (vipPrepClient.configured) {
+    try { vipPayload = await vipPrepClient.fetchRange(date, date); }
+    catch {
+      warnings.push("On Par Bookings is unavailable; its last saved VIP floor-plan assignments remain visible unless known inactive.");
+      const inactive = await knownInactiveVipBookings(date);
+      knownInactiveVipIds = inactive.ids;
+      knownInactiveVipObservations = inactive.observations;
+      warnings.push(...inactive.warnings);
+    }
+  }
   const vipRows: FloorPlanSourceRow[] = (
     vipPayload?.reservations ?? []
-  ).map((reservation) => ({
+  ).filter(isActiveVipPrepReservation).map((reservation) => ({
     plan: vipEventPlan(reservation),
     source: {
       status: "DEFINITE",
@@ -255,6 +274,12 @@ async function sourceEventsForDate(date: string) {
       eventEndAt: reservation.endAt,
       sourceUpdatedAt: reservation.updatedAt,
       sourceSystem: "vip-prep",
+      linkedTripleseatEventIds: reservation.linkedTripleseatEventIds ?? [],
+      onParBooking: {
+        reservationId: reservation.id, confirmationCode: reservation.confirmationCode,
+        sourceUpdatedAt: reservation.updatedAt, refreshedAt: vipPayload!.generatedAt,
+        linkedTripleseatEventIds: reservation.linkedTripleseatEventIds ?? [],
+      },
     } satisfies UnknownRecord,
     sourceEventId: vipPrepExternalId(reservation),
   }));
@@ -267,7 +292,7 @@ async function sourceEventsForDate(date: string) {
     .filter(
       (row) =>
         !liveRows.some((candidate) =>
-          eventMatchesConfirmedContract(
+          !candidate.sourceEventId.startsWith("vip-") && eventMatchesConfirmedContract(
             candidate.plan.date,
             candidate.plan.name,
             row.plan.date,
@@ -288,7 +313,7 @@ async function sourceEventsForDate(date: string) {
     ...liveRows.filter(
       (candidate) =>
         !confirmedRows.some((confirmed) =>
-          eventMatchesConfirmedContract(
+          !candidate.sourceEventId.startsWith("vip-") && eventMatchesConfirmedContract(
             candidate.plan.date,
             candidate.plan.name,
             confirmed.plan.date,
@@ -299,6 +324,11 @@ async function sourceEventsForDate(date: string) {
     ...confirmedRows,
   ]);
   return {
+    warnings,
+    knownInactiveVipIds,
+    knownInactiveVipObservations,
+    vipAuthoritative: vipPayload !== null,
+    tripleseatAuthoritative: stored.length > 0 || sourceWindowWasSynchronized,
     rows: rows.filter(
       (row) =>
         sourceValue(row.source, "status")?.toUpperCase() === "DEFINITE" ||
@@ -309,7 +339,7 @@ async function sourceEventsForDate(date: string) {
         sourceValue(row.source, "sourceSystem") === "contract-evidence",
     ),
     sourceRowCount:
-      stored.length + vipRows.length + confirmedRows.length > 0 ||
+      vipPayload !== null || knownInactiveVipIds.size > 0 || stored.length + vipRows.length + confirmedRows.length > 0 ||
       sourceWindowWasSynchronized
         ? 1
         : 0,
@@ -337,8 +367,10 @@ function createPlan(date: string, events: FloorPlanEvent[]) {
 
 function sourceChanged(previous: FloorPlanEvent, current: FloorPlanEvent) {
   const sourceFacts = (event: FloorPlanEvent) => {
-    const { floorPlanChanges: _changes, seatingGenerationIssues: _issues, ...source } = event.source;
-    return source;
+    const { floorPlanChanges: _changes, seatingGenerationIssues: _issues, onParBooking, ...source } = event.source;
+    if (!onParBooking) return source;
+    const { refreshedAt: _refreshed, ...bookingFacts } = onParBooking;
+    return { ...source, onParBooking: bookingFacts };
   };
   return JSON.stringify({
     guestCount: previous.guestCount,
@@ -453,8 +485,11 @@ function floorPlanEventsShareSource(
   left: FloorPlanEvent,
   right: FloorPlanEvent,
 ) {
-  const leftIds = floorPlanEventSourceIds(left);
-  return [...floorPlanEventSourceIds(right)].some((id) => leftIds.has(id));
+  // Historical trace IDs can preserve a staff draft while old merged rows split;
+  // they are not verification for merging bookings or matching entertainment.
+  const traceIds = (event: FloorPlanEvent) => [event.tripleseatEventId, ...(event.source.sourceEventIds ?? []), ...(event.source.verifiedSourceEventIds ?? [])];
+  const leftIds = new Set(traceIds(left));
+  return traceIds(right).some((id) => leftIds.has(id));
 }
 
 export function floorPlanEventsWithSavedIdentity(
@@ -464,24 +499,32 @@ export function floorPlanEventsWithSavedIdentity(
   const matchedSavedIndexes = new Set<number>();
   const previousByCurrentIndex = new Map<number, FloorPlanEvent>();
 
+  const uniqueSavedId = (event: FloorPlanEvent) => savedEvents.filter((candidate) => candidate.id === event.id).length === 1;
   for (const [currentIndex, current] of currentEvents.entries()) {
-    const savedIndex = savedEvents.findIndex(
-      (event, index) =>
+    const candidates = savedEvents.map((event, index) => ({ event, index })).filter(
+      ({ event, index }) =>
+        uniqueSavedId(event) &&
         !matchedSavedIndexes.has(index) &&
         event.tripleseatEventId === current.tripleseatEventId,
     );
-    if (savedIndex < 0) continue;
+    if (candidates.length !== 1) continue;
+    const savedIndex = candidates[0].index;
     matchedSavedIndexes.add(savedIndex);
     previousByCurrentIndex.set(currentIndex, savedEvents[savedIndex]);
   }
   for (const [currentIndex, current] of currentEvents.entries()) {
     if (previousByCurrentIndex.has(currentIndex)) continue;
-    const savedIndex = savedEvents.findIndex(
-      (event, index) =>
+    const currentIds = floorPlanEventSourceIds(current);
+    const candidates = savedEvents.map((event, index) => ({ event, index })).filter(
+      ({ event, index }) =>
+        uniqueSavedId(event) &&
         !matchedSavedIndexes.has(index) &&
-        floorPlanEventsShareSource(current, event),
+        [...floorPlanEventSourceIds(event)].some((id) => currentIds.has(id)),
     );
-    if (savedIndex < 0) continue;
+    if (candidates.length !== 1) continue;
+    const savedIndex = candidates[0].index;
+    const matchingCurrent = currentEvents.filter((event) => [...floorPlanEventSourceIds(event)].some((id) => floorPlanEventSourceIds(savedEvents[savedIndex]).has(id)));
+    if (matchingCurrent.length !== 1) continue;
     matchedSavedIndexes.add(savedIndex);
     previousByCurrentIndex.set(currentIndex, savedEvents[savedIndex]);
   }
@@ -501,11 +544,32 @@ export function floorPlanEventsWithSavedIdentity(
   return reconciled;
 }
 
-async function reconciledPlan(date: string, storage: FloorPlanStorage) {
+/** Live booked VIP holds are a read projection, not staff arrival or a Save. */
+export function projectVipFloorPlanReservations(plan: FloorPlanDocument) {
+  const reservations = [...plan.reservations];
+  for (const event of plan.events) {
+    if (!event.tripleseatEventId.startsWith("vip-") || !event.source.onParBooking) continue;
+    for (const areaId of event.source.onParBookingAreaIds ?? event.contractedAreaIds) {
+      if (!["vip-1", "vip-2"].includes(areaId)) continue;
+      if (reservations.some((row) => row.floorPlanEventId === event.id && row.areaId === areaId && row.reservationType === "room" && sameReservationInterval(row, event))) continue;
+      const canonicalId = `${event.id}:room:${areaId}`;
+      const id = reservations.some((row) => row.id === canonicalId) ? `vip-source:${canonicalId}` : canonicalId;
+      reservations.push({ id, floorPlanEventId: event.id, areaId, reservationType: "room", startAt: event.startAt, endAt: event.endAt,
+        label: getFloorPlanArea(areaId)?.shortLabel ?? areaId, source: "generated", lockedByUser: false, timingSource: "event-default" });
+    }
+  }
+  return { ...plan, reservations };
+}
+
+async function reconciledPlan(date: string, storage: FloorPlanStorage, options: FloorPlanReadOptions = {}) {
   const [saved, sourceResult] = await Promise.all([
     storage.get(date),
-    sourceEventsForDate(date),
+    sourceEventsForDate(date, options),
   ]);
+  const finish = (plan: FloorPlanDocument) => ({ ...projectVipFloorPlanReservations(plan), sourceWarnings: sourceResult.warnings });
+  if (saved?.events.some((event, index) => saved.events.findIndex((candidate) => candidate.id === event.id) !== index)) {
+    sourceResult.warnings.push("Saved floor-plan event identities are duplicated. Canonical booking identities are shown; ambiguous historical staff assignments require review.");
+  }
   const sourceRows = sourceResult.rows;
   const planId = saved?.id ?? `floor-plan-${date}`;
   const normalizedEvents: FloorPlanEvent[] = [];
@@ -521,6 +585,16 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
       ),
     );
   }
+  for (const event of saved?.events ?? []) {
+    const vip = event.tripleseatEventId.startsWith("vip-");
+    if (vip && inactiveVipIsNewer(sourceResult.knownInactiveVipObservations, event.tripleseatEventId,
+      event.source.onParBooking?.refreshedAt ?? event.beoLastModifiedAt)) {
+      if (!sourceResult.warnings.includes(KNOWN_INACTIVE_VIP_WARNING)) sourceResult.warnings.push(KNOWN_INACTIVE_VIP_WARNING);
+      continue;
+    }
+    if (vip ? sourceResult.vipAuthoritative : sourceResult.tripleseatAuthoritative) continue;
+    if (!normalizedEvents.some((candidate) => candidate.tripleseatEventId === event.tripleseatEventId)) normalizedEvents.push(event);
+  }
   const currentEvents = floorPlanEventsWithSavedIdentity(
     normalizedEvents,
     saved?.events ?? [],
@@ -534,9 +608,12 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
       ...(previous.source.seatingGenerationIssues?.length ? { seatingGenerationIssues: previous.source.seatingGenerationIssues } : {}),
     } };
   });
-  if (!saved) return createPlan(date, currentEvents);
+  if (!saved) {
+    if (!currentEvents.length && sourceResult.warnings.length) throw new Error(sourceResult.warnings.join(" "));
+    return finish(createPlan(date, currentEvents));
+  }
   if (currentEvents.length === 0) {
-    return sourceResult.sourceRowCount > 0
+    return finish(sourceResult.sourceRowCount > 0
       ? {
           ...saved,
           events: [],
@@ -546,7 +623,7 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
       : {
           ...saved,
           events: ensureDistinctFloorPlanEventColors(saved.events),
-        };
+        });
   }
 
   const currentIds = new Set(currentEvents.map((event) => event.id));
@@ -572,23 +649,24 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage) {
     const previous = saved.events.find((event) => event.id === current.id);
     return !previous || sourceChanged(previous, current);
   }) || saved.events.some((event) => !currentIds.has(event.id));
-  return {
+  return finish({
     ...saved,
     events: eventsWithSeatingAttention,
     reservations: retainedReservations,
     status: floorPlanStatusAfterSourceChange(saved.status, changed),
-  };
+  });
 }
 
 export async function getFloorPlanDay(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
+  options: FloorPlanReadOptions = {},
 ): Promise<FloorPlanDayPayload> {
   if (!isValidEntertainmentDate(date)) {
     throw new Error("Floor-plan date must use YYYY-MM-DD.");
   }
-  const plan = await reconciledPlan(date, storage);
-  const warnings: string[] = [];
+  const plan = await reconciledPlan(date, storage, options);
+  const warnings: string[] = [...plan.sourceWarnings];
   if (plan.ruleVersion !== FLOOR_PLAN_RULE_VERSION) {
     warnings.push(
       "This saved floor plan uses an earlier seating rule version. Select ‘Replace generated only’, then ‘Generate Floor Plan’ to refresh seating highlights; manual and locked assignments are preserved.",
@@ -606,7 +684,7 @@ export async function getFloorPlanDay(
     warnings: [] as string[],
   };
   try {
-    const day = await getEntertainmentDay(date);
+    const day = await getEntertainmentDay(date, { vipPrepClient: options.vipPrepClient, readOnly: options.readOnly });
     entertainment = {
       reservations: day.reservations,
       conflicts: day.conflicts,
@@ -652,6 +730,47 @@ export async function getFloorPlanDay(
   };
 }
 
+/** Load the overview plus an exact requested date, including unsaved VIP-only dates. */
+export async function loadLiveFloorPlanPublicationWindow(
+  today: string,
+  storage: FloorPlanStorage = getFloorPlanStorage(),
+  requestedDate?: string | null,
+  vipPrepClient: Pick<VipPrepClient, "configured" | "fetchRange"> = new VipPrepClient(),
+) {
+  const dates = floorPlanPublicationDates(today, requestedDate);
+  const endDate = addCalendarDays(today, 14);
+  const ranges = [{ from: today, to: endDate }, ...dates.filter((date) => date < today || date > endDate).map((date) => ({ from: date, to: date }))];
+  const [savedPlans, refreshed] = await Promise.all([
+    Promise.all(dates.map((date) => storage.get(date).catch(() => null))),
+    vipPrepClient.configured ? Promise.all(ranges.map(async (range) => {
+      try { return { ...range, payload: await vipPrepClient.fetchRange(range.from, range.to), error: false }; }
+      catch { return { ...range, payload: null, error: true }; }
+    })) : [],
+  ]);
+  const liveVipDates = new Set(refreshed.flatMap((entry) => entry.payload?.reservations.filter(isActiveVipPrepReservation).map((reservation) => reservation.operatingDate) ?? []));
+  const savedByDate = new Map(savedPlans.filter((plan): plan is FloorPlanDocument => Boolean(plan)).map((plan) => [plan.eventDate, plan]));
+  const projectionDates = dates.filter((date) => Boolean(savedByDate.get(date)?.events.length) || liveVipDates.has(date) || date === requestedDate);
+  const cachedClient: Pick<VipPrepClient, "configured" | "fetchRange"> = {
+    configured: vipPrepClient.configured,
+    async fetchRange(from, to) {
+      const range = refreshed.find((entry) => entry.from <= from && entry.to >= to);
+      if (!range?.payload || range.error) throw new Error("On Par Bookings is unavailable.");
+      const reservations = range.payload.reservations.filter((reservation) => reservation.operatingDate >= from && reservation.operatingDate <= to);
+      return { ...range.payload, from, to, reservations, reservationCount: reservations.length };
+    },
+  };
+  const publications = await Promise.all(projectionDates.map(async (date) => {
+    try {
+      const payload = await getFloorPlanDay(date, storage, { vipPrepClient: cachedClient, readOnly: true });
+      return payload.plan.events.length ? { plan: payload.plan, payload } : null;
+    } catch {
+      const plan = savedByDate.get(date) ?? null;
+      return plan?.events.length ? { plan, payload: null } : null;
+    }
+  }));
+  return publications.filter((publication): publication is NonNullable<typeof publication> => publication !== null);
+}
+
 async function generateFloorPlanFromStoredSources(
   date: string,
   mode: FloorPlanGenerationMode,
@@ -668,6 +787,7 @@ async function generateFloorPlanFromStoredSources(
     // Event-only repair must not retime or rewrite another party from a source refresh.
     plan = {
       ...savedBeforeGeneration,
+      sourceWarnings: plan.sourceWarnings,
       events: savedBeforeGeneration.events.map((event) => event.id === selectedEventId ? selected : event),
       reservations: [
         ...savedBeforeGeneration.reservations.filter((row) => row.floorPlanEventId !== selectedEventId),
@@ -1353,11 +1473,20 @@ export async function refreshFloorPlanSources(
 ) {
   if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const savedBeforeRefresh = await storage.get(date);
-  await syncEventPlanWindow(
-    { startDate: date, endDate: date },
-    { legacyPlans: [] },
-  );
-  await syncEntertainmentDay(date);
+  const refreshWarnings: string[] = [];
+  let tripleseatRefreshed = false;
+  try {
+    await syncEventPlanWindow({ startDate: date, endDate: date }, { legacyPlans: [] });
+    tripleseatRefreshed = true;
+  } catch {
+    refreshWarnings.push("Tripleseat could not be refreshed. On Par Bookings is refreshed independently and saved Tripleseat assignments are retained.");
+  }
+  try {
+    const entertainment = await syncEntertainmentDay(date);
+    refreshWarnings.push(...entertainment.warnings);
+  } catch {
+    refreshWarnings.push("The shared entertainment source could not be refreshed; its saved assignments remain available.");
+  }
   const plan = await reconciledPlan(date, storage);
   if (!plan.events.length) {
     if (
@@ -1370,19 +1499,21 @@ export async function refreshFloorPlanSources(
           ...plan,
           events: [],
           reservations: [],
-          lastTripleseatSyncAt: new Date().toISOString(),
+          lastTripleseatSyncAt: tripleseatRefreshed ? new Date().toISOString() : savedBeforeRefresh.lastTripleseatSyncAt,
         },
-        "Removed floor-plan holds without a DEFINITE Tripleseat event.",
+        "Removed floor-plan holds after the source confirmed no active reservations.",
       );
     }
-    throw new Error("No Tripleseat event plan is available for this date.");
+    const empty = await getFloorPlanDay(date, storage);
+    return { ...empty, warnings: [...new Set([...empty.warnings, ...refreshWarnings])] };
   }
   await storage.save(
     {
       ...plan,
-      lastTripleseatSyncAt: new Date().toISOString(),
+      lastTripleseatSyncAt: tripleseatRefreshed ? new Date().toISOString() : savedBeforeRefresh?.lastTripleseatSyncAt ?? null,
     },
     "Synchronized live Tripleseat floor-plan fields.",
   );
-  return getFloorPlanDay(date, storage);
+  const payload = await getFloorPlanDay(date, storage);
+  return { ...payload, warnings: [...new Set([...payload.warnings, ...refreshWarnings])] };
 }

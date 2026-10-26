@@ -119,12 +119,7 @@ function mergeOnParGroup(
   matchingRows: readonly FloorPlanSourceRow[],
   extraReviewReasons: readonly string[] = [],
 ): FloorPlanSourceRow {
-  const orderedOnPar = [...onParRows].sort((left, right) => {
-    const leftRoom = left.plan.rooms.join(" ");
-    const rightRoom = right.plan.rooms.join(" ");
-    return leftRoom.localeCompare(rightRoom) ||
-      left.sourceEventId.localeCompare(right.sourceEventId);
-  });
+  const orderedOnPar = [...onParRows].sort((left, right) => left.sourceEventId.localeCompare(right.sourceEventId));
   const primary = orderedOnPar[0];
   const tripleseatRows = matchingRows.filter((row) => !isOnParBookingRow(row));
   const allRows = [...tripleseatRows, ...orderedOnPar];
@@ -144,10 +139,7 @@ function mergeOnParGroup(
     orderedOnPar.flatMap((row) => row.plan.rooms),
   );
   const sourceEventIds = uniqueStrings(
-    allRows.flatMap((row) => [
-      row.sourceEventId,
-      ...sourceStringList(row.source, "sourceEventIds"),
-    ]),
+    allRows.map((row) => row.sourceEventId),
   );
 
   return {
@@ -155,7 +147,7 @@ function mergeOnParGroup(
       ...primary.plan,
       guest_count: guestCount,
       rooms: uniqueStrings([...tripleseatRooms, ...onParRooms]),
-      food: uniqueStrings(allRows.flatMap((row) => row.plan.food)),
+      food: allRows.flatMap((row) => row.plan.food),
       drink_options: uniqueStrings(
         allRows.flatMap((row) => row.plan.drink_options),
       ),
@@ -192,6 +184,8 @@ function mergeOnParGroup(
       rooms: uniqueStrings([...tripleseatRooms, ...onParRooms]),
       sourceSystem: "vip-prep",
       sourceEventIds,
+      verifiedSourceEventIds: sourceEventIds,
+      linkedTripleseatEventIds: uniqueStrings(orderedOnPar.flatMap((row) => sourceStringList(row.source, "linkedTripleseatEventIds"))),
       onParBookingRooms: onParRooms,
       sourceUpdatedAt: newestTimestamp(
         allRows.map((row) => sourceString(row.source, "sourceUpdatedAt")),
@@ -203,17 +197,26 @@ function mergeOnParGroup(
 
 function sameOnParParty(left: FloorPlanSourceRow, right: FloorPlanSourceRow) {
   if (!sameSourceWindow(left, right)) return false;
-  return floorPlanSourceNamesMatch(left.plan.name, right.plan.name);
+  const linked = new Set(sourceStringList(left.source, "linkedTripleseatEventIds"));
+  return sourceStringList(right.source, "linkedTripleseatEventIds").some((id) => linked.has(id));
 }
 
 /**
- * Collapses one party's OnParBookings room reservations into a single floor-plan
- * event and absorbs one unambiguous same-name Tripleseat block into that event.
- * OnParBookings remains authoritative for the title, time, and VIP room list.
+ * Reconcile only canonical source identities or explicit feed-provided links.
+ * A matching display name is not evidence that two reservations are one party.
  */
 export function resolveFloorPlanSourceRows(
   rows: readonly FloorPlanSourceRow[],
 ) {
+  const canonicalRows = new Map<string, FloorPlanSourceRow>();
+  for (const row of rows) {
+    const key = `${isOnParBookingRow(row) ? "on-par-bookings" : "tripleseat"}:${row.sourceEventId}`;
+    const previous = canonicalRows.get(key);
+    const nextTime = Date.parse(row.plan.source_updated_at ?? "");
+    const previousTime = Date.parse(previous?.plan.source_updated_at ?? "");
+    if (!previous || Number.isFinite(nextTime) && (!Number.isFinite(previousTime) || nextTime >= previousTime)) canonicalRows.set(key, row);
+  }
+  rows = [...canonicalRows.values()];
   const onParGroups: FloorPlanSourceRow[][] = [];
   for (const row of rows.filter(isOnParBookingRow)) {
     const group = onParGroups.find((candidate) =>
@@ -226,33 +229,21 @@ export function resolveFloorPlanSourceRows(
   const claimedRows = new Set<FloorPlanSourceRow>();
   const mergedOnParRows = onParGroups.map((group) => {
     group.forEach((row) => claimedRows.add(row));
-    const matchingRows = rows.filter(
+    const linkedIds = new Set(group.flatMap((row) => sourceStringList(row.source, "linkedTripleseatEventIds")));
+    const linkedRows = rows.filter(
       (candidate) =>
         !isOnParBookingRow(candidate) &&
         candidate.plan.date === group[0].plan.date &&
-        floorPlanSourceNamesMatch(group[0].plan.name, candidate.plan.name),
+        linkedIds.has(candidate.sourceEventId),
     );
-    const matchingOnParGroups = onParGroups.filter(
-      (candidate) =>
-        candidate[0].plan.date === group[0].plan.date &&
-        floorPlanSourceNamesMatch(
-          candidate[0].plan.name,
-          group[0].plan.name,
-        ),
-    );
-    if (matchingRows.length === 1 && matchingOnParGroups.length === 1) {
-      claimedRows.add(matchingRows[0]);
-      return mergeOnParGroup(group, matchingRows);
-    }
-    const ambiguous =
-      matchingRows.length > 1 ||
-      (matchingRows.length === 1 && matchingOnParGroups.length > 1);
+    const matchingRows = linkedRows.filter((candidate) => sameSourceWindow(candidate, group[0]));
+    matchingRows.forEach((row) => claimedRows.add(row));
     return mergeOnParGroup(
       group,
-      [],
-      ambiguous
+      matchingRows,
+      linkedRows.length !== matchingRows.length
         ? [
-            "Multiple same-name source records match this OnPar reservation; floor-plan source needs review.",
+            "A verified linked source has a different interval; its physical reservations remain separate for review.",
           ]
         : [],
     );

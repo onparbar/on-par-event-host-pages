@@ -153,10 +153,10 @@ describe("kitchen day response gating", () => {
 describe("kitchen checklist day layout", () => {
   const noop = () => {};
 
-  it("keeps VIP food off the printable kitchen sheets", () => {
+  it("keeps VIP food visible on printable kitchen sheets", () => {
     const event = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     const vip = { ...event, event: { ...event.event, eventId: "vip-reservation-1" } };
-    expect(printableEventChecklists([event, vip])).toEqual([event]);
+    expect(printableEventChecklists([event, vip])).toEqual([event, vip]);
   });
 
   function renderSheet(checklistIndex: number) {

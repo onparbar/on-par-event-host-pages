@@ -370,6 +370,7 @@ describe("merged floor-plan event identities", () => {
       "vip-primary",
       "vip-secondary",
     ];
+    event.source.verifiedSourceEventIds = [...event.source.sourceEventIds];
     const mergedPlan = { ...plan, events: [event] };
     const vip1 = {
       ...entertainmentReservation(
@@ -404,7 +405,7 @@ describe("merged floor-plan event identities", () => {
     ).toEqual([]);
   });
 
-  it("reconnects an overlapping same-party reservation saved under an older local ID", () => {
+  it("does not attach an overlapping same-name VIP reservation without a verified source ID", () => {
     const event = floorPlanEvent(
       "floor-plan-event-oem-sales",
       "vip-current",
@@ -429,7 +430,7 @@ describe("merged floor-plan event identities", () => {
 
     expect(
       eventForFloorPlanEntertainment(mergedPlan, staleManualReservation),
-    ).toBe(event);
+    ).toBeNull();
   });
 
   it("does not reconnect a same-name stale reservation outside the event window", () => {

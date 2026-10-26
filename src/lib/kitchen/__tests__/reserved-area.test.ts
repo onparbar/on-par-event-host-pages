@@ -74,11 +74,23 @@ describe("kitchen reserved areas", () => {
     },
   );
 
-  it("matches corporate kitchen prep through exact aliases on a merged VIP floor-plan event", () => {
+  it("matches corporate kitchen prep through verified source IDs on a linked VIP floor-plan event", () => {
     const plan = floorPlan();
     plan.events[0].tripleseatEventId = "vip-booking";
     plan.events[0].source.sourceEventIds = ["vip-booking", String(source.eventId)];
+    plan.events[0].source.verifiedSourceEventIds = [String(source.eventId)];
     expect(withKitchenReservedAreas([checklist], plan)[0].event.room).toBe("VIP 2");
+  });
+
+  it("does not use a legacy name-derived VIP alias to move another party's kitchen area", () => {
+    const plan = floorPlan();
+    plan.events[0].tripleseatEventId = "vip-other-booking";
+    plan.events[0].source.sourceEventIds = ["vip-other-booking", String(source.eventId)];
+    expect(withKitchenReservedAreas([checklist], plan)[0]).toBe(checklist);
+    const vip = { ...checklist, event: { ...checklist.event, eventId: "vip-this-booking" } };
+    plan.events[0].tripleseatEventId = "corporate-other-booking";
+    plan.events[0].source.sourceEventIds = ["corporate-other-booking", "vip-this-booking"];
+    expect(withKitchenReservedAreas([vip], plan)[0]).toBe(vip);
   });
 
   it("does not label ancillary conversation seating as a second reserved VIP room", () => {

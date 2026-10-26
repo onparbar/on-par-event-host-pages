@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
+import { createMemoryKitchenStorage, setKitchenStorageForTests } from "@/lib/kitchen/storage";
 
 vi.mock("server-only", () => ({}));
 
 const { confirmVipArrival, listVipCheckins } = await import("../service");
 const reservation = vipPrepPayload.reservations[0];
 const eventId = `vip-${reservation.id}`;
+beforeEach(() => setKitchenStorageForTests(createMemoryKitchenStorage()));
 
 function client(foodPrep = reservation.foodPrep) {
   return {
@@ -48,11 +50,11 @@ describe("VIP arrival and food release", () => {
       const storage = {
         listVipCheckinsForDate: vi.fn().mockResolvedValue([]),
         confirmVipCheckin: vi.fn().mockResolvedValue(saved),
-        getVipCheckin: vi.fn().mockResolvedValue(saved),
+        getVipCheckin: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(saved),
         getVipInitialFoodRelease: vi.fn().mockResolvedValue({ expected_item_count: 2, status: "PENDING" }),
         listVipInitialFoodDispatches: vi.fn().mockResolvedValue([
-          { request_id: "chicken", status: "SCHEDULED" },
-          { request_id: "dessert", status: "SCHEDULED" },
+          { request_id: "chicken", source_record_id: "platter-chicken-tenders", source_quantity: 1, status: "SCHEDULED" },
+          { request_id: "dessert", source_record_id: "dessert-platter", source_quantity: 1, status: "SCHEDULED" },
         ]),
       };
       const testClient = {
@@ -124,7 +126,7 @@ describe("VIP arrival and food release", () => {
         expected_item_count: 1, status: "PENDING",
       }),
       listVipInitialFoodDispatches: vi.fn().mockImplementation(async () => [{
-        request_id: "request-1", status: dispatchStatus,
+        request_id: "request-1", source_record_id: "platter-wings", source_quantity: 2, status: dispatchStatus,
       }]),
       listVipCheckinsForDate: vi.fn().mockImplementation(async () => saved ? [saved] : []),
     };
@@ -175,7 +177,7 @@ describe("VIP arrival and food release", () => {
       synchronizeFood: vi.fn().mockResolvedValue({ exceptionCount: 1 }) as never,
       dispatch: vi.fn().mockResolvedValue({ sent: 0 }) as never,
     });
-    expect(result.foodStatus).toBe("FOOD_SEND_FAILED");
+    expect(result.foodStatus).toBe("FOOD_HELD");
     expect(result.checkedInAt).toBe(saved.checked_in_at);
   });
 

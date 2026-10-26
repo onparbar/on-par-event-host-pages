@@ -79,9 +79,9 @@ export function operationalEventRequestHref(path: string, eventId: string | null
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export function operationalEventFromPlan(plan: Pick<EventPlan, "id" | "name" | "date" | "rooms" | "guest_count" | "time">): SelectedOperationalEvent {
+export function operationalEventFromPlan(plan: Pick<EventPlan, "id" | "source_event_id" | "name" | "date" | "rooms" | "guest_count" | "time">): SelectedOperationalEvent {
   return {
-    eventId: String(plan.id),
+    eventId: plan.source_event_id ?? String(plan.id),
     eventName: plan.name,
     date: plan.date,
     area: plan.rooms.join(" · "),

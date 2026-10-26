@@ -1,15 +1,13 @@
 import { loadAdminState } from "@/lib/admin-state";
+import { isPreviewReviewOnly } from "@/lib/operations/preview-review";
 import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { floorPlans, floorPlanSpecialPages } from "@/lib/events";
 import {
   ensureConfirmedContractFloorPlanWindow,
-  getFloorPlanDay,
+  loadLiveFloorPlanPublicationWindow,
 } from "@/lib/floor-plans/service";
 import { getFloorPlanStorage } from "@/lib/floor-plans/storage";
-import { loadFloorPlanPublicationWindow } from "@/lib/floor-plans/publication";
-import FloorPlansClient, {
-  type FloorPlanPublication,
-} from "./FloorPlansClient";
+import FloorPlansClient from "./FloorPlansClient";
 
 export const metadata = {
   title: "Floor Plans | On Par Event Host",
@@ -21,20 +19,16 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function FloorPlansPage() {
+export default async function FloorPlansPage({ searchParams }: { searchParams: Promise<{ date?: string | string[] }> }) {
   const today = todayInEntertainmentTimeZone();
+  const params = await searchParams;
+  const requestedDate = typeof params.date === "string" ? params.date : null;
   const storage = getFloorPlanStorage();
-  await ensureConfirmedContractFloorPlanWindow(today, storage);
-  const [adminState, publicationPlans] = await Promise.all([
+  if (!isPreviewReviewOnly()) await ensureConfirmedContractFloorPlanWindow(today, storage);
+  const [adminState, publications] = await Promise.all([
     loadAdminState(),
-    loadFloorPlanPublicationWindow(today, storage),
+    loadLiveFloorPlanPublicationWindow(today, storage, requestedDate),
   ]);
-  const publications = await Promise.all(
-    publicationPlans.map(async (plan): Promise<FloorPlanPublication> => ({
-      plan,
-      payload: await getFloorPlanDay(plan.eventDate, storage).catch(() => null),
-    })),
-  );
   return (
     <FloorPlansClient
       initialState={adminState}

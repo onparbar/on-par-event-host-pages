@@ -1,5 +1,6 @@
 import { getGoTabConfigurationStatus } from "@/lib/gotab/config";
 import { getSupabaseSecret } from "@/lib/kitchen/storage";
+import { isPreviewReviewOnly } from "./preview-review";
 
 const EVENT_HOST_DATABASE_HOST = "tmnstuthbllnoqgepotn.supabase.co";
 
@@ -31,6 +32,7 @@ export function releaseStatus(env: NodeJS.ProcessEnv = process.env) {
   return {
     deploymentEnvironment: ["production", "preview", "development"].includes(env.VERCEL_ENV ?? "") ? env.VERCEL_ENV : "unknown",
     releaseSha: /^[a-f0-9]{40}$/i.test(releaseSha) ? releaseSha.toLowerCase() : null,
+    reviewOnly: isPreviewReviewOnly(env),
     database: { targetMatchesEventHost: databaseTargetMatches(env), credentialsConfigured: Boolean(getSupabaseSecret(env)) },
     tripleseat: { kitchenMode: mode, entertainmentMode: mode },
     gotab: {

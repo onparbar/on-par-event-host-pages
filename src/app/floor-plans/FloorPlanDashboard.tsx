@@ -13,7 +13,7 @@ import {
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
-import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
+import { findOperationalFloorPlanEvent, operationalFloorPlanEventId } from "@/lib/operations/floor-plan-context";
 import {
   AREAS,
   DISPLAY_AREAS,
@@ -34,7 +34,7 @@ import { seatingCoverageMessage, summarizeEventSeating } from "@/lib/floor-plans
 import { reservationTimingSource } from "@/lib/floor-plans/reservation-state";
 import { formatEntertainmentDurationHours, normalizeEntertainmentDurationHours } from "@/lib/entertainment/duration";
 import { reservationOccupancy, RESERVATION_CLEANUP_MINUTES, RESERVATION_SETUP_MINUTES } from "@/lib/operations/reservation-buffer";
-import { entertainmentReservationMatchesFloorPlanEvent, floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
+import { entertainmentReservationMatchesFloorPlanEvent } from "@/lib/floor-plans/identity";
 import {
   displayEventForFloorPlanArea,
   assignLocalFloorPlanArea,
@@ -343,8 +343,10 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   useEffect(() => {
     if (!contextReady || !preferredEventId || !payload) return;
-    const requested = payload.plan.events.find((event) => [...floorPlanEventSourceIds(event)].some((id) => operationalKitchenEventId(id) === operationalKitchenEventId(preferredEventId)));
-    if (requested) { setActiveEventId(requested.id); setVisibleEventId(requested.id); }
+    const requested = findOperationalFloorPlanEvent(payload.plan.events, preferredEventId);
+    setActiveEventId(requested?.id ?? "");
+    setVisibleEventId(requested?.id ?? null);
+    if (!requested) setMessage("The requested event identity is unavailable or ambiguous. No party was selected; choose the exact event below.");
   }, [contextReady, preferredEventId, payload]);
 
   const plan = payload?.plan ?? null;
@@ -477,7 +479,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   function selectEditingEvent(eventId: string) {
     setActiveEventId(eventId);
     const selected = plan?.events.find((event) => event.id === eventId);
-    if (selected) selectEvent({ eventId: operationalKitchenEventId(selected.tripleseatEventId), eventName: selected.name, date, area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: selected.guestCount });
+    if (selected) selectEvent({ eventId: operationalFloorPlanEventId(selected), eventName: selected.name, date, area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: selected.guestCount });
     if (visibleEventId) setVisibleEventId(eventId);
     setSelectedAreaIds([]);
     setSelectedReservationId("");
@@ -937,7 +939,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       sectionSubtitle="Live Tripleseat planning"
       sectionTitle="Admin Floor Plans"
     >
-      <EventSelectionBridge event={activeEvent ? { eventId: operationalKitchenEventId(activeEvent.tripleseatEventId), eventName: activeEvent.name, date, area: activeEvent.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: activeEvent.guestCount } : null} />
+      <EventSelectionBridge event={activeEvent && (!preferredEventId || plan && findOperationalFloorPlanEvent(plan.events, preferredEventId)?.id === activeEvent.id) ? { eventId: operationalFloorPlanEventId(activeEvent), eventName: activeEvent.name, date, area: activeEvent.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(", "), guestCount: activeEvent.guestCount } : null} />
       <fieldset disabled={requestState === "saving"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <section className="floor-plan-toolbar" aria-label="Floor plan controls">
         <div className="floor-plan-date-controls">
