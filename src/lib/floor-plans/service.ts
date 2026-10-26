@@ -665,7 +665,7 @@ export async function getFloorPlanDay(
   if (!isValidEntertainmentDate(date)) {
     throw new Error("Floor-plan date must use YYYY-MM-DD.");
   }
-  const plan = await reconciledPlan(date, storage, options);
+  let plan = await reconciledPlan(date, storage, options);
   const warnings: string[] = [...plan.sourceWarnings];
   if (plan.ruleVersion !== FLOOR_PLAN_RULE_VERSION) {
     warnings.push(
@@ -684,7 +684,8 @@ export async function getFloorPlanDay(
     warnings: [] as string[],
   };
   try {
-    const day = await getEntertainmentDay(date, { vipPrepClient: options.vipPrepClient, readOnly: options.readOnly });
+    const day = await getEntertainmentDay(date, { vipPrepClient: options.vipPrepClient, readOnly: options.readOnly, floorPlanStorage: storage, floorPlanEvents: plan.events });
+    plan = { ...plan, events: plan.events.map((event) => ({ ...event, color: day.floorPlanEventColors?.[event.id] ?? event.color })) };
     entertainment = {
       reservations: day.reservations,
       conflicts: day.conflicts,

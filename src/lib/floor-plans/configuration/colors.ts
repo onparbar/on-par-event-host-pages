@@ -49,7 +49,17 @@ export function floorPlanEventColor(index: number, used: readonly string[]) {
       return candidate;
     }
   }
-  return EVENT_COLORS[index % EVENT_COLORS.length];
+  // A busy day can exhaust the short palette. Search additional shades instead of repeating it.
+  let unused: string | null = null;
+  for (let red = 0; red <= 255; red += 51) for (let green = 0; green <= 255; green += 51) for (let blue = 0; blue <= 255; blue += 51) {
+    const brightness = (red * 299 + green * 587 + blue * 114) / 1000;
+    if (brightness < 45 || brightness > 190) continue;
+    const candidate = `#${[red, green, blue].map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+    if (normalizedUsed.includes(candidate)) continue;
+    unused ??= candidate;
+    if (normalizedUsed.every((color) => floorPlanEventColorsAreDistinct(candidate, color))) return candidate;
+  }
+  return unused ?? EVENT_COLORS[index % EVENT_COLORS.length];
 }
 
 export function distinctFloorPlanEventColor(

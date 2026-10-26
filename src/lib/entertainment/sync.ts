@@ -45,6 +45,9 @@ import {
   vipPrepEntertainmentEvents,
 } from "../vip-prep/client";
 import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "../vip-prep/known-inactive";
+import { getFloorPlanStorage, type FloorPlanStorage } from "../floor-plans/storage";
+import type { FloorPlanEvent } from "../floor-plans/types";
+import { projectDayEventColors } from "../floor-plans/event-colors";
 import {
   confirmedContractEntertainmentSourcesForDate,
   eventMatchesConfirmedContract,
@@ -57,6 +60,8 @@ export type EntertainmentDependencies = {
   localEvents?: LocalEntertainmentEvent[];
   vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
   readOnly?: boolean;
+  floorPlanStorage?: Pick<FloorPlanStorage, "get">;
+  floorPlanEvents?: readonly FloorPlanEvent[];
 };
 
 export type ReservationMutationInput = {
@@ -372,7 +377,7 @@ export async function getEntertainmentDay(
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEntertainmentStorage();
   const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
-  const [stored, vipResult] = await Promise.all([
+  const [stored, vipResult, floorColors] = await Promise.all([
     storage.getDay(date),
     vipPrepClient.configured
       ? vipPrepClient.fetchRange(date, date).then(
@@ -380,6 +385,8 @@ export async function getEntertainmentDay(
           () => ({ events: [], error: "VIP Prep could not be refreshed; the last saved VIP schedule remains visible.", refreshed: false }),
         )
       : Promise.resolve({ events: [], error: null, refreshed: false }),
+    Promise.resolve().then(async () => ({ events: (await (options.floorPlanStorage ?? getFloorPlanStorage()).get(date))?.events ?? [], warning: null as string | null }))
+      .catch(() => ({ events: [] as FloorPlanEvent[], warning: "Saved floor-plan colors could not be loaded; event colors are resolved from the current schedule until Floor Plans is available." })),
   ]);
   const knownInactive = vipResult.error ? await knownInactiveVipBookings(date) : { ids: new Set<string>(), observations: new Map<string, string>(), warnings: [] };
   const inactiveEventIds = new Set(stored.events.filter((event) => inactiveVipIsNewer(knownInactive.observations,
@@ -504,6 +511,7 @@ export async function getEntertainmentDay(
         .some((value) => visibleEventIds.has(value)),
   ));
   const warnings = [...diagnostics.warnings];
+  if (floorColors.warning) warnings.push(floorColors.warning);
   warnings.push(...knownInactive.warnings);
   if (inactiveEventIds.size) warnings.push(KNOWN_INACTIVE_VIP_WARNING);
   if (vipResult.error) warnings.push(vipResult.error);
@@ -513,10 +521,12 @@ export async function getEntertainmentDay(
       "The latest Tripleseat sync failed. The last saved schedule remains visible.",
     );
   }
+  const colors = projectDayEventColors(options.floorPlanEvents ?? floorColors.events, events, reservations, floorColors.events);
   return {
     date,
-    events,
-    reservations,
+    events: colors.events,
+    reservations: colors.reservations,
+    floorPlanEventColors: Object.fromEntries(colors.floorEvents.map((event) => [event.id, event.color])),
     conflicts: detectEntertainmentConflicts(reservations),
     sync: stored.sync,
     sourceMode: adapter.sourceMode,

@@ -198,6 +198,7 @@ export type EntertainmentDayPayload = {
   date: string;
   events: EntertainmentEventSnapshot[];
   reservations: EntertainmentReservation[];
+  floorPlanEventColors?: Record<string, string>;
   conflicts: EntertainmentConflict[];
   sync: EntertainmentSyncState | null;
   sourceMode: "live" | "mock";
