@@ -146,12 +146,36 @@ describe("automatic checklist Admin closeout", () => {
     expect(deps.saveRecord).not.toHaveBeenCalled();
   });
 
-  it("does not backfill pre-activation parties, while the exact activation boundary is eligible", async () => {
+  it.each([
+    { offset: -1, expected: 1 },
+    { offset: 0, expected: 1 },
+    { offset: 1, expected: 0 },
+    { offset: 1_800_000, expected: 0 },
+    { offset: 3_600_000, expected: 0 },
+  ])("uses the event end, not the later closeout deadline, as the activation boundary: $offset", async ({ offset, expected }) => {
     const deps = await setup();
-    expect((await autoSubmitChecklists({ ...deps, env: { ...ENV, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: new Date(NOW.getTime() + 1).toISOString() } })).submitted).toBe(0);
-    expect((await autoSubmitChecklists({ ...deps, now: new Date(NOW.getTime() + 2), env: { ...ENV,
+    const activatedAt = new Date(Date.parse("2026-10-28T01:00:00Z") + offset).toISOString();
+    expect((await autoSubmitChecklists({ ...deps, env: { ...ENV, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: activatedAt } })).submitted).toBe(expected);
+    expect(deps.saveRecord).toHaveBeenCalledTimes(expected);
+  });
+
+  it("rechecks the event-end activation boundary when the source end changes before saving", async () => {
+    const deps = await setup();
+    const row = (await deps.plans.findById("77"))!;
+    vi.spyOn(deps.plans, "findById").mockResolvedValue({ ...row,
+      sourceSnapshot: { ...row.sourceSnapshot, eventEndAt: "2026-10-28T00:59:59.998Z" } });
+    expect((await autoSubmitChecklists({ ...deps, env: { ...ENV,
+      CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "2026-10-28T00:59:59.999Z" } })).submitted).toBe(0);
+    expect(deps.saveRecord).not.toHaveBeenCalled();
+  });
+
+  it("does no source work before the activation instant", async () => {
+    const deps = await setup();
+    const read = vi.spyOn(deps.plans, "plansForWindow");
+    expect((await autoSubmitChecklists({ ...deps, env: { ...ENV,
       CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: new Date(NOW.getTime() + 1).toISOString() } })).submitted).toBe(0);
-    expect((await autoSubmitChecklists({ ...deps, env: { ...ENV, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: NOW.toISOString() } })).submitted).toBe(1);
+    expect(read).not.toHaveBeenCalled();
+    expect(deps.vipClient.fetchRange).not.toHaveBeenCalled();
   });
 
   it("closes an exact VIP checklist without recording arrival or creating a prepaid-food order", async () => {

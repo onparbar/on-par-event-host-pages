@@ -1,6 +1,7 @@
 import { getGoTabConfigurationStatus } from "@/lib/gotab/config";
 import { getSupabaseSecret } from "@/lib/kitchen/storage";
 import { isPreviewReviewOnly } from "./preview-review";
+import { checklistAutoSubmitConfiguration } from "./checklist-auto-submit-policy";
 
 const EVENT_HOST_DATABASE_HOST = "tmnstuthbllnoqgepotn.supabase.co";
 
@@ -28,11 +29,17 @@ function tripleseatMode(env: NodeJS.ProcessEnv) {
 export function releaseStatus(env: NodeJS.ProcessEnv = process.env) {
   const gotab = getGoTabConfigurationStatus(env);
   const mode = tripleseatMode(env);
+  const automatic = checklistAutoSubmitConfiguration(env, new Date());
   const releaseSha = env.EVENT_HOST_RELEASE_SHA?.trim() ?? "";
   return {
     deploymentEnvironment: ["production", "preview", "development"].includes(env.VERCEL_ENV ?? "") ? env.VERCEL_ENV : "unknown",
     releaseSha: /^[a-f0-9]{40}$/i.test(releaseSha) ? releaseSha.toLowerCase() : null,
     reviewOnly: isPreviewReviewOnly(env),
+    checklists: {
+      automaticSubmissionEnabled: automatic.enabled && Boolean(env.CRON_SECRET?.trim()) && !isPreviewReviewOnly(env),
+      activatedAt: automatic.enabled ? new Date(automatic.activatedAt).toISOString() : null,
+      cronConfigured: Boolean(env.CRON_SECRET?.trim()),
+    },
     database: { targetMatchesEventHost: databaseTargetMatches(env), credentialsConfigured: Boolean(getSupabaseSecret(env)) },
     tripleseat: { kitchenMode: mode, entertainmentMode: mode },
     gotab: {

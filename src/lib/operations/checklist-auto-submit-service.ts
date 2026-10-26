@@ -89,7 +89,7 @@ export async function autoSubmitChecklists(options: Dependencies = {}) {
     summary.considered += 1;
     if (scanned.event.id === 99990001 || sourceCounts.get(scanned.sourceEventId) !== 1 || numericCounts.get(scanned.event.id) !== 1) { summary.skipped += 1; continue; }
     const scannedTiming = automaticChecklistTiming(scanned);
-    if (!scannedTiming || Date.parse(scannedTiming.scheduledFor) < Date.parse(configuration.activatedAt) || now.getTime() < Date.parse(scannedTiming.scheduledFor)) { summary.skipped += 1; continue; }
+    if (!scannedTiming || Date.parse(scannedTiming.eventEndedAt) < Date.parse(configuration.activatedAt) || now.getTime() < Date.parse(scannedTiming.scheduledFor)) { summary.skipped += 1; continue; }
     try {
       const existing = await getRecord(scanned.event.id);
       if (existing && (existing.eventDate !== scanned.event.date || existing.status === "submitted" ||
@@ -107,7 +107,7 @@ export async function autoSubmitChecklists(options: Dependencies = {}) {
       }
       const timing = source && automaticChecklistTiming(source);
       if (!source || source.event.id !== scanned.event.id || source.event.date !== scanned.event.date || !timing ||
-          Date.parse(timing.scheduledFor) < Date.parse(configuration.activatedAt) || now.getTime() < Date.parse(timing.scheduledFor)) { summary.skipped += 1; continue; }
+          Date.parse(timing.eventEndedAt) < Date.parse(configuration.activatedAt) || now.getTime() < Date.parse(timing.scheduledFor)) { summary.skipped += 1; continue; }
       const state: EventChecklistState = existing ? structuredClone(existing) : blankChecklist();
       const readiness = checklistReadiness(source.event, state);
       const complete = (key: string) => state.tasks[key] === true && typeof state.taskEvidence?.[key]?.employeeName === "string" && Boolean(state.taskEvidence[key].employeeName.trim()) &&

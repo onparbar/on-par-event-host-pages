@@ -28,7 +28,7 @@ describe("safe release runtime proof", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     const value = await response.json();
-    expect(Object.keys(value).sort()).toEqual(["database", "deploymentEnvironment", "gotab", "releaseSha", "reviewOnly", "tripleseat"]);
+    expect(Object.keys(value).sort()).toEqual(["checklists", "database", "deploymentEnvironment", "gotab", "releaseSha", "reviewOnly", "tripleseat"]);
     expect(value).toMatchObject({ deploymentEnvironment: "preview", releaseSha: "a".repeat(40), database: { targetMatchesEventHost: true, credentialsConfigured: true } });
     expect(JSON.stringify(value)).not.toMatch(/supabase\.co|sensitive-database-key|private-guest|test-phone/);
     expect(fetch).not.toHaveBeenCalled();
@@ -74,5 +74,15 @@ describe("safe release runtime proof", () => {
     const status = releaseStatus(env({ VERCEL_ENV: "private-team-name", EVENT_HOST_RELEASE_SHA: "sensitive-not-a-commit" }));
     expect(status.deploymentEnvironment).toBe("unknown");
     expect(status.releaseSha).toBeNull();
+  });
+
+  it("verifies automatic closeout configuration without invoking it or exposing the cron credential", () => {
+    const values = { CHECKLIST_AUTO_SUBMIT_ENABLED: "true", CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "2026-10-26T16:30:00-04:00", CRON_SECRET: "private-cron-credential" };
+    expect(releaseStatus(env(values)).checklists).toEqual({ automaticSubmissionEnabled: true, activatedAt: "2026-10-26T20:30:00.000Z", cronConfigured: true });
+    expect(JSON.stringify(releaseStatus(env(values)))).not.toContain(values.CRON_SECRET);
+    for (const override of [{ CHECKLIST_AUTO_SUBMIT_ENABLED: "false" }, { CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "private-invalid-value" }, { CRON_SECRET: "" }, { VERCEL_ENV: "preview", EVENT_HOST_REVIEW_ONLY: "true" }]) {
+      expect(releaseStatus(env({ ...values, ...override })).checklists.automaticSubmissionEnabled).toBe(false);
+    }
+    expect(releaseStatus(env({ ...values, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "private-invalid-value" })).checklists.activatedAt).toBeNull();
   });
 });
