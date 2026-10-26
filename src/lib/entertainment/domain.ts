@@ -1,5 +1,6 @@
 import {
   canonicalCategoryForText,
+  conflictingBookingQuantity,
   deterministicEventColor,
   exactResourceIdsForText,
   getEntertainmentResource,
@@ -364,12 +365,12 @@ export function buildEntertainmentSchedule({
       });
     }
 
-    const relevantSourceItems = source.items.filter((item) => {
+    const relevantSourceItems = groupEntertainmentTimingItems(source.items).filter((item) => {
       const text = itemText(item);
       const category = canonicalCategoryForText(text);
       return (
         (category != null && isEntertainmentScheduleCategory(category)) ||
-        isAmbiguousLaneText(text)
+        isAmbiguousLaneText(text) || Boolean(item.timingReviewIssues?.length)
       );
     });
     const localScheduleItems = localEvent
@@ -384,7 +385,7 @@ export function buildEntertainmentSchedule({
     let items: EntertainmentTimingItem[] = usingLocalFallback
       ? localScheduleItems
       : relevantSourceItems;
-    items = [...groupEntertainmentTimingItems(items), ...privateRoomItems(source)];
+    items = [...(usingLocalFallback ? groupEntertainmentTimingItems(items) : items), ...privateRoomItems(source)];
     if (
       relevantSourceItems.length === 0 &&
       !usingLocalFallback &&
@@ -421,6 +422,7 @@ export function buildEntertainmentSchedule({
         return;
       }
       if (!category) {
+        eventIssues.push(...(item.timingReviewIssues ?? []));
         if (isAmbiguousLaneText(text)) {
           eventIssues.push({
             code: "AMBIGUOUS_RESOURCE",
@@ -456,8 +458,11 @@ export function buildEntertainmentSchedule({
       const resourceText = item.resourceText ?? text;
       const exactFromSource = exactResourceIdsForText(resourceText, category);
       const quantity =
-        quantityForText(resourceText, category, item.quantity) ??
+        quantityForText(resourceText, category, item.quantity, item.name) ??
         exactFromSource.length;
+      if (conflictingBookingQuantity(resourceText, category, item.quantity, item.name)) {
+        itemIssues.push({ code: "AMBIGUOUS_RESOURCE", message: `${item.name} has a conflicting booking quantity and explicit lane/table count; verify the contract.` });
+      }
 
       if (quantity < 1) {
         itemIssues.push({
@@ -470,6 +475,13 @@ export function buildEntertainmentSchedule({
         quantity,
         new Set(exactFromSource).size,
       );
+      // Keep an existing detail-line binding when its parent is now folded correctly.
+      const sourceIds = new Set([item.sourceId, ...(item.groupedSourceIds ?? [])]);
+      const priorReferences = new Set(existingReservations.filter((reservation) =>
+        reservation.active && reservation.sourceReference && sourceIds.has(reservation.sourceReference) &&
+        reservation.resourceCategory === category && reservation.tripleseatEventId === source.tripleseatEventId,
+      ).map((reservation) => reservation.sourceReference!));
+      const sourceReference = priorReferences.size === 1 ? [...priorReferences][0] : item.sourceId;
       const matchingManualReservations = manuallyOccupied
         .filter(
           (reservation) =>
@@ -499,7 +511,7 @@ export function buildEntertainmentSchedule({
         desiredCount - matchingManualReservations.length - chosenIds.length,
       );
       if (needed > 0) {
-        const ownSyncPrefix = `${source.tripleseatEventId}:${item.sourceId}:`;
+        const ownSyncPrefix = `${source.tripleseatEventId}:${sourceReference}:`;
         const occupiedForItem = occupied.filter((reservation) =>
           !(reservation.manualOverride && reservation.syncKey?.startsWith(ownSyncPrefix)),
         );
@@ -552,7 +564,7 @@ export function buildEntertainmentSchedule({
           });
           return;
         }
-        const syncKey = `${source.tripleseatEventId}:${item.sourceId}:${slot}`;
+        const syncKey = `${source.tripleseatEventId}:${sourceReference}:${slot}`;
         const issues = uniqueIssues([
           ...itemIssues,
           ...(exactFromSource.includes(resourceId)
@@ -600,7 +612,7 @@ export function buildEntertainmentSchedule({
             : usingLocalFallback || isContractEvidence
               ? "event-host-fallback"
               : "tripleseat",
-          sourceReference: item.sourceId,
+          sourceReference,
           manualOverride: timingSource === "staff-override",
           hasSourceUpdate: false,
           needsReview: issues.length > 0,
@@ -684,11 +696,12 @@ function unresolvedObservedTiming(
   );
   if (!observed || !existing.sourceReference) return null;
   const source = observed.sourceSnapshot;
-  const items = groupEntertainmentTimingItems(source.items.filter((item) => {
+  const items = groupEntertainmentTimingItems(source.items).filter((item) => {
     const category = canonicalCategoryForText(itemText(item));
     return category != null && isEntertainmentScheduleCategory(category);
-  }));
-  const item = [...items, ...privateRoomItems(source)].find((item) => item.sourceId === existing.sourceReference);
+  });
+  const observedItems: EntertainmentTimingItem[] = [...items, ...privateRoomItems(source)];
+  const item = observedItems.find((item) => item.sourceId === existing.sourceReference || item.groupedSourceIds?.includes(existing.sourceReference!));
   if (!item) return null;
   const timing = resolveEntertainmentItemTiming(item, source);
   return !timing.startAt || !timing.endAt ? { timing, observed } : null;

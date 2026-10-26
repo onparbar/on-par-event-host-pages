@@ -10,7 +10,10 @@ export type EntertainmentTimingItem = EntertainmentSourceItem & {
   contractedDurationMinutes?: number;
   timingReviewIssues?: EntertainmentReviewIssue[];
   resourceText?: string;
+  groupedSourceIds?: string[];
 };
+
+const EXTRA_HOUR_PATTERN = "\\b(?:(\\d+\\s+\\d+/\\d+|\\d+/\\d+|\\d+(?:\\.\\d+)?)\\s+)?extra\\s+hours?\\b";
 
 function textFor(item: EntertainmentSourceItem) {
   return [...new Set([item.name, item.description].filter((value): value is string => Boolean(value)))].join(" · ")
@@ -54,36 +57,61 @@ function durationEvidence(item: EntertainmentTimingItem) {
 export function groupEntertainmentTimingItems(items: readonly EntertainmentSourceItem[]): EntertainmentTimingItem[] {
   const result: EntertainmentTimingItem[] = [];
   for (const item of items) {
+    if ((item as EntertainmentTimingItem).contractedDurationMinutes != null) {
+      result.push({ ...item });
+      continue;
+    }
     const text = textFor(item);
-    const category = canonicalCategoryForText([item.categoryName, text].filter(Boolean).join(" "));
     const previous = result.at(-1);
     const previousCategory = previous ? canonicalCategoryForText([previous.categoryName, textFor(previous)].filter(Boolean).join(" ")) : null;
-    const activity = category === "bowling" ? "(?:duckpin\\s+)?bowling" : "darts?";
-    const extra = category === "bowling" || category === "darts"
-      ? text.match(new RegExp(`\\b(?:(\\d+(?:\\.\\d+)?)\\s+)?extra\\s+hours?\\s+of\\s+${activity}\\b`, "i")) : null;
-    const rentalDetail = new RegExp(`\\b\\d+(?:\\.\\d+)?\\s*(?:hours?|hrs?|minutes?|mins?)\\s+${activity}\\s+lane\\s+rental\\b`, "i").test(text);
+    const extras = [...text.matchAll(new RegExp(EXTRA_HOUR_PATTERN, "gi"))];
+    const standaloneExtra = new RegExp(`^${EXTRA_HOUR_PATTERN}`, "i").test(item.name.trim());
+    const category = canonicalCategoryForText([item.categoryName, text].filter(Boolean).join(" ")) ??
+      (standaloneExtra ? previousCategory : null);
+    const activity = category === "bowling" ? "(?:duckpin\\s+)?bowling\\s+lane"
+      : category === "darts" ? "dart\\s+(?:lane|board)"
+      : category === "pool" ? "(?:pool|billiard)\\s+table"
+      : category === "shuffleboard" ? "(?:neo\\s+)?shuffleboard\\s+table" : null;
+    const extra = activity && extras.length ? extras[0] : null;
+    const rentalDetail = activity && new RegExp(`\\b\\d+(?:\\.\\d+)?\\s*(?:hours?|hrs?|minutes?|mins?)\\s+${activity}\\s+rental\\b`, "i").test(text);
     const sameQuantity = previous && (previous.quantity == null || item.quantity == null || previous.quantity === item.quantity);
     const canMerge = previous && category === previousCategory && sameQuantity && !item.startAt && !item.endAt &&
-      (category === "bowling" || category === "darts");
-    const detailEvidence = durationEvidence(item);
+      activity;
+    const withoutExtras = (value: string) => value.replace(new RegExp(EXTRA_HOUR_PATTERN, "gi"), "");
+    const detailEvidence = durationEvidence(extra ? { ...item, name: withoutExtras(item.name), description: item.description ? withoutExtras(item.description) : null } : item);
     const priorEvidence = previous ? durationEvidence(previous) : null;
     const duration = detailEvidence.minutes;
     const previousDuration = priorEvidence?.minutes ?? null;
-    if (canMerge && ((rentalDetail && previousDuration == null && duration != null) || extra)) {
-      const extraMinutes = extra ? Number(extra[1] ?? 1) * 60 : null;
-      const combined = extraMinutes != null && previousDuration != null ? previousDuration + extraMinutes : !extra ? duration : null;
-      if (combined != null && combined > 0 && Number.isSafeInteger(combined * 60_000)) {
-        previous.resourceText ??= [previous.categoryName, textFor(previous)].filter(Boolean).join(" ");
+    const extraMinutes = extra ? parseEntertainmentDurationMinutes(`${extra[1] ?? 1} hours`) : null;
+    const invalidExtra = extra && (new Set(extras.map((match) => parseEntertainmentDurationMinutes(`${match[1] ?? 1} hours`))).size > 1 ||
+      extraMinutes == null || text.slice(0, extra.index).trimEnd().endsWith("-") ||
+      (standaloneExtra && duration != null && duration !== extraMinutes));
+    if (canMerge && ((rentalDetail && previousDuration == null && duration != null) || (extra && standaloneExtra))) {
+      const combined = extraMinutes != null
+        ? standaloneExtra && previousDuration != null ? previousDuration + extraMinutes
+          : !standaloneExtra && previousDuration == null && duration != null ? duration + extraMinutes : null
+        : duration;
+      if (!invalidExtra && combined != null && combined > 0 && Number.isSafeInteger(combined * 60_000)) {
+        previous.resourceText ??= textFor(previous);
         if (detailEvidence.contradictory || priorEvidence?.contradictory) {
           previous.timingReviewIssues = [...(previous.timingReviewIssues ?? []), { code: "TIME_NEEDS_REVIEW", message: `${item.name} has contradictory or invalid contracted duration information.` }];
         }
         previous.contractedDurationMinutes = combined;
+        previous.groupedSourceIds = [...(previous.groupedSourceIds ?? []), item.sourceId];
         previous.description = [previous.description, `${item.sourceId}: ${text}`].filter(Boolean).join(" · ");
         if (previous.quantity == null) previous.quantity = item.quantity;
         continue;
       }
     }
-    result.push({ ...item });
+    const grouped: EntertainmentTimingItem = { ...item };
+    if (extra && !standaloneExtra && duration != null && !invalidExtra) {
+      grouped.contractedDurationMinutes = duration + extraMinutes!;
+      if (detailEvidence.contradictory) grouped.timingReviewIssues = [{ code: "TIME_NEEDS_REVIEW", message: `${item.name} has contradictory contracted duration information.` }];
+    } else if (extras.length && (standaloneExtra || invalidExtra)) {
+      grouped.categoryName ??= category;
+      grouped.timingReviewIssues = [{ code: "TIME_NEEDS_REVIEW", message: `${item.name} could not be matched to one base rental with a consistent quantity and duration.` }];
+    }
+    result.push(grouped);
   }
   return result;
 }

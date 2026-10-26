@@ -87,11 +87,12 @@ describe("contract entertainment timing", () => {
     expect(schedule(source({ items: rows })).reservations).toHaveLength(3);
   });
 
-  it("does not turn a duration-detail line into a guessed singular resource count", () => {
+  it("uses the booking-heading quantity rather than the singular duration-detail wording", () => {
     const rows = [item({ name: "Duckpin Bowling Lanes", description: null, quantity: 6 }), item({ sourceId: "duration-line", name: "1 Hour Bowling Lane Rental", description: null, quantity: 6 })];
     const built = schedule(source({ items: rows }));
-    expect(built.reservations).toEqual([]);
-    expect(built.events[0].reviewIssues).toContainEqual(expect.objectContaining({ code: "SOURCE_DETAILS_UNAVAILABLE" }));
+    expect(built.reservations).toHaveLength(6);
+    expect(built.reservations.every((reservation) => reservation.contractedDurationMinutes === 60)).toBe(true);
+    expect(built.events[0].reviewIssues).not.toContainEqual(expect.objectContaining({ code: "SOURCE_DETAILS_UNAVAILABLE" }));
   });
 
   it("retains contradictory evidence on a duration-detail line after grouping", () => {

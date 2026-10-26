@@ -1,5 +1,6 @@
 import {
   canonicalCategoryForText,
+  conflictingBookingQuantity,
   deterministicEventColor,
   exactResourceIdsForText,
   getEntertainmentResource,
@@ -399,7 +400,7 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const text = [selection.sourceCategory, selection.name]
       .filter(Boolean)
       .join(" ");
-    return canonicalCategoryForText(text)
+    return canonicalCategoryForText(text) || /\bextra\s+hours?\b/i.test(selection.name)
       ? [
           {
             item: {
@@ -424,7 +425,11 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
 
   const candidates = [
     ...groupEntertainmentTimingItems(documentItems.map(({ item }) => item)).map((item) => ({ item, sourceType: "document-line" as const })),
-    ...groupEntertainmentTimingItems(selectionItems.map(({ item }) => item)).map((item) => ({ item, sourceType: "selection" as const })),
+    ...groupEntertainmentTimingItems(selectionItems.map(({ item }) => item)).filter((item) => {
+      const category = canonicalCategoryForText([item.categoryName, item.name, item.description].filter(Boolean).join(" "));
+      return !category || !documentItems.some(({ item: document }) =>
+        canonicalCategoryForText([document.categoryName, document.name, document.description].filter(Boolean).join(" ")) === category);
+    }).map((item) => ({ item, sourceType: "selection" as const })),
   ];
   const timingContext = { ...source, items: candidates.map((candidate) => candidate.item), timingNotes: (source.operationalNotes ?? []).map((note) => note.text) };
   for (const candidate of candidates) {
@@ -432,6 +437,7 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const text = [item.categoryName, item.name, item.description].filter(Boolean).join(" · ");
     const category = canonicalCategoryForText(text);
     if (!category) {
+      reviewReasons.push(...(item.timingReviewIssues ?? []).map((issue) => issue.message));
       if (
         isEntertainmentCategory(item.categoryName) ||
         isAmbiguousLaneText(text)
@@ -445,7 +451,10 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
 
     const resourceText = item.resourceText ?? text;
     const exactResourceIds = exactResourceIdsForText(resourceText, category);
-    const quantity = quantityForText(resourceText, category, item.quantity);
+    const quantity = quantityForText(resourceText, category, item.quantity, item.name);
+    if (conflictingBookingQuantity(resourceText, category, item.quantity, item.name)) {
+      reviewReasons.push(`${item.name} has a conflicting booking quantity and explicit lane/table count; verify the contract.`);
+    }
     const isMiniGolf = category === "mini-golf";
     const timing = isMiniGolf ? null : resolveEntertainmentItemTiming(item, timingContext);
     const range = timing?.startAt && timing.endAt ? { startAt: timing.startAt, endAt: timing.endAt } : null;

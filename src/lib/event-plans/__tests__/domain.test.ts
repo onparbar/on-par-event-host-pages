@@ -451,7 +451,7 @@ describe("Tripleseat EventPlan mapping", () => {
     expect(plan.entertainment).toEqual([
       {
         name: "Duckpin Bowling",
-        quantity: "Quantity not listed on BEO",
+        quantity: "1 lane",
         time: "6:00 PM - 8:00 PM",
         duration: "2 hours",
         startTimeSource: "event-start-default",
@@ -459,7 +459,7 @@ describe("Tripleseat EventPlan mapping", () => {
       },
     ]);
     expect(plan.review_reasons).not.toContain('Entertainment time is missing for "Duckpin Bowling Lanes".');
-    expect(plan.review_reasons).toContain('Entertainment quantity is missing for "Duckpin Bowling Lanes".');
+    expect(plan.review_reasons).not.toContain('Entertainment quantity is missing for "Duckpin Bowling Lanes".');
     expect(plan.review_reasons).not.toEqual(
       expect.arrayContaining([
         expect.stringContaining("Entertainment duration is missing"),

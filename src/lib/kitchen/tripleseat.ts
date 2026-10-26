@@ -21,6 +21,7 @@ import type {
   EntertainmentSourceEvent,
   EntertainmentSourceItem,
 } from "../entertainment/types";
+import { canonicalCategoryForText } from "../entertainment/resources";
 import { extractEventPlanOperationalNotes } from "../event-plans/notes";
 import type { TripleseatEventPlanSource } from "../event-plans/types";
 
@@ -517,6 +518,19 @@ function normalizeMenuSelection(value: unknown): KitchenSourceSelection[] {
     "menu_modifier_selections",
   ]).flatMap((modifier) => {
     const normalized = normalizeMenuSelectionRecord(modifier);
+    const rawModifier = asRecord(modifier);
+    const plainMiniGolf = (value: string) => /^mini golf(?:\s*[-–]\s*1 course)?$/i.test(value.trim());
+    if (normalized && rawModifier && selection && plainMiniGolf(selection.name) &&
+      Number.isSafeInteger(selection.quantity) && selection.quantity! > 0 && normalized.quantity == null && plainMiniGolf(normalized.name) &&
+      [rawModifier.description, rawModifier.long_description].every((value) => !asString(value) || plainMiniGolf(stripMarkup(asString(value)!))) &&
+      ["start_at", "start_time", "end_at", "end_time", "event_start_iso8601", "event_end_iso8601", "duration"].every((field) => rawModifier[field] == null) &&
+      ["price", "unit_price", "price_per_person", "amount", "subtotal", "total"].every((field) => rawModifier[field] == null || asNumber(rawModifier[field]) === 0)) {
+      return [];
+    }
+    if (normalized && !normalized.sourceCategory && selection && /^extra\s+hours?$/i.test(normalized.name) &&
+      canonicalCategoryForText([selection.sourceCategory, selection.name].filter(Boolean).join(" "))) {
+      normalized.sourceCategory = canonicalCategoryForText([selection.sourceCategory, selection.name].filter(Boolean).join(" "));
+    }
     return normalized ? [normalized] : [];
   });
 
@@ -674,6 +688,31 @@ function entertainmentDocumentItems(event: UnknownRecord) {
     }
   }
   return items;
+}
+
+function entertainmentItemCategory(item: EntertainmentSourceItem) {
+  const category = item.categoryName ?? "";
+  if (isFoodDocumentCategory(category) || /\b(?:beverages?|drinks?)\b/i.test(category)) return null;
+  return canonicalCategoryForText([category, item.name, item.description].filter(Boolean).join(" "));
+}
+
+function needsBookingEntertainment(event: UnknownRecord, items: readonly EntertainmentSourceItem[]) {
+  const categories = new Set(items.map(entertainmentItemCategory).filter(Boolean));
+  return categories.size === 0 || extractArray(event.category_totals, ["category_totals"]).some((value) => {
+    const category = canonicalCategoryForText(categoryName(value) ?? "");
+    return category != null && !categories.has(category);
+  });
+}
+
+function mergeEntertainmentItems(primary: EntertainmentSourceItem[], fallback: EntertainmentSourceItem[]) {
+  if (!primary.length) return fallback;
+  const categories = new Set(primary.map(entertainmentItemCategory).filter(Boolean));
+  return [...primary, ...fallback.filter((item) => {
+    const category = entertainmentItemCategory(item);
+    if (category) return !categories.has(category);
+    // Retain unmapped evidence, without adding fallback food/drink selections.
+    return !isFoodDocumentCategory(item.categoryName ?? "") && !/\b(?:beverages?|drinks?)\b/i.test(item.categoryName ?? "");
+  })];
 }
 
 function normalizedSelectionName(value: string) {
@@ -1281,7 +1320,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const [menuSelections, rawNotes, bookingItems] = await Promise.all([
       this.menuSelections(eventId),
       this.noteRecords("events", eventId),
-      bookingId && documentItems.length === 0
+      bookingId && needsBookingEntertainment(detail, documentItems)
         ? this.bookingEntertainmentItems(bookingId, eventId)
         : Promise.resolve([]),
     ]);
@@ -1292,10 +1331,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       normalizeDate(summary.event_date_iso8601) ||
       normalizeDate(summary.start_date) ||
       normalizeDate(summary.event_date);
-    const items =
-      documentItems.length > 0 || bookingItems.length > 0
-        ? [...documentItems, ...bookingItems]
-        : menuSelections.map((selection, index) => ({
+    const items = mergeEntertainmentItems(
+      mergeEntertainmentItems(documentItems, bookingItems),
+      menuSelections.map((selection, index) => ({
             sourceId: `menu:${selection.sourceId ?? index}`,
             name: selection.name,
             description: selection.name,
@@ -1303,7 +1341,8 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
             quantity: selection.quantity ?? null,
             startAt: null,
             endAt: null,
-          }));
+          })),
+    );
     const rooms = extractArray(detail.rooms, ["rooms"]).flatMap(
       (value, index) => {
         const room = asRecord(value);
@@ -1470,7 +1509,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       await Promise.all([
         this.menuSelections(eventId),
         this.noteRecords("events", eventId, noteAvailability),
-        bookingId && eventDocumentItems.length === 0
+        bookingId && needsBookingEntertainment(detail, eventDocumentItems)
           ? this.bookingEntertainmentItems(bookingId, eventId)
           : Promise.resolve([]),
       ]);
@@ -1526,10 +1565,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       status,
       rooms: roomNames(detail),
       selections: merged.selections,
-      documentItems: [
-        ...eventDocumentItems,
-        ...bookingDocumentItems,
-      ],
+      documentItems: mergeEntertainmentItems(eventDocumentItems, bookingDocumentItems),
       operationalNotes: operationalNoteResult.notes,
       operationalNotesAvailable: operationalNoteResult.available,
       operationalNotesTruncated: operationalNoteResult.truncated,

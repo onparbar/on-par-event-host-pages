@@ -283,6 +283,14 @@ function numberedResourceIds(
     },
   };
   const match = value.match(config[category].pattern);
+  const followingNoun = {
+    bowling: /^(?:(?:duckpin\s+)?bowling\s+)?lanes?\b/i,
+    darts: /^(?:dart\s+)?(?:lanes?|boards?)\b/i,
+    pool: /^(?:(?:pool|billiard)\s+)?tables?\b/i,
+    shuffleboard: /^(?:(?:neo\s+)?shuffleboard\s+)?tables?\b/i,
+  }[category];
+  // Repeated heading + "2 pool tables" is a count, not an assignment to Pool Table 2.
+  if (match && followingNoun.test(value.slice((match.index ?? 0) + match[0].length).trim())) return [];
   return match
     ? numberRange(match[1], config[category].maximum).map(
         (number) => `${category}-${number}`,
@@ -314,6 +322,7 @@ export function quantityForText(
   value: string,
   category: EntertainmentCategory,
   structuredQuantity: number | null,
+  bookingName = value,
 ) {
   if (category === "mini-golf") {
     // Mini Golf is open play rather than a scheduled resource reservation.
@@ -332,6 +341,13 @@ export function quantityForText(
   if (exactResourceCount > 0) {
     return exactResourceCount;
   }
+  // Bare booking headings count inventory; rental-detail Qty can be billed hours.
+  const bookingHeading = {
+    bowling: /^(?:(?:duckpin\s+)?bowling(?:\s+lanes?)?|duckpin\s+lanes?)$/,
+    darts: /^(?:dartsee\s+)?darts?$|^dart\s+(?:lanes?|boards?)$/,
+    pool: /^(?:pool|billiards?)(?:\s+tables?)?$/,
+    shuffleboard: /^(?:neo\s+)?shuffleboard(?:\s+tables?)?$/,
+  }[category];
   const nounPattern: Record<
     Exclude<EntertainmentCategory, "private-rooms" | "mini-golf">,
     string
@@ -347,6 +363,10 @@ export function quantityForText(
   if (match) {
     return Number(match[1]);
   }
+  if (bookingHeading.test(normalizeResourceText(bookingName)) &&
+    typeof structuredQuantity === "number" && Number.isSafeInteger(structuredQuantity) && structuredQuantity > 0) {
+    return structuredQuantity;
+  }
   const singularRentalPattern: Record<
     Exclude<EntertainmentCategory, "private-rooms" | "mini-golf">,
     RegExp
@@ -360,6 +380,13 @@ export function quantityForText(
     return 1;
   }
   return null;
+}
+
+export function conflictingBookingQuantity(value: string, category: EntertainmentCategory, quantity: number | null, bookingName: string) {
+  if (quantity == null || quantityForText(bookingName, category, null) != null ||
+    quantityForText(bookingName, category, quantity) !== quantity) return false;
+  const textQuantity = quantityForText(value, category, null);
+  return textQuantity != null && textQuantity !== quantity;
 }
 
 export function deterministicEventColor(eventId: string) {
