@@ -5,6 +5,7 @@ import {
   getPhysicalFloorPlanAreaId,
 } from "./configuration/areas";
 import { formatClock } from "@/lib/entertainment/time";
+import { formatEntertainmentIntervalHours } from "@/lib/entertainment/duration";
 import type {
   EntertainmentCategory,
   EntertainmentReservation,
@@ -380,33 +381,9 @@ export function entertainmentMultipleReservationOutlines(
     );
 }
 
-function sourceDurationForArea(event: FloorPlanEvent, area: FloorPlanArea) {
-  const pattern =
-    area.type === "bowling"
-      ? /bowling/i
-      : area.type === "darts"
-        ? /dart/i
-        : area.type === "pool"
-          ? /pool/i
-          : area.type === "shuffleboard"
-            ? /shuffle/i
-            : area.type === "mini-golf"
-              ? /mini\s*golf/i
-              : null;
-  if (!pattern) return "";
-  const duration = event.source.entertainment.find((item) =>
-    pattern.test(item.name),
-  )?.duration.trim();
-  if (!duration || /not listed|unknown|tbd/i.test(duration)) return "";
-  return duration
-    .toUpperCase()
-    .replace(/\bHOURS\b/g, "HRS")
-    .replace(/\bHOUR\b/g, "HR");
-}
-
 export function entertainmentTimingLabel(
   reservation: EntertainmentReservation,
-  event: FloorPlanEvent,
+  _event: FloorPlanEvent,
   area: FloorPlanArea,
 ) {
   const needsTimeReview = reservation.reviewIssues.some(
@@ -415,7 +392,7 @@ export function entertainmentTimingLabel(
   const time = needsTimeReview
     ? "TIME TBD"
     : `${formatClock(reservation.startAt)} – ${formatClock(reservation.endAt)}`;
-  const duration = sourceDurationForArea(event, area);
+  const duration = area.type === "mini-golf" ? "" : formatEntertainmentIntervalHours(reservation.startAt, reservation.endAt);
   return duration ? `${duration} · ${time}` : time;
 }
 

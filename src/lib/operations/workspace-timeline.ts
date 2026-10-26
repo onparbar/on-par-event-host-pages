@@ -1,6 +1,7 @@
 import type { WorkspacePayload } from "./workspace";
 import { checklistSections } from "@/lib/checklist-model";
 import { checklistReadiness } from "@/lib/checklist-readiness";
+import { formatEntertainmentIntervalHours } from "@/lib/entertainment/duration";
 
 export type WorkspaceTimelineItem = {
   id: string;
@@ -29,7 +30,8 @@ export function workspaceTimeline(payload: WorkspacePayload): WorkspaceTimelineI
   }
   if (payload.foodReminderAt) entries.push({ id: "food", label: "Get Food Out", at: payload.foodReminderAt, location: area, instruction: "Have food out and ready 15 minutes before the party. This is not an order release.", completed: payload.record?.tasks["food-kitchen-window"] === true });
   for (const activity of payload.activities.filter((item) => !item.cancelled)) {
-    entries.push({ id: `${activity.id}:start`, label: `${activity.label}${activity.quantity ? `: ${activity.quantity}` : ""}`, at: activity.untimed ? null : activity.startAt, location: activity.resourceNames.join(", ") || area, instruction: activity.untimed ? "Untimed contract activity." : activity.startAt ? "Activity start / guest transition." : "Activity time needs review.", completed: Boolean(activity.startedAt || activity.completedAt) });
+    const duration = !activity.untimed && activity.startAt && activity.endAt ? formatEntertainmentIntervalHours(activity.startAt, activity.endAt) : "";
+    entries.push({ id: `${activity.id}:start`, label: `${activity.label}${activity.quantity ? `: ${activity.quantity}` : ""}`, at: activity.untimed ? null : activity.startAt, location: activity.resourceNames.join(", ") || area, instruction: activity.untimed ? "Untimed contract activity." : activity.startAt ? `Activity start / guest transition.${duration ? ` Duration: ${duration}.` : ""}` : "Activity time needs review.", completed: Boolean(activity.startedAt || activity.completedAt) });
     if (!activity.untimed && activity.endAt) entries.push({ id: `${activity.id}:end`, label: `${activity.label} ends`, at: activity.endAt, location: activity.resourceNames.join(", ") || area, instruction: "Guide guests to the next scheduled activity.", completed: Boolean(activity.completedAt) });
   }
   if (payload.eventEndAt) entries.push({ id: "breakdown", label: "Event ends / breakdown", at: payload.eventEndAt, location: area, instruction: "Complete closing and breakdown tasks.", completed: sectionComplete("end-of-event") });

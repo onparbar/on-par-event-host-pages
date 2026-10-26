@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { syncRollingEventPlans } from "@/lib/event-plans/sync";
+import { syncEntertainmentDay } from "@/lib/entertainment/sync";
 import {
   ensureConfirmedContractFloorPlanWindow,
   maintainTwoWeekFloorPlanHorizon,
@@ -81,11 +82,36 @@ async function runSync() {
       });
     }
     const floorPlans = await maintainTwoWeekFloorPlanHorizon();
+    const warnings = floorPlans.results.flatMap((entry) => [
+      ...(entry.status === "error" ? [`${entry.date}: ${entry.message ?? "Floor plans could not refresh."}`] : []),
+      ...(entry.warnings ?? []).map((warning) => `${entry.date}: ${warning}`),
+    ]);
+    const entertainment: Array<{ date: string; status: "success" | "error"; conflictsFound?: number; message?: string }> = [];
+    const sourceWindow = result.sync;
+    const remainingDates = sourceWindow ? [...new Set(result.plans.map((plan) => plan.date))].filter(
+      (date) => date >= sourceWindow.windowStart && date <= sourceWindow.windowEnd &&
+        (date < floorPlans.startDate || date > floorPlans.endDate),
+    ).sort() : [];
+    for (const date of remainingDates) {
+      try {
+        const day = await syncEntertainmentDay(date);
+        entertainment.push({ date, status: "success", conflictsFound: day.conflicts.length });
+        if (day.conflicts.length) {
+          warnings.push(`${date}: ${day.conflicts.length} entertainment resource conflict${day.conflicts.length === 1 ? " requires" : "s require"} review.`);
+        }
+      } catch {
+        const message = "Entertainment could not refresh; its last saved reservations remain in effect.";
+        entertainment.push({ date, status: "error", message });
+        warnings.push(`${date}: ${message}`);
+      }
+    }
     return NextResponse.json({
       sourceMode: result.sourceMode,
       eventCount: result.plans.length,
       sync: result.sync,
       floorPlans,
+      entertainment,
+      ...(warnings.length ? { warning: warnings.join(" ") } : {}),
     });
   } catch (error) {
     const message =

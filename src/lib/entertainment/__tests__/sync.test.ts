@@ -448,7 +448,7 @@ describe("persistent entertainment synchronization", () => {
     );
   });
 
-  it("uses the known event window when mock entertainment timing needs review", async () => {
+  it("does not invent a purchased duration from the known event window", async () => {
     const storage = new MemoryEntertainmentStorage();
     const mockAdapter: TripleseatAdapter = {
       ...adapter([]),
@@ -479,15 +479,8 @@ describe("persistent entertainment synchronization", () => {
         },
       ],
     });
-    expect(synced.reservations).toHaveLength(1);
-    expect(synced.reservations[0]).toMatchObject({
-      startAt: "2026-07-28T21:00:00.000Z",
-      endAt: "2026-07-28T22:00:00.000Z",
-      needsReview: true,
-    });
-    expect(synced.reservations[0].reviewIssues).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "TIME_NEEDS_REVIEW" })]),
-    );
+    expect(synced.reservations).toHaveLength(0);
+    expect(synced.events[0].reviewIssues).toContainEqual(expect.objectContaining({ code: "TIME_NEEDS_REVIEW", message: expect.stringContaining("duration") }));
   });
 
   it("rejects untrusted reservation IDs before querying storage", async () => {

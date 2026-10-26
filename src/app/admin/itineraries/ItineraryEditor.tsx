@@ -7,9 +7,10 @@ import type { AdminState } from "@/lib/admin-types";
 import type { ItineraryAsset } from "@/lib/event-plans/types";
 import { applyItineraryEdit, buildItineraryEdit, type ItineraryEditFields } from "@/lib/itineraries/edits";
 import { itineraryDrinkLines } from "@/lib/itineraries/presentation";
+import { normalizeEntertainmentDurationHours } from "@/lib/entertainment/duration";
 
 function draftFor(event: ItineraryAsset): Required<ItineraryEditFields> {
-  return { name: event.name, time: event.time, guest_count: event.guest_count, rooms: event.rooms, food: event.food, drinkLines: itineraryDrinkLines(event), entertainment: event.entertainment, special_instructions: event.special_instructions ?? [] };
+  return { name: event.name, time: event.time, guest_count: event.guest_count, rooms: event.rooms, food: event.food, drinkLines: itineraryDrinkLines(event), entertainment: event.entertainment.map((item) => ({ ...item, duration: normalizeEntertainmentDurationHours(item.duration) })), special_instructions: event.special_instructions ?? [] };
 }
 
 function lineValues(value: string) { return value.split("\n"); }
@@ -93,7 +94,7 @@ export default function ItineraryEditor({ base, events, initialState, initialUpd
             return <div className="admin-itinerary-activity" key={index}>
               <label>Activity<input aria-label={`Activity ${index + 1}`} readOnly={miniGolf} value={item.name} maxLength={120} onChange={(event) => updateItem("name", event.target.value)} /></label>
               <label>Quantity<input aria-label={`Quantity ${index + 1}`} readOnly={miniGolf} value={item.quantity} maxLength={120} onChange={(event) => updateItem("quantity", event.target.value)} /></label>
-              {miniGolf ? <span className="meta">Contract quantity · Untimed</span> : <><label>Time<input aria-label={`Time ${index + 1}`} value={item.time} maxLength={120} onChange={(event) => updateItem("time", event.target.value)} /></label><label>Duration<input aria-label={`Duration ${index + 1}`} value={item.duration} maxLength={120} onChange={(event) => updateItem("duration", event.target.value)} /></label><button className="button-link" type="button" onClick={() => update("entertainment", draft.entertainment.filter((_, rowIndex) => rowIndex !== index))}>Remove activity {index + 1}</button></>}
+              {miniGolf ? <span className="meta">Contract quantity · Untimed</span> : <><label>Time<input aria-label={`Time ${index + 1}`} value={item.time} maxLength={120} onChange={(event) => updateItem("time", event.target.value)} /></label><label>Duration (hours)<input aria-label={`Duration ${index + 1}`} value={item.duration} maxLength={120} onChange={(event) => updateItem("duration", event.target.value)} /></label><button className="button-link" type="button" onClick={() => update("entertainment", draft.entertainment.filter((_, rowIndex) => rowIndex !== index))}>Remove activity {index + 1}</button></>}
             </div>;
           })}
           <button className="button-link" type="button" onClick={() => update("entertainment", [...draft.entertainment, { name: "", quantity: "", time: "", duration: "" }])}>Add activity</button>

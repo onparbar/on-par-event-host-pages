@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getEntertainmentDay, syncEntertainmentDay } = vi.hoisted(() => ({
+const { getEntertainmentDay, syncEntertainmentDay, syncEventPlanWindow } = vi.hoisted(() => ({
   getEntertainmentDay: vi.fn(),
   syncEntertainmentDay: vi.fn(),
+  syncEventPlanWindow: vi.fn(),
 }));
+
+vi.mock("@/lib/event-plans/sync", () => ({ syncEventPlanWindow }));
 
 vi.mock("@/lib/entertainment/sync", () => ({
   assertEntertainmentDate: vi.fn(),
@@ -19,6 +22,7 @@ describe("entertainment operational access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("NODE_ENV", "production");
+    syncEventPlanWindow.mockResolvedValue({ plans: [], sync: null });
     getEntertainmentDay.mockResolvedValue({
       date: "2026-08-06",
       reservations: [],
@@ -58,6 +62,7 @@ describe("entertainment operational access", () => {
 
     expect(response.status).toBe(200);
     expect(syncEntertainmentDay).toHaveBeenCalledWith("2026-08-06");
+    expect(syncEventPlanWindow).toHaveBeenCalledWith({ startDate: "2026-08-06", endDate: "2026-08-06" }, { legacyPlans: [] });
   });
 
   it("rejects a cross-origin schedule mutation", async () => {
@@ -74,5 +79,6 @@ describe("entertainment operational access", () => {
 
     expect(response.status).toBe(403);
     expect(syncEntertainmentDay).not.toHaveBeenCalled();
+    expect(syncEventPlanWindow).not.toHaveBeenCalled();
   });
 });

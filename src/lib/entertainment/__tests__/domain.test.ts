@@ -250,13 +250,13 @@ describe("America/New_York operating time rules", () => {
     );
   });
 
-  it("requires positive 15-minute reservation increments", () => {
+  it("preserves exact clock times while requiring a positive zoned reservation interval", () => {
     expect(() =>
       validateReservationTimes(
         "2026-07-28T21:07:00.000Z",
         "2026-07-28T22:00:00.000Z",
       ),
-    ).toThrow("15-minute");
+    ).not.toThrow();
     expect(() => validateReservationTimes(END, START)).toThrow(
       "after its start",
     );
@@ -442,7 +442,7 @@ describe("deterministic schedule construction", () => {
     );
   });
 
-  it("uses event times as a marked fallback when item time is missing", () => {
+  it("does not substitute the full event window when contracted duration is missing", () => {
     const result = buildEntertainmentSchedule({
       sourceEvents: [
         sourceEvent({
@@ -460,15 +460,8 @@ describe("deterministic schedule construction", () => {
       localEvents: [localEvent()],
       now: NOW,
     });
-    expect(result.reservations).toEqual([
-      expect.objectContaining({
-        startAt: START,
-        endAt: END,
-        reviewIssues: expect.arrayContaining([
-          expect.objectContaining({ code: "TIME_NEEDS_REVIEW" }),
-        ]),
-      }),
-    ]);
+    expect(result.reservations).toEqual([]);
+    expect(result.events[0].reviewIssues).toContainEqual(expect.objectContaining({ code: "TIME_NEEDS_REVIEW", message: expect.stringContaining("duration") }));
   });
 
   it("reports a resource shortage instead of inventing a thirteenth lane", () => {
@@ -605,7 +598,7 @@ describe("deterministic schedule construction", () => {
           items: [
             sourceItem({
               name: "Duckpin Bowling",
-              description: "5 Duckpin Bowling lanes for 2 hours",
+              description: "5 Duckpin Bowling lanes for 1 hour",
               quantity: 5,
             }),
           ],

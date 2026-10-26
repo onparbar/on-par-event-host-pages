@@ -1,4 +1,5 @@
 import type { EventPlan, ItineraryAsset } from "@/lib/event-plans/types";
+import { normalizeEntertainmentDurationHours } from "@/lib/entertainment/duration";
 
 export function itineraryDrinkLines(event: ItineraryAsset) {
   if (event.itinerary_edit?.fields.drinkLines) return event.itinerary_edit.fields.drinkLines;
@@ -23,9 +24,8 @@ export function itineraryEntertainmentGroups(event: Pick<EventPlan, "entertainme
         details.push("Untimed");
       } else if (/time not listed/i.test(item.time)) {
         details.push("Time not listed on BEO");
-      } else if (item.duration) {
-        details.push(item.duration);
       }
+      if (item.duration) details.push(normalizeEntertainmentDurationHours(item.duration));
     }
     return { title: item.name, detail: details.filter(Boolean).join(" · ") };
   });

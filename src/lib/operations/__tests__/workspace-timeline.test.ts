@@ -4,6 +4,14 @@ import { workspaceTimeline, workspaceTimelinePosition } from "../workspace-timel
 import { workspaceEvent, workspaceRecord, workspaceReservation } from "./workspace-fixtures";
 
 describe("event operating timeline", () => {
+  it("includes activity duration in hours without moving exact half-hour starts or timing mini golf", () => {
+    const payload = buildWorkspacePayload({ event: workspaceEvent, record: null, reservations: [workspaceReservation({ endAt: "2026-10-24T00:00:00.000Z" })], scheduleAvailable: true });
+    const entries = workspaceTimeline(payload);
+    const activity = entries.find((item) => item.label.startsWith("Duckpin Bowling:"));
+    expect(activity).toMatchObject({ at: "2026-10-23T22:30:00.000Z", instruction: "Activity start / guest transition. Duration: 1.5 hours." });
+    expect(entries.find((item) => item.label === "Mini Golf: 20")).toMatchObject({ at: null, instruction: "Untimed contract activity." });
+  });
+
   it("uses saved activity times, contract mini-golf quantity without time, and separate food deadline", () => {
     const payload = buildWorkspacePayload({ event: workspaceEvent, record: workspaceRecord(), reservations: [workspaceReservation()], scheduleAvailable: true });
     const entries = workspaceTimeline(payload);

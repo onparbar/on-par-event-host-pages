@@ -587,7 +587,7 @@ describe("floor-plan dashboard organization", () => {
       /aria-label="VIP 1 assigned to ADF"[^>]+--event-color:#B45309/,
     );
     expect(html).toMatch(
-      /aria-label="VIP 1 also reserved by Cassie Perks VIP, 9:00 PM – 11:00 PM"[^>]+--event-color:#1D4ED8/,
+      /aria-label="VIP 1 also reserved by Cassie Perks VIP, 2 hours · 9:00 PM – 11:00 PM"[^>]+--event-color:#1D4ED8/,
     );
     expect(html).toContain(">9:00 PM – 11:00 PM</small>");
   });

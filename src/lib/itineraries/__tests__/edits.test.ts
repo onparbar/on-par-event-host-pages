@@ -9,6 +9,21 @@ const edit = { updatedAt: now, sourceUpdatedAt: plan.source_updated_at!, fields:
 const fullFields = () => ({ name: plan.name, time: plan.time, guest_count: plan.guest_count, rooms: plan.rooms, food: plan.food, drinkLines: itineraryDrinkLines(plan), entertainment: plan.entertainment, special_instructions: [] });
 
 describe("Admin itinerary display edits", () => {
+  it("shows normalized hours alongside exact clock times, including old minute-based items", () => {
+    const entertainment = [{ name: "Bowling", quantity: "3 lanes", time: "5:30 PM - 7:00 PM", duration: "90 minutes" }];
+    expect(itineraryEntertainmentGroups({ entertainment })).toEqual([{ title: "Bowling", detail: "3 lanes · 5:30 PM – 7:00 PM · 1.5 hours" }]);
+  });
+
+  it("normalizes manual duration edits without creating a display-only override for equivalent units", () => {
+    const entertainment = [{ name: "Bowling", quantity: "3 lanes", time: "5:30 PM - 7:00 PM", duration: "90 minutes" }];
+    const base = { ...plan, entertainment };
+    const fields = { ...fullFields(), entertainment: [{ ...entertainment[0], duration: "1.5 hours" }] };
+    expect(buildItineraryEdit(base, fields, now)).toBeNull();
+    const saved = normalizeItineraryEdits({ 123: { ...edit, fields: { entertainment } } });
+    expect(saved["123"].fields.entertainment?.[0].duration).toBe("1.5 hours");
+    expect(applyItineraryEdit(base, { ...edit, fields: { entertainment } }).entertainment[0].duration).toBe("1.5 hours");
+  });
+
   it("keeps the source record unchanged and applies only the edited fields", () => {
     const original = structuredClone(plan);
     const current = applyItineraryEdit(plan, edit);
@@ -17,6 +32,13 @@ describe("Admin itinerary display edits", () => {
     expect(current.date).toBe(plan.date);
     expect(current.source_updated_at).toBe(plan.source_updated_at);
     expect(plan).toEqual(original);
+  });
+
+  it("does not create a display edit merely because source timing metadata exists", () => {
+    const entertainment = [{ name: "Bowling", quantity: "3 lanes", time: "5:30 PM - 7:00 PM", duration: "1.5 hours", startTimeSource: "event-start-default" as const, contractedDurationMinutes: 90 }];
+    const base = { ...plan, entertainment };
+    const fields = { ...fullFields(), entertainment: entertainment.map(({ name, quantity, time, duration }) => ({ name, quantity, time, duration })) };
+    expect(buildItineraryEdit(base, fields, now)).toBeNull();
   });
 
   it("keeps future source updates for fields that were not overridden", () => {

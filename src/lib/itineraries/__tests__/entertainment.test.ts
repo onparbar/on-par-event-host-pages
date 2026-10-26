@@ -120,6 +120,12 @@ function day(reservations: EntertainmentReservation[]): EntertainmentDayPayload 
 }
 
 describe("itinerary entertainment projection", () => {
+  it("expresses partial purchased intervals in hours while preserving exact clocks", () => {
+    const items = itineraryEntertainmentFromReservations([reservation({ endAt: "2026-08-08T00:00:00.000Z" })]);
+    expect(items).toEqual([{ name: "Duckpin Bowling", quantity: "1 lane · Bowling Lane 1", time: "6:30 PM – 8:00 PM", duration: "1.5 hours" }]);
+    expect(items[0].duration).not.toMatch(/minute|\bmin\b/i);
+  });
+
   it("groups physical reservations into the current itinerary time and quantity", () => {
     const items = itineraryEntertainmentFromReservations([
       reservation(),

@@ -92,6 +92,9 @@ type ReservationRow = {
   source_start_at: string | null;
   source_end_at: string | null;
   source_resource_id: string | null;
+  start_time_source?: EntertainmentReservation["startTimeSource"];
+  source_start_time_source?: EntertainmentReservation["sourceStartTimeSource"];
+  contracted_duration_minutes?: number | null;
   event_color: string;
   color_source: EntertainmentReservation["colorSource"];
   source: EntertainmentReservation["source"];
@@ -200,6 +203,9 @@ function reservationToRow(
     source_start_at: reservation.sourceStartAt,
     source_end_at: reservation.sourceEndAt,
     source_resource_id: reservation.sourceResourceId,
+    start_time_source: reservation.startTimeSource ?? null,
+    source_start_time_source: reservation.sourceStartTimeSource ?? null,
+    contracted_duration_minutes: reservation.contractedDurationMinutes ?? null,
     event_color: reservation.eventColor,
     color_source: reservation.colorSource,
     source: reservation.source,
@@ -238,6 +244,9 @@ function reservationFromRow(
     sourceStartAt: row.source_start_at,
     sourceEndAt: row.source_end_at,
     sourceResourceId: row.source_resource_id,
+    startTimeSource: row.start_time_source,
+    sourceStartTimeSource: row.source_start_time_source,
+    contractedDurationMinutes: row.contracted_duration_minutes,
     eventColor: row.event_color,
     colorSource: row.color_source,
     source: row.source,
@@ -322,6 +331,9 @@ function materialReservationValue(reservation: EntertainmentReservation) {
     sourceStartAt: reservation.sourceStartAt,
     sourceEndAt: reservation.sourceEndAt,
     sourceResourceId: reservation.sourceResourceId,
+    startTimeSource: reservation.startTimeSource,
+    sourceStartTimeSource: reservation.sourceStartTimeSource,
+    contractedDurationMinutes: reservation.contractedDurationMinutes,
     manualOverride: reservation.manualOverride,
     hasSourceUpdate: reservation.hasSourceUpdate,
     needsReview: reservation.needsReview,

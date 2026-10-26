@@ -686,6 +686,7 @@ export async function maintainTwoWeekFloorPlanHorizon(
     eventCount: number;
     planStatus?: FloorPlanStatus;
     message?: string;
+    warnings?: string[];
   }> = [];
 
   for (let offset = 0; offset <= 14; offset += 1) {
@@ -697,11 +698,13 @@ export async function maintainTwoWeekFloorPlanHorizon(
         storage,
       );
       const validated = await validateAndSaveFloorPlan(date, storage);
+      const warnings = [...new Set([...generated.warnings, ...validated.warnings])];
       results.push({
         date,
         status: "generated",
         eventCount: generated.plan.events.length,
         planStatus: validated.plan.status,
+        ...(warnings.length ? { warnings } : {}),
       });
     } catch (error) {
       const message = error instanceof Error

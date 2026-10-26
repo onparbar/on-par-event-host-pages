@@ -5,6 +5,7 @@ import {
   displayEventForFloorPlanArea,
   assignLocalFloorPlanArea,
   entertainmentMultipleReservationOutlines,
+  entertainmentTimingLabel,
   floorPlanEventFillColor,
   eventForFloorPlanEntertainment,
   localHighlightIdsForDeletion,
@@ -181,6 +182,13 @@ function entertainmentReservation(
 }
 
 describe("multiple entertainment reservation outlines", () => {
+  it("labels the saved interval in hours rather than stale source-category duration", () => {
+    const event = floorPlanEvent("timing-event", "77", "Redacted event", "#297025");
+    event.source.entertainment = [{ name: "Bowling", quantity: "1 lane", time: "5:30 PM - 8:30 PM", duration: "3 hours" }];
+    const reservation = entertainmentReservation("timing-reservation", event, "bowling-1", "2026-08-07T21:30:00.000Z", "2026-08-07T23:00:00.000Z");
+    expect(entertainmentTimingLabel(reservation, event, getFloorPlanArea("bowling-1")!)).toBe("1.5 hours · 5:30 PM – 7:00 PM");
+  });
+
   const firstEvent = floorPlanEvent("event-1", "101", "First Party", "#D97706");
   const secondEvent = floorPlanEvent("event-2", "202", "Second Party", "#C026D3");
   const floorPlan = { ...plan, events: [firstEvent, secondEvent] };
@@ -338,7 +346,7 @@ describe("multiple entertainment reservation outlines", () => {
         eventName: "Cassie Perks VIP",
         color: "#1D4ED8",
         resourceNames: ["VIP 1"],
-        timeLabel: "9:00 PM – 11:00 PM",
+        timeLabel: "2 hours · 9:00 PM – 11:00 PM",
         x: 1068,
         y: 540,
         width: 128,

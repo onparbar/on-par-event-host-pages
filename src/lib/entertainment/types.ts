@@ -42,7 +42,13 @@ export type EntertainmentSourceItem = {
   quantity: number | null;
   startAt: string | null;
   endAt: string | null;
+  startTimeSource?: EntertainmentStartTimeSource;
 };
+
+export type EntertainmentStartTimeSource =
+  | "contract-explicit"
+  | "event-start-default"
+  | "staff-override";
 
 export type EntertainmentSourceRoom = {
   id: string | null;
@@ -63,6 +69,7 @@ export type EntertainmentSourceEvent = {
   categoryNames: string[];
   sourceUpdatedAt: string | null;
   noteCount: number;
+  timingNotes?: string[];
   sourceSystem?: "tripleseat" | "vip-prep" | "contract-evidence";
 };
 
@@ -114,6 +121,9 @@ export type EntertainmentReservation = {
   sourceStartAt: string | null;
   sourceEndAt: string | null;
   sourceResourceId: string | null;
+  startTimeSource?: EntertainmentStartTimeSource | null;
+  sourceStartTimeSource?: Exclude<EntertainmentStartTimeSource, "staff-override"> | null;
+  contractedDurationMinutes?: number | null;
   eventColor: string;
   colorSource: EntertainmentColorSource;
   source: EntertainmentReservationSource;

@@ -155,7 +155,7 @@ function miniGolfOnly(value: string) {
 
 function entertainmentEvidenceKey(
   item: EventPlan["entertainment"][number],
-  field: keyof EventPlan["entertainment"][number],
+  field: "name" | "quantity" | "time" | "duration",
 ) {
   return [item.name, item[field]]
     .map((value) => value.trim().toLocaleLowerCase("en-US"))
@@ -500,7 +500,7 @@ export function buildAdminContractEvidence(
   const entertainmentRows = plan.entertainment.length
     ? plan.entertainment.flatMap((item, index) => {
         const retainedFor = (
-          field: keyof EventPlan["entertainment"][number],
+          field: "name" | "quantity" | "time" | "duration",
         ) =>
           entertainmentEvidence.find(
             ({ item: retained }) =>

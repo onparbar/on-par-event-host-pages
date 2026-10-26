@@ -428,11 +428,20 @@ export async function getEntertainmentDay(
     (reservation) =>
       reservation.active && reservation.resourceCategory !== "mini-golf",
   );
-  const liveVip = buildEntertainmentSchedule({
+  const builtVip = buildEntertainmentSchedule({
     sourceEvents: vipResult.events,
     localEvents: floorPlanContext(options).localEvents,
     existingReservations: storedReservations,
   });
+  const liveVip = {
+    ...builtVip,
+    reservations: mergeReservationsForSync(
+      stored.reservations.filter((reservation) => reservation.source === "vip-prep"),
+      builtVip.reservations,
+      undefined,
+      builtVip.events,
+    ).filter((reservation) => reservation.active),
+  };
   const confirmedSources = confirmedContractEntertainmentSourcesForDate(
     date,
     stored.sync?.lastSuccessfulSyncAt,
@@ -452,7 +461,7 @@ export async function getEntertainmentDay(
           ),
       ),
   );
-  const confirmedSchedule = buildEntertainmentSchedule({
+  const builtConfirmedSchedule = buildEntertainmentSchedule({
     sourceEvents: confirmedSources,
     localEvents: floorPlanContext(options).localEvents,
     existingReservations: [
@@ -460,6 +469,15 @@ export async function getEntertainmentDay(
       ...liveVip.reservations,
     ],
   });
+  const confirmedEventIds = new Set(builtConfirmedSchedule.events.flatMap(eventIdentityValues));
+  const existingConfirmed = stored.reservations.filter((reservation) =>
+    [reservation.localEventId, reservation.tripleseatEventId].some((id) => id && confirmedEventIds.has(id)),
+  );
+  const confirmedSchedule = {
+    ...builtConfirmedSchedule,
+    reservations: mergeReservationsForSync(existingConfirmed, builtConfirmedSchedule.reservations, undefined, builtConfirmedSchedule.events),
+  };
+  const replacedConfirmedIds = new Set(existingConfirmed.map((reservation) => reservation.id));
   let contractPersistenceWarning: string | null = null;
   if (
     confirmedSchedule.events.length > 0 ||
@@ -478,10 +496,10 @@ export async function getEntertainmentDay(
   const combinedReservations = [
     ...storedReservations.filter(
       (reservation) =>
-        !vipResult.refreshed || reservation.source !== "vip-prep",
+        (!vipResult.refreshed || reservation.source !== "vip-prep") && !replacedConfirmedIds.has(reservation.id),
     ),
     ...liveVip.reservations,
-    ...confirmedSchedule.reservations,
+    ...confirmedSchedule.reservations.filter((reservation) => reservation.active),
   ];
   const combinedEvents = [
     ...stored.events.filter(
@@ -692,6 +710,7 @@ export async function syncEntertainmentDay(
       stored.reservations,
       built.reservations,
       now,
+      built.events,
     );
     const conflicts = detectEntertainmentConflicts(merged);
     const counts = reservationCounts(stored.reservations, merged);
@@ -951,6 +970,9 @@ export async function createManualEntertainmentReservation(
     sourceStartAt: null,
     sourceEndAt: null,
     sourceResourceId: null,
+    startTimeSource: "staff-override",
+    sourceStartTimeSource: null,
+    contractedDurationMinutes: null,
     ...color,
     source: "manual",
     sourceReference: null,
@@ -1021,6 +1043,9 @@ export async function updateEntertainmentReservation(
     resourceName: values.resource.canonicalName,
     startAt: values.startAt,
     endAt: values.endAt,
+    startTimeSource: !options.preserveAssignmentMode && (
+      Date.parse(existing.startAt) !== Date.parse(values.startAt) || Date.parse(existing.endAt) !== Date.parse(values.endAt)
+    ) ? "staff-override" : existing.startTimeSource,
     eventColor: values.eventColor,
     colorSource: options.preserveAssignmentMode ? existing.colorSource : "manual",
     manualOverride: options.preserveAssignmentMode ? existing.manualOverride : true,
@@ -1128,6 +1153,7 @@ export async function revertEntertainmentReservation(
     resourceName: resource.canonicalName,
     startAt: existing.sourceStartAt,
     endAt: existing.sourceEndAt,
+    startTimeSource: existing.sourceStartTimeSource ?? null,
     manualOverride: false,
     hasSourceUpdate: false,
     reviewIssues: existing.reviewIssues.filter(

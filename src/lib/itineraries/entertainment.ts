@@ -1,4 +1,5 @@
 import { formatClock, parseTimeRange } from "@/lib/entertainment/time";
+import { formatEntertainmentIntervalHours } from "@/lib/entertainment/duration";
 import { canonicalCategoryForText } from "@/lib/entertainment/resources";
 import { floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
 import type { FloorPlanDocument } from "@/lib/floor-plans/types";
@@ -118,21 +119,6 @@ export function hasAmbiguousLegacyItineraryIdentity(day: EntertainmentDay, plan:
     day.reservations.some((reservation) => reservation.active && !reservation.tripleseatEventId?.trim() && !reservation.localEventId?.trim() && unresolved(reservation.eventName, reservation.operatingDate, reservation.startAt, reservation.endAt));
 }
 
-function durationLabel(startAt: string, endAt: string) {
-  const minutes = Math.round(
-    (Date.parse(endAt) - Date.parse(startAt)) / 60_000,
-  );
-  if (!Number.isFinite(minutes) || minutes <= 0) return "";
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return [
-    hours ? `${hours} hour${hours === 1 ? "" : "s"}` : "",
-    remainingMinutes
-      ? `${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}`
-      : "",
-  ].filter(Boolean).join(" ");
-}
-
 function groupName(reservation: EntertainmentReservation) {
   switch (reservation.resourceCategory) {
     case "bowling":
@@ -242,7 +228,7 @@ export function itineraryEntertainmentFromReservations(
       name: groupName(first),
       quantity: `${quantityLabel(first, group.length)} · ${reservedResourcesLabel(group)}`,
       time: `${formatClock(first.startAt)} – ${formatClock(first.endAt)}`,
-      duration: durationLabel(first.startAt, first.endAt),
+      duration: formatEntertainmentIntervalHours(first.startAt, first.endAt),
     };
   });
 }

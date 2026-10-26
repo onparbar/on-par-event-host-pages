@@ -6,6 +6,8 @@ import { useEventContext } from "./EventContext";
 import { workspaceReminders, type WorkspaceAction, type WorkspacePayload } from "@/lib/operations/workspace";
 import { workspaceTimeline, workspaceTimelinePosition } from "@/lib/operations/workspace-timeline";
 import { eventFoodDeliveryState, type EventFoodDelivery } from "@/lib/gotab/delivery";
+import { formatEntertainmentIntervalHours } from "@/lib/entertainment/duration";
+import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
 
 const WORKSPACE_PATHS = new Set(["/checklists", "/floor-plans", "/entertainment-schedules", "/event-host-addons", "/itineraries"]);
 type WorkspaceContextValue = {
@@ -57,10 +59,12 @@ export function EventWorkspaceProvider({ children }: { children: ReactNode }) {
     const timer = window.setInterval(onRefresh, 15_000);
     const clock = window.setInterval(() => setNow(new Date()), 1_000);
     const onChecklist = () => void refresh();
+    const entertainment = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(ENTERTAINMENT_UPDATE_CHANNEL);
+    entertainment?.addEventListener("message", onChecklist);
     window.addEventListener("event-host:checklist-updated", onChecklist);
     window.addEventListener("focus", onRefresh); window.addEventListener("online", onRefresh);
     document.addEventListener("visibilitychange", onRefresh);
-    return () => { window.clearInterval(timer); window.clearInterval(clock); window.removeEventListener("event-host:checklist-updated", onChecklist); window.removeEventListener("focus", onRefresh); window.removeEventListener("online", onRefresh); document.removeEventListener("visibilitychange", onRefresh); };
+    return () => { entertainment?.close(); window.clearInterval(timer); window.clearInterval(clock); window.removeEventListener("event-host:checklist-updated", onChecklist); window.removeEventListener("focus", onRefresh); window.removeEventListener("online", onRefresh); document.removeEventListener("visibilitychange", onRefresh); };
   }, [refresh]);
 
   const act = useCallback(async (action: Omit<WorkspaceAction, "expectedUpdatedAt" | "expectedSourceFingerprint" | "employeeName">) => {
@@ -112,9 +116,11 @@ export function EventWorkspaceReminders() {
     {due.map((reminder) => {
       const activity = payload.activities.find((item) => item.id === reminder.activityId);
       const evidence = payload.record?.taskEvidence?.[reminder.id];
+      const duration = activity && !activity.untimed && activity.startAt && activity.endAt ? formatEntertainmentIntervalHours(activity.startAt, activity.endAt) : "";
       return <article className="workspace-reminder" data-attention={!reminder.acknowledged} key={reminder.id}>
         <strong>{reminder.stage === "food" ? `Food Reminder — ${payload.event.name}` : `${activity?.label} — ${reminder.stage === "before" ? "starts soon" : "due now"}`}</strong>
         <p>{reminder.stage === "food" ? `This party starts at ${workspaceClock(payload.eventStartAt)}. Please get the food out and ready for the event.` : `${payload.event.name} · ${activity?.resourceNames.join(", ") || payload.event.rooms.join(", ")} · starts ${workspaceClock(activity?.startAt ?? null, true)}`}</p>
+        {duration ? <p>Duration: {duration}</p> : null}
         <small>{reminder.acknowledged ? `Acknowledged by ${evidence?.employeeName ?? "staff"} at ${workspaceClock(evidence?.completedAt ?? null, true)}. The task is still open.` : `Due ${workspaceClock(reminder.dueAt, true)}`}</small>
         <div className="workspace-action-row">
           {!reminder.acknowledged ? <button disabled={disabled} onClick={() => void workspace.act({ action: "ACK_REMINDER", reminderId: reminder.id })} type="button">Acknowledge</button> : null}

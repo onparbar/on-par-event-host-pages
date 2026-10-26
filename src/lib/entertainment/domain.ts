@@ -11,8 +11,8 @@ import {
 } from "./resources";
 import {
   isInsideOperatingDay,
-  parseTimeRange,
 } from "./time";
+import { groupEntertainmentTimingItems, resolveEntertainmentItemTiming, type EntertainmentTimingItem } from "./timing";
 import type {
   EntertainmentCategory,
   EntertainmentColorSource,
@@ -22,6 +22,7 @@ import type {
   EntertainmentReviewIssue,
   EntertainmentSourceEvent,
   EntertainmentSourceItem,
+  EntertainmentStartTimeSource,
 } from "./types";
 import { resolveAreaAlias } from "../floor-plans/configuration/aliases";
 import { selectEntertainmentResources } from "../floor-plans/configuration/adjacency";
@@ -30,6 +31,9 @@ export type LocalEntertainmentItem = {
   name: string;
   quantity: string;
   time: string;
+  duration?: string;
+  startTimeSource?: EntertainmentStartTimeSource;
+  contractedDurationMinutes?: number;
 };
 
 export type LocalEntertainmentEvent = {
@@ -210,15 +214,17 @@ export function findAdjacentAvailableResources(
 
 function localFallbackItems(
   localEvent: LocalEntertainmentEvent,
-): EntertainmentSourceItem[] {
+): EntertainmentTimingItem[] {
   return localEvent.entertainment.map((item, index) => ({
     sourceId: `event-host:${index}:${normalizeEventName(item.name)}`,
     name: item.name,
-    description: `${item.quantity} ${item.name} ${item.time}`,
+    description: `${item.quantity} ${item.name} ${item.startTimeSource === "event-start-default" ? "" : item.time} ${item.duration ?? ""}`,
     categoryName: null,
     quantity: null,
     startAt: null,
     endAt: null,
+    startTimeSource: item.startTimeSource,
+    contractedDurationMinutes: item.contractedDurationMinutes,
   }));
 }
 
@@ -235,6 +241,7 @@ function privateRoomItems(source: EntertainmentSourceEvent) {
             quantity: 1,
             startAt: source.eventStartAt,
             endAt: source.eventEndAt,
+            startTimeSource: "event-start-default",
           } satisfies EntertainmentSourceItem,
         ]
       : [];
@@ -242,62 +249,8 @@ function privateRoomItems(source: EntertainmentSourceEvent) {
 }
 
 function itemText(item: EntertainmentSourceItem) {
-  return [item.categoryName, item.name, item.description]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function itemTiming(
-  item: EntertainmentSourceItem,
-  source: EntertainmentSourceEvent,
-) {
-  if (
-    item.startAt &&
-    item.endAt &&
-    Number.isFinite(Date.parse(item.startAt)) &&
-    Number.isFinite(Date.parse(item.endAt)) &&
-    Date.parse(item.endAt) > Date.parse(item.startAt)
-  ) {
-    return {
-      startAt: item.startAt,
-      endAt: item.endAt,
-      usedFallback: false,
-    };
-  }
-  const parsed = parseTimeRange(itemText(item), source.localDate);
-  if (parsed) {
-    return { ...parsed, usedFallback: false };
-  }
-  const durationMatch = itemText(item).match(
-    /\b(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b/i,
-  );
-  const eventStartEpoch = Date.parse(source.eventStartAt ?? "");
-  if (durationMatch && Number.isFinite(eventStartEpoch)) {
-    const durationHours = Number(durationMatch[1]);
-    if (durationHours > 0 && durationHours <= 15) {
-      return {
-        startAt: source.eventStartAt!,
-        endAt: new Date(
-          eventStartEpoch + durationHours * 60 * 60 * 1000,
-        ).toISOString(),
-        usedFallback: false,
-      };
-    }
-  }
-  if (
-    source.eventStartAt &&
-    source.eventEndAt &&
-    Number.isFinite(Date.parse(source.eventStartAt)) &&
-    Number.isFinite(Date.parse(source.eventEndAt)) &&
-    Date.parse(source.eventEndAt) > Date.parse(source.eventStartAt)
-  ) {
-    return {
-      startAt: source.eventStartAt,
-      endAt: source.eventEndAt,
-      usedFallback: true,
-    };
-  }
-  return null;
+  return [[item.categoryName, item.name].filter(Boolean).join(" "), item.description]
+    .filter(Boolean).join(" · ");
 }
 
 function colorForEvent(
@@ -426,10 +379,10 @@ export function buildEntertainmentSchedule({
     const usingLocalFallback =
       relevantSourceItems.length === 0 &&
       localScheduleItems.length > 0;
-    let items = usingLocalFallback
+    let items: EntertainmentTimingItem[] = usingLocalFallback
       ? localScheduleItems
       : relevantSourceItems;
-    items = [...items, ...privateRoomItems(source)];
+    items = [...groupEntertainmentTimingItems(items), ...privateRoomItems(source)];
     if (
       relevantSourceItems.length === 0 &&
       !usingLocalFallback &&
@@ -484,31 +437,24 @@ export function buildEntertainmentSchedule({
       }
       duplicateKeys.add(duplicateKey);
 
-      const timing = itemTiming(item, source);
-      if (!timing) {
-        eventIssues.push({
-          code: "TIME_NEEDS_REVIEW",
-          message: `No usable reservation time was found for ${item.name}.`,
-        });
+      const timing = resolveEntertainmentItemTiming(item, source);
+      const { startAt, endAt } = timing;
+      if (!startAt || !endAt) {
+        eventIssues.push(...timing.reviewIssues);
         return;
       }
-      const itemIssues: EntertainmentReviewIssue[] = [];
-      if (timing.usedFallback) {
-        itemIssues.push({
-          code: "TIME_NEEDS_REVIEW",
-          message: `${item.name} uses the event start and end time as a temporary fallback.`,
-        });
-      }
-      if (!isInsideOperatingDay(timing.startAt, timing.endAt, source.localDate)) {
+      const itemIssues: EntertainmentReviewIssue[] = [...timing.reviewIssues];
+      if (!isInsideOperatingDay(startAt, endAt, source.localDate)) {
         itemIssues.push({
           code: "OUTSIDE_OPERATING_DAY",
           message: `${item.name} extends outside the 10:00 AM–1:00 AM operating day.`,
         });
       }
 
-      const exactFromSource = exactResourceIdsForText(text, category);
+      const resourceText = item.resourceText ?? text;
+      const exactFromSource = exactResourceIdsForText(resourceText, category);
       const quantity =
-        quantityForText(text, category, item.quantity) ??
+        quantityForText(resourceText, category, item.quantity) ??
         exactFromSource.length;
 
       if (quantity < 1) {
@@ -525,10 +471,11 @@ export function buildEntertainmentSchedule({
       const matchingManualReservations = manuallyOccupied
         .filter(
           (reservation) =>
+            !reservation.syncKey &&
             !consumedManualReservationIds.has(reservation.id) &&
             reservation.resourceCategory === category &&
-            sameInstant(reservation.startAt, timing.startAt) &&
-            sameInstant(reservation.endAt, timing.endAt) &&
+            sameInstant(reservation.startAt, startAt) &&
+            sameInstant(reservation.endAt, endAt) &&
             manualReservationMatchesSourceEvent(
               reservation,
               source,
@@ -550,12 +497,16 @@ export function buildEntertainmentSchedule({
         desiredCount - matchingManualReservations.length - chosenIds.length,
       );
       if (needed > 0) {
+        const ownSyncPrefix = `${source.tripleseatEventId}:${item.sourceId}:`;
+        const occupiedForItem = occupied.filter((reservation) =>
+          !(reservation.manualOverride && reservation.syncKey?.startsWith(ownSyncPrefix)),
+        );
         const autoAssigned = findAdjacentAvailableResources(
           category,
           needed,
-          timing.startAt,
-          timing.endAt,
-          occupied,
+          startAt,
+          endAt,
+          occupiedForItem,
           chosenIds,
           seatingAreaIds,
         );
@@ -589,8 +540,8 @@ export function buildEntertainmentSchedule({
           eventReservations.some(
             (reservation) =>
               reservation.resourceId === resource.id &&
-              reservation.startAt === timing.startAt &&
-              reservation.endAt === timing.endAt,
+              reservation.startAt === startAt &&
+              reservation.endAt === endAt,
           )
         ) {
           itemIssues.push({
@@ -620,6 +571,7 @@ export function buildEntertainmentSchedule({
               ]
             : []),
         ]);
+        const timingSource = usingLocalFallback && !item.startTimeSource ? null : timing.startTimeSource;
         const reservation: EntertainmentReservation = {
           id: sourceReservationId(syncKey),
           syncKey,
@@ -631,11 +583,14 @@ export function buildEntertainmentSchedule({
           resourceId: resource.id,
           resourceCategory: resource.category,
           resourceName: resource.canonicalName,
-          startAt: timing.startAt,
-          endAt: timing.endAt,
-          sourceStartAt: timing.startAt,
-          sourceEndAt: timing.endAt,
-          sourceResourceId: resource.id,
+          startAt,
+          endAt,
+          sourceStartAt: timingSource === "staff-override" ? null : startAt,
+          sourceEndAt: timingSource === "staff-override" ? null : endAt,
+          sourceResourceId: timingSource === "staff-override" ? null : resource.id,
+          startTimeSource: timingSource,
+          sourceStartTimeSource: timingSource === "staff-override" ? null : timingSource,
+          contractedDurationMinutes: timing.durationMinutes,
           eventColor: color.color,
           colorSource: color.source,
           source: source.sourceSystem === "vip-prep"
@@ -644,7 +599,7 @@ export function buildEntertainmentSchedule({
               ? "event-host-fallback"
               : "tripleseat",
           sourceReference: item.sourceId,
-          manualOverride: false,
+          manualOverride: timingSource === "staff-override",
           hasSourceUpdate: false,
           needsReview: issues.length > 0,
           reviewIssues: issues,
@@ -667,7 +622,8 @@ export function buildEntertainmentSchedule({
                 : "tripleseat-sync",
         };
         eventReservations.push(reservation);
-        occupied.push(reservation);
+        const manualSource = manuallyOccupied.find((existing) => existing.syncKey === syncKey);
+        occupied.push(manualSource ? mergeReservationsForSync([manualSource], [reservation], now)[0] : reservation);
       });
       eventIssues.push(...itemIssues);
     });
@@ -701,17 +657,6 @@ export function buildEntertainmentSchedule({
   return { events: snapshots, reservations };
 }
 
-function reservationSourceChanged(
-  existing: EntertainmentReservation,
-  incoming: EntertainmentReservation,
-) {
-  return (
-    existing.sourceStartAt !== incoming.sourceStartAt ||
-    existing.sourceEndAt !== incoming.sourceEndAt ||
-    existing.sourceResourceId !== incoming.sourceResourceId
-  );
-}
-
 function syncedReservationRevision(
   existing: EntertainmentReservation,
   incoming: EntertainmentReservation,
@@ -728,10 +673,30 @@ function syncedReservationRevision(
     : { ...incoming, updatedAt: now };
 }
 
+function unresolvedObservedTiming(
+  existing: EntertainmentReservation,
+  sourceEvents: readonly EntertainmentEventSnapshot[],
+) {
+  const observed = sourceEvents.find((event) => event.active &&
+    [event.tripleseatEventId, event.localEventId].some((id) => id && [existing.tripleseatEventId, existing.localEventId].includes(id)),
+  );
+  if (!observed || !existing.sourceReference) return null;
+  const source = observed.sourceSnapshot;
+  const items = groupEntertainmentTimingItems(source.items.filter((item) => {
+    const category = canonicalCategoryForText(itemText(item));
+    return category != null && isEntertainmentScheduleCategory(category);
+  }));
+  const item = [...items, ...privateRoomItems(source)].find((item) => item.sourceId === existing.sourceReference);
+  if (!item) return null;
+  const timing = resolveEntertainmentItemTiming(item, source);
+  return !timing.startAt || !timing.endAt ? { timing, observed } : null;
+}
+
 export function mergeReservationsForSync(
   existingReservations: readonly EntertainmentReservation[],
   incomingReservations: readonly EntertainmentReservation[],
   now = new Date().toISOString(),
+  sourceEvents: readonly EntertainmentEventSnapshot[] = [],
 ) {
   const existingBySyncKey = new Map(
     existingReservations.flatMap((reservation) =>
@@ -757,14 +722,17 @@ export function mergeReservationsForSync(
         createdAt: existing.createdAt,
       }, now);
     }
-    const sourceChanged =
-      reservationSourceChanged(existing, incoming) &&
-      existing.sourceUpdatedAt !== incoming.sourceUpdatedAt;
+    const preserveTime = existing.startTimeSource === "staff-override" || !existing.startTimeSource;
+    const sourceChanged = (preserveTime && (
+      existing.sourceStartAt !== incoming.sourceStartAt || existing.sourceEndAt !== incoming.sourceEndAt
+    )) || existing.sourceResourceId !== incoming.sourceResourceId;
     const hasSourceUpdate = existing.hasSourceUpdate || sourceChanged;
     const reviewIssues = uniqueIssues([
       ...existing.reviewIssues.filter(
-        (issue) => issue.code !== "SOURCE_HAS_NEWER_INFORMATION",
+        (issue) => issue.code !== "SOURCE_HAS_NEWER_INFORMATION" &&
+          (preserveTime || !["TIME_NEEDS_REVIEW", "OUTSIDE_OPERATING_DAY"].includes(issue.code)),
       ),
+      ...(!preserveTime ? incoming.reviewIssues.filter((issue) => ["TIME_NEEDS_REVIEW", "OUTSIDE_OPERATING_DAY"].includes(issue.code)) : []),
       ...(hasSourceUpdate
         ? [
             {
@@ -781,13 +749,15 @@ export function mergeReservationsForSync(
       resourceId: existing.resourceId,
       resourceCategory: existing.resourceCategory,
       resourceName: existing.resourceName,
-      startAt: existing.startAt,
-      endAt: existing.endAt,
+      startAt: preserveTime ? existing.startAt : incoming.startAt,
+      endAt: preserveTime ? existing.endAt : incoming.endAt,
+      ...(existing.startTimeSource != null || incoming.startTimeSource != null
+        ? { startTimeSource: preserveTime ? existing.startTimeSource ?? "staff-override" as const : incoming.startTimeSource } : {}),
       eventColor: existing.eventColor,
       colorSource: existing.colorSource,
       manualOverride: true,
       hasSourceUpdate,
-      needsReview: existing.needsReview || hasSourceUpdate,
+      needsReview: reviewIssues.length > 0 || (existing.needsReview && existing.reviewIssues.length === 0),
       reviewIssues,
       autoAssigned: existing.autoAssigned,
       notes: existing.notes,
@@ -803,6 +773,24 @@ export function mergeReservationsForSync(
       continue;
     }
     if (!incomingKeys.has(existing.syncKey)) {
+      const unresolved = existing.manualOverride && existing.active
+        ? unresolvedObservedTiming(existing, sourceEvents) : null;
+      if (unresolved) {
+        merged.push(syncedReservationRevision(existing, {
+          ...existing,
+          sourceStartAt: unresolved.timing.startAt,
+          sourceEndAt: unresolved.timing.endAt,
+          sourceStartTimeSource: unresolved.timing.startTimeSource === "staff-override" ? null : unresolved.timing.startTimeSource,
+          contractedDurationMinutes: unresolved.timing.durationMinutes,
+          sourceUpdatedAt: unresolved.observed.sourceUpdatedAt,
+          lastTripleseatSyncAt: unresolved.observed.syncedAt,
+          hasSourceUpdate: true,
+          needsReview: true,
+          reviewIssues: uniqueIssues([...existing.reviewIssues, ...unresolved.timing.reviewIssues,
+            { code: "SOURCE_HAS_NEWER_INFORMATION", message: "The source activity still exists but its timing is incomplete. The staff override remains active for review." }]),
+        }, now));
+        continue;
+      }
       merged.push(syncedReservationRevision(existing, {
         ...existing,
         active: false,
@@ -876,13 +864,8 @@ export function conflictForCandidate(
 }
 
 export function validateReservationTimes(startAt: string, endAt: string) {
-  const start = Date.parse(startAt);
-  const end = Date.parse(endAt);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-    throw new Error("Reservation end time must be after its start time.");
-  }
-  if (start % (15 * 60_000) !== 0 || end % (15 * 60_000) !== 0) {
-    throw new Error("Reservation times must use 15-minute increments.");
+  if (!validEntertainmentInterval(startAt, endAt)) {
+    throw new Error("Reservation end time must be after its start time, using explicit time zones.");
   }
 }
 

@@ -1,5 +1,6 @@
 import type { EventPlan, EventPlanEntertainmentItem, ItineraryAsset } from "@/lib/event-plans/types";
 import { itineraryDrinkLines } from "./presentation";
+import { normalizeEntertainmentDurationHours } from "@/lib/entertainment/duration";
 
 export type ItineraryEditFields = Partial<Pick<EventPlan, "name" | "time" | "guest_count" | "rooms" | "food" | "entertainment" | "special_instructions">> & { drinkLines?: string[] };
 export type ItineraryEdit = { updatedAt: string; sourceUpdatedAt: string | null; fields: ItineraryEditFields };
@@ -24,7 +25,7 @@ function entertainment(value: unknown): EventPlanEntertainmentItem[] {
     const row = item as Record<string, unknown>;
     const name = text(row.name, 120);
     if (!name) throw new Error("Entertainment items need a name.");
-    return { name, quantity: text(row.quantity, 120), time: isMiniGolf(name) ? "" : text(row.time, 120), duration: isMiniGolf(name) ? "" : text(row.duration, 120) };
+    return { name, quantity: text(row.quantity, 120), time: isMiniGolf(name) ? "" : text(row.time, 120), duration: isMiniGolf(name) ? "" : normalizeEntertainmentDurationHours(text(row.duration, 120)) };
   });
 }
 
@@ -61,7 +62,7 @@ export function applyItineraryEdit<T extends EventPlan>(plan: T, edit?: Itinerar
   if (fields.entertainment) {
     // Mini Golf is contract-counted, never scheduled or invented in an itinerary edit.
     result.entertainment = [
-      ...fields.entertainment.filter((item) => !isMiniGolf(item.name)),
+      ...fields.entertainment.filter((item) => !isMiniGolf(item.name)).map((item) => ({ ...item, duration: normalizeEntertainmentDurationHours(item.duration) })),
       ...plan.entertainment.filter((item) => isMiniGolf(item.name)).map((item) => ({ ...item, time: "", duration: "" })),
     ];
   }
@@ -75,7 +76,8 @@ export function buildItineraryEdit(base: ItineraryAsset, fields: Required<Itiner
   const changes: ItineraryEditFields = {};
   for (const key of editableKeys) {
     const source = key === "drinkLines" ? itineraryDrinkLines({ ...base, ...normalized, itinerary_edit: undefined }) : base[key];
-    if (JSON.stringify(source ?? []) !== JSON.stringify(normalized[key])) Object.assign(changes, { [key]: normalized[key] });
+    const comparableSource = key === "entertainment" ? entertainment(base.entertainment) : source;
+    if (JSON.stringify(comparableSource ?? []) !== JSON.stringify(normalized[key])) Object.assign(changes, { [key]: normalized[key] });
   }
   if (!Object.keys(changes).length) return null;
   return normalizeItineraryEdits({ [base.id]: { fields: changes, sourceUpdatedAt: base.source_updated_at ?? null, updatedAt: now } })[String(base.id)];

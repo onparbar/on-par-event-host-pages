@@ -21,6 +21,7 @@ import type {
 import PublishedFloorPlanMap from "./PublishedFloorPlanMap";
 import { findOperationalFloorPlanEvent } from "@/lib/operations/floor-plan-context";
 import { floorPlanEventView } from "@/lib/floor-plans/event-view";
+import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
 
 const FLOOR_PLAN_ZOOM_MIN = 50;
 const FLOOR_PLAN_ZOOM_MAX = 200;
@@ -574,8 +575,10 @@ export default function FloorPlansClient({
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const channel = new BroadcastChannel("event-host-floor-plans");
+    const entertainment = new BroadcastChannel(ENTERTAINMENT_UPDATE_CHANNEL);
     channel.addEventListener("message", () => router.refresh());
-    return () => channel.close();
+    entertainment.addEventListener("message", () => router.refresh());
+    return () => { channel.close(); entertainment.close(); };
   }, [router]);
 
   async function handleLiveSync(date: string) {

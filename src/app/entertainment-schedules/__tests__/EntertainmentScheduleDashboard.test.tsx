@@ -24,6 +24,7 @@ import EntertainmentScheduleDashboard, {
   calculateEntertainmentColumnSlotUnits,
   calculateEntertainmentFitRowHeight,
   calculateEntertainmentFitZoom,
+  ReservationModal,
 } from "../EntertainmentScheduleDashboard";
 
 const loadedPayload: EntertainmentDayPayload = {
@@ -133,6 +134,36 @@ describe("entertainment schedule kiosk fit", () => {
 });
 
 describe("entertainment schedule dashboard controls", () => {
+  it("shows exact partial hours with clock times in schedule text and accessible details", () => {
+    const html = renderToStaticMarkup(createElement(EntertainmentScheduleDashboard, {
+      initialDate: "2026-08-14", initialPayload: { ...loadedPayload, reservations: [reservation({ startAt: "2026-08-14T21:30:00.000Z", endAt: "2026-08-14T23:00:00.000Z" })] },
+    }));
+    expect(html).toContain("1.5 hours");
+    expect(html).toContain("5:30 PM");
+    expect(html).toContain("7:00 PM");
+    expect(html).not.toContain("90 minutes");
+  });
+
+  it.each([
+    ["contract-explicit", "Explicit contract time"],
+    ["event-start-default", "Event start default"],
+    ["staff-override", "Staff override"],
+    [null, "Source not recorded"],
+  ] as const)("shows the %s start source and keeps contracted hours when the actual interval differs", (startTimeSource, label) => {
+    const saved = reservation({ startTimeSource, contractedDurationMinutes: 120 });
+    const html = renderToStaticMarkup(createElement(ReservationModal, {
+      draft: { reservation: saved, operatingDate: "2026-08-14", eventId: "77", eventName: "Current Event", resourceId: "bowling-1", startAt: "2026-08-14T17:30", endAt: "2026-08-14T19:00", eventColor: "#0F766E", notes: "", reason: "", needsReview: false },
+      events: [], conflicts: [], saving: false, onClose: vi.fn(), onRemove: vi.fn(), onRevert: vi.fn(), onSave: vi.fn(),
+    }));
+    expect(html).toContain("Start time source");
+    expect(html).toContain(label);
+    expect(html).toContain("1.5 hours");
+    expect(html).toContain("Contracted duration");
+    expect(html).toContain("2 hours");
+    expect(html).toContain('value="2026-08-14T17:30"');
+    expect(html).toContain('value="2026-08-14T19:00"');
+  });
+
   it("keeps the activity-card panel out of the schedule editing area", () => {
     const html = renderToStaticMarkup(
       createElement(EntertainmentScheduleDashboard, {

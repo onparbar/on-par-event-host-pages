@@ -1219,10 +1219,6 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     return records;
   }
 
-  private async noteCount(eventId: string) {
-    return (await this.noteRecords("events", eventId)).length;
-  }
-
   private async bookingEntertainmentItems(
     bookingId: string,
     eventId: string,
@@ -1282,9 +1278,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     }
     const bookingId = asString(detail.booking_id);
     const documentItems = entertainmentDocumentItems(detail);
-    const [menuSelections, noteCount, bookingItems] = await Promise.all([
+    const [menuSelections, rawNotes, bookingItems] = await Promise.all([
       this.menuSelections(eventId),
-      this.noteCount(eventId),
+      this.noteRecords("events", eventId),
       bookingId && documentItems.length === 0
         ? this.bookingEntertainmentItems(bookingId, eventId)
         : Promise.resolve([]),
@@ -1353,7 +1349,11 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       items,
       categoryNames,
       sourceUpdatedAt: asString(detail.updated_at),
-      noteCount,
+      noteCount: rawNotes.length,
+      timingNotes: extractEventPlanOperationalNotes(rawNotes.flatMap((note) => {
+        const body = asString(note.body);
+        return body ? [{ body, id: asString(note.id), createdAt: asString(note.created_at), updatedAt: asString(note.updated_at) }] : [];
+      })).notes.map((note) => note.text),
     };
   }
 

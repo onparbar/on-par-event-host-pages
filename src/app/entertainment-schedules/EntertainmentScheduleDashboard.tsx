@@ -22,6 +22,7 @@ import {
   textColorForBackground,
 } from "@/lib/entertainment/resources";
 import { broadcastEntertainmentUpdate } from "@/lib/entertainment/live-updates";
+import { formatEntertainmentDurationHours, formatEntertainmentIntervalHours } from "@/lib/entertainment/duration";
 import {
   addCalendarDays,
   clampOperatingMinutes,
@@ -341,7 +342,7 @@ async function responseError(response: Response) {
   return payload?.error || `Request failed (${response.status}).`;
 }
 
-function ReservationModal({
+export function ReservationModal({
   draft,
   events,
   conflicts,
@@ -371,6 +372,18 @@ function ReservationModal({
     value.reservation != null && value.reservation.source !== "manual";
   const selectedCategory =
     getEntertainmentResource(value.resourceId)?.category ?? "bowling";
+  const duration = useMemo(() => {
+    try {
+      return formatEntertainmentIntervalHours(isoFromLocalInput(value.startAt), isoFromLocalInput(value.endAt));
+    } catch {
+      return "";
+    }
+  }, [value.startAt, value.endAt]);
+  const contractedDuration = value.reservation?.contractedDurationMinutes != null
+    ? formatEntertainmentDurationHours(value.reservation.contractedDurationMinutes) : "";
+  const startSource = !value.reservation || value.reservation.startTimeSource === "staff-override" ? "Staff override"
+    : value.reservation.startTimeSource === "contract-explicit" ? "Explicit contract time"
+      : value.reservation.startTimeSource === "event-start-default" ? "Event start default" : "Source not recorded";
 
   useEffect(() => {
     setValue(draft);
@@ -593,6 +606,9 @@ function ReservationModal({
         </div>
 
         <div className="entertainment-detail-grid">
+          <div><span>Duration</span><strong>{duration || "Duration needs review"}</strong></div>
+          {contractedDuration ? <div><span>Contracted duration</span><strong>{contractedDuration}</strong></div> : null}
+          <div><span>Start time source</span><strong>{startSource}</strong></div>
           <div>
             <span>Source</span>
             <strong>
@@ -663,6 +679,7 @@ function ReservationModal({
               {" · "}
               {formatClock(value.reservation.sourceStartAt)} –{" "}
               {formatClock(value.reservation.sourceEndAt)}
+              {" · "}{formatEntertainmentIntervalHours(value.reservation.sourceStartAt, value.reservation.sourceEndAt)}
             </p>
           </section>
         ) : null}
@@ -1607,6 +1624,7 @@ export default function EntertainmentScheduleDashboard({
                       />
                     ) : null}
                     {layout.placed.map(({ reservation, slot }) => {
+                      const duration = formatEntertainmentIntervalHours(reservation.startAt, reservation.endAt);
                       const startMinute =
                         operatingMinutesForIso(
                           reservation.startAt,
@@ -1637,7 +1655,7 @@ export default function EntertainmentScheduleDashboard({
                           aria-disabled={!isEditing}
                           aria-label={`${reservation.eventName}, ${reservation.resourceName}, ${formatClock(
                             reservation.startAt,
-                          )} to ${formatClock(reservation.endAt)}${
+                          )} to ${formatClock(reservation.endAt)}, ${duration}${
                             hasConflict ? ", overlap conflict" : ""
                           }`}
                           className={[
@@ -1680,7 +1698,7 @@ export default function EntertainmentScheduleDashboard({
                           tabIndex={isEditing ? 0 : -1}
                           title={`${formatClock(
                             reservation.startAt,
-                          )} – ${formatClock(reservation.endAt)}\n${
+                          )} – ${formatClock(reservation.endAt)} · ${duration}\n${
                             reservation.eventName
                           }\n${reservation.resourceName}`}
                           type="button"
@@ -1708,9 +1726,7 @@ export default function EntertainmentScheduleDashboard({
                                     reservation.endAt,
                                   )}
                             </strong>
-                            {width >= 210 ? (
-                              <span>{reservation.eventName}</span>
-                            ) : null}
+                            <span>{duration}{width >= 210 ? ` · ${reservation.eventName}` : ""}</span>
                           </span>
                           {isEditing ? (
                             <span

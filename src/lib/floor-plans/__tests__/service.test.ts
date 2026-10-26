@@ -18,6 +18,7 @@ import {
   floorPlanEventsWithSavedIdentity,
   generateFloorPlan,
   getFloorPlanDay,
+  maintainTwoWeekFloorPlanHorizon,
   refreshFloorPlanSources,
   reservationsForReconciledFloorPlanEvents,
   saveFloorPlanEdits,
@@ -103,6 +104,24 @@ afterEach(() => {
 });
 
 describe("Floor Plan Tripleseat source enforcement", () => {
+  it("retains warning-only entertainment sync failures in floor-plan horizon results", async () => {
+    const floorPlanStorage = new MemoryFloorPlanStorage();
+    setEventPlanStorageForTests(createMemoryEventPlanStorage());
+    setEntertainmentStorageForTests(createMemoryEntertainmentStorage());
+    setTripleseatAdapterForTests(adapter(async () => [source()]));
+    await generateFloorPlan("2026-08-06", "fill-missing", floorPlanStorage);
+    setTripleseatAdapterForTests({
+      ...adapter(async () => [source()]),
+      fetchEntertainmentEventsForDate: async () => { throw new Error("Redacted source failure"); },
+    });
+
+    const horizon = await maintainTwoWeekFloorPlanHorizon(new Date("2026-08-06T12:00:00-04:00"), floorPlanStorage);
+    const refreshed = horizon.results.find((entry) => entry.date === "2026-08-06");
+
+    expect(refreshed?.status).toBe("generated");
+    expect(refreshed?.warnings).toContain("The latest Tripleseat sync failed. The last saved schedule remains visible.");
+  });
+
   it("saves and reopens a GEG table converted from seating to food", async () => {
     const storage = new MemoryFloorPlanStorage();
     setEventPlanStorageForTests(createMemoryEventPlanStorage());

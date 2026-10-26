@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { syncEventPlanWindow } from "@/lib/event-plans/sync";
 import {
   assertEntertainmentDate,
   EntertainmentSyncError,
@@ -32,6 +33,17 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Sync date must use YYYY-MM-DD." },
       { status: 400 },
+    );
+  }
+  try {
+    await syncEventPlanWindow(
+      { startDate: date, endDate: date },
+      { legacyPlans: [] },
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "Event details could not refresh. Entertainment was not rescheduled; try syncing again." },
+      { status: 502 },
     );
   }
   try {
