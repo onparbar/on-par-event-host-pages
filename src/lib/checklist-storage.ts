@@ -1,5 +1,7 @@
 import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY, checklistSections, normalizeStaffPoc, type ChecklistRecord } from "@/lib/checklist-model";
 import { StaleSaveError } from "@/lib/stale-save";
+import { AUTO_SUBMISSION_KEY, isAutomaticSubmission, readAutomaticSubmission, type AutomaticChecklistSubmission } from "@/lib/operations/checklist-auto-submission";
+import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const CHECKLIST_COLUMNS =
@@ -25,6 +27,8 @@ export type SaveChecklistInput = {
   checklist: ChecklistPayload;
   expectedUpdatedAt: string | null;
   allowReopen?: boolean;
+  /** Trusted server job only; incoming checklist fields cannot forge this receipt. */
+  autoSubmission?: AutomaticChecklistSubmission;
 };
 
 type DatabaseRecord = {
@@ -184,6 +188,9 @@ export async function getChecklistRecordUpdatedAt(eventId: number) {
 }
 
 export async function saveChecklist(input: SaveChecklistInput) {
+  if (input.autoSubmission && (input.action !== "submit" || !isAutomaticSubmission(input.autoSubmission) || operationalKitchenEventId(input.autoSubmission.sourceEventId) !== String(input.eventId))) {
+    throw new Error("Invalid automatic checklist submission evidence.");
+  }
   if (input.expectedUpdatedAt !== null && (typeof input.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(input.expectedUpdatedAt)))) {
     throw new Error("Load the saved checklist revision before saving.");
   }
@@ -194,7 +201,7 @@ export async function saveChecklist(input: SaveChecklistInput) {
     } : undefined);
   const taskKeys = new Set(checklistSections.flatMap((section) => section.items.map((item) => item.key)));
   const preservePrevious = (key: string) => !taskKeys.has(key) && (input.action !== "submit" || key !== CHECKLIST_CLOSEOUT_CONFIRMATION_KEY);
-  const acceptIncoming = (key: string) => input.action === "submit" || key !== CHECKLIST_CLOSEOUT_CONFIRMATION_KEY;
+  const acceptIncoming = (key: string) => key !== AUTO_SUBMISSION_KEY && (input.action === "submit" || key !== CHECKLIST_CLOSEOUT_CONFIRMATION_KEY);
   const previousUnknownTasks = Object.fromEntries(Object.entries(previous?.tasks ?? {}).filter(([key]) => preservePrevious(key)));
   const previousUnknownEvidence = Object.fromEntries(Object.entries(previous?.task_evidence ?? {}).filter(([key]) => preservePrevious(key)));
   const suppliedPoc = input.checklist.poc ?? input.poc;
@@ -216,6 +223,18 @@ export async function saveChecklist(input: SaveChecklistInput) {
     submitted_at: input.action === "submit" ? now : null,
     updated_at: now,
   };
+
+  const previousAuto = readAutomaticSubmission({ taskEvidence: previous?.task_evidence ?? undefined });
+  if (input.autoSubmission) {
+    if (previousAuto || Object.hasOwn(previous?.tasks ?? {}, AUTO_SUBMISSION_KEY)) throw new StaleSaveError("This event was already automatically submitted or reopened by Admin. Admin reopening must be preserved.");
+    row.tasks[AUTO_SUBMISSION_KEY] = true;
+    row.task_evidence[AUTO_SUBMISSION_KEY] = {
+      employeeName: "Event Host automation (system)", completedAt: input.autoSubmission.submittedAt,
+      automaticSubmission: structuredClone(input.autoSubmission),
+    };
+  } else if (input.allowReopen || previousAuto && input.action === "submit") {
+    row.tasks[AUTO_SUBMISSION_KEY] = false;
+  }
 
   if (useLocalMemoryStorage()) {
     if ((previous?.updated_at ?? null) !== input.expectedUpdatedAt) throw new StaleSaveError();

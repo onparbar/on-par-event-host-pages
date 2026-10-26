@@ -17,6 +17,7 @@ import {
   type ChecklistRecord,
 } from "@/lib/checklist-model";
 import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY } from "@/lib/checklist-readiness";
+import { AUTO_SUBMISSION_KEY, readAutomaticSubmission } from "@/lib/operations/checklist-auto-submission";
 import type { AdminState } from "@/lib/admin-types";
 import type {
   AdminContractEvidence,
@@ -142,6 +143,33 @@ export function ChecklistCloseoutWarnings({
       <ul>{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
     </section>
   );
+}
+
+export function AutomaticChecklistSubmission({
+  record,
+}: {
+  record: Pick<ChecklistRecord, "status" | "tasks" | "taskEvidence">;
+}) {
+  const receipt = record.status === "submitted" && record.tasks?.[AUTO_SUBMISSION_KEY] === true
+    ? readAutomaticSubmission(record) : null;
+  if (!receipt) return null;
+  const needsAttention = receipt.missingBwa || receipt.missingPoc || receipt.missingTaskKeys.length > 0 || receipt.contractWarnings.length > 0;
+  const taskLabels = new Map(checklistSections.flatMap((section) => section.items.map((item) => [item.key, item.label] as const)));
+
+  return <section className="event-workspace-panel" aria-label="Automatic checklist submission">
+    <PortalStatusBadge>Automatically submitted</PortalStatusBadge>
+    {needsAttention ? <PortalStatusBadge tone="warning">Needs attention</PortalStatusBadge> : null}
+    <p>Filed by the system after the one-hour event closeout deadline. This preserves saved progress; it does not mark unfinished work complete or confirm it was performed.</p>
+    <p>Event ended <time dateTime={receipt.eventEndedAt}>{formatOperationsTimestamp(receipt.eventEndedAt)} Eastern</time>. Scheduled submission <time dateTime={receipt.scheduledFor}>{formatOperationsTimestamp(receipt.scheduledFor)} Eastern</time>.</p>
+    <p>Automatically submitted <time dateTime={receipt.submittedAt}>{formatOperationsTimestamp(receipt.submittedAt)} Eastern</time>.</p>
+    {receipt.missingBwa || receipt.missingPoc ? <ul>
+      {receipt.missingBwa ? <li>BWA name was not entered.</li> : null}
+      {receipt.missingPoc ? <li>POC name was not entered.</li> : null}
+    </ul> : null}
+    {receipt.missingTaskKeys.length ? <><strong>Unfinished or unverified tasks at submission</strong><ul>{receipt.missingTaskKeys.map((key) => <li key={key}>{taskLabels.get(key) ?? key}</li>)}</ul></> : null}
+    {receipt.contractWarnings.length ? <><strong>Retained contract warnings</strong><ul>{receipt.contractWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></> : null}
+    <p>Use Un-submit checklist if saved information needs correction.</p>
+  </section>;
 }
 
 function itineraryMonthKey(date: string) {
@@ -578,18 +606,20 @@ export default function AdminClient({
                 const progress = completedTaskCount(record);
                 const eventName = completedChecklistEventName(record, event?.name);
                 const eventDate = record.eventDate || event?.date;
-                const poc = record.poc.trim() || event?.poc;
+                const automatic = record.tasks?.[AUTO_SUBMISSION_KEY] === true ? readAutomaticSubmission(record) : null;
+                const poc = record.poc.trim() || (!automatic ? event?.poc : undefined);
                 return (
                   <article className="asset-section completed-card" key={record.eventId}>
                     <h3>{eventName}</h3>
                     <p className="meta">
                       {eventDate ? formatEventDate(eventDate) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{poc ? ` | ${poc}` : ""}
                     </p>
+                    <AutomaticChecklistSubmission record={record} />
                     <ChecklistCloseoutWarnings record={record} />
                     <div className="completed-meta-grid">
                       <div className="checklist-meta-card">
-                        <span className="eyebrow">Submitted</span>
-                        <strong>{record.submittedAt ? new Date(record.submittedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Unknown"}</strong>
+                        <span className="eyebrow">{automatic ? "Automatically submitted" : "Submitted"}</span>
+                        <strong>{automatic ? `${formatOperationsTimestamp(automatic.submittedAt)} Eastern` : record.submittedAt ? new Date(record.submittedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Unknown"}</strong>
                         <span className="meta">{progress.completed}/{progress.total} tasks complete</span>
                       </div>
                       <div className="checklist-meta-card">
@@ -632,7 +662,7 @@ export default function AdminClient({
             ) : (
               <section className="asset-section">
                 <h3>Completed Checklists</h3>
-                <p className="meta">Submitted checklist and add-on sheets will appear here after a BWA submits them from the checklist page.</p>
+                <p className="meta">Checklist and add-on sheets appear here after staff submit them or the system automatically files saved progress one hour after the event ends. Automatic submissions retain unfinished tasks and warnings for Admin review.</p>
               </section>
             )}
             {unsubmitError ? <p className="portal-form-error" role="alert">{unsubmitError}</p> : null}

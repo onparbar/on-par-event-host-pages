@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { checklistEventsForPlans } from "../../../lib/checklist-events";
 import type { EventChecklistState } from "../../../lib/checklist-model";
-import { findEventPlanById } from "../../../lib/event-plans/sync";
-import { rollingEventPlanHorizon } from "../../../lib/event-plans/horizon";
-import {
-  findVipPrepReservationByEventId,
-  vipPrepEventPlan,
-  vipPrepExternalId,
-} from "../../../lib/vip-prep/client";
+import { ChecklistSourceError, resolveChecklistSource } from "@/lib/operations/checklist-source";
 import {
   listChecklistRecords,
   getChecklistRecord,
@@ -26,6 +20,8 @@ export const dynamic = "force-dynamic";
 
 type SaveChecklistRequest = {
   eventId?: number;
+  sourceEventId?: string;
+  eventDate?: string;
   checklist?: EventChecklistState;
   syncFoodAddOns?: boolean;
   syncFoodAddOnKeys?: string[];
@@ -79,23 +75,10 @@ export async function PUT(request: Request) {
     return badRequest("Load the saved checklist revision before saving.");
   }
 
-  let plan = await findEventPlanById(body.eventId);
-  let kitchenEventId = String(body.eventId);
-  if (!plan) {
-    const horizon = rollingEventPlanHorizon();
-    const reservation = await findVipPrepReservationByEventId(
-      body.eventId,
-      horizon.startDate,
-      horizon.endDate,
-    );
-    if (reservation) {
-      plan = vipPrepEventPlan(reservation);
-      kitchenEventId = vipPrepExternalId(reservation);
-    }
-  }
-  if (!plan) {
-    return badRequest("Unknown event.");
-  }
+  let source: Awaited<ReturnType<typeof resolveChecklistSource>>;
+  try { source = await resolveChecklistSource({ eventId: body.eventId, sourceEventId: body.sourceEventId, eventDate: body.eventDate }); }
+  catch (error) { return NextResponse.json({ error: error instanceof ChecklistSourceError ? error.message : "The event source could not be verified." }, { status: error instanceof ChecklistSourceError ? error.status : 503 }); }
+  const { plan, kitchenEventId } = source;
   const [event] = checklistEventsForPlans([plan]);
 
   try {

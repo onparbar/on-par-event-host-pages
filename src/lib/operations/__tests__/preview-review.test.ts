@@ -19,7 +19,7 @@ describe("protected read-only Preview", () => {
     const response = proxy(new NextRequest("https://review.example/api/vip-checkin", { method }));
     expect(response.status).toBe(403);
   });
-  it.each(["/api/gotab/reconcile", "/api/event-plans/sync", "/api/kitchen/oauth/start", "/api/kitchen/oauth/callback"])("blocks mutating GET %s", (pathname) => {
+  it.each(["/api/gotab/reconcile", "/api/event-plans/sync", "/api/checklists/auto-submit", "/api/kitchen/oauth/start", "/api/kitchen/oauth/callback"])("blocks mutating GET %s", (pathname) => {
     expect(previewReviewBlocksRequest("GET", pathname, review)).toBe(true);
   });
   it.each(["/api/vip-checkin/health", "/api/vip-checkin", "/api/kitchen/day", "/api/entertainment/schedule", "/api/release-status"])("keeps read-only view %s available", (pathname) => {

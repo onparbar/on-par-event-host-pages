@@ -5,10 +5,12 @@ import type {
   AdminContractEvidence,
   AdminOperationsPayload,
 } from "@/lib/admin-operations";
-import type { ChecklistRecord } from "@/lib/checklist-model";
+import { checklistSections, type ChecklistRecord } from "@/lib/checklist-model";
 import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY } from "@/lib/checklist-readiness";
+import { AUTO_SUBMISSION_KEY, type AutomaticChecklistSubmission as SubmissionReceipt } from "@/lib/operations/checklist-auto-submission";
 import {
   AdminOperationsReview,
+  AutomaticChecklistSubmission,
   ChecklistCloseoutWarnings,
   completedChecklistEventName,
   ContractEvidenceDrawer,
@@ -112,6 +114,87 @@ describe("admin event readiness UI", () => {
     expect(html).toContain("Imported value");
     expect(html).toContain("Contract source");
     expect(html).toContain("Four lanes for two hours");
+  });
+});
+
+describe("automatically submitted checklist review", () => {
+  const receipt: SubmissionReceipt = {
+    version: 1, actor: "SYSTEM", sourceEventId: "77", sourceFingerprint: "a".repeat(64),
+    eventEndedAt: "2026-10-25T01:00:00.000Z", scheduledFor: "2026-10-25T02:00:00.000Z", submittedAt: "2026-10-25T02:05:00.000Z",
+    missingTaskKeys: ["shift-lead-checkout", "food-ready"], missingBwa: true, missingPoc: true,
+    contractWarnings: ["Contract quantity is unresolved."],
+  };
+  const record = (changes: Partial<SubmissionReceipt> = {}): Pick<ChecklistRecord, "status" | "tasks" | "taskEvidence"> => ({
+    status: "submitted", tasks: { [AUTO_SUBMISSION_KEY]: true },
+    taskEvidence: { [AUTO_SUBMISSION_KEY]: { employeeName: "SYSTEM", completedAt: receipt.submittedAt, automaticSubmission: { ...receipt, ...changes } } },
+  });
+
+  it("identifies system submission separately from verified work and retains missing staff, task labels and warnings", () => {
+    const html = renderToStaticMarkup(createElement(AutomaticChecklistSubmission, { record: record() }));
+    expect(html).toContain("Automatically submitted");
+    expect(html).toContain("Needs attention");
+    expect(html).toContain("Filed by the system after the one-hour event closeout deadline.");
+    expect(html).toContain("does not mark unfinished work complete or confirm it was performed");
+    expect(html).toContain("BWA name was not entered.");
+    expect(html).toContain("POC name was not entered.");
+    for (const key of receipt.missingTaskKeys) {
+      const label = checklistSections.flatMap((section) => section.items).find((item) => item.key === key)!.label;
+      expect(html).toContain(label);
+    }
+    expect(html).toContain("Contract quantity is unresolved.");
+    expect(html).not.toContain("Confirmed by SYSTEM");
+    expect(html).toContain("Use Un-submit checklist if saved information needs correction.");
+  });
+
+  it("shows every automatic timestamp in New York time across UTC midnight", () => {
+    const html = renderToStaticMarkup(createElement(AutomaticChecklistSubmission, { record: record() }));
+    expect(html).toContain('dateTime="2026-10-25T01:00:00.000Z"');
+    expect(html).toContain('dateTime="2026-10-25T02:00:00.000Z"');
+    expect(html).toContain('dateTime="2026-10-25T02:05:00.000Z"');
+    expect(html).toContain("Oct 24, 9:00 PM");
+    expect(html).toContain("Oct 24, 10:00 PM");
+    expect(html).toContain("Oct 24, 10:05 PM");
+    expect(html).toContain("Eastern");
+  });
+
+  it("does not add an attention warning when the automatic snapshot contains no outstanding issues", () => {
+    const html = renderToStaticMarkup(createElement(AutomaticChecklistSubmission, { record: record({ missingTaskKeys: [], missingBwa: false, missingPoc: false, contractWarnings: [] }) }));
+    expect(html).toContain("Automatically submitted");
+    expect(html).not.toContain("Needs attention");
+    expect(html).not.toContain("name was not entered");
+    expect(html).not.toContain("Unfinished or unverified tasks at submission");
+  });
+
+  it.each([
+    { missingBwa: true },
+    { missingPoc: true },
+    { missingTaskKeys: ["shift-lead-checkout"] },
+    { contractWarnings: ["Retained source warning"] },
+  ])("flags each independently outstanding issue for Admin attention: %j", (issue) => {
+    const html = renderToStaticMarkup(createElement(AutomaticChecklistSubmission, { record: record({ missingTaskKeys: [], missingBwa: false, missingPoc: false, contractWarnings: [], ...issue }) }));
+    expect(html).toContain("Needs attention");
+  });
+
+  it("does not label a reopened, manually resubmitted, legacy or malformed record automatically submitted", () => {
+    const active = record();
+    const cases: Array<Pick<ChecklistRecord, "status" | "tasks" | "taskEvidence">> = [
+      { ...active, status: "draft" },
+      { ...active, tasks: { [AUTO_SUBMISSION_KEY]: false } },
+      { ...active, tasks: {} },
+      { ...active, taskEvidence: {} },
+      record({ actor: "STAFF" as "SYSTEM" }),
+      record({ scheduledFor: "2026-10-25T01:30:00.000Z" }),
+      record({ submittedAt: "invalid" }),
+      record({ sourceFingerprint: "invalid" }),
+    ];
+    for (const item of cases) expect(renderToStaticMarkup(createElement(AutomaticChecklistSubmission, { record: item }))).toBe("");
+  });
+
+  it("renders retained source warning text and unknown task keys as text, never markup", () => {
+    const html = renderToStaticMarkup(createElement(AutomaticChecklistSubmission, { record: record({ missingTaskKeys: ["<script>task</script>"], contractWarnings: ["<script>warning</script>"] }) }));
+    expect(html).toContain("&lt;script&gt;task&lt;/script&gt;");
+    expect(html).toContain("&lt;script&gt;warning&lt;/script&gt;");
+    expect(html).not.toContain("<script>");
   });
 });
 

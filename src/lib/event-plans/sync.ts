@@ -254,10 +254,10 @@ export async function loadEventPlanWindow(
   options: Pick<
     EventPlanSyncOptions,
     "now" | "storage" | "legacyPlans"
-  > = {},
+  > & { window?: EventPlanWindow } = {},
 ): Promise<StoredEventPlanWindow> {
   const now = options.now ?? new Date();
-  const window = storageWindow(now);
+  const window = options.window ? validatedWindow(options.window) : storageWindow(now);
   const storage = options.storage ?? getEventPlanStorage();
   const legacyPlans = options.legacyPlans ?? legacyEventPlans;
   const includeConfirmedContractEvidence =

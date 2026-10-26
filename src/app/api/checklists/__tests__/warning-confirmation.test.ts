@@ -9,7 +9,7 @@ import { setupTaskFingerprint } from "@/lib/operations/setup";
 import { StaleSaveError } from "@/lib/stale-save";
 import { POST } from "../submit/route";
 
-vi.mock("@/lib/checklist-storage", () => ({ saveChecklist: vi.fn() }));
+vi.mock("@/lib/checklist-storage", () => ({ saveChecklist: vi.fn(), getChecklistRecord: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/event-plans/sync", () => ({ findEventPlanById: vi.fn() }));
 vi.mock("@/lib/gotab/sync-checklist-addons", () => ({ synchronizeChecklistFoodAddOns: vi.fn() }));
 

@@ -47,6 +47,14 @@ describe("Event Host food add-ons", () => {
     expect(checklistEventForSelection([first, remembered], null, 1)).toBe(first);
     expect(checklistEventForSelection([first, remembered], "unavailable", 1)).toBeUndefined();
   });
+  it("selects canonical VIP sources exactly and refuses ambiguous legacy numeric choices", () => {
+    const first = { id: 527983760, source_event_id: "vip-test-h4l720-hfbtsa" };
+    const second = { id: 527983760, source_event_id: "vip-test-1k212gj-1rfricb" };
+    expect(checklistEventForSelection([first, second], second.source_event_id, first.id)).toBe(second);
+    expect(checklistEventForSelection([first, second], "vip-unknown", first.id)).toBeUndefined();
+    expect(checklistEventForSelection([first, second], "527983760", first.id)).toBeUndefined();
+    expect(checklistEventForSelection([first, second], null, first.id)).toBeUndefined();
+  });
   it("prices each dessert platter at $120 even when an old draft has a manual price", () => {
     const dessert = foodAddOns.find((item) => item.key === "dessert-platter")!;
     expect(dessert.kind).toBe("fixed-price");

@@ -29,13 +29,17 @@ export default async function ChecklistsPage({
 
   const [adminState, eventPlanWindow] = await Promise.all([
     loadAdminState(),
-    loadStaffEventPlans(requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(new Date())),
+    loadStaffEventPlans(requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(new Date()), {
+      exactDate: Boolean(requestedDate && isValidEntertainmentDate(requestedDate)), includeUnsubmitted: true,
+    }),
   ]);
   const checklistEvents = checklistEventsForPlans(eventPlanWindow.plans);
-  const activeEventIds = availableChecklistEvents(
-    checklistEvents,
-    adminState.archivedEventIds,
-  ).map((event) => event.id);
+  const activeEventIds = requestedDate && isValidEntertainmentDate(requestedDate)
+    ? checklistEvents.map((event) => event.id)
+    : [...new Set([
+      ...availableChecklistEvents(checklistEvents, adminState.archivedEventIds).map((event) => event.id),
+      ...(eventPlanWindow.unfinishedEventIds ?? []),
+    ])];
 
   return (
     <ChecklistsClient

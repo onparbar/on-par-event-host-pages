@@ -1,3 +1,5 @@
+import type { AutomaticChecklistSubmission } from "./operations/checklist-auto-submission";
+
 export type RateOption = {
   key: string;
   label: string;
@@ -51,7 +53,7 @@ export type EventChecklistState = {
   extrasAdded: string;
   remainingDrinkCardBalance: string;
   tasks: Record<string, boolean>;
-  taskEvidence?: Record<string, { employeeName: string; completedAt: string; sourceFingerprint?: string; contractWarnings?: string[] }>;
+  taskEvidence?: Record<string, { employeeName: string; completedAt: string; sourceFingerprint?: string; contractWarnings?: string[]; automaticSubmission?: AutomaticChecklistSubmission }>;
   entertainment: Record<string, EntertainmentState>;
   food: Record<string, FoodState>;
 };
@@ -69,9 +71,11 @@ export type ChecklistRecord = EventChecklistState & {
 };
 
 /** Resolve the navigation preference before rendering or publishing a default. */
-export function checklistEventForSelection<T extends { id: number }>(events: readonly T[], preferredEventId: string | null, activeEventId: number) {
-  if (preferredEventId) return events.find((event) => String(event.id) === preferredEventId);
-  return events.find((event) => event.id === activeEventId) ?? events[0];
+export function checklistEventForSelection<T extends { id: number; source_event_id?: string }>(events: readonly T[], preferredEventId: string | null, activeEventId: number) {
+  const matches = preferredEventId
+    ? events.filter((event) => preferredEventId.startsWith("vip-") ? event.source_event_id === preferredEventId : String(event.id) === preferredEventId)
+    : events.filter((event) => event.id === activeEventId);
+  return matches.length === 1 ? matches[0] : preferredEventId || matches.length > 1 ? undefined : events[0];
 }
 
 export function normalizeStaffPoc(value: unknown): string {

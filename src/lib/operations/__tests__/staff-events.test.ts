@@ -5,6 +5,9 @@ import { numericVipEventId, vipPrepExternalId } from "@/lib/vip-prep/identity";
 import type { EventPlan } from "@/lib/event-plans/types";
 import { operationalEventFromPlan } from "../event-context";
 import { buildOperationalEventSummaries } from "../command-center";
+import { createMemoryEventPlanStorage } from "@/lib/event-plans/storage";
+import { loadEventPlanWindow } from "@/lib/event-plans/sync";
+import { defaultChecklistState, type ChecklistRecord } from "@/lib/checklist-model";
 
 const reservation = { ...vipPrepPayload.reservations[0], operatingDate: "2026-10-23", eventName: "Staff training", startAt: "2026-10-23T18:00:00Z", endAt: "2026-10-23T20:00:00Z" };
 const plan: EventPlan = { id: 123, name: "Different corporate party", date: "2026-10-23", rooms: ["VIP 1"], time: "2:00 PM – 4:00 PM", day: "Friday", guest_count: 20, color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified" };
@@ -59,8 +62,8 @@ describe("read-only staff event feed", () => {
     const loadPlans = vi.fn().mockResolvedValue({ plans: [plan], sync: null });
     const fetchRange = vi.fn().mockResolvedValue({ ...vipPrepPayload, reservations: [reservation] });
     const result = await loadStaffEventPlans("2026-10-23", { loadPlans, vipClient: { configured: true, fetchRange } });
-    expect(loadPlans).toHaveBeenCalledWith({ now: new Date("2026-10-23T12:00:00Z") });
-    expect(fetchRange).toHaveBeenCalledExactlyOnceWith("2026-10-23", "2026-10-23");
+    expect(loadPlans).toHaveBeenCalledWith({ now: new Date("2026-10-23T12:00:00Z"), window: { startDate: "2026-10-22", endDate: "2026-11-23" } });
+    expect(fetchRange).toHaveBeenCalledExactlyOnceWith("2026-10-22", "2026-10-23");
     expect(result.plans).toHaveLength(2);
     expect(result.sourceWarning).toBe("");
   });
@@ -76,5 +79,65 @@ describe("read-only staff event feed", () => {
     await expect(loadStaffEventPlans("2026-02-30", { loadPlans, vipClient: { configured: true, fetchRange } })).rejects.toThrow("valid YYYY-MM-DD");
     expect(loadPlans).not.toHaveBeenCalled();
     expect(fetchRange).not.toHaveBeenCalled();
+  });
+  it("actually loads a previous-day event instead of losing it before the following-day eligibility filter", async () => {
+    const storage = createMemoryEventPlanStorage();
+    await storage.replaceWindow({ startDate: plan.date, endDate: plan.date }, [{ eventId: String(plan.id), eventDate: plan.date,
+      plan: { ...plan }, sourceSnapshot: { status: "DEFINITE" }, sourceUpdatedAt: null }]);
+    const result = await loadStaffEventPlans("2026-10-24", { loadPlans: (options) => loadEventPlanWindow({ ...options, storage, legacyPlans: [] }), vipClient: { configured: false, fetchRange: vi.fn() } });
+    expect(result.plans.map((item) => item.id)).toEqual([plan.id]);
+  });
+  it("recovers saved unfinished past events by exact source ID and date, never by a matching name", async () => {
+    const old = { ...plan, id: 999, date: "2026-09-12", name: "Sanitized older event" };
+    const record = { ...defaultChecklistState(old.date), eventId: old.id, eventName: old.name, eventDate: old.date, poc: "", status: "draft", updatedAt: null, submittedAt: null } as ChecklistRecord;
+    const submitted = { ...record, eventId: 1000, status: "submitted" as const };
+    const moved = { ...record, eventId: 1001 };
+    const findPlan = vi.fn().mockImplementation(async (id) => id === old.id ? old : id === moved.eventId ? { ...old, id, date: "2026-09-13" } : null);
+    const result = await loadStaffEventPlans("2026-10-26", { includeUnsubmitted: true,
+      loadPlans: vi.fn().mockResolvedValue({ plans: [], sync: null }), findPlan,
+      loadChecklists: vi.fn().mockResolvedValue([record, submitted, moved]), vipClient: { configured: false, fetchRange: vi.fn() } });
+    expect(result.plans).toEqual([old]); expect(result.unfinishedEventIds).toEqual([old.id]);
+    expect(findPlan).toHaveBeenCalledWith(old.id); expect(findPlan).not.toHaveBeenCalledWith(submitted.eventId);
+    expect(result.sourceWarning).toContain("No different party was substituted");
+  });
+  it.each([true, false])("keeps current events first and recovered drafts newest-first (current available: %s)", async (includeCurrent) => {
+    const current = { ...plan, id: 990, date: "2026-10-26" };
+    const saturday = { ...plan, id: 991, date: "2026-10-24" };
+    const july = { ...plan, id: 992, date: "2026-07-30" };
+    const records: ChecklistRecord[] = [july, saturday].map((event) => ({ ...defaultChecklistState(event.date),
+      eventId: event.id, eventName: event.name, eventDate: event.date, poc: "", status: "draft", updatedAt: null, submittedAt: null }));
+    const result = await loadStaffEventPlans(current.date, { includeUnsubmitted: true,
+      loadPlans: vi.fn().mockResolvedValue({ plans: includeCurrent ? [current] : [], sync: null }),
+      loadChecklists: vi.fn().mockResolvedValue(records),
+      findPlan: vi.fn(async (id) => [saturday, july].find((event) => event.id === id) ?? null),
+      vipClient: { configured: false, fetchRange: vi.fn() },
+    });
+    expect(result.plans.map((event) => event.id)).toEqual(includeCurrent ? [current.id, saturday.id, july.id] : [saturday.id, july.id]);
+    expect(result.unfinishedEventIds).toEqual([saturday.id, july.id]);
+  });
+  it("uses only the requested past date and does not recover unrelated older records into that explicit view", async () => {
+    const loadPlans = vi.fn().mockResolvedValue({ plans: [plan], sync: null });
+    const fetchRange = vi.fn().mockResolvedValue({ ...vipPrepPayload, reservations: [reservation] });
+    const findPlan = vi.fn();
+    const result = await loadStaffEventPlans(plan.date, { exactDate: true, includeUnsubmitted: true, loadPlans, findPlan,
+      loadChecklists: vi.fn().mockResolvedValue([{ eventId: 991, eventDate: "2026-01-01", status: "draft" } as ChecklistRecord]),
+      vipClient: { configured: true, fetchRange } });
+    expect(loadPlans).toHaveBeenCalledWith({ now: new Date(`${plan.date}T12:00:00Z`), window: { startDate: plan.date, endDate: plan.date } });
+    expect(fetchRange).toHaveBeenCalledExactlyOnceWith(plan.date, plan.date); expect(findPlan).not.toHaveBeenCalled();
+    expect(result.plans).toHaveLength(2);
+  });
+  it("recovers a past VIP draft from its saved exact date and fails closed on an unavailable source", async () => {
+    const sourceId = vipPrepExternalId(reservation);
+    const id = numericVipEventId(sourceId);
+    const record = { ...defaultChecklistState(reservation.operatingDate), eventId: id, eventName: "A name is not identity", eventDate: reservation.operatingDate, poc: "", status: "draft", updatedAt: null, submittedAt: null } as ChecklistRecord;
+    const fetchRange = vi.fn(async (from: string) => ({ ...vipPrepPayload, reservations: from === reservation.operatingDate ? [reservation] : [] }));
+    const options = { includeUnsubmitted: true, loadPlans: vi.fn().mockResolvedValue({ plans: [], sync: null }), findPlan: vi.fn().mockResolvedValue(null), loadChecklists: vi.fn().mockResolvedValue([record]), vipClient: { configured: true, fetchRange } };
+    const result = await loadStaffEventPlans("2026-10-26", options);
+    expect(result.plans[0].source_event_id).toBe(sourceId); expect(result.unfinishedEventIds).toEqual([id]);
+    expect(fetchRange).toHaveBeenCalledWith(reservation.operatingDate, reservation.operatingDate);
+    fetchRange.mockRejectedValue(new Error("Private source diagnostic"));
+    const failed = await loadStaffEventPlans("2026-10-26", options);
+    expect(failed.plans).toEqual([]); expect(failed.sourceWarning).toContain("No different party was substituted");
+    expect(failed.sourceWarning).not.toContain("Private source diagnostic");
   });
 });

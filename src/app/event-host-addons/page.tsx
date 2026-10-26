@@ -19,14 +19,11 @@ export default async function EventHostAddOnsPage({ searchParams }: { searchPara
   const { date: requestedDate } = await searchParams;
   const [adminState, eventPlanWindow] = await Promise.all([
     loadAdminState(),
-    loadStaffEventPlans(requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(new Date())),
+    loadStaffEventPlans(requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(new Date()), {
+      exactDate: Boolean(requestedDate && isValidEntertainmentDate(requestedDate)), includeUnsubmitted: true,
+    }),
   ]);
-  const checklistEvents = checklistEventsForPlans(eventPlanWindow.plans).sort(
-    (left, right) =>
-      left.date.localeCompare(right.date) ||
-      left.time.localeCompare(right.time) ||
-      left.name.localeCompare(right.name),
-  );
+  const checklistEvents = checklistEventsForPlans(eventPlanWindow.plans);
   const archivedEventIds = new Set(adminState.archivedEventIds);
   const activeEventIds = checklistEvents
     .filter((event) => !archivedEventIds.has(event.id))

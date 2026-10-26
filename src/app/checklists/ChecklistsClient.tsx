@@ -17,9 +17,8 @@ import type { ChecklistEvent } from "@/lib/checklist-events";
 import { checklistReadiness } from "@/lib/checklist-readiness";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
 import { EventWorkspaceRequests } from "@/app/_components/EventWorkspace";
-import { operationalEventFromPlan } from "@/lib/operations/event-context";
+import { operationalEventFromPlan, operationalEventHref } from "@/lib/operations/event-context";
 import { contractSetup, reconcileChecklistSetup, setupTaskFingerprint } from "@/lib/operations/setup";
-import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 import { eventFoodDeliveryState, type EventFoodDelivery } from "@/lib/gotab/delivery";
 import {
   checklistSections,
@@ -337,7 +336,7 @@ export default function ChecklistsClient({
 
   useEffect(() => {
     if (!contextReady || !preferredEventId) return;
-    const requested = visibleEvents.find((event) => String(event.id) === operationalKitchenEventId(preferredEventId));
+    const requested = checklistEventForSelection(visibleEvents, preferredEventId, 0);
     if (requested) setActiveEventId(requested.id);
   }, [contextReady, preferredEventId, visibleEvents]);
 
@@ -354,21 +353,24 @@ export default function ChecklistsClient({
     }
   }, [activeEventId, visibleEvents]);
 
-  const saveDrafts = useEffectEvent(async (eventIds: number[]) => {
+  const saveDrafts = useEffectEvent(async (eventIds: number[], options?: { syncFoodAddOns: false }) => {
+    const savedEventIds = new Set<number>();
+    const availableIds = eventIds.filter((eventId) => !conflictByEvent[eventId] && !inFlightEventIds.current.has(eventId) &&
+      metaByEvent[eventId]?.status !== "submitted" && events.some((event) => event.id === eventId) && checklistsByEvent[eventId]);
     const revisionSnapshot = Object.fromEntries(eventIds.map((eventId) => [eventId, revisionByEventRef.current[eventId] ?? 0]));
 
     setSaveStateByEvent((current) => {
       const next = { ...current };
-      for (const eventId of eventIds) {
+      for (const eventId of availableIds) {
         next[eventId] = "saving";
       }
       return next;
     });
 
-    for (const eventId of eventIds) {
+    for (const eventId of availableIds) {
       const event = events.find((item) => item.id === eventId);
       const checklist = checklistsByEvent[eventId];
-      const syncFoodAddOns = dirtyFoodEventIds.includes(eventId);
+      const syncFoodAddOns = options?.syncFoodAddOns === false ? false : dirtyFoodEventIds.includes(eventId);
 
       if (!event || !checklist || metaByEvent[eventId]?.status === "submitted") {
         continue;
@@ -394,6 +396,8 @@ export default function ChecklistsClient({
           },
           body: JSON.stringify({
             eventId,
+            sourceEventId: event.source_event_id ?? String(event.id),
+            eventDate: event.date,
             expectedUpdatedAt: metaByEventRef.current[eventId]?.updatedAt ?? null,
             checklist,
             syncFoodAddOns,
@@ -407,12 +411,17 @@ export default function ChecklistsClient({
           if (response.status === 409) setConflictByEvent((current) => ({ ...current, [eventId]: true }));
           throw new Error(payload.error ?? "Unable to save draft. Your draft is retained on this screen.");
         }
+        if (!payload.record || payload.record.eventId !== eventId || payload.record.eventDate !== event.date ||
+          payload.record.status !== "draft" || !payload.record.updatedAt || !Number.isFinite(Date.parse(payload.record.updatedAt))) {
+          throw new Error("The saved draft could not be verified for this event. Your entries remain on this screen; do not leave until the save is confirmed.");
+        }
         const revisionIsCurrent =
           (revisionByEventRef.current[eventId] ?? 0) ===
           revisionSnapshot[eventId];
         window.dispatchEvent(new Event("event-host:checklist-updated"));
 
         if (revisionIsCurrent) {
+          savedEventIds.add(eventId);
           setChecklistsByEvent((current) => ({
             ...current,
             [eventId]: mergeRecordState(payload.record, event),
@@ -465,6 +474,7 @@ export default function ChecklistsClient({
         inFlightEventIds.current.delete(eventId);
       }
     }
+    return savedEventIds;
   });
 
   useEffect(() => {
@@ -509,6 +519,8 @@ export default function ChecklistsClient({
         },
         body: JSON.stringify({
           eventId,
+          sourceEventId: event.source_event_id ?? String(event.id),
+          eventDate: event.date,
           expectedUpdatedAt: metaByEventRef.current[eventId]?.updatedAt ?? null,
           checklist,
           ...(confirmedWarnings ? { warningConfirmation: { sourceFingerprint: currentReadiness.warningFingerprint } } : {}),
@@ -562,7 +574,7 @@ export default function ChecklistsClient({
     } finally { inFlightEventIds.current.delete(eventId); finalSubmissionEventIds.current.delete(eventId); }
   });
 
-  const activeEvent = checklistEventForSelection(visibleEvents, preferredEventId ? operationalKitchenEventId(preferredEventId) : null, activeEventId);
+  const activeEvent = checklistEventForSelection(visibleEvents, preferredEventId, activeEventId);
   const activeChecklist = activeEvent ? checklistsByEvent[activeEvent.id] : undefined;
   const activeMeta = activeEvent ? metaByEvent[activeEvent.id] : undefined;
   const activeSaveState = activeEvent ? saveStateByEvent[activeEvent.id] : "idle";
@@ -618,7 +630,7 @@ export default function ChecklistsClient({
     return <PortalShell mainClassName="page checklist-page" sectionTitle={sectionTitle} sectionSubtitle="Event workspace"><p role="status">Loading the selected event workspace…</p></PortalShell>;
   }
 
-  if (preferredEventId && !visibleEvents.some((event) => String(event.id) === operationalKitchenEventId(preferredEventId))) {
+  if (preferredEventId && !checklistEventForSelection(visibleEvents, preferredEventId, 0)) {
     return <PortalShell mainClassName="page checklist-page" sectionTitle={sectionTitle} sectionSubtitle="Selected event"><section className="checklist-meta-card"><strong>The selected event is not available in this active workspace.</strong><p>It may already be submitted or outside the active event window. No other party has been selected automatically.</p><button type="button" onClick={clearEvent}>Choose another event</button></section></PortalShell>;
   }
 
@@ -853,7 +865,9 @@ export default function ChecklistsClient({
                     ? isAddOnWorkspace
                       ? "Submit at the end of the event to send the complete add-on record to Admin."
                       : "Use the submit button when the event checklist is final."
-                    : "Enter the BWA, finish critical tasks with completion evidence, and confirm any retained contract warnings before submitting."}
+                    : isAddOnWorkspace
+                      ? "Final submission closes the same event checklist. Add-on quantities can be saved separately; finish critical tasks in Checklists and confirm retained warnings before closing the record."
+                      : "Enter the BWA, finish critical tasks with completion evidence, and confirm any retained contract warnings before submitting."}
               </span>
               {!isSubmitted && !canSubmit ? (
                 <ul aria-label="Checklist submission requirements" className="meta">
@@ -865,6 +879,10 @@ export default function ChecklistsClient({
                   {loadState !== "ready" ? <li>Saved checklist data must load successfully before submission.</li> : null}
                 </ul>
               ) : null}
+              {isAddOnWorkspace && !isSubmitted && readiness.missing.length > 0 ? <div>
+                <p className="meta">This saves the current add-on draft to Admin only. It does not order food, send anything to the KDS, or mark tasks complete.</p>
+                <button type="button" disabled={!isEditable || foodSaveBusy || Boolean(conflictByEvent[activeEvent.id])} onClick={() => void openChecklistForCloseout(activeEvent)}>Save add-on draft and open checklist</button>
+              </div> : null}
             </div>
             <button
               type="button"
@@ -1399,6 +1417,11 @@ export default function ChecklistsClient({
     }));
   }
 
+  async function openChecklistForCloseout(event: ChecklistEvent) {
+    const saved = await saveDrafts([event.id], { syncFoodAddOns: false });
+    if (saved.has(event.id)) window.location.assign(operationalEventHref("/checklists", operationalEventFromPlan(event)));
+  }
+
   function updateFoodAddOn(
     eventId: number,
     key: string,
@@ -1429,7 +1452,8 @@ export default function ChecklistsClient({
 
   async function submitFoodAddOn(eventId: number, key: string, sourceType: "EVENT_HOST_ADDON" | "REFILL" = "EVENT_HOST_ADDON") {
     const checklist = checklistsByEvent[eventId];
-    if (!checklist || metaByEvent[eventId]?.status === "submitted" || conflictByEvent[eventId] || finalSubmissionEventIds.current.has(eventId)) return;
+    const event = events.find((item) => item.id === eventId);
+    if (!event || !checklist || metaByEvent[eventId]?.status === "submitted" || conflictByEvent[eventId] || finalSubmissionEventIds.current.has(eventId)) return;
     const itemStateKey = `${eventId}:${key}`;
     if (foodSubmissionLocked(foodSubmitByItem[itemStateKey])) return;
     if (inFlightEventIds.current.has(eventId)) {
@@ -1447,6 +1471,8 @@ export default function ChecklistsClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           eventId,
+          sourceEventId: event.source_event_id ?? String(event.id),
+          eventDate: event.date,
           expectedUpdatedAt: metaByEventRef.current[eventId]?.updatedAt ?? null,
           checklist,
           syncFoodAddOns: true,
