@@ -695,12 +695,12 @@ export default function KitchenDashboard() {
   useEffect(() => {
     if (!eventContext.preferredEventId) {
       openedContextEventRef.current = null;
-    } else if (focusedEvent && openedContextEventRef.current !== eventContext.preferredEventId) {
+    } else if (focusedEvent && day?.date === selectedDate && openedContextEventRef.current !== eventContext.preferredEventId) {
       openedContextEventRef.current = eventContext.preferredEventId;
       checklistTriggerRef.current = null;
       setSelectedEventId(focusedEvent.event.eventId);
     }
-  }, [eventContext.preferredEventId, focusedEvent]);
+  }, [day?.date, eventContext.preferredEventId, focusedEvent, selectedDate]);
   const retainedStaffDraftCount = Object.keys(staffDrafts).filter((eventId) =>
     dirtyStaffRef.current.has(eventId) && !sortedEvents.some((event) => String(event.event.eventId) === eventId),
   ).length;
