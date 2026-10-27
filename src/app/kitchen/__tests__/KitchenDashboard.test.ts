@@ -154,6 +154,24 @@ describe("kitchen day response gating", () => {
 describe("kitchen checklist day layout", () => {
   const noop = () => {};
 
+  it("shows the approved two-dish serving setup while preserving full prepared food and refill pans", () => {
+    const checklist = generateKitchenChecklist({ eventId: "redacted-serving", eventName: "Redacted serving fixture", localDate: "2026-10-27",
+      startTime: "5:30 PM", endTime: "8:30 PM", guestCount: 17, status: "DEFINITE", room: "VIP 1", sourceUpdatedAt: "2026-10-06T14:52:00Z",
+      specialNotes: ["Needs Review: Tripleseat booking contract data could not be verified. Review the source event."],
+      selections: [{ name: "The Full Course - Food + $20 Drink Cards", quantity: 17, isFood: true }, { name: "Taco Bar", quantity: 1, isFood: true },
+        { name: "Chicken Tender Platter", quantity: 1, isFood: true }, { name: "Wing Platter", quantity: 1, isFood: true }, { name: "Veggie Tray", quantity: 1, isFood: true }] });
+    const original = structuredClone(checklist);
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, { checklist, bwaSaveState: "idle" }));
+    expect(html).toContain("Serving chafing dishes</span><strong>2</strong>");
+    expect(html).toContain("Wings and chicken tenders share one serving chafing dish: one 1/2 pan of each.");
+    expect(html).toContain("Taco Bar uses one serving chafing dish");
+    expect(html).toContain("remaining prepared pans for refills");
+    expect(html).toContain("Tripleseat booking contract data could not be verified");
+    expect(checklist).toEqual(original);
+    const rows = checklist.sections.flatMap((section) => section.rows);
+    for (const key of ["platter-wings", "platter-chicken-tenders"]) expect(rows.find((row) => row.key === key)).toMatchObject({ quantity: 64, numberOfPans: 2, panSize: "1/2" });
+  });
+
   it("keeps VIP food visible on printable kitchen sheets", () => {
     const event = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     const vip = { ...event, event: { ...event.event, eventId: "vip-reservation-1" } };

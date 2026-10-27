@@ -2,8 +2,21 @@ import { describe, expect, it } from "vitest";
 import { buildWorkspacePayload } from "../workspace";
 import { workspaceTimeline, workspaceTimelinePosition } from "../workspace-timeline";
 import { workspaceEvent, workspaceRecord, workspaceReservation } from "./workspace-fixtures";
+import { checklistReadiness } from "@/lib/checklist-readiness";
 
 describe("event operating timeline", () => {
+  it("ignores optional unchecked work when showing setup completion", () => {
+    const event = { ...workspaceEvent, food: [], drink_options: [], entertainment: [], source_updated_at: "2026-10-23T15:00:00Z" };
+    const record = workspaceRecord({ tasks: {}, taskEvidence: {} });
+    for (const task of checklistReadiness(event, record).tasks.filter((item) => item.applicability === "required")) {
+      record.tasks[task.key] = true;
+      record.taskEvidence![task.key] = { employeeName: "BWA", completedAt: "2026-10-23T16:00:00Z" };
+    }
+    const payload = buildWorkspacePayload({ event, record, reservations: [], scheduleAvailable: true });
+    expect(workspaceTimeline(payload).find((item) => item.id === "setup")?.completed).toBe(true);
+    expect(record.tasks["chaffing-dishes-placed"]).toBeUndefined();
+  });
+
   it("includes activity duration in hours without moving exact half-hour starts or timing mini golf", () => {
     const payload = buildWorkspacePayload({ event: workspaceEvent, record: null, reservations: [workspaceReservation({ endAt: "2026-10-24T00:00:00.000Z" })], scheduleAvailable: true });
     const entries = workspaceTimeline(payload);

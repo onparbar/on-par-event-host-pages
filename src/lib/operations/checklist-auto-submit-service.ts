@@ -114,7 +114,7 @@ export async function autoSubmitChecklists(options: Dependencies = {}) {
         Number.isFinite(Date.parse(state.taskEvidence?.[key]?.completedAt ?? ""));
       const receipt: AutomaticChecklistSubmission = { version: 1, actor: "SYSTEM", ...timing,
         submittedAt: now.toISOString(), sourceEventId: source.sourceEventId, sourceFingerprint: automaticChecklistSourceFingerprint(source),
-        missingTaskKeys: readiness.tasks.filter((task) => task.applicability !== "not-applicable" && (task.applicability === "needs-review" || !complete(task.key))).map((task) => task.key),
+        missingTaskKeys: readiness.tasks.filter((task) => task.applicability !== "optional" && (task.applicability === "needs-review" || !complete(task.key))).map((task) => task.key),
         missingBwa: !state.bwa.trim(), missingPoc: !state.poc?.trim(), contractWarnings: [...new Set([
           ...readiness.tasks.filter((task) => task.applicability === "needs-review").map((task) => `${task.label}: ${task.reason}`),
           ...(source.event.review_reasons ?? []),

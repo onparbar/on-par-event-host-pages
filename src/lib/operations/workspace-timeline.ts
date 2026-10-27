@@ -19,7 +19,7 @@ export function workspaceTimeline(payload: WorkspacePayload): WorkspaceTimelineI
   const readiness = payload.record ? checklistReadiness(payload.event, payload.record) : null;
   const sectionComplete = (sectionKey: string) => {
     const keys = new Set(checklistSections.find((section) => section.key === sectionKey)?.items.map((item) => item.key));
-    const tasks = readiness?.tasks.filter((item) => keys.has(item.key) && item.applicability !== "not-applicable") ?? [];
+    const tasks = readiness?.tasks.filter((item) => keys.has(item.key) && item.applicability !== "optional") ?? [];
     return tasks.length > 0 && tasks.every((item) => item.applicability === "required" && payload.record?.tasks[item.key] && payload.record.taskEvidence?.[item.key]?.employeeName.trim() && Number.isFinite(Date.parse(payload.record.taskEvidence[item.key].completedAt)));
   };
   if (payload.eventStartAt) {

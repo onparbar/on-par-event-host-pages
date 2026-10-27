@@ -40,6 +40,20 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("automatic checklist Admin closeout", () => {
+  it("does not report optional unchecked tasks as missing in automatic closeout", async () => {
+    const deps = await setup();
+    const row = (await deps.plans.findById("77"))!;
+    await deps.plans.replaceWindow({ startDate: DATE, endDate: DATE }, [{ ...row, plan: { ...event, food: [], drink_options: [], entertainment: [] } }]);
+    await autoSubmitChecklists(deps);
+    const saved = (await getChecklistRecord(77))!;
+    const missing = readAutomaticSubmission(saved)!.missingTaskKeys;
+    expect(missing).toContain("tablet-layout-accurate");
+    for (const key of ["prepaid-drink-cards-labeled", "food-ready", "mini-golf-coins", "chaffing-dishes-placed"]) {
+      expect(missing).not.toContain(key);
+      expect(saved.tasks[key]).toBeUndefined();
+    }
+  });
+
   it("creates a clearly incomplete record for a never-started event at exactly end plus1 hour, not before", async () => {
     const deps = await setup();
     expect((await autoSubmitChecklists({ ...deps, now: new Date(NOW.getTime() - 1) })).submitted).toBe(0);

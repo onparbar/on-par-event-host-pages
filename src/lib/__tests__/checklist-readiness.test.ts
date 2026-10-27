@@ -23,10 +23,15 @@ describe("conditional setup and closeout readiness", () => {
     expect(tasks.find((task) => task.key === "mini-golf-coins")?.dueAt).toBe("2026-10-21T22:00:00.000Z"); // Arrival task, not a timed golf reservation.
   });
 
-  it("only marks categories N/A when their absence is verified", () => {
+  it("keeps unselected categories optional without declaring them absent", () => {
     const noSelections = { ...event, food: [], entertainment: [], drink_options: [] };
     const tasks = checklistTaskRequirements(noSelections);
-    for (const key of ["food-ready", "mini-golf-coins", "prepaid-drink-cards-shown", "bowling-pin-setup"]) expect(tasks.find((task) => task.key === key)?.applicability).toBe("not-applicable");
+    for (const key of ["food-ready", "mini-golf-coins", "prepaid-drink-cards-shown", "bowling-pin-setup"]) {
+      const task = tasks.find((task) => task.key === key);
+      expect(task?.applicability).toBe("optional");
+      expect(task?.reason).toBe("Complete this task if needed for this event.");
+    }
+    expect(tasks.some((task) => /not applicable|^no .+ is listed/i.test(task.reason))).toBe(false);
     const unknown = checklistTaskRequirements({ ...noSelections, source_updated_at: null });
     expect(unknown.find((task) => task.key === "mini-golf-coins")?.applicability).toBe("needs-review");
     expect(checklistReadiness({ ...noSelections, needs_review: true }, defaultChecklistState(event.date)).review.length).toBeGreaterThan(0);
@@ -40,14 +45,14 @@ describe("conditional setup and closeout readiness", () => {
   it("does not demand chafing equipment for a verified dessert-only event", () => {
     const tasks = checklistTaskRequirements({ ...event, food: ["Dessert Platter"] });
     expect(tasks.find((task) => task.key === "food-carts-prepped")?.applicability).toBe("required");
-    expect(tasks.find((task) => task.key === "chaffing-dishes-placed")?.applicability).toBe("not-applicable");
-    expect(tasks.find((task) => task.key === "sternos-cooled")?.applicability).toBe("not-applicable");
+    expect(tasks.find((task) => task.key === "chaffing-dishes-placed")?.applicability).toBe("optional");
+    expect(tasks.find((task) => task.key === "sternos-cooled")?.applicability).toBe("optional");
   });
 
   it("does not require hot equipment when no food is verified", () => {
     for (const food of [[], ["No food"], ["None"]]) {
       const tasks = checklistTaskRequirements({ ...event, food });
-      for (const key of ["chaffing-dishes-placed", "chaffing-dishes-clean", "sternos-cooled"]) expect(tasks.find((task) => task.key === key)?.applicability).toBe("not-applicable");
+      for (const key of ["chaffing-dishes-placed", "chaffing-dishes-clean", "sternos-cooled"]) expect(tasks.find((task) => task.key === key)?.applicability).toBe("optional");
     }
   });
 
@@ -75,7 +80,64 @@ describe("conditional setup and closeout readiness", () => {
 
   it("recognizes a quantity-prefixed dessert without demanding hot equipment", () => {
     const tasks = checklistTaskRequirements({ ...event, food: ["2 × Dessert Platter"] });
-    expect(tasks.find((task) => task.key === "chaffing-dishes-placed")?.applicability).toBe("not-applicable");
+    expect(tasks.find((task) => task.key === "chaffing-dishes-placed")?.applicability).toBe("optional");
+  });
+
+  it.each([
+    { food: ["17 × The Full Course", "Taco Bar"], drink_options: ["Food + Beverage package"] },
+    { food: ["17 × The Full Course + Taco Bar"], drink_options: [] },
+    { food: ["The Full Course - Food + $20 Drink Cards"], drink_options: [] },
+    { food: ["The Back Nine"], drink_options: [] },
+    { food: ["Chicken Tender Platter"], drink_options: ["The Back Nine"] },
+    { food: ["Chicken Tender Platter"], drink_options: ["Food and Beverage package"] },
+    { food: ["The Full Course - Food Only"], drink_options: ["17 prepaid drink cards"] },
+  ])("requires drink-card tasks for an included-card package: %j", (selections) => {
+    const tasks = checklistTaskRequirements({ ...event, ...selections });
+    for (const key of ["prepaid-drink-cards-labeled", "prepaid-drink-cards-shown", "prepaid-cards-collected"]) {
+      expect(tasks.find((task) => task.key === key)?.applicability).toBe("required");
+      expect(tasks.find((task) => task.key === key)?.reason).toBe("Drink cards is listed in the event source.");
+    }
+  });
+
+  it.each([
+    { food: ["Food Only Package"], drink_options: [] },
+    { food: ["The Full Course - Food Only"], drink_options: [] },
+    { food: ["The Full Course - No Drink Cards"], drink_options: [] },
+    { food: ["Chicken Tender Platter"], drink_options: ["No drink cards"] },
+    { food: ["Chicken Tender Platter"], drink_options: ["Drink cards not included"] },
+    { food: ["Chicken Tender Platter"], drink_options: ["Soft drinks included"] },
+    { food: ["Chicken Tender Platter"], drink_options: ["Food + Beverage minimum"] },
+  ])("does not invent included cards for an explicitly card-free or food-only selection: %j", (selections) => {
+    const tasks = checklistTaskRequirements({ ...event, ...selections });
+    for (const key of ["prepaid-drink-cards-labeled", "prepaid-drink-cards-shown", "prepaid-cards-collected"]) expect(tasks.find((task) => task.key === key)?.applicability).toBe("optional");
+  });
+
+  it.each([
+    { food: ["The Full Course - unverified"], drink_options: [] },
+    { food: ["Chicken Tender Platter"], drink_options: ["Food + Beverage package not verified"] },
+    { food: ["The Full Course"], drink_options: ["No drink cards"] },
+  ])("retains drink-card review for uncertain or contradictory package evidence: %j", (selections) => {
+    const tasks = checklistTaskRequirements({ ...event, ...selections });
+    for (const key of ["prepaid-drink-cards-labeled", "prepaid-drink-cards-shown", "prepaid-cards-collected"]) expect(tasks.find((task) => task.key === key)?.applicability).toBe("needs-review");
+  });
+
+  it("does not require optional tasks for closeout or discard their saved completion evidence", () => {
+    const plan = { ...event, food: [], entertainment: [], drink_options: [] };
+    const state = completedState(plan);
+    for (const task of checklistTaskRequirements(plan).filter((task) => task.applicability === "optional")) {
+      state.tasks[task.key] = false;
+      delete state.taskEvidence![task.key];
+    }
+    const incompleteOptional = checklistReadiness(plan, state);
+    expect(incompleteOptional.canSubmit).toBe(true);
+    expect(incompleteOptional.missing).toEqual([]);
+    state.tasks["prepaid-drink-cards-labeled"] = true;
+    state.taskEvidence!["prepaid-drink-cards-labeled"] = { employeeName: "Earlier BWA", completedAt: "2026-10-21T21:00:00Z" };
+    const saved = structuredClone(state);
+    const completedOptional = checklistReadiness(plan, state);
+    expect(completedOptional.canSubmit).toBe(true);
+    expect(completedOptional.completed).toBe(incompleteOptional.completed);
+    expect(state).toEqual(saved);
   });
 
   it("computes due times in Eastern across midnight and DST without guessing invalid local clocks", () => {

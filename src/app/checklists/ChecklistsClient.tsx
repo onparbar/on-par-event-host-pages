@@ -727,7 +727,7 @@ export default function ChecklistsClient({
             <span className="eyebrow">Current Event</span>
             <strong>{activeEvent.name}</strong>
             <span className="meta">
-              {progress.completed} of {progress.total} checklist items complete
+              {progress.completed} of {progress.total} required checklist items complete
             </span>
             <progress aria-label="Checklist completion" className="checklist-progress" max={Math.max(1, progress.total)} value={progress.completed} />
             <span className={`sync-chip sync-chip-${activeSaveState}`}>{saveMessage}</span>
@@ -910,12 +910,13 @@ export default function ChecklistsClient({
               <div className="task-list">
                 <dl className="setup-equipment-grid">
                   <div><dt>Food tables</dt><dd data-needs-review={setup.foodTables === null}>{setup.foodTables ?? "Needs review"}</dd></div>
-                  <div><dt>Chafing dishes</dt><dd data-needs-review={setup.chafingDishes === null}>{setup.chafingDishes ?? "Needs review"}</dd></div>
+                  <div><dt>{setup.servingSetup ? "Serving chafing dishes" : "Chafing dishes"}</dt><dd data-needs-review={setup.chafingDishes === null}>{setup.servingSetup ? setup.servingSetup.chafingDishes : setup.chafingDishes ?? "Needs review"}</dd></div>
                   <div><dt>Tongs</dt><dd data-needs-review={setup.tongs === null}>{setup.tongs ?? "Needs review"}</dd></div>
                   <div><dt>Sauce containers</dt><dd data-needs-review={setup.sauceContainers === null}>{setup.sauceContainers ?? "Needs review"}</dd></div>
                   <div><dt>Spoons</dt><dd data-needs-review={setup.spoons === null}>{setup.spoons ?? "Needs review"}</dd></div>
                 </dl>
                 {setup.mirrored ? <p className="setup-mirror-note">Mirrored setup: duplicate equipment and supplies, not food quantities or charges.</p> : null}
+                {setup.servingSetup ? <div role="note" aria-label="Serving chafing setup"><strong>Serving setup — extra pans are refills</strong><ul>{setup.servingSetup.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}</ul></div> : null}
                 <strong>Purchased food — quantities unchanged</strong>
                 <ul>{setup.purchasedFood.map((food, index) => <li key={`${index}:${food}`}>{food}</li>)}</ul>
                 <ul>{setup.food.map((food) => <li key={food.name}>{food.name}: {food.quantity === null ? "Quantity needs review" : `${food.quantity} ${food.unit}`}{food.pans !== null && food.panSize ? ` · ${food.pans} ${food.panSize} pans` : ""}</li>)}</ul>
@@ -924,7 +925,7 @@ export default function ChecklistsClient({
               </div>
             </article>
             <p className="meta">Task completions record the staff name from this session, or the BWA name above, and the completion time. Names are staff-entered, not authenticated identity. Enter the BWA before final submission; only Admin can reopen a submitted checklist.</p>
-            {readiness.review.length ? <p role="alert">Contract warnings affect {readiness.review.length} critical task(s). Complete these tasks and confirm the warnings before submission. Unverified items are not marked Not applicable, and the warnings remain in Admin.</p> : null}
+            {readiness.review.length ? <p role="alert">Contract warnings affect {readiness.review.length} critical task(s). Complete these tasks and confirm the warnings before submission. The warnings remain in Admin.</p> : null}
             {checklistSections.map((section) => (
               <article className="task-section-card" key={section.key}>
                 <header className="task-section-header">{section.title}</header>
@@ -936,14 +937,14 @@ export default function ChecklistsClient({
                     <label className={`task-row${!isEditable ? " task-row-disabled" : ""}`} key={item.key}>
                       <input
                         type="checkbox"
-                        checked={requirement.applicability !== "not-applicable" && activeChecklist.tasks[item.key]}
-                        disabled={!isEditable || requirement.applicability === "not-applicable" || !(staffName.trim() || activeChecklist.bwa.trim())}
+                        checked={activeChecklist.tasks[item.key]}
+                        disabled={!isEditable || !(staffName.trim() || activeChecklist.bwa.trim())}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           updateEventChecklist(activeEvent.id, (current) => completeChecklistTask(current, item.key, checked, staffName, new Date().toISOString(), setupTaskFingerprint(activeEvent, item.key, setup)));
                         }}
                       />
-                      <span>{item.label}{requirement.critical && requirement.applicability !== "not-applicable" ? " · Critical" : ""}<small className="meta">{requirement.applicability === "not-applicable" ? `Not applicable — ${requirement.reason}` : requirement.applicability === "needs-review" ? requirement.reason : requirement.dueAt ? `Due ${formatTimestamp(requirement.dueAt)} Eastern` : section.title}{evidence && activeChecklist.tasks[item.key] ? ` · Recorded by ${evidence.employeeName} · ${formatTimestamp(evidence.completedAt)} Eastern` : ""}</small></span>
+                      <span>{item.label}{requirement.critical && requirement.applicability !== "optional" ? " · Critical" : ""}<small className="meta">{requirement.applicability === "optional" ? "Available if needed — check against the contract." : requirement.applicability === "needs-review" ? requirement.reason : requirement.dueAt ? `Due ${formatTimestamp(requirement.dueAt)} Eastern` : section.title}{evidence && activeChecklist.tasks[item.key] ? ` · Recorded by ${evidence.employeeName} · ${formatTimestamp(evidence.completedAt)} Eastern` : ""}</small></span>
                     </label>
                   ); })}
                 </div>

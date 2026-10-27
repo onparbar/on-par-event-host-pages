@@ -7,6 +7,7 @@ import { kitchenProgress } from "@/lib/kitchen/production";
 import { FoodDeliveryPanel, KitchenExpoPanel, KitchenProductionPanel } from "./KitchenOperationsPanel";
 import type { EventFoodDelivery } from "@/lib/gotab/delivery";
 import { KitchenSheetViewport } from "./KitchenSheetViewport";
+import { servingChafingSetup } from "@/lib/operations/setup";
 import {
   useCallback,
   useEffect,
@@ -2039,6 +2040,7 @@ export function KitchenChecklistSheet({
     .filter((section) => section.rows.length > 0)
     .sort((left, right) => categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category));
   const dropReminder = appetizerDropReminder(checklist);
+  const servingSetup = servingChafingSetup(checklist);
   const reviewMessages = [
     ...new Set([
       ...checklist.warnings.map((warning) => warning.message),
@@ -2116,8 +2118,8 @@ export function KitchenChecklistSheet({
           <strong>{checklist.event.guestCount ?? "Needs review"}</strong>
         </div>
         <div className="kitchen-checklist-header-fact">
-          <span>Chafing dishes</span>
-          <strong>{checklist.chafingDishes.total ?? "—"}</strong>
+          <span>{servingSetup ? "Serving chafing dishes" : "Chafing dishes"}</span>
+          <strong>{servingSetup ? servingSetup.chafingDishes : checklist.chafingDishes.total ?? "—"}</strong>
         </div>
         <div className="kitchen-checklist-brand-actions">
           <Image
@@ -2208,6 +2210,8 @@ export function KitchenChecklistSheet({
           value={formatTime(checklist.timing.foodReadyBy)}
         />
       </div>
+
+      {servingSetup ? <section aria-label="Serving chafing setup"><strong>Serving setup — extra pans are refills</strong><ul>{servingSetup.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}</ul></section> : null}
 
       {dropReminder ? (
         <section

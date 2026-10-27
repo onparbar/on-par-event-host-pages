@@ -2,13 +2,16 @@ import type { EventPlan } from "@/lib/event-plans/types";
 import type { EventChecklistState } from "@/lib/checklist-model";
 import { KITCHEN_RULE_CONFIG } from "@/lib/kitchen/config";
 import { generateKitchenChecklist } from "@/lib/kitchen/rules";
-import type { KitchenSourceSelection } from "@/lib/kitchen/types";
+import type { KitchenChecklist, KitchenSourceSelection } from "@/lib/kitchen/types";
+
+type ServingChafingSetup = { chafingDishes: number; instructions: string[] };
 
 export type ContractSetup = {
   purchasedFood: string[];
   foodTables: number | null;
   mirrored: boolean;
   chafingDishes: number | null;
+  servingSetup: ServingChafingSetup | null;
   tongs: number | null;
   sauceContainers: number | null;
   spoons: number | null;
@@ -21,6 +24,32 @@ function selectionsFromPlan(value: string): KitchenSourceSelection[] {
   const match = /^\s*(\d+(?:\.\d+)?)\s*[×x]\s*(.+)$/i.exec(value);
   // Event-plan formatting joins approved normalized kind labels with this exact separator.
   return (match?.[2] ?? value).split(" + ").map((name) => ({ name, quantity: match ? Number(match[1]) : null, isFood: true }));
+}
+
+/** Approved serving layout; prep quantities and all-pan capacity remain unchanged. */
+export function servingChafingSetup(checklist: KitchenChecklist): ServingChafingSetup | null {
+  const guests = checklist.event.guestCount;
+  if (!Number.isInteger(guests) || guests === null || guests < 1 || guests > KITCHEN_RULE_CONFIG.barTables.doubleAboveGuestCount
+    || !Number.isFinite(Date.parse(checklist.event.sourceUpdatedAt ?? "")) || checklist.liveFoodAddOns.length > 0
+    || checklist.selectedBars.length !== 1 || checklist.selectedBars[0] !== "taco"
+    || checklist.chafingDishes.total === null
+    || checklist.warnings.some((warning) => ["UNKNOWN_FOOD_ITEM", "INVALID_SELECTION_QUANTITY", "CONFLICTING_QUANTITY", "UNAPPROVED_PLATTER_QUANTITY", "UNAPPROVED_PLATTER_PACKING", "SOURCE_STALE", "SOURCE_SYNC_FAILED"].includes(warning.code)
+      // Keep the generated missing-document warning visible without treating it as a serving-layout override.
+      || warning.code === "SPECIAL_NOTE_REQUIRES_REVIEW" && warning.message !== "Special contract note requires kitchen review: Needs Review: Tripleseat booking contract data could not be verified. Review the source event.")) return null;
+  const standalone = checklist.normalizedSelections.filter((selection) => !selection.kinds.some((kind) => kind.startsWith("package:")) && selection.kinds.some((kind) => kind.startsWith("platter:") || kind === "dessert"));
+  if (standalone.some((selection) => !selection.quantityProvided || !Number.isInteger(selection.quantity) || selection.quantity < 1)) return null;
+  const hotPlatters = checklist.normalizedSelections.flatMap((selection) => selection.kinds
+    .filter((kind) => KITCHEN_RULE_CONFIG.platter.rules[kind]?.hot)
+    .map((kind) => ({ kind, quantity: selection.quantity, provided: selection.quantityProvided })));
+  const halfPanPair = ["platter-wings", "platter-chicken-tenders"].every((key) => checklist.sections
+    .flatMap((section) => section.rows).some((row) => row.key === key && row.numberOfPans === 2 && row.panSize === "1/2"));
+  // Do not extrapolate this layout to other foods, quantities, or mirrored setups.
+  if (hotPlatters.length !== 2 || !["platter:wings", "platter:chicken-tenders"].every((kind) => hotPlatters.some((item) => item.kind === kind && item.quantity === 1 && item.provided)) || !halfPanPair) return null;
+  return { chafingDishes: 2, instructions: [
+    "Wings and chicken tenders share one serving chafing dish: one 1/2 pan of each.",
+    "Keep the extra 1/2 pan of wings and extra 1/2 pan of chicken tenders for refills; prepare the full purchased quantities.",
+    "Taco Bar uses one serving chafing dish; keep its remaining prepared pans for refills.",
+  ] };
 }
 
 export function contractSetup(event: EventPlan): ContractSetup {
@@ -58,9 +87,10 @@ export function contractSetup(event: EventPlan): ContractSetup {
   const existingLargeMultiplier = guestsVerified && event.guest_count > KITCHEN_RULE_CONFIG.chafingSetup.doubleAboveGuestCount ? KITCHEN_RULE_CONFIG.chafingSetup.largeEventMultiplier : 1;
   const chafingDishes = !quantitiesKnown || unknownMapping || kitchen.chafingDishes.bars === null || kitchen.chafingDishes.hotPlatters === null ? null
     : kitchen.chafingDishes.bars + kitchen.chafingDishes.hotPlatters * (mirrored && existingLargeMultiplier === 1 ? 2 : 1);
+  const servingSetup = chafingDishes === null || event.needs_review ? null : servingChafingSetup(kitchen);
   return {
     purchasedFood: [...event.food], foodTables: selections.length ? guestsVerified ? multiplier : null : 0,
-    mirrored, chafingDishes, tongs, sauceContainers, spoons: sauceContainers,
+    mirrored, chafingDishes, servingSetup, tongs, sauceContainers, spoons: sauceContainers,
     food: kitchen.sections.flatMap((section) => section.rows.map((row) => ({ name: row.foodName, quantity: quantitiesKnown && !unknownMapping ? row.quantity : null, unit: row.unit, pans: quantitiesKnown && !unknownMapping ? row.numberOfPans : null, panSize: row.panSize }))),
     review: [...new Set(review)],
   };
@@ -72,8 +102,8 @@ const SETUP_INPUTS: Record<string, (event: EventPlan, setup: ContractSetup) => u
   "event-tables-cleaned": (event) => [event.rooms, event.guest_count],
   "table-line-placed": (event, setup) => [event.rooms, setup.foodTables],
   "food-carts-prepped": (_event, setup) => [setup.tongs, setup.sauceContainers, setup.spoons, setup.food],
-  "chaffing-dishes-placed": (_event, setup) => [setup.chafingDishes, setup.food],
-  "chaffing-dishes-clean": (_event, setup) => setup.chafingDishes,
+  "chaffing-dishes-placed": (_event, setup) => [setup.chafingDishes, setup.food, ...(setup.servingSetup ? [setup.servingSetup] : [])],
+  "chaffing-dishes-clean": (_event, setup) => setup.servingSetup ? [setup.chafingDishes, setup.servingSetup] : setup.chafingDishes,
   "floor-boxes-cleaned": (_event, setup) => setup.foodTables,
   "stanchions-placed": (event, setup) => [event.rooms, setup.foodTables, event.entertainment],
   "signs-placed": (event) => [event.name, event.rooms, event.time, event.entertainment],

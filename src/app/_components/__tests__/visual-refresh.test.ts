@@ -48,7 +48,8 @@ describe("dashboard visual refresh boundaries", () => {
     expect(css).toContain("@media screen and (max-width: 640px)");
   });
   it("presents existing setup quantities and progress without inventing new counts", () => {
-    for (const key of ["foodTables", "chafingDishes", "tongs", "sauceContainers", "spoons"]) expect(checklist).toContain(`{setup.${key} ?? "Needs review"}`);
+    for (const key of ["foodTables", "tongs", "sauceContainers", "spoons"]) expect(checklist).toContain(`{setup.${key} ?? "Needs review"}`);
+    expect(checklist).toContain('setup.servingSetup ? setup.servingSetup.chafingDishes : setup.chafingDishes ?? "Needs review"');
     expect(checklist).toContain('<progress aria-label="Checklist completion"');
     expect(checklist).toContain('max={Math.max(1, progress.total)} value={progress.completed}');
   });

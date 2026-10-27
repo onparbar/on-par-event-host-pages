@@ -47,7 +47,7 @@ describe("event command center", () => {
     const readiness = checklistReadiness(source, { tasks, bwa: "Staff" });
     expect(summary.checklistCompleted).toBe(0);
     expect(summary.checklistTotal).toBe(readiness.total);
-    expect(readiness.tasks.find((task) => task.key === "mini-golf-coins")?.applicability).toBe("not-applicable");
+    expect(readiness.tasks.find((task) => task.key === "mini-golf-coins")?.applicability).toBe("optional");
   });
   it("excludes old attention flags from the current work queue", () => {
     const events = buildOperationalEventSummaries([plan({ id: 1, date: "2026-10-20", needs_review: true }), plan({ id: 2, date: "2026-10-22", needs_review: true })], [], null);
