@@ -1,4 +1,11 @@
 export const ENTERTAINMENT_TIME_ZONE = "America/New_York" as const;
+export const TRIPLESEAT_RECONNECT_WARNING = "Tripleseat authorization was rejected. An Admin must reconnect Tripleseat. Saved assignments were retained.";
+
+export type SourceRefreshResult = {
+  tripleseat: "success" | "partial" | "error";
+  onParBookings: "success" | "error" | "not-configured";
+  reconnectTripleseat: boolean;
+};
 
 export type EntertainmentCategory =
   | "bowling"
@@ -207,6 +214,7 @@ export type EntertainmentDayPayload = {
   warnings: string[];
   missingEnvironmentVariables: string[];
   canEdit: boolean;
+  sourceRefresh?: SourceRefreshResult;
 };
 
 export type EntertainmentSyncResult = {

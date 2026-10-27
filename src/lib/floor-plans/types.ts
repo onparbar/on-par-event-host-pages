@@ -1,6 +1,7 @@
 import type {
   EntertainmentConflict,
   EntertainmentReservation,
+  SourceRefreshResult,
 } from "@/lib/entertainment/types";
 
 export const FLOOR_PLAN_RULE_VERSION = "floor-plan-v1.5.0" as const;
@@ -215,6 +216,7 @@ export type FloorPlanDayPayload = {
   sourceMode: "live" | "mock";
   warnings: string[];
   sourceChanges?: FloorPlanSourceChange[];
+  sourceRefresh?: SourceRefreshResult;
 };
 
 export type FloorPlanGenerationMode =

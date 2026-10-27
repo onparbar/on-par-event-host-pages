@@ -2,7 +2,7 @@ import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { PortalZoomControls } from "@/app/_components/PortalShell";
-import type { EntertainmentReservation } from "@/lib/entertainment/types";
+import { TRIPLESEAT_RECONNECT_WARNING, type EntertainmentReservation } from "@/lib/entertainment/types";
 import type { DateAsset } from "@/lib/events";
 import {
   AwaitingApprovalSection,
@@ -390,6 +390,62 @@ describe("floor-plan dashboard organization", () => {
     );
     expect(html).toContain("Edit in Admin");
     expect(html).toContain("Approved Event Host floor plan");
+  });
+
+  it("shows an On Par-only refresh as partial and retains the seating warning without duplicate sync errors", () => {
+    const payload: FloorPlanDayPayload = { ...interactivePayload,
+      plan: { ...interactivePlan, lastTripleseatSyncAt: null },
+      sourceRefresh: { tripleseat: "error", onParBookings: "success", reconnectTripleseat: true },
+      warnings: [
+        "The latest Tripleseat sync failed. The last saved schedule remains visible.",
+        "Seating is eight seats short.",
+        "Tripleseat could not be refreshed. On Par Bookings is refreshed independently and saved Tripleseat assignments are retained.",
+        "On Par Bookings refreshed independently; Tripleseat is unavailable and its saved reservations were retained.",
+        TRIPLESEAT_RECONNECT_WARNING,
+      ],
+    };
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanCard, {
+      publication: { plan: payload.plan, payload }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
+    }));
+    expect(html).toContain("On Par Bookings refreshed.");
+    expect(html).toContain("Tripleseat could not be refreshed.");
+    expect(html).toContain("Saved Tripleseat assignments were retained.");
+    expect(html.match(/Ask an Admin to reconnect Tripleseat\./g)).toHaveLength(1);
+    expect(html).toContain("Seating is eight seats short.");
+    expect(html).not.toContain("Not synced yet");
+    expect(html).not.toContain("events updated");
+    expect(html).not.toContain("The latest Tripleseat sync failed");
+    expect(html).not.toContain("refreshed independently");
+  });
+
+  it("reports complete source success without claiming every displayed event changed", () => {
+    const payload: FloorPlanDayPayload = { ...interactivePayload,
+      sourceRefresh: { tripleseat: "success", onParBookings: "success", reconnectTripleseat: false },
+    };
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanCard, {
+      publication: { plan: payload.plan, payload }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
+    }));
+    expect(html).toContain("Tripleseat and On Par Bookings refreshed successfully.");
+    expect(html).not.toContain("event updated");
+    expect(html).not.toContain("events updated");
+    expect(html).not.toContain("reconnect Tripleseat");
+  });
+
+  it("collapses historical sync warnings while keeping the stored timestamp clearly labeled", () => {
+    const payload: FloorPlanDayPayload = { ...interactivePayload, warnings: [
+      "The latest Tripleseat sync failed. The last saved schedule remains visible.",
+      TRIPLESEAT_RECONNECT_WARNING,
+      "On Par Bookings refreshed independently; Tripleseat is unavailable and its saved reservations were retained.",
+      "Contracted area needs review.",
+    ] };
+    const html = renderToStaticMarkup(createElement(PublishedFloorPlanCard, {
+      publication: { plan: payload.plan, payload }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
+    }));
+    expect(html).toContain("Tripleseat · Last synced");
+    expect(html.match(/An Admin must reconnect Tripleseat\./g)).toHaveLength(1);
+    expect(html).toContain("Contracted area needs review.");
+    expect(html).not.toContain("refreshed independently");
+    expect(html).not.toContain("The latest Tripleseat sync failed");
   });
 
   it("shows saved unapproved plans as awaiting Admin approval", () => {

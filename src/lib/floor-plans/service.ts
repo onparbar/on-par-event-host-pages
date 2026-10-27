@@ -2,6 +2,7 @@ import {
   getEntertainmentDay,
   syncEntertainmentDay,
   updateEntertainmentReservation,
+  requiresTripleseatReconnect,
 } from "@/lib/entertainment/sync";
 import { validEntertainmentInterval } from "@/lib/entertainment/domain";
 import {
@@ -15,7 +16,7 @@ import {
   isValidEntertainmentDate,
   todayInEntertainmentTimeZone,
 } from "@/lib/entertainment/time";
-import type { EntertainmentReservation } from "@/lib/entertainment/types";
+import { TRIPLESEAT_RECONNECT_WARNING, type EntertainmentReservation, type SourceRefreshResult } from "@/lib/entertainment/types";
 import { buildEventPlan } from "@/lib/event-plans/domain";
 import { getEventPlanStorage } from "@/lib/event-plans/storage";
 import { syncEventPlanWindow } from "@/lib/event-plans/sync";
@@ -1494,18 +1495,31 @@ export async function refreshFloorPlanSources(
   const savedBeforeRefresh = await storage.get(date);
   const refreshWarnings: string[] = [];
   let tripleseatRefreshed = false;
+  let entertainmentRefreshed = false;
+  const sourceRefresh: SourceRefreshResult = { tripleseat: "error", onParBookings: new VipPrepClient().configured ? "error" : "not-configured", reconnectTripleseat: false };
   try {
     await syncEventPlanWindow({ startDate: date, endDate: date }, { legacyPlans: [] });
     tripleseatRefreshed = true;
-  } catch {
-    refreshWarnings.push("Tripleseat could not be refreshed. On Par Bookings is refreshed independently and saved Tripleseat assignments are retained.");
+  } catch (error) {
+    sourceRefresh.reconnectTripleseat = requiresTripleseatReconnect(error);
+    refreshWarnings.push(sourceRefresh.reconnectTripleseat ? TRIPLESEAT_RECONNECT_WARNING :
+      "Tripleseat could not be refreshed. On Par Bookings is refreshed independently and saved Tripleseat assignments are retained.");
   }
   try {
     const entertainment = await syncEntertainmentDay(date);
     refreshWarnings.push(...entertainment.warnings);
-  } catch {
-    refreshWarnings.push("The shared entertainment source could not be refreshed; its saved assignments remain available.");
+    entertainmentRefreshed = entertainment.sourceRefresh?.tripleseat === "success";
+    sourceRefresh.onParBookings = entertainment.sourceRefresh?.onParBookings ?? sourceRefresh.onParBookings;
+    sourceRefresh.reconnectTripleseat ||= entertainment.sourceRefresh?.reconnectTripleseat === true;
+  } catch (error) {
+    sourceRefresh.reconnectTripleseat ||= requiresTripleseatReconnect(error);
+    refreshWarnings.push(requiresTripleseatReconnect(error) ? TRIPLESEAT_RECONNECT_WARNING :
+      "The shared entertainment source could not be refreshed; its saved assignments remain available.");
   }
+  sourceRefresh.tripleseat = tripleseatRefreshed && entertainmentRefreshed ? "success" : tripleseatRefreshed || entertainmentRefreshed ? "partial" : "error";
+  if (entertainmentRefreshed) sourceRefresh.reconnectTripleseat = false;
+  const providerWarnings = entertainmentRefreshed ? refreshWarnings.map((warning) => warning === TRIPLESEAT_RECONNECT_WARNING
+    ? "Tripleseat event details did not refresh; saved event details were retained." : warning) : refreshWarnings;
   const plan = await reconciledPlan(date, storage);
   if (!plan.events.length) {
     if (
@@ -1524,15 +1538,15 @@ export async function refreshFloorPlanSources(
       );
     }
     const empty = await getFloorPlanDay(date, storage);
-    return { ...empty, warnings: [...new Set([...empty.warnings, ...refreshWarnings])] };
+    return { ...empty, sourceRefresh, warnings: [...new Set([...empty.warnings, ...providerWarnings])] };
   }
   await storage.save(
     {
       ...plan,
       lastTripleseatSyncAt: tripleseatRefreshed ? new Date().toISOString() : savedBeforeRefresh?.lastTripleseatSyncAt ?? null,
     },
-    "Synchronized live Tripleseat floor-plan fields.",
+    tripleseatRefreshed ? "Synchronized live Tripleseat floor-plan fields." : "Retained saved Tripleseat floor-plan fields after a failed refresh.",
   );
   const payload = await getFloorPlanDay(date, storage);
-  return { ...payload, warnings: [...new Set([...payload.warnings, ...refreshWarnings])] };
+  return { ...payload, sourceRefresh, warnings: [...new Set([...payload.warnings, ...providerWarnings])] };
 }

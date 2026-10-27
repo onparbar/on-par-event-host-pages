@@ -40,6 +40,7 @@ import type {
   EntertainmentReviewIssue,
   EntertainmentSourceEvent,
 } from "./types";
+import { TRIPLESEAT_RECONNECT_WARNING } from "./types";
 import {
   getMissingVipPrepEnvironmentVariables,
   VipPrepClient,
@@ -115,7 +116,13 @@ function isOperationalEntertainmentStatus(status: string | null, fullBuyout = fa
   );
 }
 
+export function requiresTripleseatReconnect(error: unknown) {
+  return error instanceof Error && (error.message === TRIPLESEAT_RECONNECT_WARNING ||
+    /^Tripleseat OAuth refresh was rejected \((?:400|401|403)\)\./.test(error.message));
+}
+
 function safeSyncError(error: unknown) {
+  if (requiresTripleseatReconnect(error)) return TRIPLESEAT_RECONNECT_WARNING;
   if (!(error instanceof Error)) {
     return "Entertainment synchronization failed.";
   }
@@ -568,7 +575,8 @@ export async function getEntertainmentDay(
   if (contractPersistenceWarning) warnings.push(contractPersistenceWarning);
   if (stored.sync?.status === "error" && stored.sync.errorSummary) {
     warnings.push(
-      "The latest Tripleseat sync failed. The last saved schedule remains visible.",
+      stored.sync.errorSummary === TRIPLESEAT_RECONNECT_WARNING ? TRIPLESEAT_RECONNECT_WARNING :
+        "The latest Tripleseat sync failed. The last saved schedule remains visible.",
     );
   }
   const colors = projectDayEventColors(options.floorPlanEvents ?? floorColors.events, events, reservations, floorColors.events);
@@ -636,7 +644,7 @@ function reservationCounts(
 export async function syncEntertainmentDay(
   date: string,
   options: EntertainmentDependencies = {},
-) {
+): Promise<EntertainmentDayPayload> {
   assertEntertainmentDate(date);
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEntertainmentStorage();
@@ -676,7 +684,8 @@ export async function syncEntertainmentDay(
       });
       await storage.failSync(date, safeSyncError(tripleseatResult.reason));
       const payload = await getEntertainmentDay(date, { ...options, adapter, storage, vipPrepClient: { configured: true, fetchRange: async () => vipPayload } });
-      return { ...payload, warnings: unique([...payload.warnings, "On Par Bookings refreshed independently; Tripleseat is unavailable and its saved reservations were retained."]) };
+      return { ...payload, sourceRefresh: { tripleseat: "error", onParBookings: "success", reconnectTripleseat: requiresTripleseatReconnect(tripleseatResult.reason) },
+        warnings: unique([...payload.warnings, "On Par Bookings refreshed independently; Tripleseat is unavailable and its saved reservations were retained."]) };
     }
     const tripleseatSourceEvents = tripleseatResult.value;
     let allSourceEvents = [
@@ -772,7 +781,14 @@ export async function syncEntertainmentDay(
       existingReservations: stored.reservations,
       stats,
     });
-    return getEntertainmentDay(date, { ...options, adapter, storage });
+    const payload = await getEntertainmentDay(date, { ...options, adapter, storage, vipPrepClient: {
+      configured: vipPrepClient.configured,
+      async fetchRange() {
+        if (!vipPayload) throw new Error("On Par Bookings was unavailable during this refresh.");
+        return vipPayload;
+      },
+    } });
+    return { ...payload, sourceRefresh: { tripleseat: "success", onParBookings: vipPrepClient.configured ? vipPayload ? "success" : "error" : "not-configured", reconnectTripleseat: false } };
   } catch (error) {
     const message = safeSyncError(error);
     try {

@@ -22,6 +22,7 @@ import PublishedFloorPlanMap from "./PublishedFloorPlanMap";
 import { findOperationalFloorPlanEvent } from "@/lib/operations/floor-plan-context";
 import { floorPlanEventView } from "@/lib/floor-plans/event-view";
 import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
+import { floorPlanSyncFeedback, floorPlanSyncWarnings } from "@/lib/floor-plans/sync-feedback";
 
 const FLOOR_PLAN_ZOOM_MIN = 50;
 const FLOOR_PLAN_ZOOM_MAX = 200;
@@ -34,7 +35,7 @@ export type FloorPlanDisplayAsset = DateAsset & {
 
 type FloorPlanLiveState = {
   payload: FloorPlanDayPayload | null;
-  status: "idle" | "syncing" | "success" | "error";
+  status: "idle" | "syncing" | "success" | "partial" | "error";
   message: string;
 };
 
@@ -390,6 +391,8 @@ export function PublishedFloorPlanCard({
   const approved = plan.status === "Approved";
   const bookingOnlyProjection = plan.version === 0 && plan.events.every((event) => event.tripleseatEventId.startsWith("vip-"));
   const bookingRefresh = plan.events.flatMap((event) => event.source.onParBooking?.refreshedAt ? [event.source.onParBooking.refreshedAt] : []).sort().at(-1) ?? null;
+  const sourceFeedback = payload.sourceRefresh ? floorPlanSyncFeedback(payload) : null;
+  const warnings = floorPlanSyncWarnings(payload);
   const date = dateBlock(plan.eventDate);
   const label = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -432,7 +435,7 @@ export function PublishedFloorPlanCard({
                 <span aria-live="polite">
                   {liveState?.status === "syncing"
                     ? "Refreshing On Par Bookings and Tripleseat…"
-                    : liveState?.message || syncTime(plan.lastTripleseatSyncAt)}
+                    : liveState?.message || sourceFeedback?.message || `Tripleseat · ${syncTime(plan.lastTripleseatSyncAt)}`}
                 </span>
               </div>
               <div className="floor-plan-live-sync-actions">
@@ -454,7 +457,7 @@ export function PublishedFloorPlanCard({
                 </button>
               </div>
             </div>
-            {payload.warnings.length ? <div className="floor-plan-live-sync-message is-error" role="status">{payload.warnings.join(" ")}</div> : null}
+            {warnings.length ? <div className="floor-plan-live-sync-message is-error" role="status">{warnings.join(" ")}</div> : null}
             <PublishedFloorPlanMap payload={payload} zoom={zoom} />
           </div>
         ) : null}
@@ -631,8 +634,7 @@ export default function FloorPlansClient({
         ...current,
         [date]: {
           payload,
-          status: "success",
-          message: `${syncTime(payload.plan.lastTripleseatSyncAt)} · ${payload.plan.events.length} event${payload.plan.events.length === 1 ? "" : "s"} updated`,
+          ...floorPlanSyncFeedback(payload),
         },
       }));
     } catch (error) {
