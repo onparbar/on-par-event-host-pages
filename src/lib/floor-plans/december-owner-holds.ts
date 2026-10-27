@@ -14,13 +14,28 @@ type Dependencies = {
   loadDay?: typeof getFloorPlanDay;
 };
 
+function comparableSourceTimestamp(value: string | null) {
+  if (!value) return value;
+  // Existing database ingestion stores legacy, timezone-less Tripleseat update metadata as UTC.
+  // Compare that representation without depending on the machine's local timezone; do not retime events.
+  const legacy = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}) (AM|PM)$/i);
+  if (legacy) {
+    const [, month, day, year, hour, minute, period] = legacy;
+    const parsed = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour) % 12 + (/pm/i.test(period) ? 12 : 0), Number(minute));
+    const date = new Date(parsed);
+    return Number(hour) >= 1 && Number(hour) <= 12 && Number(minute) <= 59 && date.getUTCFullYear() === Number(year) && date.getUTCMonth() === Number(month) - 1 && date.getUTCDate() === Number(day) ? parsed : value;
+  }
+  return /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : value;
+}
+
 function planningSourceSignature(events: FloorPlanEvent[]) {
   return JSON.stringify(events.map((event) => ({
     id: event.id, sourceId: event.tripleseatEventId, guests: event.guestCount,
     start: Date.parse(event.startAt ?? ""), end: Date.parse(event.endAt ?? ""),
     areas: [...event.contractedAreaIds].sort(), unresolved: event.unresolvedAreaNames,
-    fullBuyout: event.fullBuyout, food: event.source.food, entertainment: event.source.entertainment,
-    sourceUpdatedAt: Date.parse(event.beoLastModifiedAt ?? ""),
+    fullBuyout: event.fullBuyout, food: event.source.food,
+    entertainment: event.source.entertainment.map(({ name, quantity, time, duration }) => ({ name, quantity, time, duration })),
+    sourceUpdatedAt: comparableSourceTimestamp(event.beoLastModifiedAt),
   })).sort((left, right) => left.id.localeCompare(right.id)));
 }
 

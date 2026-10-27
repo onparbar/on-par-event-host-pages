@@ -186,6 +186,79 @@ describe("bounded December owner-hold draft reconciliation", () => {
     expect((await reconcileDecemberOwnerHoldDrafts(storage, { loadDay, vipPrepClient: client() })).results[0]).toMatchObject({ status: "updated", planStatus: "Draft" });
   });
 
+  it.each([
+    ["2026-10-09T14:31:00+00:00", "10/9/2026 2:31 PM"],
+    ["2026-10-09T00:15:00Z", "10/9/2026 12:15 AM"],
+    ["2026-10-09T12:15:00Z", "10/9/2026 12:15 PM"],
+  ])("accepts equivalent stored ISO metadata %s and legacy UTC metadata %s without rewriting source values", async (storedTimestamp, liveTimestamp) => {
+    const storage = new MemoryFloorPlanStorage(); const doc = document();
+    doc.events[0].beoLastModifiedAt = storedTimestamp;
+    const saved = await storage.save(doc, "Stored source timestamp.");
+    const loadDay = reader();
+    loadDay.mockImplementation(async (...args) => {
+      const day = await reader()(...args); day.plan.events[0].beoLastModifiedAt = liveTimestamp; return day;
+    });
+    expect((await reconcileDecemberOwnerHoldDrafts(storage, { loadDay, vipPrepClient: client() })).results[0]).toMatchObject({ status: "updated", removedHolds: 1 });
+    const updated = (await storage.get(DATE))!;
+    expect(updated.events[0].beoLastModifiedAt).toBe(storedTimestamp);
+    expect(updated.events[0].startAt).toBe(saved.events[0].startAt); expect(updated.events[0].endAt).toBe(saved.events[0].endAt);
+    expect(updated.reservations).toContainEqual(saved.reservations[0]);
+  });
+
+  it.each([
+    "10/9/2026 2:32 PM",
+    "10/9/2026 0:31 PM",
+    "10/9/2026 13:31 PM",
+    "10/9/2026 2:60 PM",
+    "2/30/2026 2:31 PM",
+    "2/29/2026 2:31 PM",
+    "13/9/2026 2:31 PM",
+    "10/9/2026 2:31",
+  ])("does not waive a source update for changed or invalid legacy metadata: %s", async (liveTimestamp) => {
+    const storage = new MemoryFloorPlanStorage(); const doc = document(); doc.events[0].beoLastModifiedAt = "2026-10-09T14:31:00Z";
+    const saved = await storage.save(doc, "Source baseline."); const loadDay = reader();
+    loadDay.mockImplementation(async (...args) => {
+      const day = await reader()(...args); day.plan.events[0].beoLastModifiedAt = liveTimestamp; return day;
+    });
+    expect((await reconcileDecemberOwnerHoldDrafts(storage, { loadDay, vipPrepClient: client() })).results[0]).toMatchObject({ status: "skipped", removedHolds: 0 });
+    expect(await storage.get(DATE)).toEqual(saved); expect(await storage.revisions(saved.id)).toHaveLength(1);
+  });
+
+  it("accepts unchanged entertainment evidence after JSONB reorders object properties", async () => {
+    const storage = new MemoryFloorPlanStorage(); const doc = document();
+    // JSONB returns object keys in a different order from the fresh source projection.
+    doc.events[0].source.entertainment = [{ time: "5:30 PM–7:30 PM", name: "Duckpin Bowling", duration: "2 hours", quantity: "2 lanes" }];
+    const saved = await storage.save(doc, "JSONB source baseline.");
+    const loadDay = reader();
+    loadDay.mockImplementation(async (...args) => {
+      const day = await reader()(...args);
+      day.plan.events[0].source.entertainment = [{ name: "Duckpin Bowling", quantity: "2 lanes", time: "5:30 PM–7:30 PM", duration: "2 hours" }];
+      expect(day.plan.events[0].source.entertainment).toEqual(saved.events[0].source.entertainment);
+      expect(JSON.stringify(day.plan.events[0].source.entertainment)).not.toBe(JSON.stringify(saved.events[0].source.entertainment));
+      return day;
+    });
+    expect((await reconcileDecemberOwnerHoldDrafts(storage, { loadDay, vipPrepClient: client() })).results[0]).toMatchObject({ status: "updated", removedHolds: 1 });
+    const updated = (await storage.get(DATE))!;
+    expect(updated.events[0].source.entertainment).toEqual(saved.events[0].source.entertainment);
+    expect(updated.reservations).toContainEqual(saved.reservations[0]);
+  });
+
+  it.each(["name", "quantity", "time", "duration"] as const)("still preserves the saved draft when an entertainment item's %s changed", async (field) => {
+    const storage = new MemoryFloorPlanStorage(); const doc = document();
+    doc.events[0].source.entertainment = [{ time: "5:30 PM–7:30 PM", name: "Duckpin Bowling", duration: "2 hours", quantity: "2 lanes" }];
+    const saved = await storage.save(doc, "Contract source baseline.");
+    const loadDay = reader();
+    loadDay.mockImplementation(async (...args) => {
+      const day = await reader()(...args);
+      const item = { name: "Duckpin Bowling", quantity: "2 lanes", time: "5:30 PM–7:30 PM", duration: "2 hours" };
+      item[field] = { name: "Darts", quantity: "3 lanes", time: "6:00 PM–8:00 PM", duration: "3 hours" }[field];
+      day.plan.events[0].source.entertainment = [item];
+      return day;
+    });
+    expect((await reconcileDecemberOwnerHoldDrafts(storage, { loadDay, vipPrepClient: client() })).results[0]).toMatchObject({ status: "skipped", removedHolds: 0 });
+    expect(await storage.get(DATE)).toEqual(saved); expect(await storage.revisions(saved.id)).toHaveLength(1);
+  });
+
   it.each([false, true])("recomputes stale generation warnings while retaining genuine source warnings: %s", async (hasSourceWarning) => {
     const storage = new MemoryFloorPlanStorage(); await storage.save(document(), "Old blocker.");
     const loadDay = reader();
