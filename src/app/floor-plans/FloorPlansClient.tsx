@@ -52,6 +52,13 @@ type FloorPlanWindowSyncResult = {
   error?: string;
 };
 
+type FloorPlanMonthDraftResult = {
+  month: string;
+  startDate: string;
+  endDate: string;
+  results: Array<{ date: string; status: "created" | "skipped" | "error"; eventCount: number; planStatus?: string; message?: string }>;
+};
+
 export type FloorPlanPublication = {
   plan: FloorPlanDocument;
   payload: FloorPlanDayPayload | null;
@@ -142,6 +149,19 @@ export async function syncFloorPlanWindowFromTripleseat(
     throw new Error(
       result?.error || "Unable to sync upcoming floor plans from Tripleseat.",
     );
+  }
+  return result;
+}
+
+export async function prepareFloorPlanMonthDrafts(month: string, fetchImpl: typeof fetch = fetch) {
+  const response = await fetchImpl("/api/floor-plans/planning-month", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ month }),
+  });
+  const result = await response.json().catch(() => null) as (FloorPlanMonthDraftResult & { error?: string }) | null;
+  if (!response.ok || result?.month !== month || result.startDate !== `${month}-01` || result.endDate !== `${month}-31` || !Array.isArray(result.results) || result.results.length !== 31 || result.results.some((entry) => !entry || !["created", "skipped", "error"].includes(entry.status) || typeof entry.date !== "string" || !entry.date.startsWith(`${month}-`))) {
+    throw new Error(result?.error || "Unable to prepare this month’s floor-plan drafts. Existing plans are unchanged.");
   }
   return result;
 }
@@ -354,6 +374,7 @@ export function PublishedFloorPlanCard({
   onOpenChange,
   onSync,
   zoom = 100,
+  showPlanningStatus = false,
 }: {
   publication: FloorPlanPublication;
   isOpen: boolean;
@@ -361,6 +382,7 @@ export function PublishedFloorPlanCard({
   onOpenChange: (open: boolean) => void;
   onSync: () => void;
   zoom?: number;
+  showPlanningStatus?: boolean;
 }) {
   const payload = liveState?.payload ?? publication.payload;
   const plan = payload?.plan ?? publication.plan;
@@ -393,7 +415,7 @@ export function PublishedFloorPlanCard({
             <span>{plan.events.map((event) => event.name).join(" · ")}</span>
           </span>
           <PortalStatusBadge tone={approved ? "success" : "warning"}>
-            {bookingOnlyProjection ? "On Par Bookings" : approved ? "Approved" : "Saved edits"}
+            {showPlanningStatus ? plan.status : bookingOnlyProjection ? "On Par Bookings" : approved ? "Approved" : "Saved edits"}
           </PortalStatusBadge>
           <span className="floor-plan-expand-label">
             <span className="when-closed">View plan</span>
@@ -521,12 +543,14 @@ export default function FloorPlansClient({
   publications,
   specialPages,
   today,
+  planningMonth = "2026-12",
 }: {
   initialState: AdminState;
   plans: DateAsset[];
   publications: FloorPlanPublication[];
   specialPages: DateAsset[];
   today: string;
+  planningMonth?: string;
 }) {
   const router = useRouter();
   const eventContext = useEventContext();
@@ -553,12 +577,19 @@ export default function FloorPlansClient({
     ),
     [publications],
   );
-  const upcoming = useMemo(
+  const allUpcoming = useMemo(
     () => buildUpcomingFloorPlanEntries(organized.upcoming, savedPublications),
     [organized.upcoming, savedPublications],
   );
+  const monthPrefix = `${planningMonth}-`;
+  const december = allUpcoming.filter((entry) => entry.date.startsWith(monthPrefix));
+  const upcoming = allUpcoming.filter((entry) => !entry.date.startsWith(monthPrefix));
+  const decemberPending = pendingPublications.filter((publication) => publication.plan.eventDate.startsWith(monthPrefix) && !publication.payload);
+  const monthLabel = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${planningMonth}-01T12:00:00Z`));
+  const monthName = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(`${planningMonth}-01T12:00:00Z`));
+  const focusedDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date ?? null;
   const [openAssetKey, setOpenAssetKey] = useState<string | null>(
-    upcoming[0]?.key ?? organized.archived[0]?.image ?? null,
+    allUpcoming.find((entry) => entry.date === focusedDate)?.key ?? upcoming[0]?.key ?? organized.archived[0]?.image ?? null,
   );
   const [liveByDate, setLiveByDate] = useState<Record<string, FloorPlanLiveState>>({});
   const [windowSyncState, setWindowSyncState] = useState<{
@@ -566,15 +597,15 @@ export default function FloorPlansClient({
     message: string;
   }>({ status: "idle", message: "" });
   const [planZoom, setPlanZoom] = useState(100);
-  const focusedDate = eventContext.requestedDate ?? eventContext.selectedEvent?.date ?? null;
+  const [monthDraftState, setMonthDraftState] = useState<{ status: "idle" | "preparing" | "success" | "error"; message: string }>({ status: "idle", message: "" });
   const focusedWorkspace = Boolean(eventContext.requestedEventId);
   const focusedPayload = focusedDate ? liveByDate[focusedDate]?.payload ?? savedPublications.find((publication) => publication.plan.eventDate === focusedDate)?.payload ?? null : null;
 
   useEffect(() => {
     const date = eventContext.requestedDate ?? eventContext.selectedEvent?.date;
     if (!eventContext.ready || !date) return;
-    setOpenAssetKey(upcoming.find((entry) => entry.date === date)?.key ?? organized.archived.find((asset) => asset.date === date)?.image ?? null);
-  }, [eventContext.ready, eventContext.requestedDate, eventContext.selectedEvent?.date, upcoming, organized.archived]);
+    setOpenAssetKey(allUpcoming.find((entry) => entry.date === date)?.key ?? organized.archived.find((asset) => asset.date === date)?.image ?? null);
+  }, [eventContext.ready, eventContext.requestedDate, eventContext.selectedEvent?.date, allUpcoming, organized.archived]);
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -642,6 +673,21 @@ export default function FloorPlansClient({
     }
   }
 
+  async function handlePrepareMonthDrafts() {
+    if (monthDraftState.status === "preparing") return;
+    setMonthDraftState({ status: "preparing", message: "Reading booked contracts and preparing missing drafts…" });
+    try {
+      const result = await prepareFloorPlanMonthDrafts(planningMonth);
+      const created = result.results.filter((entry) => entry.status === "created").length;
+      const skipped = result.results.filter((entry) => entry.status === "skipped").length;
+      const errors = result.results.filter((entry) => entry.status === "error").length;
+      setMonthDraftState({ status: errors ? "error" : "success", message: `${created} draft${created === 1 ? "" : "s"} created · ${skipped} date${skipped === 1 ? "" : "s"} skipped · ${errors} date${errors === 1 ? " needs" : "s need"} attention.${!created && !errors ? " No missing drafts were available to create." : ""} Skipped dates already have a saved plan or no active booking. Existing saved plans were preserved.` });
+      router.refresh();
+    } catch (error) {
+      setMonthDraftState({ status: "error", message: error instanceof Error ? error.message : "Unable to prepare this month’s drafts. Existing saved plans were preserved." });
+    }
+  }
+
   function renderPlan(asset: FloorPlanDisplayAsset) {
     return (
       <FloorPlanCard
@@ -674,6 +720,7 @@ export default function FloorPlansClient({
         }}
         onSync={() => void handleLiveSync(entry.date)}
         publication={entry.publication}
+        showPlanningStatus={entry.date.startsWith(monthPrefix)}
         zoom={planZoom}
       />
     );
@@ -756,14 +803,38 @@ export default function FloorPlansClient({
           </div>
         ) : (
           <PortalCard className="floor-plan-empty-card">
-            No upcoming floor plans are available yet. The newest past plan is open in the archive.
+            {december.length || decemberPending.length ? `${monthLabel} plans are in the separate folder below.` : "No upcoming floor plans are available yet. The newest past plan is open in the archive."}
           </PortalCard>
         )}
       </section>
 
       <details
+        className="floor-plan-archive floor-plan-planning-month"
+        open={Boolean(focusedDate?.startsWith(monthPrefix))}
+      >
+        <summary>
+          <span>
+            <span className="portal-eyebrow">Advance planning</span>
+            <strong>{monthLabel} floor plans</strong>
+          </span>
+          <span className="floor-plan-archive-count">{december.length + decemberPending.length} plan{december.length + decemberPending.length === 1 ? "" : "s"}</span>
+        </summary>
+        <div className="floor-plan-display-list">
+          <p>{monthLabel} plans stay separate from upcoming events. Drafts and review warnings remain visible until the plans are approved.</p>
+          <div className="floor-plan-live-sync-bar">
+            <div><strong>Prepare missing drafts</strong><span>Reads booked contracts and creates only missing drafts. Existing saved plans, entertainment reservations, and approvals are never changed.</span></div>
+            <button className="floor-plan-live-sync-button" disabled={monthDraftState.status === "preparing"} onClick={() => void handlePrepareMonthDrafts()} type="button">{monthDraftState.status === "preparing" ? `Preparing ${monthName} drafts…` : `Prepare ${monthName} drafts`}</button>
+          </div>
+          {monthDraftState.message ? <p className={`floor-plan-live-sync-message${monthDraftState.status === "error" ? " is-error" : ""}`} role="status" aria-live="polite">{monthDraftState.message}</p> : null}
+          {december.map(renderUpcomingPlan)}
+          {decemberPending.map((publication) => <PendingFloorPlanCard key={publication.plan.id} plan={publication.plan} />)}
+          {!december.length && !decemberPending.length ? <PortalCard className="floor-plan-empty-card">No {monthLabel} floor plans have been prepared yet.</PortalCard> : null}
+        </div>
+      </details>
+
+      <details
         className="floor-plan-archive"
-        open={!upcoming.length}
+        open={!allUpcoming.length && !decemberPending.length}
       >
         <summary>
           <span>
@@ -780,7 +851,7 @@ export default function FloorPlansClient({
       </details>
 
       <AwaitingApprovalSection
-        plans={pendingPublications.map((publication) => publication.plan)}
+        plans={pendingPublications.filter((publication) => !publication.plan.eventDate.startsWith(monthPrefix)).map((publication) => publication.plan)}
       />
       </>}
     </PortalShell>

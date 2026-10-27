@@ -3,6 +3,8 @@ import { MemoryFloorPlanStorage } from "../storage";
 import {
   loadFloorPlanPublicationWindow,
   nearestFloorPlanDate,
+  floorPlanPlanningMonthRange,
+  floorPlanPublicationDates,
 } from "../publication";
 import type { FloorPlanDocument } from "../types";
 
@@ -50,6 +52,23 @@ function plan(
 }
 
 describe("floor-plan publication window", () => {
+  it("includes all December planning dates without extending the ordinary upcoming window", () => {
+    const dates = floorPlanPublicationDates("2026-10-27", null, "2026-12");
+    expect(dates.filter((date) => date.startsWith("2026-12-"))).toHaveLength(31);
+    expect(dates).toContain("2026-12-01");
+    expect(dates).toContain("2026-12-31");
+    expect(dates).not.toContain("2026-11-11");
+    expect(dates).not.toContain("2027-01-01");
+    expect(floorPlanPublicationDates("2026-10-27")).toHaveLength(15);
+  });
+
+  it("deduplicates overlapping planning/requested dates and handles month/year boundaries", () => {
+    expect(floorPlanPublicationDates("2026-12-20", "2026-12-31", "2026-12")).toHaveLength(34);
+    expect(floorPlanPlanningMonthRange("2028-02")).toEqual({ startDate: "2028-02-01", endDate: "2028-02-29" });
+    expect(floorPlanPlanningMonthRange("2026-12")).toEqual({ startDate: "2026-12-01", endDate: "2026-12-31" });
+    for (const month of ["2026-13", "2026-00", "2026-2", "bad"]) expect(() => floorPlanPlanningMonthRange(month)).toThrow("YYYY-MM");
+  });
+
   it("loads saved event dates for today through two weeks ahead", async () => {
     const storage = new MemoryFloorPlanStorage();
     await storage.save(plan("2026-08-05"), "Saved pending plan.");

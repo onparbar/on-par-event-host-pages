@@ -17,7 +17,7 @@ describe("floor-plan page review Preview safety", () => {
     vi.stubEnv("VERCEL_ENV", environment);
     vi.stubEnv("EVENT_HOST_REVIEW_ONLY", "true");
     await FloorPlansPage({ searchParams: Promise.resolve({ date: "2026-11-14" }) });
-    expect(loadLiveFloorPlanPublicationWindow).toHaveBeenCalledWith(expect.any(String), {}, "2026-11-14");
+    expect(loadLiveFloorPlanPublicationWindow).toHaveBeenCalledWith(expect.any(String), {}, "2026-11-14", undefined, "2026-12");
     if (environment === "preview") expect(ensureConfirmedContractFloorPlanWindow).not.toHaveBeenCalled();
     else expect(ensureConfirmedContractFloorPlanWindow).toHaveBeenCalledTimes(1);
   });

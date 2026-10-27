@@ -39,6 +39,13 @@ const payload: FloorPlanDayPayload = {
 };
 const props = { initialState: { archivedAssetKeys: [], overlaysByAsset: {} } as unknown as AdminState, plans: [], publications: [{ plan: payload.plan, payload }], specialPages: [], today: payload.date };
 
+function decemberPublication(status: FloorPlanDayPayload["plan"]["status"] = "Draft", includePayload = true) {
+  const date = "2026-12-05";
+  const plan = { ...payload.plan, id: `floor-plan-${date}`, eventDate: date, status,
+    events: payload.plan.events.map((item, index) => ({ ...item, floorPlanId: `floor-plan-${date}`, name: index ? "December VIP party" : "December corporate party" })) };
+  return { plan, payload: includePayload ? { ...payload, date, plan } : null };
+}
+
 describe("main floor-plan view versus selected checklist workspace", () => {
   beforeEach(() => { context.requestedEventId = null; context.preferredEventId = "source-one"; context.requestedDate = payload.date; localState.enabled = false; localState.eventId = null; vi.clearAllMocks(); });
 
@@ -53,6 +60,60 @@ describe("main floor-plan view versus selected checklist workspace", () => {
     expect(html).not.toContain("My event workspace");
     expect(context.clearEvent).not.toHaveBeenCalled();
     expect(context.selectEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the empty December folder below Upcoming and above Archive", () => {
+    const html = renderToStaticMarkup(createElement(FloorPlansClient, props));
+    const upcoming = html.indexOf('id="upcoming-floor-plans"');
+    const december = html.indexOf("December 2026 floor plans");
+    const archive = html.indexOf("Floor-plan archive");
+    expect(upcoming).toBeLessThan(december);
+    expect(december).toBeLessThan(archive);
+    expect(html).toContain("No December 2026 floor plans have been prepared yet.");
+    expect(html).toContain('<details class="floor-plan-archive floor-plan-planning-month">');
+  });
+
+  it("keeps December maps and pending drafts in one folder without duplicate static images or approval entries", () => {
+    const draft = decemberPublication();
+    const pending = decemberPublication("Needs Review", false);
+    pending.plan = { ...pending.plan, id: "floor-plan-2026-12-06", eventDate: "2026-12-06", events: [{ ...pending.plan.events[0], name: "December pending review" }] };
+    const html = renderToStaticMarkup(createElement(FloorPlansClient, { ...props,
+      plans: [{ date: draft.plan.eventDate, label: "Static December duplicate", image: "/floor-plans/december-duplicate.png", events: ["Static December duplicate"] }],
+      publications: [...props.publications, draft, pending] }));
+    const folderStart = html.indexOf('class="floor-plan-archive floor-plan-planning-month"');
+    const archiveStart = html.indexOf("Floor-plan archive");
+    const folder = html.slice(folderStart, archiveStart);
+    expect(html.slice(0, folderStart)).not.toContain("December corporate party");
+    expect(folder).toContain("December corporate party");
+    expect(folder).toContain("December pending review");
+    expect(folder).toContain("Draft");
+    expect(folder).toContain("Needs Review");
+    expect(folder).toContain("Edit and approve");
+    expect(folder).toContain("2 plans");
+    expect(html).not.toContain("Static December duplicate");
+    expect(html.slice(archiveStart)).not.toContain("December corporate party");
+    expect(html.slice(archiveStart)).not.toContain("December pending review");
+  });
+
+  it("opens the December folder and exact date card for a date-only deep link, showing both parties", () => {
+    context.requestedDate = "2026-12-05";
+    const december = decemberPublication();
+    const html = renderToStaticMarkup(createElement(FloorPlansClient, { ...props, publications: [...props.publications, december] }));
+    expect(html).toContain('<details class="floor-plan-archive floor-plan-planning-month" open="">');
+    expect(html).toContain("Showing all events");
+    expect(html).toContain('aria-label="VIP 1 assigned to December corporate party"');
+    expect(html).toContain('aria-label="VIP 2 assigned to December VIP party"');
+    expect(html).not.toContain('aria-label="VIP 1 assigned to First party"');
+  });
+
+  it("keeps a December checklist workspace focused on its exact event without the planning folder", () => {
+    context.requestedDate = "2026-12-05";
+    context.requestedEventId = "source-one";
+    const html = renderToStaticMarkup(createElement(FloorPlansClient, { ...props, publications: [decemberPublication()] }));
+    expect(html).toContain('aria-label="VIP 1 assigned to December corporate party"');
+    expect(html).not.toContain("December VIP party");
+    expect(html).not.toContain("December 2026 floor plans");
+    expect(html).not.toContain("Show all events");
   });
 
   it("keeps exact event-only highlights for a selected checklist's explicit floor-plan link", () => {

@@ -43,6 +43,20 @@ afterEach(() => {
 });
 
 describe("pre-arrival On Par Bookings floor-plan visibility", () => {
+  it("loads the entire planning month with one batched VIP read and no saved-data writes", async () => {
+    configureSources();
+    const storage = new MemoryFloorPlanStorage();
+    const save = vi.spyOn(storage, "save");
+    const dates = ["2026-12-01", "2026-12-16", "2026-12-31"];
+    const booked = payload();
+    booked.reservations = dates.map((date, index) => ({ ...booked.reservations[0], id: `redacted-december-${index}`, operatingDate: date, startAt: `${date}T22:00:00Z`, endAt: `${date}T23:00:00Z` }));
+    const fetchRange = vi.fn(async (from: string, to: string) => ({ ...booked, from, to, reservations: booked.reservations.filter((entry) => entry.operatingDate >= from && entry.operatingDate <= to) }));
+    const result = await loadLiveFloorPlanPublicationWindow("2026-10-27", storage, "2026-12-16", { configured: true, fetchRange }, "2026-12");
+    expect(result.map((entry) => entry.plan.eventDate)).toEqual(dates);
+    expect(fetchRange.mock.calls).toEqual([["2026-10-27", "2026-11-10"], ["2026-12-01", "2026-12-31"]]);
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("projects only the exact booked room and interval before arrival without saving", async () => {
     const entertainment = configureSources();
     const storage = new MemoryFloorPlanStorage();

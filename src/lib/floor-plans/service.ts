@@ -63,7 +63,7 @@ import {
   isVipOnlyFloorPlanEvent,
 } from "./generator";
 import { reservationTimingSource, sameReservationInterval } from "./reservation-state";
-import { floorPlanPublicationDates } from "./publication";
+import { floorPlanPlanningMonthRange, floorPlanPublicationDates } from "./publication";
 import { seatingCoverageMessage, summarizeEventSeating } from "./seating-summary";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
 import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
@@ -737,10 +737,13 @@ export async function loadLiveFloorPlanPublicationWindow(
   storage: FloorPlanStorage = getFloorPlanStorage(),
   requestedDate?: string | null,
   vipPrepClient: Pick<VipPrepClient, "configured" | "fetchRange"> = new VipPrepClient(),
+  planningMonth?: string | null,
 ) {
-  const dates = floorPlanPublicationDates(today, requestedDate);
+  const dates = floorPlanPublicationDates(today, requestedDate, planningMonth);
   const endDate = addCalendarDays(today, 14);
-  const ranges = [{ from: today, to: endDate }, ...dates.filter((date) => date < today || date > endDate).map((date) => ({ from: date, to: date }))];
+  const month = planningMonth ? floorPlanPlanningMonthRange(planningMonth) : null;
+  const ranges = [{ from: today, to: endDate }, ...(month ? [{ from: month.startDate, to: month.endDate }] : [])];
+  if (requestedDate && isValidEntertainmentDate(requestedDate) && !ranges.some((range) => range.from <= requestedDate && range.to >= requestedDate)) ranges.push({ from: requestedDate, to: requestedDate });
   const [savedPlans, refreshed] = await Promise.all([
     Promise.all(dates.map((date) => storage.get(date).catch(() => null))),
     vipPrepClient.configured ? Promise.all(ranges.map(async (range) => {
