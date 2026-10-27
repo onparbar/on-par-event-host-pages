@@ -13,7 +13,6 @@ import {
   displayEventForFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
-  floorPlanEventFillColor,
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
   isEntertainmentTimeAnchor,
@@ -81,17 +80,6 @@ export function PublishedFloorPlanMapView({
     plan,
     entertainmentReservations,
   );
-  const eventFillColors = new Map(
-    plan.events.map((event) => [
-      event.id,
-      floorPlanEventFillColor(
-        plan,
-        entertainmentReservations,
-        event,
-      ),
-    ]),
-  );
-
   return (
     <div className="published-floor-plan-map">
       {view.selectedEventId && (payload.floorPlanConflicts.length || payload.entertainmentConflicts.length) ? (
@@ -166,7 +154,7 @@ export function PublishedFloorPlanMapView({
               : null;
             const event = displayEventForFloorPlanArea(plan, local, shared);
             if (!event) return null;
-            const fillColor = eventFillColors.get(event.id) ?? event.color;
+            const fillColor = event.color;
             const showTime = Boolean(
               shared &&
                 area.type !== "mini-golf" &&
@@ -213,7 +201,7 @@ export function PublishedFloorPlanMapView({
               if (!event || !geometry || !getFloorPlanArea(reservation.areaId)) {
                 return null;
               }
-              const fillColor = eventFillColors.get(event.id) ?? event.color;
+              const fillColor = event.color;
               return (
                 <span
                   aria-label={`Custom highlight: ${reservation.label}`}

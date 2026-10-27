@@ -40,7 +40,6 @@ import {
   assignLocalFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
-  floorPlanEventFillColor,
   eventForFloorPlanEntertainment,
   floorPlanCustomGeometry,
   floorPlanOverlayLabel,
@@ -779,16 +778,6 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         plan,
         mapView.entertainmentReservations,
       );
-    const exportedEventFillColors = new Map(
-      plan.events.map((event) => [
-        event.id,
-        floorPlanEventFillColor(
-          plan,
-          mapView.entertainmentReservations,
-          event,
-        ),
-      ]),
-    );
     const canvas = document.createElement("canvas");
     canvas.width = 1920;
     canvas.height = 1080;
@@ -817,7 +806,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       context.fillText(`${event.name} (${event.guestCount}) | ${eventTime(event)}`, 34, 96 + index * 34);
     });
     const drawOverlay = (area: FloorPlanArea, event: FloorPlanEvent, label: string) => {
-      const fillColor = exportedEventFillColors.get(event.id) ?? event.color;
+      const fillColor = event.color;
       context.globalAlpha = 0.5;
       context.fillStyle = fillColor;
       context.fillRect(area.x, area.y, area.width, area.height);
@@ -889,7 +878,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
         ? area.y + area.height + 8
         : area.y + area.height / 2 - 14;
       context.globalAlpha = 0.38;
-      context.fillStyle = exportedEventFillColors.get(event.id) ?? event.color;
+      context.fillStyle = event.color;
       context.fillRect(x, y, width, 28);
       context.globalAlpha = 1;
       context.strokeStyle = event.color;

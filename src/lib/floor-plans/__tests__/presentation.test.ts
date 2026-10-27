@@ -6,7 +6,6 @@ import {
   assignLocalFloorPlanArea,
   entertainmentMultipleReservationOutlines,
   entertainmentTimingLabel,
-  floorPlanEventFillColor,
   eventForFloorPlanEntertainment,
   localHighlightIdsForDeletion,
   primaryLocalFloorPlanReservation,
@@ -220,9 +219,6 @@ describe("multiple entertainment reservation outlines", () => {
         height: 71,
       }),
     ]);
-    expect(
-      floorPlanEventFillColor(floorPlan, reservations, secondEvent),
-    ).toBe(firstEvent.color);
   });
 
   it("does not add a border when parties reserve different resources", () => {
@@ -232,6 +228,39 @@ describe("multiple entertainment reservation outlines", () => {
     ];
 
     expect(entertainmentMultipleReservationOutlines(floorPlan, reservations)).toEqual([]);
+  });
+
+  it("uses only the actual shared VIP room's earlier color, not an unrelated shared pool's color", () => {
+    const main = { ...firstEvent, color: "#15803D" };
+    const vip = { ...secondEvent, color: "#0033FF" };
+    const evening = floorPlanEvent("event-3", "303", "Evening Party", "#7C3AED");
+    const source = { ...floorPlan, events: [main, vip, evening] };
+    const reservations = [
+      { ...entertainmentReservation("main-pool", main, "pool-1", "2026-08-07T16:00:00Z", "2026-08-07T18:00:00Z"), resourceCategory: "pool" as const, resourceName: "Pool Table 1" },
+      { ...entertainmentReservation("vip-pool", vip, "pool-1", "2026-08-07T18:00:00Z", "2026-08-07T20:00:00Z"), resourceCategory: "pool" as const, resourceName: "Pool Table 1" },
+      { ...entertainmentReservation("vip-room", vip, "private-room-vip-1", "2026-08-07T18:00:00Z", "2026-08-07T21:00:00Z"), resourceCategory: "private-rooms" as const, resourceName: "VIP 1" },
+      { ...entertainmentReservation("evening-room", evening, "private-room-vip-1", "2026-08-07T22:30:00Z", "2026-08-08T01:30:00Z"), resourceCategory: "private-rooms" as const, resourceName: "VIP 1" },
+    ];
+    const before = structuredClone({ source, reservations });
+    const outlines = entertainmentMultipleReservationOutlines(source, reservations);
+    expect(outlines.find((outline) => outline.category === "private-rooms"))
+      .toMatchObject({ eventId: evening.id, color: evening.color, fillColor: vip.color, resourceNames: ["VIP 1"] });
+    expect(outlines.find((outline) => outline.category === "pool"))
+      .toMatchObject({ eventId: vip.id, color: vip.color, fillColor: main.color, resourceNames: ["Pool Table 1"] });
+    expect({ source, reservations }).toEqual(before);
+  });
+
+  it("does not choose one unrelated primary color for a run whose shared resources have different earlier owners", () => {
+    const thirdEvent = floorPlanEvent("event-3", "303", "Third Party", "#15803D");
+    const source = { ...floorPlan, events: [firstEvent, secondEvent, thirdEvent] };
+    const reservations = [
+      entertainmentReservation("first-5", firstEvent, "bowling-5", "2026-08-07T16:00:00Z", "2026-08-07T18:00:00Z"),
+      entertainmentReservation("third-6", thirdEvent, "bowling-6", "2026-08-07T16:00:00Z", "2026-08-07T18:00:00Z"),
+      entertainmentReservation("second-5", secondEvent, "bowling-5", "2026-08-07T21:00:00Z", "2026-08-07T23:00:00Z"),
+      entertainmentReservation("second-6", secondEvent, "bowling-6", "2026-08-07T21:00:00Z", "2026-08-07T23:00:00Z"),
+    ];
+    expect(entertainmentMultipleReservationOutlines(source, reservations))
+      .toEqual([expect.objectContaining({ eventId: secondEvent.id, color: secondEvent.color, fillColor: secondEvent.color, resourceNames: ["Bowling Lane 5", "Bowling Lane 6"] })]);
   });
 
   it("splits non-contiguous shared lanes into separate borders", () => {
@@ -261,7 +290,7 @@ describe("multiple entertainment reservation outlines", () => {
         reservations,
         secondEvent.id,
       )[0],
-    ).toEqual(expect.objectContaining({ eventId: firstEvent.id }));
+    ).toEqual(expect.objectContaining({ eventId: firstEvent.id, color: firstEvent.color, fillColor: secondEvent.color }));
   });
 
   it("keeps the earlier VIP room orange and labels the later VIP booking's blue border with its own time", () => {

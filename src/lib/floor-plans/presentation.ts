@@ -221,39 +221,6 @@ export function visibleEntertainmentReservations(
   });
 }
 
-/**
- * When one party is the later reservation on shared entertainment, carry the
- * earlier reservation's fill across that party's other floor-plan highlights.
- * The party's own event color remains the border color.
- */
-export function floorPlanEventFillColor(
-  plan: FloorPlanDocument,
-  reservations: readonly EntertainmentReservation[],
-  event: FloorPlanEvent,
-) {
-  const sharedFillColors = new Set<string>();
-  for (const reservation of reservations) {
-    if (
-      !reservation.active ||
-      eventForFloorPlanEntertainment(plan, reservation)?.id !== event.id
-    ) {
-      continue;
-    }
-    const primary = primaryEntertainmentReservationForResource(
-      plan,
-      reservations,
-      reservation.resourceId,
-    );
-    const primaryEvent = eventForFloorPlanEntertainment(plan, primary);
-    if (primaryEvent && primaryEvent.id !== event.id) {
-      sharedFillColors.add(primaryEvent.color);
-    }
-  }
-  return sharedFillColors.size === 1
-    ? [...sharedFillColors][0]
-    : event.color;
-}
-
 function additionalEntertainmentGroups(
   plan: FloorPlanDocument,
   reservations: readonly EntertainmentReservation[],
@@ -346,6 +313,18 @@ export function entertainmentMultipleReservationOutlines(
           return area ? [area] : [];
         });
         if (!areas.length) return [];
+        const primaryFillColors = new Set(
+          run.flatMap((reservation) => {
+            const primary = primaryEntertainmentReservationForResource(
+              plan,
+              reservations,
+              reservation.resourceId,
+              preferredEventId,
+            );
+            const event = eventForFloorPlanEntertainment(plan, primary);
+            return event ? [event.color] : [];
+          }),
+        );
         const left = Math.max(0, Math.min(...areas.map((area) => area.x)) - OUTLINE_PADDING);
         const top = Math.max(0, Math.min(...areas.map((area) => area.y)) - OUTLINE_PADDING);
         const right = Math.min(
@@ -361,11 +340,10 @@ export function entertainmentMultipleReservationOutlines(
           eventId: group.event.id,
           eventName: group.event.name,
           color: group.event.color,
-          fillColor: floorPlanEventFillColor(
-            plan,
-            reservations,
-            group.event,
-          ),
+          fillColor:
+            primaryFillColors.size === 1
+              ? [...primaryFillColors][0]
+              : group.event.color,
           category: group.category,
           resourceNames: run.map((reservation) => reservation.resourceName),
           timeLabel:
