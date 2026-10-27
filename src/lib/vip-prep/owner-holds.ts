@@ -1,3 +1,6 @@
+import { vipPrepExternalId } from "./identity";
+import type { VipPrepReservation } from "./types";
+
 type OwnerHoldPlanningEvidence = {
   operatingDate: string;
   eventName: string;
@@ -14,7 +17,7 @@ const DECEMBER_OWNER_HOLD_LABELS = new Set([
   "vip unavailable vip",
 ]);
 
-/** December 2026 planning exception only; never a cancellation or an arrival/food rule. */
+/** Exact December 2026 internal-placeholder evidence; never a source cancellation. */
 export function isDecemberOwnerHoldVip(evidence: OwnerHoldPlanningEvidence) {
   return /^2026-12-(?:0[1-9]|[12]\d|3[01])$/.test(evidence.operatingDate) &&
     /^vip-[A-Za-z0-9-]+$/.test(evidence.sourceEventId ?? "") &&
@@ -23,4 +26,16 @@ export function isDecemberOwnerHoldVip(evidence: OwnerHoldPlanningEvidence) {
     !evidence.linkedTripleseatEventIds?.length &&
     (evidence.foodCount === undefined || evidence.foodCount === 0) &&
     (evidence.extraCount === undefined || evidence.extraCount === 0);
+}
+
+/** Staff visibility only: keep the raw booking and its source-membership evidence. */
+export function isDecemberOwnerHoldReservation(reservation: VipPrepReservation) {
+  return isDecemberOwnerHoldVip({
+    operatingDate: reservation.operatingDate,
+    eventName: reservation.eventName,
+    sourceEventId: vipPrepExternalId(reservation),
+    linkedTripleseatEventIds: reservation.linkedTripleseatEventIds,
+    foodCount: reservation.foodPrep.length,
+    extraCount: reservation.extras.length,
+  });
 }

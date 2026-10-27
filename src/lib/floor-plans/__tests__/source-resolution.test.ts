@@ -110,6 +110,19 @@ describe("floor-plan source resolution", () => {
     expect(resolved.plan.guest_count).toBe(18);
   });
 
+  it("retains purchased extras from a secondary linked VIP source without treating unknown legacy counts as zero", () => {
+    const first = verifiedLink(vipRow("vip-a", 2, "VIP 1"));
+    const second = verifiedLink(vipRow("vip-b", 3, "VIP 2"));
+    first.source = { ...first.source, vipExtraCount: 0 };
+    second.source = { ...second.source, vipExtraCount: 2 };
+    const before = structuredClone([first, second]);
+    expect(resolveFloorPlanSourceRows([first, second])[0].source?.vipExtraCount).toBe(2);
+    expect([first, second]).toEqual(before);
+    const legacy = { ...second, source: { ...second.source, vipExtraCount: undefined } };
+    expect(resolveFloorPlanSourceRows([first, legacy])[0].source?.vipExtraCount).toBeUndefined();
+    expect(resolveFloorPlanSourceRows([{ ...first, source: { ...first.source, vipExtraCount: undefined } }, second])[0].source?.vipExtraCount).toBe(2);
+  });
+
   it("recognizes a Tripleseat event-type prefix and OnPar VIP suffix", () => {
     expect(
       floorPlanSourceNamesMatch(

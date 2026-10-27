@@ -37,6 +37,24 @@ describe("manual checklist write identity", () => {
     expect(result.kitchenEventId).toBe(sourceId);
     expect(deps.findVip).toHaveBeenCalledExactlyOnceWith(id, date, date);
   });
+  it.each(["vip", "numeric"])("rejects direct %s checklist writes for a December internal hold after raw identity verification", async (selection) => {
+    const deps = options();
+    const hold = { ...reservation, operatingDate: "2026-12-02", eventName: "VIP unavailable VIP", foodPrep: [], extras: [] };
+    deps.findVip.mockResolvedValue(hold);
+    await expect(resolveChecklistSource({ eventId: id, sourceEventId: selection === "vip" ? sourceId : undefined,
+      eventDate: hold.operatingDate }, deps)).rejects.toMatchObject({ status: 400, message: expect.stringContaining("internal VIP block") });
+    expect(deps.findVip).toHaveBeenCalledWith(id, hold.operatingDate, hold.operatingDate);
+  });
+  it.each(["2026-11-02", "2027-12-02"])("keeps same-label bookings outside December 2026 writable: %s", async (operatingDate) => {
+    const deps = options();
+    deps.findVip.mockResolvedValue({ ...reservation, operatingDate, eventName: "Owner hold VIP", foodPrep: [], extras: [] });
+    expect((await resolveChecklistSource({ eventId: id, sourceEventId: sourceId, eventDate: operatingDate }, deps)).kitchenEventId).toBe(sourceId);
+  });
+  it("preserves a same-label December customer booking with food", async () => {
+    const deps = options();
+    deps.findVip.mockResolvedValue({ ...reservation, operatingDate: "2026-12-02", eventName: "Owner hold VIP" });
+    expect((await resolveChecklistSource({ eventId: id, sourceEventId: sourceId, eventDate: "2026-12-02" }, deps)).plan.food).not.toEqual([]);
+  });
   it("rejects mismatched source IDs before any source or saved record access", async () => {
     const deps = options();
     await expect(resolveChecklistSource({ eventId: 77, sourceEventId: sourceId, eventDate: date }, deps)).rejects.toMatchObject({ status: 409 });

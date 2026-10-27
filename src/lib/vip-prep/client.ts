@@ -2,7 +2,7 @@ import type { EntertainmentSourceEvent } from "@/lib/entertainment/types";
 import type { EventPlan } from "@/lib/event-plans/types";
 import type { KitchenSourceEvent } from "@/lib/kitchen/types";
 import { numericVipEventId, vipPrepExternalId } from "./identity";
-import { isDecemberOwnerHoldVip } from "./owner-holds";
+import { isDecemberOwnerHoldReservation } from "./owner-holds";
 import type { VipPrepPayload, VipPrepReservation, VipPrepExtra } from "./types";
 export { numericVipEventId, vipPrepExternalId } from "./identity";
 export type { VipPrepFoodItem, VipPrepPayload, VipPrepReservation, VipPrepExtra, VipPrepMappingIssue } from "./types";
@@ -280,7 +280,7 @@ export async function findVipPrepReservationByEventId(
 export function vipPrepKitchenEvents(
   reservations: readonly VipPrepReservation[],
 ): KitchenSourceEvent[] {
-  return reservations.filter(isActiveVipPrepReservation).map((reservation) => ({
+  return reservations.filter((reservation) => isActiveVipPrepReservation(reservation) && !isDecemberOwnerHoldReservation(reservation)).map((reservation) => ({
     eventId: vipPrepExternalId(reservation),
     bookingId: reservation.confirmationCode,
     eventName: reservation.eventName,
@@ -310,10 +310,7 @@ export function vipPrepKitchenEvents(
 export function vipPrepEntertainmentEvents(
   reservations: readonly VipPrepReservation[],
 ): EntertainmentSourceEvent[] {
-  return reservations.filter((reservation) => isActiveVipPrepReservation(reservation) && !isDecemberOwnerHoldVip({
-    operatingDate: reservation.operatingDate, eventName: reservation.eventName, sourceEventId: vipPrepExternalId(reservation),
-    linkedTripleseatEventIds: reservation.linkedTripleseatEventIds, foodCount: reservation.foodPrep.length, extraCount: reservation.extras.length,
-  })).map((reservation) => ({
+  return reservations.filter((reservation) => isActiveVipPrepReservation(reservation) && !isDecemberOwnerHoldReservation(reservation)).map((reservation) => ({
     tripleseatEventId: vipPrepExternalId(reservation),
     tripleseatBookingId: reservation.confirmationCode,
     eventName: reservation.eventName,

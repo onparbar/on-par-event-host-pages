@@ -48,6 +48,7 @@ import {
 } from "../vip-prep/client";
 import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "../vip-prep/known-inactive";
 import { isDecemberOwnerHoldVip } from "../vip-prep/owner-holds";
+import { projectDecemberOwnerHoldEntertainmentVisibility } from "./owner-holds";
 import { getFloorPlanStorage, type FloorPlanStorage } from "../floor-plans/storage";
 import type { FloorPlanEvent } from "../floor-plans/types";
 import { projectDayEventColors } from "../floor-plans/event-colors";
@@ -452,10 +453,11 @@ export async function getEntertainmentDay(
       reservation.active && reservation.resourceCategory !== "mini-golf" &&
       ![reservation.tripleseatEventId, reservation.localEventId].some((id) => id && inactiveEventIds.has(id)),
   );
+  const availableStoredReservations = projectDecemberOwnerHoldEntertainmentVisibility({ events: stored.events, reservations: storedReservations }).reservations;
   const builtVip = buildEntertainmentSchedule({
     sourceEvents: vipResult.events,
     localEvents: floorPlanContext(options).localEvents,
-    existingReservations: storedReservations,
+    existingReservations: availableStoredReservations,
   });
   const liveVip = {
     ...builtVip,
@@ -489,7 +491,7 @@ export async function getEntertainmentDay(
     sourceEvents: confirmedSources,
     localEvents: floorPlanContext(options).localEvents,
     existingReservations: [
-      ...storedReservations,
+      ...availableStoredReservations,
       ...liveVip.reservations,
     ],
   });
@@ -579,13 +581,14 @@ export async function getEntertainmentDay(
         "The latest Tripleseat sync failed. The last saved schedule remains visible.",
     );
   }
-  const colors = projectDayEventColors(options.floorPlanEvents ?? floorColors.events, events, reservations, floorColors.events);
+  const visible = projectDecemberOwnerHoldEntertainmentVisibility({ events, reservations });
+  const colors = projectDayEventColors(options.floorPlanEvents ?? floorColors.events, visible.events, visible.reservations, floorColors.events);
   return {
     date,
     events: colors.events,
     reservations: colors.reservations,
     floorPlanEventColors: Object.fromEntries(colors.floorEvents.map((event) => [event.id, event.color])),
-    conflicts: detectEntertainmentConflicts(reservations),
+    conflicts: detectEntertainmentConflicts(visible.reservations),
     sync: stored.sync,
     sourceMode: adapter.sourceMode,
     warnings: unique(warnings),
@@ -673,7 +676,7 @@ export async function syncEntertainmentDay(
       const now = new Date().toISOString();
       const built = preserveManualEventColors(buildEntertainmentSchedule({
         sourceEvents: vipPrepEntertainmentEvents(vipPayload.reservations), localEvents: context.localEvents,
-        existingReservations: ownerHoldPlanningProjection(stored).reservations.filter(isVipEntertainmentReservation), now,
+        existingReservations: projectDecemberOwnerHoldEntertainmentVisibility(ownerHoldPlanningProjection(stored)).reservations.filter(isVipEntertainmentReservation), now,
       }), stored.events);
       const reservations = mergeReservationsForSync(stored.reservations.filter(isVipEntertainmentReservation), built.reservations, now, built.events);
       const preserved = preserveOwnerHoldCache(stored, built.events, reservations);
@@ -746,7 +749,7 @@ export async function syncEntertainmentDay(
       buildEntertainmentSchedule({
         sourceEvents,
         localEvents: context.localEvents,
-        existingReservations: ownerHoldPlanningProjection(stored).reservations,
+        existingReservations: projectDecemberOwnerHoldEntertainmentVisibility(ownerHoldPlanningProjection(stored)).reservations,
         now,
       }),
       stored.events,
@@ -762,7 +765,8 @@ export async function syncEntertainmentDay(
       built.events.push(...stored.events.filter(isVipEntertainmentEvent));
     }
     const preserved = preserveOwnerHoldCache(stored, built.events, merged);
-    const conflicts = detectEntertainmentConflicts(representedEntertainmentReservations(built.events, ownerHoldPlanningProjection({ ...stored, ...preserved }).reservations));
+    const visible = projectDecemberOwnerHoldEntertainmentVisibility({ ...stored, ...preserved });
+    const conflicts = detectEntertainmentConflicts(representedEntertainmentReservations(visible.events, visible.reservations));
     const counts = reservationCounts(stored.reservations, preserved.reservations);
     const stats = {
       eventsProcessed: built.events.length,
@@ -987,7 +991,7 @@ async function assertNoUnconfirmedConflict(
   storage: EntertainmentStorage,
   forceConflict: boolean,
 ) {
-  const day = await storage.getDay(reservation.operatingDate);
+  const day = projectDecemberOwnerHoldEntertainmentVisibility(await storage.getDay(reservation.operatingDate));
   const represented = representedEntertainmentReservations(day.events, [
     ...day.reservations.filter((row) => row.id !== reservation.id), reservation,
   ]);

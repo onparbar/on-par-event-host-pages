@@ -3,6 +3,7 @@ import type { EntertainmentDayPayload } from "@/lib/entertainment/types";
 import type { FloorPlanDocument } from "@/lib/floor-plans/types";
 import { detectFloorPlanConflicts } from "@/lib/floor-plans/conflicts";
 import { validateFloorPlan } from "@/lib/floor-plans/validator";
+import { projectDecemberOwnerHoldFloorPlanVisibility } from "@/lib/floor-plans/owner-holds";
 import { applyEntertainmentDayToItinerary, itineraryIdentityScope } from "./entertainment";
 import { applyItineraryEdit, type ItineraryEdit } from "./edits";
 import { buildItineraryRevision } from "./readiness";
@@ -18,7 +19,8 @@ export function buildItineraryAsset(input: {
   edit?: ItineraryEdit;
   now: Date;
 }): ItineraryAsset {
-  const scope = itineraryIdentityScope(input.plan, input.floorPlan, input.floorPlanPersisted, input.candidates);
+  const floorPlan = input.floorPlan ? projectDecemberOwnerHoldFloorPlanVisibility(input.floorPlan) : null;
+  const scope = itineraryIdentityScope(input.plan, floorPlan, input.floorPlanPersisted, input.candidates);
   const projected = input.day ? applyEntertainmentDayToItinerary(input.plan, input.day, scope) : input.plan;
   const current = applyItineraryEdit(projected, input.edit);
   return {
@@ -31,10 +33,10 @@ export function buildItineraryAsset(input: {
       candidatePlans: input.candidates,
       sourceSync: input.sourceSync,
       entertainmentDay: input.day,
-      floorPlan: input.floorPlan,
+      floorPlan,
       floorPlanPersisted: input.floorPlanPersisted,
-      floorPlanValidation: input.floorPlan && input.day
-        ? validateFloorPlan(input.floorPlan, input.day.reservations, detectFloorPlanConflicts(input.floorPlan), input.day.conflicts)
+      floorPlanValidation: floorPlan && input.day
+        ? validateFloorPlan(floorPlan, input.day.reservations, detectFloorPlanConflicts(floorPlan), input.day.conflicts)
         : [],
       pdf: input.savedPdf?.pdf,
       pdfFingerprint: input.savedPdf?.pdf_fingerprint,

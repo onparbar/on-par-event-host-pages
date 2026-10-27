@@ -68,7 +68,7 @@ import { reservationTimingSource, sameReservationInterval } from "./reservation-
 import { floorPlanPlanningMonthRange, floorPlanPublicationDates } from "./publication";
 import { seatingCoverageMessage, summarizeEventSeating } from "./seating-summary";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
-import { isDecemberOwnerHoldFloorPlanEvent, withoutDecemberOwnerHoldFloorPlanEvents } from "./owner-holds";
+import { isDecemberOwnerHoldFloorPlanEvent, projectDecemberOwnerHoldFloorPlanVisibility, withoutDecemberOwnerHoldFloorPlanEvents } from "./owner-holds";
 import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
 import { StaleSaveError } from "@/lib/stale-save";
 import {
@@ -176,6 +176,7 @@ function normalizedFloorPlanEvent(
       ...(verifiedSourceEventIds.length ? { verifiedSourceEventIds } : {}),
       ...(sourceSnapshot?.onParBooking && asRecord(sourceSnapshot.onParBooking) ? { onParBooking: sourceSnapshot.onParBooking as NonNullable<FloorPlanEvent["source"]["onParBooking"]> } : {}),
       ...(onParBookingAreaIds.length > 0 ? { onParBookingAreaIds } : {}),
+      ...(typeof sourceSnapshot?.vipExtraCount === "number" ? { vipExtraCount: sourceSnapshot.vipExtraCount } : {}),
       food: [...plan.food],
       entertainment: plan.entertainment.map((item) => ({ ...item })),
       operationalNotes: (plan.operational_notes ?? []).map((note) => ({
@@ -280,6 +281,7 @@ async function sourceEventsForDate(date: string, options: FloorPlanReadOptions =
       eventEndAt: reservation.endAt,
       sourceUpdatedAt: reservation.updatedAt,
       sourceSystem: "vip-prep",
+      vipExtraCount: reservation.extras.length,
       linkedTripleseatEventIds: reservation.linkedTripleseatEventIds ?? [],
       onParBooking: {
         reservationId: reservation.id, confirmationCode: reservation.confirmationCode,
@@ -595,7 +597,7 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage, options: 
   for (const event of saved?.events ?? []) {
     // The planning exception must not silently remove an explicit staff assignment.
     if (isDecemberOwnerHoldFloorPlanEvent(event, date)) {
-      if (!normalizedEvents.some((candidate) => candidate.id === event.id)) normalizedEvents.push(event);
+      if (!normalizedEvents.some((candidate) => candidate.tripleseatEventId === event.tripleseatEventId)) normalizedEvents.push(event);
       continue;
     }
     const vip = event.tripleseatEventId.startsWith("vip-");
@@ -669,11 +671,11 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage, options: 
   });
 }
 
-export async function getFloorPlanDay(
+async function floorPlanDay(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
   options: FloorPlanReadOptions = {},
-): Promise<FloorPlanDayPayload> {
+): Promise<{ payload: FloorPlanDayPayload; planForPersistence: FloorPlanDocument }> {
   if (!isValidEntertainmentDate(date)) {
     throw new Error("Floor-plan date must use YYYY-MM-DD.");
   }
@@ -721,16 +723,17 @@ export async function getFloorPlanDay(
   const effectivePlan: FloorPlanDocument = entertainmentChangedAfterApproval
     ? { ...plan, status: "Updated After Approval" }
     : plan;
-  const floorPlanConflicts = detectFloorPlanConflicts(effectivePlan);
+  const visiblePlan = projectDecemberOwnerHoldFloorPlanVisibility(effectivePlan);
+  const floorPlanConflicts = detectFloorPlanConflicts(visiblePlan);
   const validation = validateFloorPlan(
-    effectivePlan,
+    visiblePlan,
     entertainment.reservations,
     floorPlanConflicts,
     entertainment.conflicts,
   );
-  return {
+  return { planForPersistence: effectivePlan, payload: {
     date,
-    plan: effectivePlan,
+    plan: visiblePlan,
     entertainmentReservations: entertainment.reservations,
     floorPlanConflicts,
     entertainmentConflicts: entertainment.conflicts,
@@ -738,9 +741,17 @@ export async function getFloorPlanDay(
     revisions: await storage.revisions(effectivePlan.id).catch(() => []),
     persistence: storage.persistence,
     sourceMode: entertainment.sourceMode,
-    warnings: [...warnings, ...entertainment.warnings, ...effectivePlan.events.flatMap((event) => (event.source.seatingGenerationIssues ?? []).map((issue) => issue.message))],
-    sourceChanges: effectivePlan.events.flatMap((event) => event.source.floorPlanChanges ?? []),
-  };
+    warnings: [...warnings, ...entertainment.warnings, ...visiblePlan.events.flatMap((event) => (event.source.seatingGenerationIssues ?? []).map((issue) => issue.message))],
+    sourceChanges: visiblePlan.events.flatMap((event) => event.source.floorPlanChanges ?? []),
+  } };
+}
+
+export async function getFloorPlanDay(
+  date: string,
+  storage: FloorPlanStorage = getFloorPlanStorage(),
+  options: FloorPlanReadOptions = {},
+): Promise<FloorPlanDayPayload> {
+  return (await floorPlanDay(date, storage, options)).payload;
 }
 
 /** Load the overview plus an exact requested date, including unsaved VIP-only dates. */
@@ -784,7 +795,7 @@ export async function loadLiveFloorPlanPublicationWindow(
       return payload.plan.events.length ? { plan: payload.plan, payload } : null;
     } catch {
       const saved = savedByDate.get(date);
-      const plan = saved ? withoutDecemberOwnerHoldFloorPlanEvents(saved) : null;
+      const plan = saved ? projectDecemberOwnerHoldFloorPlanVisibility(saved) : null;
       return plan?.events.length ? { plan, payload: null } : null;
     }
   }));
@@ -833,15 +844,18 @@ async function generateFloorPlanFromStoredSources(
     }
     throw new Error("No Tripleseat event plan is available for this date.");
   }
-  const proposal = generateFloorPlanReservationProposal(plan, mode, selectedEventId);
+  const availablePlan = projectDecemberOwnerHoldFloorPlanVisibility(plan);
+  if (!availablePlan.events.length) throw new Error("No Tripleseat event plan is available for this date.");
+  const hiddenReservations = plan.reservations.filter((row) => !availablePlan.reservations.some((candidate) => candidate.id === row.id));
+  const proposal = generateFloorPlanReservationProposal(availablePlan, mode, selectedEventId);
   const generationWarnings = proposal.issues.map((issue) => issue.message);
   if (selectedEventId && mode !== "fill-missing" && !proposal.complete) {
     throw new Error(generationWarnings.join(" ") || "No valid replacement was found; the existing event assignments were not changed.");
   }
-  const proposedPlan = { ...plan, reservations: proposal.reservations };
+  const proposedPlan = { ...availablePlan, reservations: proposal.reservations };
   if (selectedEventId) {
     const conflicts = detectFloorPlanConflicts(proposedPlan).filter((conflict) => conflict.eventIds.includes(selectedEventId));
-    const previousConflicts = new Set(detectFloorPlanConflicts(plan).map((conflict) => conflict.id));
+    const previousConflicts = new Set(detectFloorPlanConflicts(availablePlan).map((conflict) => conflict.id));
     if (conflicts.some((conflict) => !previousConflicts.has(conflict.id))) {
       throw new Error("The proposed seating introduces a resource conflict. Existing assignments were not changed.");
     }
@@ -855,26 +869,27 @@ async function generateFloorPlanFromStoredSources(
     ruleVersion: FLOOR_PLAN_RULE_VERSION,
     lastTripleseatSyncAt: selectedEventId ? plan.lastTripleseatSyncAt : new Date().toISOString(),
     events: plan.events.map((event) => {
-      if (selectedEventId && event.id !== selectedEventId) return event;
+      if (isDecemberOwnerHoldFloorPlanEvent(event, date) || selectedEventId && event.id !== selectedEventId) return event;
       const { seatingGenerationIssues: _previousIssues, ...source } = event.source;
       const issues = proposal.issues.filter((issue) => issue.blocking && (!issue.eventId || issue.eventId === event.id));
       return { ...event, source: { ...source, ...(issues.length ? { seatingGenerationIssues: issues } : {}) } };
     }),
-    reservations: proposal.reservations.map((row) => proposal.addedReservationIds.includes(row.id)
+    reservations: [...proposal.reservations.map((row) => proposal.addedReservationIds.includes(row.id)
       ? { ...row, changeDetails: { fields: ["created"], reason: proposal.issues.find((issue) => issue.eventId === row.floorPlanEventId && issue.code === "seating-selection")?.message
         ?? "Generated from contracted inventory, required capacity, food-table rules and applicable availability buffers." } }
-      : row),
+      : row), ...hiddenReservations],
   };
   const savedGenerated = await storage.save(generated, `Generated ${selectedEventId ? `event ${selectedEventId}` : "entire-date"} suggestions (${mode}); added ${proposal.addedReservationIds.length}, replaced ${proposal.movedReservationIds.length}. ${generationWarnings.join(" ")}`);
   if (selectedEventId) {
     const payload = await getFloorPlanDay(date, storage);
-    const floorPlanConflicts = detectFloorPlanConflicts(savedGenerated);
+    const visibleGenerated = projectDecemberOwnerHoldFloorPlanVisibility(savedGenerated);
+    const floorPlanConflicts = detectFloorPlanConflicts(visibleGenerated);
     return {
       ...payload,
-      plan: savedGenerated,
+      plan: visibleGenerated,
       floorPlanConflicts,
-      validation: validateFloorPlan(savedGenerated, payload.entertainmentReservations, floorPlanConflicts, payload.entertainmentConflicts),
-      sourceChanges: savedGenerated.events.flatMap((event) => event.source.floorPlanChanges ?? []),
+      validation: validateFloorPlan(visibleGenerated, payload.entertainmentReservations, floorPlanConflicts, payload.entertainmentConflicts),
+      sourceChanges: visibleGenerated.events.flatMap((event) => event.source.floorPlanChanges ?? []),
       warnings: [...payload.warnings, ...generationWarnings],
     };
   }
@@ -1363,8 +1378,8 @@ export async function saveFloorPlanEdits(
       : event;
   });
   if (
-    events.some((event, index) =>
-      events
+    events.filter((event) => !isDecemberOwnerHoldFloorPlanEvent(event, date)).some((event, index, visibleEvents) =>
+      visibleEvents
         .slice(0, index)
         .some(
           (candidate) =>
@@ -1378,7 +1393,12 @@ export async function saveFloorPlanEdits(
     ...plan,
     version: Number(body.version),
     events,
-    reservations: sanitizeReservations(plan, requestedReservations, saved),
+    reservations: [
+      ...sanitizeReservations(plan, requestedReservations, saved).filter((row) =>
+        !plan.events.some((event) => event.id === row.floorPlanEventId && isDecemberOwnerHoldFloorPlanEvent(event, date))),
+      ...plan.reservations.filter((row) => plan.events.some((event) =>
+        event.id === row.floorPlanEventId && isDecemberOwnerHoldFloorPlanEvent(event, date))),
+    ],
     status:
       plan.status === "Approved"
         ? ("Updated After Approval" as const)
@@ -1443,14 +1463,14 @@ export async function validateAndSaveFloorPlan(
   expectedVersion?: number,
 ) {
   if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
-  const payload = await getFloorPlanDay(date, storage);
+  const { payload, planForPersistence } = await floorPlanDay(date, storage);
   const status: FloorPlanStatus =
     payload.floorPlanConflicts.length || payload.entertainmentConflicts.length
       ? "Conflict"
       : hasBlockingValidationFailures(payload.validation)
         ? "Needs Review"
         : "Needs Review";
-  await storage.save({ ...payload.plan, status }, "Validated floor plan.");
+  await storage.save({ ...planForPersistence, status }, "Validated floor plan.");
   return getFloorPlanDay(date, storage);
 }
 
@@ -1461,7 +1481,7 @@ export async function approveFloorPlan(
   expectedVersion?: number,
 ) {
   if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
-  const payload = await getFloorPlanDay(date, storage);
+  const { payload, planForPersistence } = await floorPlanDay(date, storage);
   if (hasBlockingValidationFailures(payload.validation)) {
     throw new Error("Resolve every blocking validation failure before approval.");
   }
@@ -1474,7 +1494,7 @@ export async function approveFloorPlan(
   const now = new Date().toISOString();
   await storage.save(
     {
-      ...payload.plan,
+      ...planForPersistence,
       status: "Approved",
       approvedAt: now,
       approvedBy: "authenticated-event-host-staff",

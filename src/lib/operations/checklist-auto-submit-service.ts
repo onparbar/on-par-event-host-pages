@@ -6,6 +6,7 @@ import { getEventPlanStorage, type EventPlanStorage, type StoredEventPlan } from
 import type { EventPlan } from "@/lib/event-plans/types";
 import { isValidEntertainmentDate } from "@/lib/entertainment/time";
 import { isActiveVipPrepReservation, VipPrepClient, vipPrepEventPlan, vipPrepExternalId, vipPrepMappingIssues, type VipPrepReservation } from "@/lib/vip-prep/client";
+import { isDecemberOwnerHoldReservation } from "@/lib/vip-prep/owner-holds";
 import { StaleSaveError } from "@/lib/stale-save";
 import { AUTO_SUBMISSION_KEY, type AutomaticChecklistSubmission } from "./checklist-auto-submission";
 import { isPreviewReviewOnly } from "./preview-review";
@@ -60,6 +61,7 @@ export async function autoSubmitChecklists(options: Dependencies = {}) {
   const plans = options.plans ?? getEventPlanStorage();
   const vipClient = options.vipClient ?? new VipPrepClient();
   const sources: AutomaticChecklistSource[] = [];
+  const hiddenVipSourceIds = new Set<string>();
   for (const range of checklistAutoSubmitDateRanges(configuration.startDate, configuration.endDate)) {
     try {
       const rows = await plans.plansForWindow(range);
@@ -75,6 +77,9 @@ export async function autoSubmitChecklists(options: Dependencies = {}) {
     }
     try {
       const payload = await vipClient.fetchRange(range.startDate, range.endDate);
+      for (const reservation of payload.reservations) {
+        if (isActiveVipPrepReservation(reservation) && isDecemberOwnerHoldReservation(reservation)) hiddenVipSourceIds.add(vipPrepExternalId(reservation));
+      }
       sources.push(...payload.reservations.filter(isActiveVipPrepReservation).map(vipSource));
     } catch { summary.sourceErrors.push("On Par Bookings is unavailable for a date range; affected VIP events were not closed automatically."); }
   }
@@ -87,7 +92,7 @@ export async function autoSubmitChecklists(options: Dependencies = {}) {
   const getRecord = options.getRecord ?? getChecklistRecord;
   for (const scanned of sources) {
     summary.considered += 1;
-    if (scanned.event.id === 99990001 || sourceCounts.get(scanned.sourceEventId) !== 1 || numericCounts.get(scanned.event.id) !== 1) { summary.skipped += 1; continue; }
+    if (hiddenVipSourceIds.has(scanned.sourceEventId) || scanned.event.id === 99990001 || sourceCounts.get(scanned.sourceEventId) !== 1 || numericCounts.get(scanned.event.id) !== 1) { summary.skipped += 1; continue; }
     const scannedTiming = automaticChecklistTiming(scanned);
     if (!scannedTiming || Date.parse(scannedTiming.eventEndedAt) < Date.parse(configuration.activatedAt) || now.getTime() < Date.parse(scannedTiming.scheduledFor)) { summary.skipped += 1; continue; }
     try {
@@ -100,7 +105,7 @@ export async function autoSubmitChecklists(options: Dependencies = {}) {
         const current = await vipClient.fetchRange(scanned.event.date, scanned.event.date);
         const matching = current.reservations.filter((booking) => isActiveVipPrepReservation(booking) && vipPrepExternalId(booking) === scanned.sourceEventId);
         const owners = current.reservations.filter((booking) => isActiveVipPrepReservation(booking) && vipPrepEventPlan(booking).id === scanned.event.id);
-        source = matching.length === 1 && owners.length === 1 ? vipSource(matching[0]) : null;
+        source = matching.length === 1 && owners.length === 1 && !isDecemberOwnerHoldReservation(matching[0]) ? vipSource(matching[0]) : null;
       } else {
         const row = await plans.findById(scanned.sourceEventId);
         source = row ? planSource(row) : null;

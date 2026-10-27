@@ -35,7 +35,9 @@ import {
   VipPrepClient,
   vipPrepKitchenEvents,
   isActiveVipPrepReservation,
+  vipPrepExternalId,
 } from "../vip-prep/client";
+import { isDecemberOwnerHoldReservation } from "../vip-prep/owner-holds";
 import {
   confirmedContractKitchenSourcesForDate,
   eventMatchesConfirmedContract,
@@ -238,11 +240,12 @@ export async function getKitchenDay(
       ? vipPrepClient.fetchRange(date, date).then(
           (payload) => {
             const events = vipPrepKitchenEvents(payload.reservations);
-            return { events, error: null, refreshed: true, refreshedAt: payload.generatedAt, count: events.length };
+            const sourceIds = payload.reservations.filter(isActiveVipPrepReservation).map(vipPrepExternalId);
+            return { events, sourceIds, error: null, refreshed: true, refreshedAt: payload.generatedAt, count: events.length };
           },
-          () => ({ events: [], error: "VIP Prep could not be refreshed; the last saved VIP checklist remains visible.", refreshed: false, refreshedAt: null, count: null }),
+          () => ({ events: [], sourceIds: [], error: "VIP Prep could not be refreshed; the last saved VIP checklist remains visible.", refreshed: false, refreshedAt: null, count: null }),
         )
-      : Promise.resolve({ events: [], error: null, refreshed: false, refreshedAt: null, count: null }),
+      : Promise.resolve({ events: [], sourceIds: [], error: null, refreshed: false, refreshedAt: null, count: null }),
     (options.floorPlanStorage ?? getFloorPlanStorage()).get(date).then(
       (plan) => ({ plan, error: null }),
       () => ({
@@ -311,7 +314,7 @@ export async function getKitchenDay(
           checklist,
         });
       }
-      const activeVipIds = new Set(liveVipEvents.map((event) => String(event.eventId)));
+      const activeVipIds = new Set(liveVipResult.sourceIds);
       for (const checklist of stored.events) {
         const booking = checklist.event.vipBooking;
         if (!booking || activeVipIds.has(String(checklist.event.eventId)) || booking.activeInSource === false) continue;
@@ -393,7 +396,9 @@ export async function getKitchenDay(
   const eventsWithSourceStatus = uniqueKitchenSourceIdentities([
     ...storedAndVipEvents,
     ...confirmedContractEvents,
-  ], (event) => String(event.event.eventId));
+  ], (event) => String(event.event.eventId)).filter((event) =>
+    !event.event.vipBooking || !isDecemberOwnerHoldReservation(event.event.vipBooking),
+  );
   const events = withKitchenReservedAreas(
     activeKitchenChecklists(
       eventsWithSourceStatus,
@@ -792,7 +797,7 @@ export async function getKitchenEventChecklist(
   const checklist = day.events.find(
     (event) => String(event.event.eventId) === normalizedEventId,
   );
-  if (!checklist) {
+  if (!checklist || checklist.event.vipBooking && isDecemberOwnerHoldReservation(checklist.event.vipBooking)) {
     throw new Error("Kitchen event was not found.");
   }
   return checklist;
@@ -808,8 +813,12 @@ export async function updateKitchenEventFoodAddOns(
   const normalizedEventId = normalizeKitchenEventId(eventId);
   const normalizedFood = normalizeKitchenEventAddOnFood(food);
   const storage = options.storage ?? getKitchenStorage();
-  if ((await storage.getEventDate(normalizedEventId)) === null) {
+  const date = await storage.getEventDate(normalizedEventId);
+  if (date === null) {
     throw new Error("Kitchen event was not found.");
+  }
+  if (normalizedEventId.startsWith("vip-") && date.startsWith("2026-12-")) {
+    await getKitchenEventChecklist(normalizedEventId, { storage });
   }
   let expectedRevision: number | null;
   if (options.expectedRevision === undefined) {

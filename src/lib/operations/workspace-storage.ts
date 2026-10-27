@@ -7,6 +7,7 @@ import type { EventPlan } from "@/lib/event-plans/types";
 import { rollingEventPlanHorizon } from "@/lib/event-plans/horizon";
 import { findVipPrepReservationByEventId, VipPrepApiError, vipPrepEventPlan, vipPrepExternalId } from "@/lib/vip-prep/client";
 import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
+import { isDecemberOwnerHoldReservation } from "@/lib/vip-prep/owner-holds";
 import { getFloorPlanStorage, type FloorPlanStorage } from "@/lib/floor-plans/storage";
 import { floorPlanEventSourceIds } from "@/lib/floor-plans/identity";
 import { itineraryIdentityScope } from "@/lib/itineraries/entertainment";
@@ -79,6 +80,7 @@ export async function loadEventWorkspace(requestedEventId: string, date: string 
     cancelled = /^(?:cancelled|canceled)$/i.test(reservation.status);
   }
   if (!event) return null;
+  if (reservation && isDecemberOwnerHoldReservation(reservation)) return null;
   if (date && event.date !== date) return null;
   const [storedRecord, admin] = await Promise.all([getRecord(id), getRecord(ADMIN_STATE_EVENT_ID)]);
   if (canonicalVip && storedRecord && !row && !unsafeRecordIdentity) {

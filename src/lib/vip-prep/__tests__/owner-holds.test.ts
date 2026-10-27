@@ -31,17 +31,22 @@ describe("December internal VIP planning holds", () => {
     ]) expect(isDecemberOwnerHoldVip({ ...evidence, ...protectedEvidence })).toBe(false);
   });
 
-  it("changes only entertainment planning, not active VIP or Kitchen conversion", () => {
+  it("hides staff projections without changing raw active-source membership", () => {
     const booking = { ...structuredClone(vipPrepPayload.reservations[0]), operatingDate: evidence.operatingDate,
       eventName: evidence.eventName, foodPrep: [], extras: [], linkedTripleseatEventIds: [],
       startAt: "2026-12-02T22:00:00Z", endAt: "2026-12-03T00:00:00Z" };
     expect(isActiveVipPrepReservation(booking)).toBe(true);
-    expect(vipPrepKitchenEvents([booking])).toHaveLength(1);
+    expect(vipPrepKitchenEvents([booking])).toEqual([]);
     expect(vipPrepEntertainmentEvents([booking])).toEqual([]);
     expect(vipPrepEntertainmentEvents([{ ...booking, eventName: "Redacted customer VIP", partySize: 1 }])).toHaveLength(1);
     expect(vipPrepEntertainmentEvents([{ ...booking, foodPrep: vipPrepPayload.reservations[0].foodPrep }])).toHaveLength(1);
     expect(vipPrepEntertainmentEvents([{ ...booking, extras: ["Purchased extra"] }])).toHaveLength(1);
     expect(vipPrepEntertainmentEvents([{ ...booking, linkedTripleseatEventIds: ["corporate-source"] }])).toHaveLength(1);
     expect(vipPrepEntertainmentEvents([{ ...booking, operatingDate: "2026-11-30" }])).toHaveLength(1);
+    expect(vipPrepKitchenEvents([{ ...booking, operatingDate: "2026-11-30" }])).toHaveLength(1);
+    expect(vipPrepKitchenEvents([{ ...booking, operatingDate: "2027-01-01" }])).toHaveLength(1);
+    expect(vipPrepKitchenEvents([{ ...booking, foodPrep: vipPrepPayload.reservations[0].foodPrep }])).toHaveLength(1);
+    expect(vipPrepKitchenEvents([{ ...booking, extras: ["Purchased extra"] }])).toHaveLength(1);
+    expect(vipPrepKitchenEvents([{ ...booking, linkedTripleseatEventIds: ["corporate-source"] }])).toHaveLength(1);
   });
 });

@@ -9,7 +9,7 @@ export function isDecemberOwnerHoldFloorPlanEvent(event: FloorPlanEvent, date: s
       ...(event.source.onParBooking?.linkedTripleseatEventIds ?? []),
       ...(event.source.sourceEventIds ?? []), ...(event.source.verifiedSourceEventIds ?? []),
     ].filter((id) => !id.startsWith("vip-")),
-    foodCount: event.source.food.length, extraCount: event.source.entertainment.length,
+    foodCount: event.source.food.length, extraCount: event.source.vipExtraCount ?? event.source.entertainment.length,
   });
 }
 
@@ -27,4 +27,12 @@ export function withoutDecemberOwnerHoldFloorPlanEvents(plan: FloorPlanDocument)
   return { ...plan, events: plan.events.filter((event) => !removedIds.has(event.id)),
     reservations: plan.reservations.filter((row) => !removedIds.has(row.floorPlanEventId)),
     status: floorPlanStatusAfterSourceChange(plan.status, true) };
+}
+
+/** Display only: internal December placeholders are hidden even when staff protected them. */
+export function projectDecemberOwnerHoldFloorPlanVisibility<T extends FloorPlanDocument>(plan: T): T {
+  const hiddenIds = new Set(plan.events.filter((event) => isDecemberOwnerHoldFloorPlanEvent(event, plan.eventDate)).map((event) => event.id));
+  if (!hiddenIds.size) return plan;
+  return { ...plan, events: plan.events.filter((event) => !hiddenIds.has(event.id)),
+    reservations: plan.reservations.filter((row) => !hiddenIds.has(row.floorPlanEventId)) };
 }

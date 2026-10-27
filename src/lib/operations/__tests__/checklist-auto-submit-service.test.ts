@@ -205,6 +205,60 @@ describe("automatic checklist Admin closeout", () => {
     expect(arrival).not.toHaveBeenCalled(); expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it("skips December internal holds without creating or changing an existing checklist", async () => {
+    const deps = await setup();
+    const reservation = { ...vipPrepPayload.reservations[0], operatingDate: "2026-12-02", eventName: "VIP unavailable VIP", foodPrep: [], extras: [],
+      startAt: "2026-12-02T22:00:00Z", endAt: "2026-12-03T01:00:00Z" };
+    const id = numericVipEventId(vipPrepExternalId(reservation));
+    const saved = await saveChecklist({ action: "save", eventId: id, eventName: reservation.eventName, eventDate: reservation.operatingDate,
+      checklist: { ...blank, extrasAdded: "Preserve historic evidence" }, expectedUpdatedAt: null });
+    deps.vipClient.fetchRange.mockImplementation(async (from, to) => ({ ...vipPrepPayload, from, to, reservations: [reservation], reservationCount: 1 }));
+    const getRecord = vi.fn(getChecklistRecord);
+    const result = await autoSubmitChecklists({ ...deps, getRecord, now: new Date("2026-12-03T02:00:00Z"),
+      env: { ...ENV, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "2026-12-01T00:00:00Z" } });
+    expect(result).toMatchObject({ considered: 1, submitted: 0, skipped: 1 });
+    expect(getRecord).not.toHaveBeenCalled();
+    expect(deps.saveRecord).not.toHaveBeenCalled();
+    expect(await getChecklistRecord(id)).toEqual(saved);
+  });
+
+  it("revalidates an internal-hold rename before automatic submission", async () => {
+    const deps = await setup();
+    const reservation = { ...vipPrepPayload.reservations[0], operatingDate: "2026-12-02", foodPrep: [], extras: [],
+      startAt: "2026-12-02T22:00:00Z", endAt: "2026-12-03T01:00:00Z" };
+    let reads = 0;
+    deps.vipClient.fetchRange.mockImplementation(async (from, to) => ({ ...vipPrepPayload, from, to, reservationCount: 1,
+      reservations: [reads++ === 0 ? reservation : { ...reservation, eventName: "Owner hold VIP" }] }));
+    const result = await autoSubmitChecklists({ ...deps, now: new Date("2026-12-03T02:00:00Z"),
+      env: { ...ENV, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "2026-12-01T00:00:00Z" } });
+    expect(result).toMatchObject({ considered: 1, submitted: 0, skipped: 1 });
+    expect(deps.vipClient.fetchRange).toHaveBeenCalledTimes(2);
+    expect(deps.saveRecord).not.toHaveBeenCalled();
+  });
+
+  it("keeps hidden holds in raw ownership counts before automatic submission", async () => {
+    const deps = await setup();
+    const reservations = ["test-h4l720-hfbtsa", "test-1k212gj-1rfricb"].map((id, index) => ({ ...vipPrepPayload.reservations[0], id,
+      eventName: index === 0 ? "Owner hold VIP" : "Customer party", foodPrep: [], extras: [], operatingDate: "2026-12-02",
+      startAt: "2026-12-02T22:00:00Z", endAt: "2026-12-03T01:00:00Z" }));
+    deps.vipClient.fetchRange.mockImplementation(async (from, to) => ({ ...vipPrepPayload, from, to, reservations, reservationCount: 2 }));
+    const result = await autoSubmitChecklists({ ...deps, now: new Date("2026-12-03T02:00:00Z"),
+      env: { ...ENV, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "2026-12-01T00:00:00Z" } });
+    expect(result).toMatchObject({ considered: 2, submitted: 0, skipped: 2 });
+    expect(deps.saveRecord).not.toHaveBeenCalled();
+  });
+
+  it("preserves automatic submission for same-label December customer bookings with food", async () => {
+    const deps = await setup();
+    const reservation = { ...vipPrepPayload.reservations[0], operatingDate: "2026-12-02", eventName: "Owner hold VIP",
+      startAt: "2026-12-02T22:00:00Z", endAt: "2026-12-03T01:00:00Z" };
+    deps.vipClient.fetchRange.mockImplementation(async (from, to) => ({ ...vipPrepPayload, from, to, reservations: [reservation], reservationCount: 1 }));
+    const result = await autoSubmitChecklists({ ...deps, now: new Date("2026-12-03T02:00:00Z"),
+      env: { ...ENV, CHECKLIST_AUTO_SUBMIT_ACTIVATED_AT: "2026-12-01T00:00:00Z" } });
+    expect(result.submitted).toBe(1);
+    expect(deps.saveRecord).toHaveBeenCalledTimes(1);
+  });
+
   it("does not repeatedly re-read each already-submitted VIP after the source range is loaded", async () => {
     const deps = await setup(); await deps.plans.replaceWindow({ startDate: DATE, endDate: DATE }, []);
     const reservation = { ...vipPrepPayload.reservations[0], operatingDate: DATE, startAt: "2026-10-27T22:00:00Z", endAt: "2026-10-28T01:00:00Z" };

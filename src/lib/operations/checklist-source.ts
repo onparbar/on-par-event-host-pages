@@ -4,6 +4,7 @@ import { rollingEventPlanHorizon } from "@/lib/event-plans/horizon";
 import { findEventPlanById } from "@/lib/event-plans/sync";
 import { findVipPrepReservationByEventId, vipPrepEventPlan, vipPrepExternalId, VipPrepApiError, VipPrepClient } from "@/lib/vip-prep/client";
 import { numericVipEventId } from "@/lib/vip-prep/identity";
+import { isDecemberOwnerHoldReservation } from "@/lib/vip-prep/owner-holds";
 import { readAutomaticSubmission } from "./checklist-auto-submission";
 
 export class ChecklistSourceError extends Error {
@@ -52,6 +53,7 @@ export async function resolveChecklistSource(input: { eventId: number; sourceEve
   if (reservation && numericVipEventId(vipPrepExternalId(reservation)) !== input.eventId) throw new ChecklistSourceError("The source reservation does not match this numeric checklist identity.", 409);
   if (!canonicalVip && corporate && reservation) throw new ChecklistSourceError("This legacy numeric checklist identity matches corporate and VIP sources. No party was selected automatically; Admin must review ownership.", 409);
   if (canonicalVip && reservation && vipPrepExternalId(reservation) !== sourceId) throw new ChecklistSourceError("The source VIP identity could not be verified.", 409);
+  if (reservation && isDecemberOwnerHoldReservation(reservation)) throw new ChecklistSourceError("This December internal VIP block is not a staff event. No checklist changes were saved.", 400);
   const plan = canonicalVip ? reservation ? vipPrepEventPlan(reservation) : null : corporate ?? (reservation ? vipPrepEventPlan(reservation) : null);
   if (!plan) throw new ChecklistSourceError("Unknown or inactive event. Refresh the source before saving.", 400);
   const sourceProof = stored ? readAutomaticSubmission(stored) : null;

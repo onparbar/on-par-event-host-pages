@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildEntertainmentSchedule } from "../domain";
-import { getEntertainmentDay, syncEntertainmentDay } from "../sync";
+import { createManualEntertainmentReservation, EntertainmentConflictError, getEntertainmentDay, syncEntertainmentDay, updateEntertainmentReservation } from "../sync";
 import { MemoryEntertainmentStorage } from "../storage";
 import type { EntertainmentSourceEvent } from "../types";
 import type { TripleseatAdapter } from "@/lib/kitchen/tripleseat";
@@ -49,7 +49,7 @@ describe("December owner holds in entertainment planning", () => {
     }
   });
 
-  it("keeps real same-size VIPs, similar names and explicit manual hold overrides", async () => {
+  it("keeps real same-size VIPs and similar names, but hides manual placeholder overrides without changing them", async () => {
     for (const name of ["Redacted customer VIP", "Owner hold VIP party", "VIP unavailable guest party"]) {
       const storage = await cached(legacySource(name));
       const day = await getEntertainmentDay(DATE, { storage, adapter: adapter(), localEvents: [], vipPrepClient: unavailable, floorPlanStorage: noFloorPlan, readOnly: true });
@@ -59,8 +59,7 @@ describe("December owner holds in entertainment planning", () => {
     const before = await storage.getDay(DATE);
     const day = await getEntertainmentDay(DATE, { storage, adapter: adapter(), localEvents: [],
       vipPrepClient: { configured: true, fetchRange: async () => payload() }, floorPlanStorage: noFloorPlan, readOnly: true });
-    expect(day.events).toHaveLength(1); expect(day.reservations).toHaveLength(1);
-    expect(day.reservations[0]).toMatchObject({ active: true, manualOverride: true });
+    expect(day.events).toEqual([]); expect(day.reservations).toEqual([]); expect(day.conflicts).toEqual([]);
     expect(await storage.getDay(DATE)).toEqual(before);
   });
 
@@ -86,6 +85,43 @@ describe("December owner holds in entertainment planning", () => {
     expect(after.events.find((row) => row.eventId === before.events[0].eventId)).toEqual(before.events[0]);
     expect(after.reservations.find((row) => row.id === before.reservations[0].id)).toEqual(before.reservations[0]);
     expect(await storage.getAudit(before.reservations[0].id)).toEqual([]);
+  });
+
+  it("allocates a corporate VIP through a cached manual December placeholder without changing its row or audit", async () => {
+    const storage = await cached(legacySource(), true);
+    const before = await storage.getDay(DATE);
+    const corporate = { ...legacySource("Redacted corporate event"), tripleseatEventId: "corporate-source", sourceSystem: "tripleseat" as const };
+    const result = await syncEntertainmentDay(DATE, { storage, adapter: adapter([corporate]), localEvents: [],
+      vipPrepClient: { configured: true, fetchRange: async () => payload() }, floorPlanStorage: noFloorPlan });
+    expect(result.reservations).toContainEqual(expect.objectContaining({ tripleseatEventId: "corporate-source", resourceId: "private-room-vip-1", needsReview: false }));
+    expect(result.conflicts).toEqual([]); expect(result.sync?.conflictsFound).toBe(0);
+    expect((await storage.getDay(DATE)).reservations.find((row) => row.id === before.reservations[0].id)).toEqual(before.reservations[0]);
+    expect(await storage.getAudit(before.reservations[0].id)).toEqual([]);
+  });
+
+  it("allows manual corporate VIP create and update through an internal December hold without changing its history", async () => {
+    const storage = await cached(legacySource(), true); const before = await storage.getDay(DATE);
+    const input = { operatingDate: DATE, eventId: "redacted-corporate", eventName: "Redacted corporate event", resourceId: "private-room-vip-1",
+      startAt: `${DATE}T22:00:00Z`, endAt: "2026-12-03T00:00:00Z", eventColor: "#0033FF", reason: "Contracted VIP assignment" };
+    const created = await createManualEntertainmentReservation(input, { storage });
+    await updateEntertainmentReservation(created.id, { ...input, endAt: `${DATE}T23:30:00Z` }, { storage });
+    expect((await storage.getDay(DATE)).reservations.find((row) => row.id === before.reservations[0].id)).toEqual(before.reservations[0]);
+    expect(await storage.getAudit(before.reservations[0].id)).toEqual([]);
+  });
+
+  it("still rejects manual VIP conflicts with genuine customers and non-December internal holds", async () => {
+    for (const original of [legacySource("Redacted genuine VIP"),
+      { ...legacySource(), vipFoodCount: 1 }, { ...legacySource(), vipExtraCount: 1 },
+      { ...legacySource(), linkedTripleseatEventIds: ["redacted-linked-corporate"] },
+      { ...legacySource(), localDate: "2026-11-30" },
+    ]) {
+      const source = { ...original };
+      const date = source.localDate;
+      source.localDate = date; source.eventStartAt = `${date}T22:00:00Z`; source.eventEndAt = `${date}T23:00:00Z`;
+      const storage = await cached(source, true);
+      await expect(createManualEntertainmentReservation({ operatingDate: date, eventId: "redacted-corporate", eventName: "Redacted corporate event", resourceId: "private-room-vip-1",
+        startAt: `${date}T22:00:00Z`, endAt: `${date}T23:00:00Z`, eventColor: "#0033FF" }, { storage })).rejects.toBeInstanceOf(EntertainmentConflictError);
+    }
   });
 
   it("uses new genuine booking evidence instead of an old cached hold classification", async () => {
@@ -119,8 +155,9 @@ describe("December owner holds in entertainment planning", () => {
     const before = await storage.getDay(DATE);
     const day = await syncEntertainmentDay(DATE, { storage, adapter: adapter(), localEvents: [],
       vipPrepClient: { configured: true, fetchRange: async () => payload() }, floorPlanStorage: noFloorPlan });
-    expect(day.reservations).toEqual(before.reservations);
-    expect((await storage.getDay(DATE)).events).toEqual(before.events);
+    expect(day.events).toEqual([]); expect(day.reservations).toEqual([]);
+    const after = await storage.getDay(DATE);
+    expect(after.events).toEqual(before.events); expect(after.reservations).toEqual(before.reservations);
     expect(await storage.getAudit(before.reservations[0].id)).toEqual([]);
   });
 

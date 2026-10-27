@@ -5,15 +5,17 @@ import { listChecklistRecords } from "@/lib/checklist-storage";
 import { numericVipEventId, vipPrepExternalId } from "@/lib/vip-prep/identity";
 import type { EventPlan } from "@/lib/event-plans/types";
 import { isActiveVipPrepReservation, VipPrepClient, vipPrepEventPlan, type VipPrepReservation } from "@/lib/vip-prep/client";
+import { isDecemberOwnerHoldReservation } from "@/lib/vip-prep/owner-holds";
 
 /** A party name or source link alone cannot establish equivalent purchased items. */
 export function mergeVipStaffEventPlans(plans: readonly EventPlan[], reservations: readonly VipPrepReservation[], sourceSyncedAt?: string) {
   const additions = reservations.filter(isActiveVipPrepReservation).map((reservation) => ({ ...vipPrepEventPlan(reservation), ...(reservation.lastRefreshedAt || sourceSyncedAt ? { synced_at: reservation.lastRefreshedAt || sourceSyncedAt } : {}) }));
   const combined = [...plans, ...additions];
+  const hiddenIds = new Set(reservations.filter((reservation) => isActiveVipPrepReservation(reservation) && isDecemberOwnerHoldReservation(reservation)).map(vipPrepExternalId));
   const counts = new Map<number, number>();
   for (const plan of combined) counts.set(plan.id, (counts.get(plan.id) ?? 0) + 1);
   // Numeric checklist persistence cannot safely choose an owner on a collision.
-  return combined.filter((plan) => counts.get(plan.id) === 1).sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time) || left.name.localeCompare(right.name));
+  return combined.filter((plan) => counts.get(plan.id) === 1 && !hiddenIds.has(plan.source_event_id ?? "")).sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time) || left.name.localeCompare(right.name));
 }
 
 /** Read-only event selection feed. Never syncs sources, checks in guests, or releases kitchen food. */
@@ -71,7 +73,8 @@ export async function loadStaffEventPlans(date: string, options: {
     ...merged.filter((plan) => plan.date >= startDate),
     ...merged.filter((plan) => plan.date < startDate).sort((left, right) => right.date.localeCompare(left.date)),
   ];
-  const collisionWarning = plans.length < corporate.length + reservations.filter(isActiveVipPrepReservation).length
+  const rawIds = [...corporate.map((plan) => plan.id), ...reservations.filter(isActiveVipPrepReservation).map((reservation) => numericVipEventId(vipPrepExternalId(reservation)))];
+  const collisionWarning = new Set(rawIds).size < rawIds.length
     ? "Some event selectors are unavailable because legacy numeric event IDs collide. No parties were merged. Open Floor Plans, Kitchen, or VIP CHECK-IN using the exact date and source reservation ID; the exact VIP workspace remains read-only until numeric checklist ownership is reconciled." : "";
   const unfinishedEventIds = plans.filter((plan) => unfinished.records.some((record) => record.status === "draft" && record.eventId === plan.id && record.eventDate === plan.date)).map((plan) => plan.id);
   return { ...window, plans, unfinishedEventIds, sourceWarning: [...new Set([vip.warning, unfinished.warning, ...recoveryWarnings, collisionWarning].filter(Boolean))].join(" ") };

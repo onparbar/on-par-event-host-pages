@@ -21,6 +21,7 @@ import {
   type VipPrepExtra,
 } from "@/lib/vip-prep/client";
 import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
+import { isDecemberOwnerHoldReservation } from "@/lib/vip-prep/owner-holds";
 import { vipInitialFoodSnapshot, vipReleaseFingerprint } from "./release-snapshot";
 
 export type VipFoodStatus =
@@ -187,7 +188,7 @@ export async function listVipCheckinDay(date: string, options: CheckinDependenci
   const priorBookings = source.reservations.length ? await cachedBookings() : [];
   const food = (items: VipPrepReservation["foodPrep"]) => items.map(({ code, label, quantity }) => ({ code, label, quantity }));
   const facts = (items: Array<{ code: string; label: string; quantity: number }>) => JSON.stringify(items.map((item) => JSON.stringify(item)).sort());
-  const reservations = source.reservations.filter(isActiveVipPrepReservation).map((reservation) => {
+  const reservations = source.reservations.filter((reservation) => isActiveVipPrepReservation(reservation) && !isDecemberOwnerHoldReservation(reservation)).map((reservation) => {
     if (checkinById.has(reservation.id) || source.sourceError) return reservation;
     const prior = priorBookings.find((booking) => booking.id === reservation.id);
     if (!prior) return reservation;
@@ -231,6 +232,9 @@ export async function confirmVipArrival(
     .find((item) => item.id === reservationId);
   if (!reservation || !["confirmed", "checked_in"].includes(reservation.status)) {
     throw new Error("This VIP reservation is no longer active. No food was sent.");
+  }
+  if (isDecemberOwnerHoldReservation(reservation)) {
+    throw new Error("This internal December VIP hold is not a guest reservation. No check-in was recorded or food sent.");
   }
 
   const eventId = vipPrepExternalId(reservation);

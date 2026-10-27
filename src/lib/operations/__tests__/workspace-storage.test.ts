@@ -61,6 +61,28 @@ describe("read-only event workspace storage", () => {
     expect(deps.findVip).toHaveBeenNthCalledWith(1, externalId, reservation.operatingDate, reservation.operatingDate);
     expect(deps.findVip).toHaveBeenNthCalledWith(2, numericVipEventId(externalId), reservation.operatingDate, reservation.operatingDate);
   });
+  it.each(["vip", "numeric"])("hides a December internal hold from direct %s workspace reads and saves without changing history", async (selection) => {
+    const deps = await options();
+    const hold = { ...vipPrepPayload.reservations[0], operatingDate: "2026-12-02", eventName: "Owner hold VIP", foodPrep: [], extras: [] };
+    deps.findVip.mockResolvedValue(hold);
+    const externalId = vipPrepExternalId(hold);
+    const id = numericVipEventId(externalId);
+    const selected = selection === "vip" ? externalId : String(id);
+    const getRecord = vi.fn(deps.getRecord);
+    const saveRecord = vi.fn(deps.saveRecord);
+    const dependencies = { ...deps, getRecord, saveRecord };
+    expect(await loadEventWorkspace(selected, hold.operatingDate, dependencies)).toBeNull();
+    expect(await saveAction(selected, hold.operatingDate, { action: "FOOD_OUT", expectedUpdatedAt: null }, dependencies)).toBeNull();
+    expect(getRecord).not.toHaveBeenCalled();
+    expect(saveRecord).not.toHaveBeenCalled();
+    expect(deps.entertainment.getDay).not.toHaveBeenCalled();
+  });
+  it.each(["2026-11-02", "2027-12-02"])("keeps same-label workspace bookings outside December 2026 visible: %s", async (operatingDate) => {
+    const deps = await options();
+    const booking = { ...vipPrepPayload.reservations[0], operatingDate, eventName: "VIP unavailable", foodPrep: [], extras: [] };
+    deps.findVip.mockResolvedValue(booking);
+    expect((await loadEventWorkspace(vipPrepExternalId(booking), operatingDate, deps))?.event.name).toContain("VIP unavailable");
+  });
   it("resolves each canonical VIP despite a hash collision without attaching or saving shared numeric staff state", async () => {
     const deps = await options();
     const reservations = ["test-h4l720-hfbtsa", "test-1k212gj-1rfricb"].map((id, index) => ({ ...vipPrepPayload.reservations[0], id, eventName: `Sanitized VIP ${index + 1}` }));

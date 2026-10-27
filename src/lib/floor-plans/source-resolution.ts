@@ -141,6 +141,9 @@ function mergeOnParGroup(
   const sourceEventIds = uniqueStrings(
     allRows.map((row) => row.sourceEventId),
   );
+  const extraCounts = orderedOnPar.map((row) => row.source?.vipExtraCount).filter((count): count is number => typeof count === "number");
+  const vipExtraCount = extraCounts.length === orderedOnPar.length || extraCounts.some((count) => count > 0)
+    ? extraCounts.reduce((total, count) => total + count, 0) : undefined;
 
   return {
     plan: {
@@ -181,6 +184,7 @@ function mergeOnParGroup(
     },
     source: {
       ...(primary.source ?? {}),
+      vipExtraCount,
       rooms: uniqueStrings([...tripleseatRooms, ...onParRooms]),
       sourceSystem: "vip-prep",
       sourceEventIds,

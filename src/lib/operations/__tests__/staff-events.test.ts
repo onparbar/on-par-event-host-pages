@@ -37,6 +37,38 @@ describe("read-only staff event feed", () => {
     expect(merged[0].source_event_id).toBe(vipPrepExternalId(reservation));
     expect(merged[0].food).toEqual([]);
   });
+  it("hides only exact December 2026 internal holds while preserving customer evidence and corporate events", async () => {
+    const hold = { ...reservation, id: "internal-hold", operatingDate: "2026-12-02", eventName: "VIP unavailable VIP", foodPrep: [], extras: [] };
+    const retained = [
+      { ...hold, id: "similar-name", eventName: "VIP unavailable birthday" },
+      { ...hold, id: "november", operatingDate: "2026-11-02" },
+      { ...hold, id: "next-december", operatingDate: "2027-12-02" },
+      { ...hold, id: "food", foodPrep: reservation.foodPrep },
+      { ...hold, id: "extras", extras: [{ code: "mini-golf", quantity: 2 }] },
+      { ...hold, id: "linked", linkedTripleseatEventIds: [String(plan.id)] },
+    ];
+    const corporate = { ...plan, date: hold.operatingDate, name: "Owner hold VIP" };
+    const before = structuredClone([hold, ...retained]);
+    const merged = mergeVipStaffEventPlans([corporate], [hold, ...retained]);
+    expect(merged.map((item) => item.source_event_id).filter(Boolean).sort()).toEqual(retained.map(vipPrepExternalId).sort());
+    expect(merged).toContain(corporate);
+    expect([hold, ...retained]).toEqual(before);
+    const result = await loadStaffEventPlans(hold.operatingDate, { exactDate: true,
+      loadPlans: vi.fn().mockResolvedValue({ plans: [], sync: null }),
+      vipClient: { configured: true, fetchRange: vi.fn().mockResolvedValue({ ...vipPrepPayload, reservations: [hold] }) } });
+    expect(result.plans).toEqual([]);
+    expect(result.sourceWarning).toBe("");
+  });
+  it("retains hidden internal holds in raw numeric collision checks", async () => {
+    const holds = ["test-h4l720-hfbtsa", "test-1k212gj-1rfricb"].map((id, index) => ({ ...reservation, id,
+      operatingDate: "2026-12-02", eventName: index === 0 ? "Owner hold VIP" : "Customer party", foodPrep: [], extras: [] }));
+    expect(mergeVipStaffEventPlans([], holds)).toEqual([]);
+    const result = await loadStaffEventPlans("2026-12-02", { exactDate: true,
+      loadPlans: vi.fn().mockResolvedValue({ plans: [], sync: null }),
+      vipClient: { configured: true, fetchRange: vi.fn().mockResolvedValue({ ...vipPrepPayload, reservations: holds }) } });
+    expect(result.plans).toEqual([]);
+    expect(result.sourceWarning).toContain("legacy numeric event IDs collide");
+  });
   it("fails closed for colliding numeric selectors instead of coalescing parties or attaching another source's staff record", async () => {
     const reservations = ["test-h4l720-hfbtsa", "test-1k212gj-1rfricb"].map((id) => ({ ...reservation, id }));
     expect(mergeVipStaffEventPlans([], reservations)).toEqual([]);
@@ -139,5 +171,19 @@ describe("read-only staff event feed", () => {
     const failed = await loadStaffEventPlans("2026-10-26", options);
     expect(failed.plans).toEqual([]); expect(failed.sourceWarning).toContain("No different party was substituted");
     expect(failed.sourceWarning).not.toContain("Private source diagnostic");
+  });
+  it("does not recover an internal December hold into the staff unfinished-checklist list", async () => {
+    const hold = { ...reservation, operatingDate: "2026-12-02", eventName: "Owner hold VIP", foodPrep: [], extras: [] };
+    const id = numericVipEventId(vipPrepExternalId(hold));
+    const record = { ...defaultChecklistState(hold.operatingDate), eventId: id, eventName: hold.eventName,
+      eventDate: hold.operatingDate, status: "draft", updatedAt: null, submittedAt: null } as ChecklistRecord;
+    const result = await loadStaffEventPlans("2027-01-02", { includeUnsubmitted: true,
+      loadPlans: vi.fn().mockResolvedValue({ plans: [], sync: null }), findPlan: vi.fn().mockResolvedValue(null),
+      loadChecklists: vi.fn().mockResolvedValue([record]), vipClient: { configured: true,
+        fetchRange: vi.fn(async (from) => ({ ...vipPrepPayload, reservations: from === hold.operatingDate ? [hold] : [] })) } });
+    expect(result.plans).toEqual([]);
+    expect(result.unfinishedEventIds).toEqual([]);
+    expect(result.sourceWarning).toBe("");
+    expect(record.status).toBe("draft");
   });
 });

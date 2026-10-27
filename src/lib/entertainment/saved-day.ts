@@ -2,10 +2,11 @@ import { detectEntertainmentConflicts } from "./domain";
 import { getEntertainmentStorage, type EntertainmentStorage } from "./storage";
 import { getTripleseatAdapter } from "@/lib/kitchen/tripleseat";
 import type { EntertainmentDayPayload } from "./types";
+import { projectDecemberOwnerHoldEntertainmentVisibility } from "./owner-holds";
 
 /** Projection only: opening an itinerary must not sync or create reservations. */
 export async function readSavedEntertainmentDay(date: string, storage: Pick<EntertainmentStorage, "getDay"> = getEntertainmentStorage()): Promise<EntertainmentDayPayload> {
-  const stored = await storage.getDay(date);
+  const stored = projectDecemberOwnerHoldEntertainmentVisibility(await storage.getDay(date));
   return {
     ...stored,
     conflicts: detectEntertainmentConflicts(stored.reservations),

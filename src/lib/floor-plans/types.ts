@@ -61,6 +61,7 @@ export type FloorPlanEventSource = {
     linkedTripleseatEventIds: string[];
   };
   onParBookingAreaIds?: string[];
+  vipExtraCount?: number;
   food: string[];
   entertainment: Array<{
     name: string;

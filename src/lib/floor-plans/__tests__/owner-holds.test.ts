@@ -5,8 +5,8 @@ import { createMemoryKitchenStorage, setKitchenStorageForTests } from "@/lib/kit
 import { setTripleseatAdapterForTests } from "@/lib/kitchen/tripleseat";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
 import type { VipPrepPayload } from "@/lib/vip-prep/types";
-import { isDecemberOwnerHoldFloorPlanEvent, withoutDecemberOwnerHoldFloorPlanEvents } from "../owner-holds";
-import { getFloorPlanDay, loadLiveFloorPlanPublicationWindow } from "../service";
+import { isDecemberOwnerHoldFloorPlanEvent, projectDecemberOwnerHoldFloorPlanVisibility, withoutDecemberOwnerHoldFloorPlanEvents } from "../owner-holds";
+import { approveFloorPlan, generateFloorPlan, getFloorPlanDay, loadLiveFloorPlanPublicationWindow, saveFloorPlanEdits, validateAndSaveFloorPlan } from "../service";
 import { MemoryFloorPlanStorage } from "../storage";
 import { FLOOR_PLAN_RULE_VERSION, type FloorPlanDocument, type FloorPlanReservation } from "../types";
 
@@ -79,6 +79,7 @@ describe("December internal VIP hold floor-plan policy", () => {
       { ...hold, name: "Owner hold VIP celebration" },
       { ...hold, source: { ...hold.source, food: ["1 × Wing Platter"] } },
       { ...hold, source: { ...hold.source, entertainment: [{ name: "Mini Golf", quantity: "10", time: "", duration: "" }] } },
+      { ...hold, source: { ...hold.source, vipExtraCount: 1 } },
     ];
     expect(protectedEvents.map((event) => isDecemberOwnerHoldFloorPlanEvent(event, DATE))).toEqual(protectedEvents.map(() => false));
   });
@@ -110,16 +111,116 @@ describe("December internal VIP hold floor-plan policy", () => {
     expect(save).not.toHaveBeenCalled(); expect(saveEvidence).not.toHaveBeenCalled();
   });
 
-  it("preserves an explicit saved staff assignment even when the live feed still calls it an internal hold", async () => {
+  it("hides a protected internal hold while preserving its saved assignment and history", async () => {
     sources(); const storage = new MemoryFloorPlanStorage(); const plan = document(); plan.reservations[0].lockedByUser = true;
-    await storage.save(plan, "Staff locked a room assignment.");
+    const saved = await storage.save(plan, "Staff locked a room assignment.");
+    const save = vi.spyOn(storage, "save");
     const day = await getFloorPlanDay(DATE, storage, { readOnly: true, vipPrepClient: { configured: true, fetchRange: async () => bookings() } });
+    expect(day.plan.events.map((event) => event.tripleseatEventId)).toEqual(["vip-redacted-customer"]);
+    expect(day.plan.reservations.map((row) => row.areaId)).toEqual(["vip-2"]);
+    expect(await storage.get(DATE)).toEqual(saved);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each<Partial<FloorPlanReservation>>([{ source: "manual" }, { lockedByUser: true }, { placementOverride: true }, { timingSource: "staff-override" }])("hides protected placeholders only in the read projection %j", (protection) => {
+    const plan = document(); plan.reservations[0] = { ...plan.reservations[0], ...protection };
+    const before = structuredClone(plan);
+    expect(withoutDecemberOwnerHoldFloorPlanEvents(plan)).toBe(plan);
+    const visible = projectDecemberOwnerHoldFloorPlanVisibility(plan);
+    expect(visible.events.map((event) => event.tripleseatEventId)).toEqual(["vip-redacted-customer"]);
+    expect(visible.reservations).toEqual([plan.reservations[1]]);
+    expect(plan).toEqual(before);
+  });
+
+  it.each(["2026-11-30", "2027-01-01", "2027-12-02"])("does not project away staff holds outside December 2026: %s", (date) => {
+    const plan = document(date); plan.reservations[0].source = "manual";
+    expect(projectDecemberOwnerHoldFloorPlanVisibility(plan)).toBe(plan);
+  });
+
+  it("prefers fresh genuine booking evidence over an old protected hold with the same identity", async () => {
+    sources(); const storage = new MemoryFloorPlanStorage(); const plan = document(); plan.reservations[0].source = "manual";
+    const before = await storage.save(plan, "Seed cached internal label.");
+    const live = bookings(); live.reservations[0].eventName = "Redacted genuine booking";
+    const day = await getFloorPlanDay(DATE, storage, { readOnly: true, vipPrepClient: { configured: true, fetchRange: async () => live } });
     expect(day.plan.events).toHaveLength(2);
-    expect(day.plan.reservations).toContainEqual(expect.objectContaining({ areaId: "vip-1", lockedByUser: true }));
+    expect(day.plan.events.find((event) => event.tripleseatEventId === "vip-redacted-hold")?.name).toBe("Redacted genuine booking");
+    expect(day.plan.reservations).toContainEqual(expect.objectContaining({ areaId: "vip-1", source: "manual" }));
+    expect(await storage.get(DATE)).toEqual(before);
+  });
+
+  it("recomputes visible conflicts without a cached manual placeholder during an outage", async () => {
+    sources(); const storage = new MemoryFloorPlanStorage(); const plan = document();
+    plan.reservations[0] = { ...plan.reservations[0], source: "manual", areaId: "vip-2" };
+    const before = await storage.save(plan, "Seed overlapping internal room hold.");
+    const day = await getFloorPlanDay(DATE, storage, { readOnly: true, vipPrepClient: { configured: false, fetchRange: vi.fn() } });
+    expect(day.floorPlanConflicts).toEqual([]);
+    expect(day.plan.events).toHaveLength(1);
+    expect(await storage.get(DATE)).toEqual(before);
+  });
+
+  it("does not delete hidden staff assignments on a visible editor save, validation or approval", async () => {
+    sources(); const storage = new MemoryFloorPlanStorage(); const plan = document(); plan.reservations[0].source = "manual";
+    const before = await storage.save(plan, "Seed protected internal hold.");
+    const visible = await getFloorPlanDay(DATE, storage);
+    await saveFloorPlanEdits(DATE, visible.plan, storage);
+    await validateAndSaveFloorPlan(DATE, storage);
+    await approveFloorPlan(DATE, true, storage);
+    const after = await storage.get(DATE);
+    expect(after?.events.find((event) => event.id === before.events[0].id)).toEqual(expect.objectContaining({ name: "Owner hold VIP" }));
+    expect(after?.reservations.find((row) => row.id === before.reservations[0].id)).toEqual(before.reservations[0]);
+    expect((await getFloorPlanDay(DATE, storage)).plan.events).toHaveLength(1);
+  });
+
+  it.each<Partial<FloorPlanReservation>>([{ source: "manual" }, { lockedByUser: true }])("allocates the corporate VIP despite a protected December placeholder, retaining the original row and revision history %j", async (protection) => {
+    sources(); const storage = new MemoryFloorPlanStorage(); const plan = document();
+    const corporate = { ...plan.events[1], tripleseatEventId: "93000001", name: "Redacted corporate event", guestCount: 10,
+      contractedAreaIds: ["vip-1"], color: "#0033FF", source: { ...plan.events[1].source, rooms: ["VIP 1"] } };
+    plan.events[1] = corporate;
+    plan.reservations = [{ ...plan.reservations[0], ...protection }];
+    const before = await storage.save(plan, "Seed protected December placeholder and contracted corporate VIP.");
+    const result = await generateFloorPlan(DATE, "fill-missing", storage, undefined, corporate.id);
+    expect(result.plan.events.map((event) => event.name)).toEqual([corporate.name]);
+    expect(result.plan.reservations).toContainEqual(expect.objectContaining({ floorPlanEventId: corporate.id, areaId: "vip-1", reservationType: "room" }));
+    expect(result.floorPlanConflicts).toEqual([]);
+    const after = await storage.get(DATE);
+    expect(after?.reservations.find((row) => row.id === before.reservations[0].id)).toEqual(before.reservations[0]);
+    expect(after?.events.find((event) => event.id === before.events[0].id)).toEqual(before.events[0]);
+    expect((await storage.revisions(before.id))[0].previousValue).toEqual(before);
+  });
+
+  it.each(["2026-11-30", "2027-01-01"])("keeps protected non-December holds unavailable to corporate generation: %s", async (date) => {
+    sources(); const storage = new MemoryFloorPlanStorage(); const plan = document(date);
+    const corporate = { ...plan.events[1], tripleseatEventId: "93000001", name: "Redacted corporate event", guestCount: 10,
+      contractedAreaIds: ["vip-1"], color: "#0033FF", source: { ...plan.events[1].source, rooms: ["VIP 1"] } };
+    plan.events[1] = corporate; plan.reservations = [{ ...plan.reservations[0], source: "manual" }];
+    const before = await storage.save(plan, "Preserved non-December occupancy.");
+    const result = await generateFloorPlan(date, "fill-missing", storage, undefined, corporate.id);
+    expect(result.plan.reservations.some((row) => row.floorPlanEventId === corporate.id && row.areaId === "vip-1")).toBe(false);
+    expect((await storage.get(date))?.reservations).toContainEqual(before.reservations[0]);
+  });
+
+  it("keeps an exact internal label with a purchased non-golf extra visible, cached, and unavailable to another event", async () => {
+    sources(); const storage = new MemoryFloorPlanStorage(); const live = bookings();
+    live.reservations = [live.reservations[0]]; live.reservations[0].extras = [{ code: "purchased-extra", label: "Purchased extra", quantity: 1 }];
+    const before = structuredClone(live);
+    const payload = await getFloorPlanDay(DATE, storage, { readOnly: true, vipPrepClient: { configured: true, fetchRange: async () => live } });
+    expect(payload.plan.events).toHaveLength(1);
+    expect(payload.plan.events[0].source).toMatchObject({ vipExtraCount: 1, entertainment: [] });
+    expect(isDecemberOwnerHoldFloorPlanEvent(payload.plan.events[0], DATE)).toBe(false);
+    expect(live).toEqual(before);
+    const purchased = payload.plan.events[0];
+    const corporate = { ...purchased, id: "corporate-event", tripleseatEventId: "93000001", name: "Redacted corporate event", guestCount: 10, color: "#0033FF",
+      source: { rooms: ["VIP 1"], food: [], entertainment: [], operationalNotes: [], reviewReasons: [] } };
+    const saved = await storage.save({ ...payload.plan, events: [purchased, corporate] }, "Seed purchased customer occupancy.");
+    const result = await generateFloorPlan(DATE, "fill-missing", storage, undefined, corporate.id);
+    expect(result.plan.events.map((event) => event.id)).toContain(purchased.id);
+    expect(result.plan.reservations.some((row) => row.floorPlanEventId === corporate.id && row.areaId === "vip-1")).toBe(false);
+    expect((await storage.get(DATE))?.reservations).toContainEqual(saved.reservations[0]);
   });
 
   it("sanitizes the publication fallback when the detailed day cannot be read", async () => {
-    sources(); const storage = new MemoryFloorPlanStorage(); await storage.save(document(), "Seed saved draft.");
+    sources(); const storage = new MemoryFloorPlanStorage(); const plan = document(); plan.reservations[0].source = "manual";
+    await storage.save(plan, "Seed saved draft.");
     const get = storage.get.bind(storage); let reads = 0;
     vi.spyOn(storage, "get").mockImplementation(async (date) => { if (date === DATE && ++reads > 1) throw new Error("Detailed read unavailable"); return get(date); });
     const publications = await loadLiveFloorPlanPublicationWindow(DATE, storage, DATE, { configured: false, fetchRange: vi.fn() });
