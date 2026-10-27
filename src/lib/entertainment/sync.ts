@@ -25,6 +25,7 @@ import {
   getEntertainmentStorage,
   getMissingEntertainmentEnvironmentVariables,
   type EntertainmentStorage,
+  type StoredEntertainmentDay,
 } from "./storage";
 import {
   isInsideOperatingDay,
@@ -45,6 +46,7 @@ import {
   vipPrepEntertainmentEvents,
 } from "../vip-prep/client";
 import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "../vip-prep/known-inactive";
+import { isDecemberOwnerHoldVip } from "../vip-prep/owner-holds";
 import { getFloorPlanStorage, type FloorPlanStorage } from "../floor-plans/storage";
 import type { FloorPlanEvent } from "../floor-plans/types";
 import { projectDayEventColors } from "../floor-plans/event-colors";
@@ -359,6 +361,48 @@ function isVipEntertainmentReservation(reservation: EntertainmentReservation) {
   );
 }
 
+function isPlanningOwnerHoldEvent(event: EntertainmentEventSnapshot) {
+  return isDecemberOwnerHoldVip({
+    operatingDate: event.operatingDate, eventName: event.eventName, sourceEventId: event.tripleseatEventId,
+    sourceSystem: event.sourceSnapshot.sourceSystem, linkedTripleseatEventIds: event.sourceSnapshot.linkedTripleseatEventIds,
+    foodCount: event.sourceSnapshot.vipFoodCount, extraCount: event.sourceSnapshot.vipExtraCount ?? event.sourceSnapshot.items.length,
+  });
+}
+
+function ownerHoldReservation(reservation: EntertainmentReservation, events: readonly EntertainmentEventSnapshot[]) {
+  const event = events.find((candidate) => [candidate.eventId, candidate.tripleseatEventId, candidate.localEventId].some((id) =>
+    id && [reservation.tripleseatEventId, reservation.localEventId].includes(id)));
+  if (event) return isPlanningOwnerHoldEvent(event);
+  return isDecemberOwnerHoldVip({ operatingDate: reservation.operatingDate, eventName: reservation.eventName,
+    sourceEventId: reservation.tripleseatEventId ?? reservation.localEventId,
+    sourceSystem: reservation.source === "manual" ? undefined : reservation.source });
+}
+
+function manualOwnerHoldReservation(reservation: EntertainmentReservation, events: readonly EntertainmentEventSnapshot[]) {
+  return (reservation.manualOverride || reservation.source === "manual") && ownerHoldReservation(reservation, events);
+}
+
+/** Ignore internal placeholders in planning, not staff overrides or the source's stored history. */
+function ownerHoldPlanningProjection(stored: StoredEntertainmentDay): StoredEntertainmentDay {
+  const manualIds = new Set(stored.reservations.filter((row) => row.active && manualOwnerHoldReservation(row, stored.events))
+    .flatMap((row) => [row.tripleseatEventId, row.localEventId].filter((id): id is string => Boolean(id))));
+  return { ...stored,
+    events: stored.events.filter((event) => !isPlanningOwnerHoldEvent(event) ||
+      [event.eventId, event.tripleseatEventId, event.localEventId].some((id) => id && manualIds.has(id))),
+    reservations: stored.reservations.filter((row) => !ownerHoldReservation(row, stored.events) || manualOwnerHoldReservation(row, stored.events)),
+  };
+}
+
+function preserveOwnerHoldCache(stored: StoredEntertainmentDay, events: EntertainmentEventSnapshot[], reservations: EntertainmentReservation[]) {
+  const refreshedIds = new Set(events.flatMap((event) => [event.eventId, event.tripleseatEventId]));
+  const retainedEvents = stored.events.filter((event) => isPlanningOwnerHoldEvent(event) && !refreshedIds.has(event.tripleseatEventId));
+  const byId = new Map(reservations.map((row) => [row.id, row]));
+  for (const row of stored.reservations) {
+    if (ownerHoldReservation(row, stored.events) && ![row.tripleseatEventId, row.localEventId].some((id) => id && refreshedIds.has(id))) byId.set(row.id, row);
+  }
+  return { events: [...events, ...retainedEvents], reservations: [...byId.values()] };
+}
+
 /** One physical room occupancy may be evidenced by two explicitly linked sources. */
 function representedEntertainmentReservations(events: readonly EntertainmentEventSnapshot[], reservations: EntertainmentReservation[]) {
   const vipRooms = reservations.filter((row) => row.active && row.source === "vip-prep" && row.resourceCategory === "private-rooms");
@@ -377,7 +421,7 @@ export async function getEntertainmentDay(
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEntertainmentStorage();
   const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
-  const [stored, vipResult, floorColors] = await Promise.all([
+  const [rawStored, vipResult, floorColors] = await Promise.all([
     storage.getDay(date),
     vipPrepClient.configured
       ? vipPrepClient.fetchRange(date, date).then(
@@ -388,6 +432,10 @@ export async function getEntertainmentDay(
     Promise.resolve().then(async () => ({ events: (await (options.floorPlanStorage ?? getFloorPlanStorage()).get(date))?.events ?? [], warning: null as string | null }))
       .catch(() => ({ events: [] as FloorPlanEvent[], warning: "Saved floor-plan colors could not be loaded; event colors are resolved from the current schedule until Floor Plans is available." })),
   ]);
+  const stored = ownerHoldPlanningProjection(rawStored);
+  const refreshedVipIds = new Set(vipResult.events.map((event) => event.tripleseatEventId));
+  const retainedManualOwnerHold = (row: EntertainmentReservation) => manualOwnerHoldReservation(row, stored.events) &&
+    ![row.tripleseatEventId, row.localEventId].some((id) => id && refreshedVipIds.has(id));
   const knownInactive = vipResult.error ? await knownInactiveVipBookings(date) : { ids: new Set<string>(), observations: new Map<string, string>(), warnings: [] };
   const inactiveEventIds = new Set(stored.events.filter((event) => inactiveVipIsNewer(knownInactive.observations,
     event.tripleseatEventId, event.sourceSnapshot.sourceObservedAt ?? event.sourceUpdatedAt)).map((event) => event.tripleseatEventId));
@@ -405,7 +453,7 @@ export async function getEntertainmentDay(
   const liveVip = {
     ...builtVip,
     reservations: mergeReservationsForSync(
-      stored.reservations.filter((reservation) => reservation.source === "vip-prep"),
+      stored.reservations.filter((reservation) => reservation.source === "vip-prep" && !retainedManualOwnerHold(reservation)),
       builtVip.reservations,
       undefined,
       builtVip.events,
@@ -465,14 +513,16 @@ export async function getEntertainmentDay(
   const combinedReservations = [
     ...storedReservations.filter(
       (reservation) =>
-        (!vipResult.refreshed || reservation.source !== "vip-prep") && !replacedConfirmedIds.has(reservation.id),
+        (!vipResult.refreshed || reservation.source !== "vip-prep" || retainedManualOwnerHold(reservation)) && !replacedConfirmedIds.has(reservation.id),
     ),
     ...liveVip.reservations,
     ...confirmedSchedule.reservations.filter((reservation) => reservation.active),
   ];
   const combinedEvents = [
     ...stored.events.filter(
-      (event) => !inactiveEventIds.has(event.tripleseatEventId) && (!vipResult.refreshed || !isVipEntertainmentEvent(event)),
+      (event) => !inactiveEventIds.has(event.tripleseatEventId) && (!vipResult.refreshed || !isVipEntertainmentEvent(event) ||
+        stored.reservations.some((row) => row.active && retainedManualOwnerHold(row) &&
+          [event.eventId, event.tripleseatEventId, event.localEventId].some((id) => id && [row.tripleseatEventId, row.localEventId].includes(id)))),
     ),
     ...liveVip.events,
     ...confirmedSchedule.events,
@@ -615,13 +665,14 @@ export async function syncEntertainmentDay(
       const now = new Date().toISOString();
       const built = preserveManualEventColors(buildEntertainmentSchedule({
         sourceEvents: vipPrepEntertainmentEvents(vipPayload.reservations), localEvents: context.localEvents,
-        existingReservations: stored.reservations.filter(isVipEntertainmentReservation), now,
+        existingReservations: ownerHoldPlanningProjection(stored).reservations.filter(isVipEntertainmentReservation), now,
       }), stored.events);
       const reservations = mergeReservationsForSync(stored.reservations.filter(isVipEntertainmentReservation), built.reservations, now, built.events);
-      const activeIds = new Set(built.events.map((event) => event.eventId));
+      const preserved = preserveOwnerHoldCache(stored, built.events, reservations);
+      const activeIds = new Set(preserved.events.map((event) => event.eventId));
       await storage.saveContractEvidence({
-        reservations,
-        events: [...built.events, ...stored.events.filter((event) => isVipEntertainmentEvent(event) && !activeIds.has(event.eventId)).map((event) => ({ ...event, active: false, syncedAt: now }))],
+        reservations: preserved.reservations,
+        events: [...preserved.events, ...stored.events.filter((event) => isVipEntertainmentEvent(event) && !activeIds.has(event.eventId)).map((event) => ({ ...event, active: false, syncedAt: now }))],
       });
       await storage.failSync(date, safeSyncError(tripleseatResult.reason));
       const payload = await getEntertainmentDay(date, { ...options, adapter, storage, vipPrepClient: { configured: true, fetchRange: async () => vipPayload } });
@@ -686,7 +737,7 @@ export async function syncEntertainmentDay(
       buildEntertainmentSchedule({
         sourceEvents,
         localEvents: context.localEvents,
-        existingReservations: [...stored.reservations],
+        existingReservations: ownerHoldPlanningProjection(stored).reservations,
         now,
       }),
       stored.events,
@@ -701,8 +752,9 @@ export async function syncEntertainmentDay(
       merged.push(...stored.reservations.filter(isVipEntertainmentReservation));
       built.events.push(...stored.events.filter(isVipEntertainmentEvent));
     }
-    const conflicts = detectEntertainmentConflicts(representedEntertainmentReservations(built.events, merged));
-    const counts = reservationCounts(stored.reservations, merged);
+    const preserved = preserveOwnerHoldCache(stored, built.events, merged);
+    const conflicts = detectEntertainmentConflicts(representedEntertainmentReservations(built.events, ownerHoldPlanningProjection({ ...stored, ...preserved }).reservations));
+    const counts = reservationCounts(stored.reservations, preserved.reservations);
     const stats = {
       eventsProcessed: built.events.length,
       reservationsCreated: counts.created,
@@ -715,8 +767,8 @@ export async function syncEntertainmentDay(
     };
     await storage.saveSync({
       date,
-      events: built.events,
-      reservations: merged,
+      events: preserved.events,
+      reservations: preserved.reservations,
       existingReservations: stored.reservations,
       stats,
     });

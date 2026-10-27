@@ -2,6 +2,7 @@ import type { EntertainmentSourceEvent } from "@/lib/entertainment/types";
 import type { EventPlan } from "@/lib/event-plans/types";
 import type { KitchenSourceEvent } from "@/lib/kitchen/types";
 import { numericVipEventId, vipPrepExternalId } from "./identity";
+import { isDecemberOwnerHoldVip } from "./owner-holds";
 import type { VipPrepPayload, VipPrepReservation, VipPrepExtra } from "./types";
 export { numericVipEventId, vipPrepExternalId } from "./identity";
 export type { VipPrepFoodItem, VipPrepPayload, VipPrepReservation, VipPrepExtra, VipPrepMappingIssue } from "./types";
@@ -309,7 +310,10 @@ export function vipPrepKitchenEvents(
 export function vipPrepEntertainmentEvents(
   reservations: readonly VipPrepReservation[],
 ): EntertainmentSourceEvent[] {
-  return reservations.filter(isActiveVipPrepReservation).map((reservation) => ({
+  return reservations.filter((reservation) => isActiveVipPrepReservation(reservation) && !isDecemberOwnerHoldVip({
+    operatingDate: reservation.operatingDate, eventName: reservation.eventName, sourceEventId: vipPrepExternalId(reservation),
+    linkedTripleseatEventIds: reservation.linkedTripleseatEventIds, foodCount: reservation.foodPrep.length, extraCount: reservation.extras.length,
+  })).map((reservation) => ({
     tripleseatEventId: vipPrepExternalId(reservation),
     tripleseatBookingId: reservation.confirmationCode,
     eventName: reservation.eventName,
@@ -324,6 +328,8 @@ export function vipPrepEntertainmentEvents(
     sourceObservedAt: reservation.lastRefreshedAt ?? null,
     noteCount: 0,
     sourceSystem: "vip-prep",
+    vipFoodCount: reservation.foodPrep.length,
+    vipExtraCount: reservation.extras.length,
     linkedTripleseatEventIds: reservation.linkedTripleseatEventIds ?? [],
   }));
 }

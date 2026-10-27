@@ -72,6 +72,8 @@ export type EntertainmentSourceEvent = {
   noteCount: number;
   timingNotes?: string[];
   sourceSystem?: "tripleseat" | "vip-prep" | "contract-evidence";
+  vipFoodCount?: number;
+  vipExtraCount?: number;
   linkedTripleseatEventIds?: string[];
 };
 

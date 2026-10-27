@@ -31,6 +31,7 @@ import {
   numericVipEventId,
 } from "@/lib/vip-prep/client";
 import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "@/lib/vip-prep/known-inactive";
+import { isDecemberOwnerHoldVip } from "@/lib/vip-prep/owner-holds";
 import {
   confirmedContractDatesInWindow,
   confirmedContractEventPlans,
@@ -66,6 +67,7 @@ import { reservationTimingSource, sameReservationInterval } from "./reservation-
 import { floorPlanPlanningMonthRange, floorPlanPublicationDates } from "./publication";
 import { seatingCoverageMessage, summarizeEventSeating } from "./seating-summary";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
+import { isDecemberOwnerHoldFloorPlanEvent, withoutDecemberOwnerHoldFloorPlanEvents } from "./owner-holds";
 import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
 import { StaleSaveError } from "@/lib/stale-save";
 import {
@@ -265,7 +267,10 @@ async function sourceEventsForDate(date: string, options: FloorPlanReadOptions =
   }
   const vipRows: FloorPlanSourceRow[] = (
     vipPayload?.reservations ?? []
-  ).filter(isActiveVipPrepReservation).map((reservation) => ({
+  ).filter((reservation) => isActiveVipPrepReservation(reservation) && !isDecemberOwnerHoldVip({
+    operatingDate: reservation.operatingDate, eventName: reservation.eventName, sourceEventId: vipPrepExternalId(reservation),
+    linkedTripleseatEventIds: reservation.linkedTripleseatEventIds, foodCount: reservation.foodPrep.length, extraCount: reservation.extras.length,
+  })).map((reservation) => ({
     plan: vipEventPlan(reservation),
     source: {
       status: "DEFINITE",
@@ -562,10 +567,11 @@ export function projectVipFloorPlanReservations(plan: FloorPlanDocument) {
 }
 
 async function reconciledPlan(date: string, storage: FloorPlanStorage, options: FloorPlanReadOptions = {}) {
-  const [saved, sourceResult] = await Promise.all([
+  const [savedDocument, sourceResult] = await Promise.all([
     storage.get(date),
     sourceEventsForDate(date, options),
   ]);
+  const saved = savedDocument ? withoutDecemberOwnerHoldFloorPlanEvents(savedDocument) : null;
   const finish = (plan: FloorPlanDocument) => ({ ...projectVipFloorPlanReservations(plan), sourceWarnings: sourceResult.warnings });
   if (saved?.events.some((event, index) => saved.events.findIndex((candidate) => candidate.id === event.id) !== index)) {
     sourceResult.warnings.push("Saved floor-plan event identities are duplicated. Canonical booking identities are shown; ambiguous historical staff assignments require review.");
@@ -586,6 +592,11 @@ async function reconciledPlan(date: string, storage: FloorPlanStorage, options: 
     );
   }
   for (const event of saved?.events ?? []) {
+    // The planning exception must not silently remove an explicit staff assignment.
+    if (isDecemberOwnerHoldFloorPlanEvent(event, date)) {
+      if (!normalizedEvents.some((candidate) => candidate.id === event.id)) normalizedEvents.push(event);
+      continue;
+    }
     const vip = event.tripleseatEventId.startsWith("vip-");
     if (vip && inactiveVipIsNewer(sourceResult.knownInactiveVipObservations, event.tripleseatEventId,
       event.source.onParBooking?.refreshedAt ?? event.beoLastModifiedAt)) {
@@ -751,7 +762,10 @@ export async function loadLiveFloorPlanPublicationWindow(
       catch { return { ...range, payload: null, error: true }; }
     })) : [],
   ]);
-  const liveVipDates = new Set(refreshed.flatMap((entry) => entry.payload?.reservations.filter(isActiveVipPrepReservation).map((reservation) => reservation.operatingDate) ?? []));
+  const liveVipDates = new Set(refreshed.flatMap((entry) => entry.payload?.reservations.filter((reservation) => isActiveVipPrepReservation(reservation) && !isDecemberOwnerHoldVip({
+    operatingDate: reservation.operatingDate, eventName: reservation.eventName, sourceEventId: vipPrepExternalId(reservation),
+    linkedTripleseatEventIds: reservation.linkedTripleseatEventIds, foodCount: reservation.foodPrep.length, extraCount: reservation.extras.length,
+  })).map((reservation) => reservation.operatingDate) ?? []));
   const savedByDate = new Map(savedPlans.filter((plan): plan is FloorPlanDocument => Boolean(plan)).map((plan) => [plan.eventDate, plan]));
   const projectionDates = dates.filter((date) => Boolean(savedByDate.get(date)?.events.length) || liveVipDates.has(date) || date === requestedDate);
   const cachedClient: Pick<VipPrepClient, "configured" | "fetchRange"> = {
@@ -768,7 +782,8 @@ export async function loadLiveFloorPlanPublicationWindow(
       const payload = await getFloorPlanDay(date, storage, { vipPrepClient: cachedClient, readOnly: true });
       return payload.plan.events.length ? { plan: payload.plan, payload } : null;
     } catch {
-      const plan = savedByDate.get(date) ?? null;
+      const saved = savedByDate.get(date);
+      const plan = saved ? withoutDecemberOwnerHoldFloorPlanEvents(saved) : null;
       return plan?.events.length ? { plan, payload: null } : null;
     }
   }));
