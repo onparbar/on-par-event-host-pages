@@ -1,15 +1,20 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
+import { EventWorkspaceTimeline } from "@/app/_components/EventWorkspace";
+import { operationalEventFromPlan } from "@/lib/operations/event-context";
 import {
   PortalPageHeader,
   PortalShell,
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
 import { formatEventDate } from "@/lib/event-format";
+import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
+import { changedItinerarySections, itineraryDrinkLines, itineraryEntertainmentGroups } from "@/lib/itineraries/presentation";
 import type {
-  EventPlan,
   EventPlanOperationalNote,
   ItineraryAsset,
 } from "@/lib/event-plans/types";
@@ -69,65 +74,8 @@ function operationalNoteProvenance(note: EventPlanOperationalNote) {
   return details.join(" · ");
 }
 
-function entertainmentGroups(event: EventPlan) {
-  if (!event.entertainment.length) {
-    return [
-      {
-        title: "No reserved entertainment",
-        detail: "No entertainment reservation is listed for this event.",
-      },
-    ];
-  }
-
-  return event.entertainment.map((item) => {
-    const detailParts = [item.quantity];
-
-    if (item.time && !/time not listed|untimed/i.test(item.time)) {
-      detailParts.push(compactTimeRange(item.time));
-    } else if (item.time && /untimed/i.test(item.time)) {
-      detailParts.push("Untimed");
-    } else if (item.time && /time not listed/i.test(item.time)) {
-      detailParts.push("Time not listed on BEO");
-    } else if (item.duration) {
-      detailParts.push(item.duration);
-    }
-
-    return {
-      title: item.name,
-      detail: detailParts.filter(Boolean).join(" · "),
-    };
-  });
-}
-
-function itineraryDrinkLines(event: EventPlan) {
-  const lines = ["Free soda and juice for all guests"];
-
-  event.drink_options.forEach((item) => {
-    if (
-      /back nine|food \+ beverage|drink card|soft drinks included|soft drinks free of charge/i.test(
-        item,
-      )
-    ) {
-      return;
-    }
-    lines.push(item);
-  });
-
-  const hasDrinkCards =
-    event.food.some((item) => /full course/i.test(item)) ||
-    event.drink_options.some((item) =>
-      /back nine|food \+ beverage|drink card/i.test(item),
-    );
-
-  if (hasDrinkCards) {
-    lines.push(`$20 prepaid drink cards for ${event.guest_count} guests`);
-  }
-
-  return lines;
-}
-
-function ItineraryDashboard({ event }: { event: ItineraryAsset }) {
-  const entertainmentItems = entertainmentGroups(event);
+export function ItineraryDashboard({ event, online }: { event: ItineraryAsset; online: boolean }) {
+  const entertainmentItems = itineraryEntertainmentGroups(event);
   const drinkItems = itineraryDrinkLines(event);
 
   return (
@@ -152,6 +100,11 @@ function ItineraryDashboard({ event }: { event: ItineraryAsset }) {
           <p>{event.time}</p>
         </div>
       </header>
+
+      <div className="itinerary-revision-stamp" data-ready={event.revision?.ready === true && online}>
+        <span title={event.revision?.fingerprint}>{event.revision?.label ?? "Revision not verified"}</span>
+        {event.revision ? <small>Snapshot {formatSourceNoteTimestamp(event.revision.generatedAt)} · Floor plan {event.revision.floorPlanVersion ? `v${event.revision.floorPlanVersion}` : "not verified"}</small> : null}
+      </div>
 
       <div className="itinerary-fact-grid">
         <div>
@@ -229,21 +182,71 @@ function ItineraryDashboard({ event }: { event: ItineraryAsset }) {
           </ul>
         </section>
       </div>
+      {event.itinerary_edit?.fields.special_instructions?.length ? <section className="itinerary-admin-instructions"><h3>Event Instructions</h3><ul>{event.itinerary_edit.fields.special_instructions.map((item, index) => <li key={index}>{item}</li>)}</ul></section> : null}
     </article>
   );
 }
 
 export default function ItinerariesClient({
   items,
+  initialEventId,
 }: {
   items: ItineraryAsset[];
+  initialEventId?: number;
 }) {
-  const [activeEventId, setActiveEventId] = useState<number>(items[0]?.id ?? 0);
+  const router = useRouter();
+  const { preferredEventId, ready: eventContextReady, selectEvent } = useEventContext();
+  const activeEventId = preferredEventId ?? (initialEventId ? String(initialEventId) : null);
   const [refreshState, setRefreshState] = useState<
     "idle" | "refreshing" | "error"
   >("idle");
-  const activeEvent =
-    items.find((event) => event.id === activeEventId) ?? items[0];
+  const [isOnline, setIsOnline] = useState(true);
+  const [changedSections, setChangedSections] = useState<Record<number, string[]>>({});
+  const previousRevisions = useRef(new Map<number, NonNullable<ItineraryAsset["revision"]>>());
+  const activeEvent = activeEventId
+    ? items.find((event) => String(event.id) === activeEventId)
+    : eventContextReady ? items[0] : undefined;
+
+  useEffect(() => {
+    const changed: Record<number, string[]> = {};
+    for (const item of items) {
+      const previous = previousRevisions.current.get(item.id);
+      if (previous && item.revision) {
+        const sections = changedItinerarySections(previous, item.revision);
+        if (sections.length) changed[item.id] = sections;
+      }
+      if (item.revision) previousRevisions.current.set(item.id, item.revision);
+    }
+    if (Object.keys(changed).length) setChangedSections((current) => ({ ...current, ...changed }));
+  }, [items]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setIsOnline(navigator.onLine);
+      if (navigator.onLine && document.visibilityState === "visible") router.refresh();
+    };
+    const offline = () => setIsOnline(false);
+    setIsOnline(navigator.onLine);
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    window.addEventListener("offline", offline);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("offline", offline);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(ENTERTAINMENT_UPDATE_CHANNEL);
+    channel.addEventListener("message", () => router.refresh());
+    return () => channel.close();
+  }, [router]);
 
   async function refreshEventPlans() {
     setRefreshState("refreshing");
@@ -260,9 +263,13 @@ export default function ItinerariesClient({
     }
   }
 
-  if (!activeEvent) {
-    return null;
-  }
+  if (!activeEvent) return (
+    <PortalShell mainClassName="page itinerary-page" sectionSubtitle="Event details" sectionTitle="Itineraries">
+      <PortalPageHeader description="Choose an available event to review its current itinerary." eyebrow="Event Host workspace" title="Itineraries" />
+      <p role="status">{!eventContextReady ? "Loading your selected event…" : activeEventId ? "The selected event is not available in this itinerary window. Choose another event below; no different party has been selected automatically." : "No itineraries are available."}</p>
+      {items.map((event) => <button className="event-switcher" key={event.id} onClick={() => selectEvent(operationalEventFromPlan(event))} type="button">{event.name} · {formatEventDate(event.date)}</button>)}
+    </PortalShell>
+  );
 
   const operationalNotes = activeEvent.operational_notes ?? [];
   const operationalNoteTexts = new Set(
@@ -287,6 +294,7 @@ export default function ItinerariesClient({
       sectionSubtitle="Event details"
       sectionTitle="Itineraries"
     >
+      <EventSelectionBridge event={operationalEventFromPlan(activeEvent)} />
       <PortalPageHeader
         aside={
           <div className="portal-status-row">
@@ -308,7 +316,7 @@ export default function ItinerariesClient({
             ) : null}
           </div>
         }
-        description="Review the event summary and approved guest itinerary in the same visual system as the operations dashboard."
+        description="Review current event, shared entertainment, and saved floor-plan information. Readiness checks and revision stamps distinguish staff-ready copies from review copies."
         eyebrow="Event Host workspace"
         title="Itineraries"
       />
@@ -320,7 +328,7 @@ export default function ItinerariesClient({
             <button
               className={`event-switcher${isActive ? " active" : ""}`}
               key={event.id}
-              onClick={() => setActiveEventId(event.id)}
+              onClick={() => selectEvent(operationalEventFromPlan(event))}
               type="button"
             >
               <span>{event.name}</span>
@@ -332,33 +340,56 @@ export default function ItinerariesClient({
         })}
       </section>
 
+      <EventWorkspaceTimeline />
       <section className="itinerary-panel">
+        {!isOnline ? <p className="itinerary-source-alert" role="alert">Offline — this is the last loaded copy. Reconnect and refresh before issuing it to staff.</p> : null}
+        {changedSections[activeEvent.id]?.length ? <p className="itinerary-source-alert" role="status">Updated since this page was opened: {changedSections[activeEvent.id].join(", ")}. Review the new revision before printing.</p> : null}
         <div className="itinerary-toolbar">
           <div>
-            <span className="eyebrow">Current Itinerary</span>
+            <span className="eyebrow">{activeEvent.revision?.ready ? "Verified saved snapshot" : "Itinerary review copy"}</span>
             <strong>{activeEvent.name}</strong>
             <span className="meta">
               {activeEvent.guest_count} guests · {activeEvent.rooms.join(", ")}
             </span>
           </div>
-          {activeEvent.pdf ? (
-            <a
-              className="button-link itinerary-open-link"
-              href={activeEvent.pdf}
-              rel="noreferrer"
-              target="_blank"
+          <div className="itinerary-toolbar-actions">
+            {activeEvent.pdf ? (
+              <a
+                className="button-link itinerary-open-link"
+                href={activeEvent.pdf}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {activeEvent.revision?.savedPdfStatus === "matching" ? "Open matching saved PDF" : activeEvent.revision?.savedPdfStatus === "outdated" ? "Open outdated saved PDF" : "Open saved PDF (unverified)"}
+              </a>
+            ) : (
+              <PortalStatusBadge>
+                {activeEvent.revision?.ready ? "Readiness checks passed" : "Review required"}
+              </PortalStatusBadge>
+            )}
+            <button
+              aria-label={`Print ${activeEvent.name} ${activeEvent.revision?.ready && isOnline ? "staff itinerary" : "review copy"} at 4 by 9 inches`}
+              className="button-link itinerary-print-button"
+              onClick={() => window.print()}
+              type="button"
             >
-              Open Approved PDF
-            </a>
-          ) : (
-            <PortalStatusBadge>Generated from current event data</PortalStatusBadge>
-          )}
+              {activeEvent.revision?.ready && isOnline ? "Print staff itinerary" : "Print review copy"} · 4″ × 9″
+            </button>
+          </div>
         </div>
 
         <div className="itinerary-workspace">
-          <ItineraryDashboard event={activeEvent} />
+          <ItineraryDashboard event={activeEvent} online={isOnline} />
 
           <aside className="itinerary-operations-card">
+            {activeEvent.itinerary_edit ? <p className="itinerary-source-alert">Admin-edited itinerary · {formatSourceNoteTimestamp(activeEvent.itinerary_edit.updatedAt)}. These display edits do not change the contract, reservations, kitchen prep, or KDS orders.</p> : null}
+            <div className="itinerary-verification">
+              <span>Readiness · {activeEvent.revision?.label ?? "Unverified revision"}</span>
+              <strong>{activeEvent.revision?.ready ? "Verified source and approved floor plan" : "Review required before staff use"}</strong>
+              {activeEvent.revision?.reasons.length ? <ul className="itinerary-support-list">{activeEvent.revision.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}
+              <p className="meta">Source sync: {activeEvent.revision?.lastSourceSyncAt ? formatSourceNoteTimestamp(activeEvent.revision.lastSourceSyncAt) : "Not verified"}<br />Entertainment sync: {activeEvent.revision?.lastEntertainmentSyncAt ? formatSourceNoteTimestamp(activeEvent.revision.lastEntertainmentSyncAt) : "Not verified"}<br />Floor plan: {activeEvent.revision?.floorPlanStatus ?? "Not verified"}</p>
+              {activeEvent.pdf && activeEvent.revision?.savedPdfStatus !== "matching" ? <p className="meta">The saved PDF has no matching current-revision evidence. It remains available for reference but is not presented as approved or current.</p> : null}
+            </div>
             <span className="eyebrow">Operational Notes</span>
             <h3>Event Host Details</h3>
             {hasEventHostDetails ? (

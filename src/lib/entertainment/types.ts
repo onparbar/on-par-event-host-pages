@@ -1,4 +1,11 @@
 export const ENTERTAINMENT_TIME_ZONE = "America/New_York" as const;
+export const TRIPLESEAT_RECONNECT_WARNING = "Tripleseat authorization was rejected. An Admin must reconnect Tripleseat. Saved assignments were retained.";
+
+export type SourceRefreshResult = {
+  tripleseat: "success" | "partial" | "error";
+  onParBookings: "success" | "error" | "not-configured";
+  reconnectTripleseat: boolean;
+};
 
 export type EntertainmentCategory =
   | "bowling"
@@ -42,7 +49,13 @@ export type EntertainmentSourceItem = {
   quantity: number | null;
   startAt: string | null;
   endAt: string | null;
+  startTimeSource?: EntertainmentStartTimeSource;
 };
+
+export type EntertainmentStartTimeSource =
+  | "contract-explicit"
+  | "event-start-default"
+  | "staff-override";
 
 export type EntertainmentSourceRoom = {
   id: string | null;
@@ -57,11 +70,18 @@ export type EntertainmentSourceEvent = {
   eventStartAt: string | null;
   eventEndAt: string | null;
   status: string | null;
+  fullBuyout?: boolean;
   rooms: EntertainmentSourceRoom[];
   items: EntertainmentSourceItem[];
   categoryNames: string[];
   sourceUpdatedAt: string | null;
+  sourceObservedAt?: string | null;
   noteCount: number;
+  timingNotes?: string[];
+  sourceSystem?: "tripleseat" | "vip-prep" | "contract-evidence";
+  vipFoodCount?: number;
+  vipExtraCount?: number;
+  linkedTripleseatEventIds?: string[];
 };
 
 export type EntertainmentColorSource =
@@ -92,6 +112,7 @@ export type EntertainmentEventSnapshot = {
 
 export type EntertainmentReservationSource =
   | "tripleseat"
+  | "vip-prep"
   | "event-host-fallback"
   | "manual";
 
@@ -111,6 +132,9 @@ export type EntertainmentReservation = {
   sourceStartAt: string | null;
   sourceEndAt: string | null;
   sourceResourceId: string | null;
+  startTimeSource?: EntertainmentStartTimeSource | null;
+  sourceStartTimeSource?: Exclude<EntertainmentStartTimeSource, "staff-override"> | null;
+  contractedDurationMinutes?: number | null;
   eventColor: string;
   colorSource: EntertainmentColorSource;
   source: EntertainmentReservationSource;
@@ -183,12 +207,14 @@ export type EntertainmentDayPayload = {
   date: string;
   events: EntertainmentEventSnapshot[];
   reservations: EntertainmentReservation[];
+  floorPlanEventColors?: Record<string, string>;
   conflicts: EntertainmentConflict[];
   sync: EntertainmentSyncState | null;
   sourceMode: "live" | "mock";
   warnings: string[];
   missingEnvironmentVariables: string[];
   canEdit: boolean;
+  sourceRefresh?: SourceRefreshResult;
 };
 
 export type EntertainmentSyncResult = {

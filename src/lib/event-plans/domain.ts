@@ -1,5 +1,6 @@
 import {
   canonicalCategoryForText,
+  conflictingBookingQuantity,
   deterministicEventColor,
   exactResourceIdsForText,
   getEntertainmentResource,
@@ -10,14 +11,18 @@ import {
   formatClock,
   isValidEntertainmentDate,
   localDateForIso,
-  parseTimeRange,
 } from "@/lib/entertainment/time";
+import { formatEntertainmentDurationHours } from "@/lib/entertainment/duration";
+import { groupEntertainmentTimingItems, resolveEntertainmentItemTiming } from "@/lib/entertainment/timing";
 import type {
   EntertainmentCategory,
   EntertainmentSourceItem,
 } from "@/lib/entertainment/types";
 import { normalizeKitchenSelection } from "@/lib/kitchen/normalize";
-import type { KitchenSourceSelection } from "@/lib/kitchen/types";
+import type {
+  KitchenSourceSelection,
+  NormalizedSelectionKind,
+} from "@/lib/kitchen/types";
 
 import {
   EVENT_PLAN_RULE_VERSION,
@@ -135,6 +140,64 @@ type ClassifiedDetails = {
   reviewReasons: string[];
 };
 
+const ITINERARY_FOOD_LABELS: Partial<
+  Record<NormalizedSelectionKind, string>
+> = {
+  "package:the-full-course": "The Full Course",
+  "package:the-front-nine": "The Front Nine",
+  "package:food-only-package": "Food Only Package",
+  "bar:taco": "Taco Bar",
+  "bar:wing": "Wing Bar",
+  "bar:appetizer": "Appetizer Bar",
+  "option:taco-lettuce-wraps": "Lettuce Wraps",
+  dessert: "Dessert Platter",
+  "platter:tater-kegs": "Tater Keg Platter",
+  "platter:chicken-tenders": "Chicken Tender Platter",
+  "platter:mozzarella-sticks": "Mozzarella Stick Platter",
+  "platter:wings": "Wing Platter",
+  "platter:veggie-tray": "Veggie Tray",
+  "platter:fries": "Fry Platter",
+  "sauce:ranch": "Ranch",
+  "sauce:marinara": "Marinara",
+};
+
+function itineraryFoodLine(selection: KitchenSourceSelection) {
+  const normalized = normalizeKitchenSelection(selection);
+  const labels = uniqueText(
+    normalized.kinds.flatMap((kind) => {
+      const label = ITINERARY_FOOD_LABELS[kind];
+      if (!label) {
+        return [];
+      }
+      if (
+        kind === "dessert" &&
+        normalized.normalizedName.startsWith("desert platter")
+      ) {
+        return ["Desert Platter"];
+      }
+      return [label];
+    }),
+  );
+  const name = labels.join(" + ") || cleanText(selection.name);
+  const quantity = selection.quantity;
+  if (
+    typeof quantity !== "number" ||
+    !Number.isInteger(quantity) ||
+    quantity <= 0
+  ) {
+    return name;
+  }
+  const quantityText = String(quantity);
+  if (
+    name.startsWith(`${quantityText} `) ||
+    name.startsWith(`${quantityText}×`) ||
+    name.startsWith(`${quantityText} ×`)
+  ) {
+    return name;
+  }
+  return `${quantityText} × ${name}`;
+}
+
 function classifySelection(
   selection: KitchenSourceSelection,
   result: ClassifiedDetails,
@@ -156,7 +219,7 @@ function classifySelection(
     selection.isFood !== false &&
     (selection.isFood === true || foodCategory || knownFood)
   ) {
-    result.food.push(name);
+    result.food.push(itineraryFoodLine(selection));
   }
   if (drinkCategory) {
     result.drinks.push(name);
@@ -198,7 +261,15 @@ function classifyDocumentItem(
   }
 
   if (isFoodCategory(item.categoryName)) {
-    result.food.push(name);
+    result.food.push(
+      itineraryFoodLine({
+        name,
+        quantity: item.quantity,
+        sourceId: item.sourceId,
+        sourceCategory: item.categoryName,
+        isFood: true,
+      }),
+    );
   }
   if (isDrinkCategory(item.categoryName)) {
     result.drinks.push(name);
@@ -246,81 +317,6 @@ function formattedTimeRange(startAt: string, endAt: string) {
   return `${formatClock(startAt)} - ${formatClock(endAt)}`;
 }
 
-function formattedDuration(startAt: string, endAt: string) {
-  const totalMinutes = Math.round(
-    (Date.parse(endAt) - Date.parse(startAt)) / 60_000,
-  );
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const parts = [];
-  if (hours) {
-    parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
-  }
-  if (minutes) {
-    parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
-  }
-  return parts.join(" ") || "Duration not listed on BEO";
-}
-
-function textualDuration(value: string) {
-  const match = value.match(
-    /\b(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|holes?)\b/i,
-  );
-  if (!match) {
-    return null;
-  }
-  const unit = match[2].toLocaleLowerCase("en-US");
-  const normalizedUnit = unit.startsWith("h")
-    ? Number(match[1]) === 1
-      ? "hour"
-      : "hours"
-    : unit.startsWith("m")
-      ? Number(match[1]) === 1
-        ? "minute"
-        : "minutes"
-      : Number(match[1]) === 1
-        ? "hole"
-        : "holes";
-  return `${match[1]} ${normalizedUnit}`;
-}
-
-function isLaneRentalDurationDetail(
-  value: string,
-  category: EntertainmentCategory,
-) {
-  if (category !== "bowling" && category !== "darts") {
-    return false;
-  }
-  const activity = category === "bowling" ? "bowling" : "dart";
-  return new RegExp(
-    `\\b\\d+(?:\\.\\d+)?\\s*hours?\\s+${activity}\\s+lane\\s+rental\\b`,
-  ).test(normalizedText(value));
-}
-
-function extraLaneHours(
-  value: string,
-  category: EntertainmentCategory,
-) {
-  if (category !== "bowling" && category !== "darts") {
-    return null;
-  }
-  const activity =
-    category === "bowling" ? "(?:duckpin\\s+)?bowling" : "darts?";
-  const match = normalizedText(value).match(
-    new RegExp(`\\b(?:(\\d+)\\s+)?extra\\s+hours?\\s+of\\s+${activity}\\b`),
-  );
-  return match ? Number(match[1] ?? 1) : null;
-}
-
-function addHoursToDuration(value: string, additionalHours: number) {
-  const match = value.match(/^(\d+(?:\.\d+)?)\s+hours?$/);
-  if (!match || !Number.isInteger(additionalHours) || additionalHours <= 0) {
-    return null;
-  }
-  const totalHours = Number(match[1]) + additionalHours;
-  return `${totalHours} hour${totalHours === 1 ? "" : "s"}`;
-}
-
 function entertainmentName(
   category: EntertainmentCategory,
   exactResourceIds: readonly string[],
@@ -346,7 +342,7 @@ function quantityLabel(
   quantity: number | null,
   exactResourceIds: readonly string[],
 ) {
-  if (exactResourceIds.length) {
+  if (exactResourceIds.length && category !== "mini-golf") {
     return exactResourceIds
       .map(
         (resourceId) =>
@@ -362,7 +358,7 @@ function quantityLabel(
     darts: "lane",
     pool: "table",
     shuffleboard: "table",
-    "mini-golf": "course",
+    "mini-golf": "guest",
     "private-rooms": "room",
   }[category];
   return `${quantity} ${noun}${quantity === 1 ? "" : "s"}`;
@@ -404,7 +400,7 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
     const text = [selection.sourceCategory, selection.name]
       .filter(Boolean)
       .join(" ");
-    return canonicalCategoryForText(text)
+    return canonicalCategoryForText(text) || /\bextra\s+hours?\b/i.test(selection.name)
       ? [
           {
             item: {
@@ -427,11 +423,21 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
       !isDrinkCategory(item.categoryName),
   ).map((item) => ({ item, sourceType: "document-line" as const }));
 
-  for (const candidate of [...documentItems, ...selectionItems]) {
+  const candidates = [
+    ...groupEntertainmentTimingItems(documentItems.map(({ item }) => item)).map((item) => ({ item, sourceType: "document-line" as const })),
+    ...groupEntertainmentTimingItems(selectionItems.map(({ item }) => item)).filter((item) => {
+      const category = canonicalCategoryForText([item.categoryName, item.name, item.description].filter(Boolean).join(" "));
+      return !category || !documentItems.some(({ item: document }) =>
+        canonicalCategoryForText([document.categoryName, document.name, document.description].filter(Boolean).join(" ")) === category);
+    }).map((item) => ({ item, sourceType: "selection" as const })),
+  ];
+  const timingContext = { ...source, items: candidates.map((candidate) => candidate.item), timingNotes: (source.operationalNotes ?? []).map((note) => note.text) };
+  for (const candidate of candidates) {
     const { item } = candidate;
-    const text = documentItemText(item);
+    const text = [item.categoryName, item.name, item.description].filter(Boolean).join(" · ");
     const category = canonicalCategoryForText(text);
     if (!category) {
+      reviewReasons.push(...(item.timingReviewIssues ?? []).map((issue) => issue.message));
       if (
         isEntertainmentCategory(item.categoryName) ||
         isAmbiguousLaneText(text)
@@ -443,72 +449,35 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
       continue;
     }
 
-    const exactResourceIds = exactResourceIdsForText(text, category);
-    const quantity = quantityForText(text, category, item.quantity);
-    const explicitRange = validTimeRange(item.startAt, item.endAt);
-    const parsedRange =
-      !explicitRange && isValidEntertainmentDate(source.localDate)
-        ? parseTimeRange(text, source.localDate)
-        : null;
-    const range = explicitRange ?? parsedRange;
-    const duration = range
-      ? formattedDuration(range.startAt, range.endAt)
-      : textualDuration(text) ?? "Duration not listed on BEO";
+    const resourceText = item.resourceText ?? text;
+    const exactResourceIds = exactResourceIdsForText(resourceText, category);
+    const quantity = quantityForText(resourceText, category, item.quantity, item.name);
+    if (conflictingBookingQuantity(resourceText, category, item.quantity, item.name)) {
+      reviewReasons.push(`${item.name} has a conflicting booking quantity and explicit lane/table count; verify the contract.`);
+    }
+    const isMiniGolf = category === "mini-golf";
+    const timing = isMiniGolf ? null : resolveEntertainmentItemTiming(item, timingContext);
+    const range = timing?.startAt && timing.endAt ? { startAt: timing.startAt, endAt: timing.endAt } : null;
+    const duration = timing?.durationMinutes != null
+      ? formatEntertainmentDurationHours(timing.durationMinutes) || "Duration not listed on BEO" : "Duration not listed on BEO";
+    if (timing) reviewReasons.push(...timing.reviewIssues.map((issue) => issue.message));
     const structuredRange = item.startAt && item.endAt
       ? `Start ${item.startAt}; end ${item.endAt}`
       : null;
     const candidateSourceText = [item.description || item.name, structuredRange]
       .filter(Boolean)
       .join(" · ");
-    const previous = mappedItems.at(-1);
-    const quantitiesMatch =
-      previous != null &&
-      (previous.numericQuantity == null ||
-        quantity == null ||
-        previous.numericQuantity === quantity);
-    const canMergeWithPrevious =
-      previous != null &&
-      previous.category === category &&
-      previous.sourceType === candidate.sourceType &&
-      quantitiesMatch &&
-      range == null;
-    const appendEvidence = () => {
-      if (!previous) return;
-      previous.sourceText = uniqueText([
-        previous.sourceText,
-        `${item.sourceId}: ${candidateSourceText}`,
-      ]).join(" · ");
-    };
-
-    if (
-      canMergeWithPrevious &&
-      previous.item.duration === "Duration not listed on BEO" &&
-      duration !== "Duration not listed on BEO" &&
-      isLaneRentalDurationDetail(text, category)
-    ) {
-      previous.item.duration = duration;
-      appendEvidence();
-      continue;
-    }
-
-    const additionalHours = extraLaneHours(text, category);
-    const extendedDuration =
-      canMergeWithPrevious && additionalHours != null
-        ? addHoursToDuration(previous.item.duration, additionalHours)
-        : null;
-    if (previous && extendedDuration) {
-      previous.item.duration = extendedDuration;
-      appendEvidence();
-      continue;
-    }
-
     const mappedItem = {
       name: entertainmentName(category, exactResourceIds),
       quantity: quantityLabel(category, quantity, exactResourceIds),
-      time: range
-        ? formattedTimeRange(range.startAt, range.endAt)
-        : "Time not listed on BEO",
-      duration,
+      time: isMiniGolf
+        ? ""
+        : range
+          ? formattedTimeRange(range.startAt, range.endAt)
+          : "Time not listed on BEO",
+      duration: isMiniGolf ? "" : duration,
+      ...(!isMiniGolf && timing?.startTimeSource ? { startTimeSource: timing.startTimeSource } : {}),
+      ...(!isMiniGolf && timing?.durationMinutes != null ? { contractedDurationMinutes: timing.durationMinutes } : {}),
     } satisfies EventPlanEntertainmentItem;
     mappedItems.push({
       item: mappedItem,
@@ -538,12 +507,10 @@ function mapEntertainment(source: TripleseatEventPlanSource) {
         `Entertainment quantity is missing for "${mapped.sourceName}".`,
       );
     }
-    if (mapped.item.time === "Time not listed on BEO") {
-      reviewReasons.push(
-        `Entertainment time is missing for "${mapped.sourceName}".`,
-      );
-    }
-    if (mapped.item.duration === "Duration not listed on BEO") {
+    if (
+      mapped.category !== "mini-golf" &&
+      mapped.item.duration === "Duration not listed on BEO"
+    ) {
       reviewReasons.push(
         `Entertainment duration is missing for "${mapped.sourceName}".`,
       );

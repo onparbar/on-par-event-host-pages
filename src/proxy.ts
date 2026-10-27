@@ -1,20 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
+import { previewReviewBlocksRequest } from "@/lib/operations/preview-review";
 
 const PRIVATE_DATA_PATH = "/data/event-plan-data.json";
-
-function loginPathForAsset(pathname: string) {
-  if (pathname.startsWith("/floor-plans/")) {
-    return "/floor-plans";
-  }
-  if (pathname.startsWith("/entertainment-schedules/")) {
-    return "/entertainment-schedules";
-  }
-  if (pathname.startsWith("/itinerary-pdfs/")) {
-    return "/itineraries";
-  }
-  return null;
-}
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -26,25 +13,14 @@ export function proxy(request: NextRequest) {
     });
   }
 
-  const protectedPath =
-    pathname === "/_next/image"
-      ? request.nextUrl.searchParams.get("url") ?? ""
-      : pathname;
-  const loginPath = loginPathForAsset(protectedPath);
-
-  if (!loginPath || hasAdminSession(request.cookies)) {
-    return NextResponse.next();
+  if (previewReviewBlocksRequest(request.method, pathname)) {
+    return NextResponse.json({ error: "This Preview is read-only. No check-in, order, sync or saved edit was performed." },
+      { status: 403, headers: { "cache-control": "no-store" } });
   }
 
-  return NextResponse.redirect(new URL(loginPath, request.url));
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    "/floor-plans/:path+",
-    "/entertainment-schedules/:path+",
-    "/itinerary-pdfs/:path*",
-    "/data/event-plan-data.json",
-    "/_next/image",
-  ],
+  matcher: ["/data/event-plan-data.json", "/api/:path*"],
 };

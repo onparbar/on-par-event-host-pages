@@ -1,9 +1,17 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { hasAdminSession } from "@/lib/admin-auth";
 import { syncRollingEventPlans } from "@/lib/event-plans/sync";
+import { syncEntertainmentDay } from "@/lib/entertainment/sync";
+import {
+  ensureConfirmedContractFloorPlanWindow,
+  maintainTwoWeekFloorPlanHorizon,
+} from "@/lib/floor-plans/service";
+import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,18 +41,83 @@ function unauthorized() {
 }
 
 async function runSync() {
+  let result: Awaited<ReturnType<typeof syncRollingEventPlans>> | null = null;
+  let syncError: string | null = null;
   try {
-    const result = await syncRollingEventPlans();
+    result = await syncRollingEventPlans();
+  } catch (error) {
+    syncError =
+      error instanceof Error
+        ? error.message
+        : "Event-plan synchronization failed.";
+  }
+
+  try {
+    if (!result) {
+      const floorPlans = await ensureConfirmedContractFloorPlanWindow(
+        todayInEntertainmentTimeZone(),
+      );
+      const confirmedResult = floorPlans.results.find(
+        (entry) =>
+          entry.date === "2026-08-21" &&
+          entry.status !== "error" &&
+          entry.eventCount > 0,
+      );
+      if (!confirmedResult) {
+        return NextResponse.json(
+          {
+            error: syncError ?? "Event-plan synchronization failed.",
+            floorPlans,
+          },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json({
+        sourceMode: "contract-evidence",
+        eventCount: confirmedResult.eventCount,
+        sync: null,
+        floorPlans,
+        warning:
+          "Tripleseat could not refresh. Confirmed contract evidence was applied, and the last saved Tripleseat data remains unchanged.",
+      });
+    }
+    const floorPlans = await maintainTwoWeekFloorPlanHorizon();
+    const warnings = floorPlans.results.flatMap((entry) => [
+      ...(entry.status === "error" ? [`${entry.date}: ${entry.message ?? "Floor plans could not refresh."}`] : []),
+      ...(entry.warnings ?? []).map((warning) => `${entry.date}: ${warning}`),
+    ]);
+    const entertainment: Array<{ date: string; status: "success" | "error"; conflictsFound?: number; message?: string }> = [];
+    const sourceWindow = result.sync;
+    const remainingDates = sourceWindow ? [...new Set(result.plans.map((plan) => plan.date))].filter(
+      (date) => date >= sourceWindow.windowStart && date <= sourceWindow.windowEnd &&
+        (date < floorPlans.startDate || date > floorPlans.endDate),
+    ).sort() : [];
+    for (const date of remainingDates) {
+      try {
+        const day = await syncEntertainmentDay(date);
+        entertainment.push({ date, status: "success", conflictsFound: day.conflicts.length });
+        if (day.conflicts.length) {
+          warnings.push(`${date}: ${day.conflicts.length} entertainment resource conflict${day.conflicts.length === 1 ? " requires" : "s require"} review.`);
+        }
+      } catch {
+        const message = "Entertainment could not refresh; its last saved reservations remain in effect.";
+        entertainment.push({ date, status: "error", message });
+        warnings.push(`${date}: ${message}`);
+      }
+    }
     return NextResponse.json({
       sourceMode: result.sourceMode,
       eventCount: result.plans.length,
       sync: result.sync,
+      floorPlans,
+      entertainment,
+      ...(warnings.length ? { warning: warnings.join(" ") } : {}),
     });
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
-        : "Event-plan synchronization failed.";
+        : syncError ?? "Event-plan synchronization failed.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
@@ -56,9 +129,9 @@ export async function GET(request: Request) {
   return runSync();
 }
 
-export async function POST() {
-  if (!hasAdminSession(await cookies())) {
-    return unauthorized();
+export async function POST(request: Request) {
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
   return runSync();
 }

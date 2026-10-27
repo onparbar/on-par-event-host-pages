@@ -2,8 +2,16 @@
   "framework": "nextjs",
   "crons": [
     {
+      "path": "/api/checklists/auto-submit",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/event-plans/sync",
       "schedule": "5 10 * * *"
+    },
+    {
+      "path": "/api/gotab/reconcile",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

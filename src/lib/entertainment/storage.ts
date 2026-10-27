@@ -44,7 +44,12 @@ export interface EntertainmentStorage {
   getAudit(reservationId: string): Promise<EntertainmentAuditEntry[]>;
   startSync(date: string): Promise<void>;
   saveSync(input: SaveSyncInput): Promise<void>;
+  saveContractEvidence(input: {
+    events: EntertainmentEventSnapshot[];
+    reservations: EntertainmentReservation[];
+  }): Promise<void>;
   failSync(date: string, message: string): Promise<void>;
+  saveEventSnapshot(event: EntertainmentEventSnapshot): Promise<void>;
   saveManualReservation(
     reservation: EntertainmentReservation,
     audit: EntertainmentAuditEntry,
@@ -87,6 +92,9 @@ type ReservationRow = {
   source_start_at: string | null;
   source_end_at: string | null;
   source_resource_id: string | null;
+  start_time_source?: EntertainmentReservation["startTimeSource"];
+  source_start_time_source?: EntertainmentReservation["sourceStartTimeSource"];
+  contracted_duration_minutes?: number | null;
   event_color: string;
   color_source: EntertainmentReservation["colorSource"];
   source: EntertainmentReservation["source"];
@@ -195,6 +203,9 @@ function reservationToRow(
     source_start_at: reservation.sourceStartAt,
     source_end_at: reservation.sourceEndAt,
     source_resource_id: reservation.sourceResourceId,
+    start_time_source: reservation.startTimeSource ?? null,
+    source_start_time_source: reservation.sourceStartTimeSource ?? null,
+    contracted_duration_minutes: reservation.contractedDurationMinutes ?? null,
     event_color: reservation.eventColor,
     color_source: reservation.colorSource,
     source: reservation.source,
@@ -233,6 +244,9 @@ function reservationFromRow(
     sourceStartAt: row.source_start_at,
     sourceEndAt: row.source_end_at,
     sourceResourceId: row.source_resource_id,
+    startTimeSource: row.start_time_source,
+    sourceStartTimeSource: row.source_start_time_source,
+    contractedDurationMinutes: row.contracted_duration_minutes,
     eventColor: row.event_color,
     colorSource: row.color_source,
     source: row.source,
@@ -317,6 +331,9 @@ function materialReservationValue(reservation: EntertainmentReservation) {
     sourceStartAt: reservation.sourceStartAt,
     sourceEndAt: reservation.sourceEndAt,
     sourceResourceId: reservation.sourceResourceId,
+    startTimeSource: reservation.startTimeSource,
+    sourceStartTimeSource: reservation.sourceStartTimeSource,
+    contractedDurationMinutes: reservation.contractedDurationMinutes,
     manualOverride: reservation.manualOverride,
     hasSourceUpdate: reservation.hasSourceUpdate,
     needsReview: reservation.needsReview,
@@ -611,6 +628,34 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
     );
   }
 
+  async saveContractEvidence(input: {
+    events: EntertainmentEventSnapshot[];
+    reservations: EntertainmentReservation[];
+  }) {
+    if (input.reservations.length > 0) {
+      await this.emptyRequest(
+        "entertainment_reservations",
+        new URLSearchParams({ on_conflict: "id" }),
+        {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(input.reservations.map(reservationToRow)),
+        },
+      );
+    }
+    if (input.events.length > 0) {
+      await this.emptyRequest(
+        "entertainment_event_snapshots",
+        new URLSearchParams({ on_conflict: "event_id" }),
+        {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(input.events.map(eventToRow)),
+        },
+      );
+    }
+  }
+
   async failSync(date: string, message: string) {
     const now = new Date().toISOString();
     await this.emptyRequest(
@@ -647,6 +692,18 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
       headers: { Prefer: "return=minimal" },
       body: JSON.stringify(auditToRow(audit)),
     });
+  }
+
+  async saveEventSnapshot(event: EntertainmentEventSnapshot) {
+    await this.emptyRequest(
+      "entertainment_event_snapshots",
+      new URLSearchParams({ on_conflict: "event_id" }),
+      {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(eventToRow(event)),
+      },
+    );
   }
 }
 
@@ -750,6 +807,28 @@ export class MemoryEntertainmentStorage implements EntertainmentStorage {
     });
   }
 
+  async saveContractEvidence(input: {
+    events: EntertainmentEventSnapshot[];
+    reservations: EntertainmentReservation[];
+  }) {
+    for (const event of input.events) {
+      await this.saveEventSnapshot(event);
+    }
+    for (const reservation of input.reservations) {
+      for (const [date, reservations] of this.reservations) {
+        const remaining = reservations.filter(
+          (candidate) => candidate.id !== reservation.id,
+        );
+        if (remaining.length !== reservations.length) {
+          this.reservations.set(date, remaining);
+        }
+      }
+      const values = this.reservations.get(reservation.operatingDate) ?? [];
+      values.push(structuredClone(reservation));
+      this.reservations.set(reservation.operatingDate, values);
+    }
+  }
+
   async failSync(date: string, message: string) {
     const now = new Date().toISOString();
     const previous = this.sync.get(date);
@@ -787,6 +866,18 @@ export class MemoryEntertainmentStorage implements EntertainmentStorage {
       structuredClone(audit),
       ...(this.audits.get(reservation.id) ?? []),
     ]);
+  }
+
+  async saveEventSnapshot(event: EntertainmentEventSnapshot) {
+    for (const [date, events] of this.events) {
+      const remaining = events.filter((item) => item.eventId !== event.eventId);
+      if (remaining.length !== events.length) {
+        this.events.set(date, remaining);
+      }
+    }
+    const values = this.events.get(event.operatingDate) ?? [];
+    values.push(structuredClone(event));
+    this.events.set(event.operatingDate, values);
   }
 }
 

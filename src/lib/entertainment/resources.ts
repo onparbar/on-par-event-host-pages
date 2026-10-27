@@ -114,6 +114,20 @@ export const ENTERTAINMENT_CATEGORY_LABELS: Record<
   "private-rooms": "Private Rooms",
 };
 
+export const ENTERTAINMENT_SCHEDULE_CATEGORIES = [
+  "bowling",
+  "darts",
+  "pool",
+  "shuffleboard",
+  "private-rooms",
+] as const satisfies readonly EntertainmentCategory[];
+
+export function isEntertainmentScheduleCategory(
+  category: EntertainmentCategory,
+) {
+  return category !== "mini-golf";
+}
+
 const RESOURCE_BY_ID = new Map(
   ENTERTAINMENT_RESOURCES.map((resource) => [resource.id, resource]),
 );
@@ -269,6 +283,14 @@ function numberedResourceIds(
     },
   };
   const match = value.match(config[category].pattern);
+  const followingNoun = {
+    bowling: /^(?:(?:duckpin\s+)?bowling\s+)?lanes?\b/i,
+    darts: /^(?:dart\s+)?(?:lanes?|boards?)\b/i,
+    pool: /^(?:(?:pool|billiard)\s+)?tables?\b/i,
+    shuffleboard: /^(?:(?:neo\s+)?shuffleboard\s+)?tables?\b/i,
+  }[category];
+  // Repeated heading + "2 pool tables" is a count, not an assignment to Pool Table 2.
+  if (match && followingNoun.test(value.slice((match.index ?? 0) + match[0].length).trim())) return [];
   return match
     ? numberRange(match[1], config[category].maximum).map(
         (number) => `${category}-${number}`,
@@ -300,33 +322,71 @@ export function quantityForText(
   value: string,
   category: EntertainmentCategory,
   structuredQuantity: number | null,
+  bookingName = value,
 ) {
   if (category === "mini-golf") {
-    return exactResourceIdsForText(value, category).length || 1;
-  }
-  if (
-    structuredQuantity != null &&
-    Number.isInteger(structuredQuantity) &&
-    structuredQuantity > 0
-  ) {
-    return structuredQuantity;
+    // Mini Golf is open play rather than a scheduled resource reservation.
+    // Its quantity must come from the contract's structured quantity; do not
+    // infer a guest count from a named course or default to one.
+    return typeof structuredQuantity === "number" &&
+      Number.isSafeInteger(structuredQuantity) &&
+      structuredQuantity > 0
+      ? structuredQuantity
+      : null;
   }
   if (category === "private-rooms") {
     return exactResourceIdsForText(value, category).length || 1;
   }
+  const exactResourceCount = exactResourceIdsForText(value, category).length;
+  if (exactResourceCount > 0) {
+    return exactResourceCount;
+  }
+  // Bare booking headings count inventory; rental-detail Qty can be billed hours.
+  const bookingHeading = {
+    bowling: /^(?:(?:duckpin\s+)?bowling(?:\s+lanes?)?|duckpin\s+lanes?)$/,
+    darts: /^(?:dartsee\s+)?darts?$|^dart\s+(?:lanes?|boards?)$/,
+    pool: /^(?:pool|billiards?)(?:\s+tables?)?$/,
+    shuffleboard: /^(?:neo\s+)?shuffleboard(?:\s+tables?)?$/,
+  }[category];
   const nounPattern: Record<
     Exclude<EntertainmentCategory, "private-rooms" | "mini-golf">,
     string
   > = {
     bowling: "(?:duckpin\\s+)?(?:bowling\\s+)?lanes?",
-    darts: "dart\\s+(?:lanes?|boards?)",
+    darts: "(?:dart\\s+)?(?:lanes?|boards?)",
     pool: "(?:(?:pool|billiard)\\s+)?tables?",
     shuffleboard: "(?:(?:neo\\s*)?shuffle(?:board)?\\s+)?tables?",
   };
   const match = value.match(
-    new RegExp(`\\b(\\d{1,2})\\s+${nounPattern[category]}\\b`, "i"),
+    new RegExp(`(?<!\\d)(\\d{1,2})\\s+${nounPattern[category]}\\b`, "i"),
   );
-  return match ? Number(match[1]) : null;
+  if (match) {
+    return Number(match[1]);
+  }
+  if (bookingHeading.test(normalizeResourceText(bookingName)) &&
+    typeof structuredQuantity === "number" && Number.isSafeInteger(structuredQuantity) && structuredQuantity > 0) {
+    return structuredQuantity;
+  }
+  const singularRentalPattern: Record<
+    Exclude<EntertainmentCategory, "private-rooms" | "mini-golf">,
+    RegExp
+  > = {
+    bowling: /\bbowling\s+lane\s+rental\b/i,
+    darts: /\bdart\s+(?:lane|board)\s+rental\b/i,
+    pool: /\b(?:pool|billiard)\s+table\s+rental\b/i,
+    shuffleboard: /\b(?:neo\s*)?shuffle(?:board)?\s+table\s+rental\b/i,
+  };
+  if (singularRentalPattern[category].test(value)) {
+    return 1;
+  }
+  return null;
+}
+
+export function conflictingBookingQuantity(value: string, category: EntertainmentCategory, quantity: number | null, bookingName: string) {
+  if (quantity == null || quantityForText(bookingName, category, null) != null ||
+    quantityForText(bookingName, category, quantity) !== quantity) return false;
+  const textQuantity = quantityForText(value, category, null);
+  return textQuantity != null && textQuantity !== quantity;
 }
 
 export function deterministicEventColor(eventId: string) {
