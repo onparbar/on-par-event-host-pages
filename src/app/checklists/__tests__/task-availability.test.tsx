@@ -12,14 +12,14 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
   useState: (initial: unknown) => {
     const index = hooks.index++;
     let value = typeof initial === "function" ? initial() : initial;
-    if (index === 4) {
+    if (index === 1) {
       const state = value[77] as EventChecklistState;
       state.bwa = hooks.bwa;
       state.tasks["prepaid-drink-cards-labeled"] = hooks.checked;
       if (hooks.checked) state.taskEvidence!["prepaid-drink-cards-labeled"] = { employeeName: "Earlier Staff", completedAt: "2026-10-27T14:29:00Z" };
     }
-    if (index === 5) value[77].status = hooks.status;
-    if (index === 14) value = "ready";
+    if (index === 2) value[77].status = hooks.status;
+    if (index === 11) value = "ready";
     hooks.states[index] = value;
     return [value, vi.fn((next: unknown) => { value = typeof next === "function" ? next(value) : next; hooks.states[index] = value; })];
   },
@@ -82,9 +82,9 @@ describe("staff checklist task availability", () => {
   it.each(["Staff", ""])("records an optional checkbox completion using the staff name or BWA: %s", (staffName) => {
     hooks.staffName = staffName;
     const { checkbox } = cardTask();
-    const before = structuredClone((hooks.states[4] as Record<number, EventChecklistState>)[77]);
+    const before = structuredClone((hooks.states[1] as Record<number, EventChecklistState>)[77]);
     checkbox.props.onChange({ target: { checked: true } });
-    const state = (hooks.states[4] as Record<number, EventChecklistState>)[77];
+    const state = (hooks.states[1] as Record<number, EventChecklistState>)[77];
     expect(state.tasks["prepaid-drink-cards-labeled"]).toBe(true);
     expect(state.taskEvidence?.["prepaid-drink-cards-labeled"]?.employeeName).toBe(staffName || "BWA");
     expect(Number.isFinite(Date.parse(state.taskEvidence!["prepaid-drink-cards-labeled"].completedAt))).toBe(true);

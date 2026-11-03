@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Fragment,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -16,26 +15,19 @@ import {
 import type { ChecklistEvent } from "@/lib/checklist-events";
 import { checklistReadiness } from "@/lib/checklist-readiness";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
-import { EventWorkspaceRequests } from "@/app/_components/EventWorkspace";
-import { operationalEventFromPlan, operationalEventHref } from "@/lib/operations/event-context";
+import AddOnQuickOrder, { addQuickOrderQuantity, isValidQuickOrder, type QuickOrderInput, type QuickOrderResult } from "./AddOnQuickOrder";
+import { operationalEventFromPlan } from "@/lib/operations/event-context";
 import { contractSetup, reconcileChecklistSetup, setupTaskFingerprint } from "@/lib/operations/setup";
 import { eventFoodDeliveryState, type EventFoodDelivery } from "@/lib/gotab/delivery";
 import {
   checklistSections,
   completeChecklistTask,
   checklistEventForSelection,
-  appetizerBarRefillAddOns,
-  currency,
   defaultChecklistState,
   entertainmentAddOns,
   entertainmentUnitPrice,
-  foodAddOns,
-  foodUnitPrice,
   numeric,
   recordToChecklistState,
-  standardFoodAddOns,
-  tacoBarRefillAddOns,
-  wingBarRefillAddOns,
   type ChecklistRecord,
   type ChecklistRecordStatus,
   type EventChecklistState,
@@ -51,10 +43,6 @@ type SaveState = "idle" | "saving" | "saved" | "error" | "submitting" | "submitt
 type KitchenSyncState = "idle" | "syncing" | "pending" | "live" | "error";
 type FoodSubmitState = "idle" | "submitting" | "pending" | "sent" | "error" | "uncertain";
 type PendingFoodDelivery = { eventId: number; kitchenEventId: string; requestIds: string[] };
-type AddOnTab =
-  | "food"
-  | "refills"
-  | "entertainment";
 type ChecklistWorkspace = "checklist" | "addons";
 
 type ChecklistSaveResponse = {
@@ -161,9 +149,6 @@ export default function ChecklistsClient({
     [activeEventIds, events],
   );
   const [activeEventId, setActiveEventId] = useState<number>(eligibleEvents[0]?.id ?? 0);
-  const [activeAddOnTab, setActiveAddOnTab] = useState<AddOnTab>("food");
-  const [refillBar, setRefillBar] = useState<"Taco Bar" | "Wing Bar" | "Appetizer Bar">("Taco Bar");
-  const [refillItemKey, setRefillItemKey] = useState("");
   const [checklistsByEvent, setChecklistsByEvent] = useState<Record<number, EventChecklistState>>(
     () => buildInitialChecklistMap(events),
   );
@@ -205,7 +190,7 @@ export default function ChecklistsClient({
   const sectionTitle = isAddOnWorkspace ? "Event Add-Ons" : "Event Checklists";
   const pageTitle = isAddOnWorkspace ? "Event Add-Ons" : "Digital Event Checklists";
   const pageDescription = isAddOnWorkspace
-    ? "Manage Food and Entertainment add-ons in their own shared event workspace."
+    ? "Choose an item, enter the quantity, and submit."
     : "Complete event tasks with drafts saved automatically to the shared event record.";
 
   useEffect(() => {
@@ -679,25 +664,6 @@ export default function ChecklistsClient({
   const warningsConfirmed = Boolean(readiness.warningFingerprint && warningConfirmation?.sourceFingerprint === readiness.warningFingerprint && warningConfirmation.employeeName === warningActor);
   const canSubmit = isEditable && (readiness.canSubmit || warningsConfirmed && readiness.canSubmitAfterWarningConfirmation) && !conflictByEvent[activeEvent.id] && !["submitting", "saving"].includes(activeSaveState);
   const progress = readiness;
-  const entertainmentSubtotal = entertainmentAddOns.reduce((sum, item) => {
-    const state = activeChecklist.entertainment[item.key];
-    return sum + entertainmentUnitPrice(item, state) * numeric(state.quantity);
-  }, 0);
-  const foodSubtotal = foodAddOns.reduce((sum, item) => {
-    const state = activeChecklist.food[item.key];
-    return sum + foodUnitPrice(item, state) * numeric(state.quantity);
-  }, 0);
-  const refillItems = refillBar === "Taco Bar"
-    ? tacoBarRefillAddOns
-    : refillBar === "Wing Bar"
-      ? wingBarRefillAddOns
-      : appetizerBarRefillAddOns;
-  const activeRefillItem = refillItems.find((item) => item.key === refillItemKey) ?? refillItems[0];
-  const activeFoodAddOns = activeAddOnTab === "food" ? standardFoodAddOns : [];
-  const activeFoodSubtotal = activeFoodAddOns.reduce((sum, item) => {
-    const state = activeChecklist.food[item.key];
-    return sum + foodUnitPrice(item, state) * numeric(state.quantity);
-  }, 0);
 
   let saveMessage = "Draft not saved yet.";
   if (loadState === "loading") {
@@ -722,37 +688,27 @@ export default function ChecklistsClient({
     >
       <EventSelectionBridge event={operationalEventFromPlan(activeEvent)} />
       <PortalPageHeader
-        aside={
+        aside={!isAddOnWorkspace ?
           <div className="checklist-meta-card">
             <span className="eyebrow">Current Event</span>
             <strong>{activeEvent.name}</strong>
-            <span className="meta">
-              {progress.completed} of {progress.total} required checklist items complete
-            </span>
+            <span className="meta">{progress.completed} of {progress.total} required checklist items complete</span>
             <progress aria-label="Checklist completion" className="checklist-progress" max={Math.max(1, progress.total)} value={progress.completed} />
             <span className={`sync-chip sync-chip-${activeSaveState}`}>{saveMessage}</span>
           </div>
-        }
+          : null}
         description={pageDescription}
         eyebrow="Event Host workspace"
         title={pageTitle}
       />
       {sourceWarning ? <section className="checklist-meta-card" role="alert">{sourceWarning}</section> : null}
-      {isAddOnWorkspace ? <>
-        <EventWorkspaceRequests />
-        <section className="checklist-meta-card">
-          <strong>Contracted entertainment</strong>
-          <ul>{activeEvent.entertainment.map((item, index) => <li key={`${index}:${item.name}`}>{item.name}: {item.quantity}{/\bmini(?:ature)?\s*golf\b/i.test(item.name) ? " · Untimed" : ` · ${item.time || "Time needs review"}`}</li>)}</ul>
-          {!activeEvent.entertainment.length ? <p>No entertainment is listed in this event source.</p> : null}
-        </section>
-      </> : null}
 
       {conflictByEvent[activeEvent.id] ? <section className="checklist-meta-card" role="alert">
         <strong>A newer saved version exists. Your draft is still here.</strong>
         <p>Review your unsaved changes before reloading. Reloading discards this screen’s draft; it does not overwrite the other staff member’s saved work.</p>
         <button type="button" onClick={() => void reloadChecklist(activeEvent.id)}>Reload latest and review</button>
       </section> : null}
-      {activeSaveState === "error" && !conflictByEvent[activeEvent.id] ? <section className="checklist-meta-card" role="alert"><p>Automatic saving is paused after the error. Your draft is still on this screen. This retry saves the draft only; food items still require their own Submit button.</p><button type="button" onClick={() => setSaveStateByEvent((current) => ({ ...current, [activeEvent.id]: "idle" }))}>Retry saving draft</button></section> : null}
+      {!isAddOnWorkspace && activeSaveState === "error" && !conflictByEvent[activeEvent.id] ? <section className="checklist-meta-card" role="alert"><p>Automatic saving is paused after the error. Your draft is still on this screen. This retry saves the draft only; food items still require their own Submit button.</p><button type="button" onClick={() => setSaveStateByEvent((current) => ({ ...current, [activeEvent.id]: "idle" }))}>Retry saving draft</button></section> : null}
 
         <section
           className="event-tab-strip"
@@ -772,14 +728,14 @@ export default function ChecklistsClient({
               >
                 <span>{event.name}</span>
                 <small>
-                  {event.dateLabel} · {eventMeta.status === "submitted" ? "Submitted" : "Draft"} · {eventProgress.completed}/{eventProgress.total}
+                  {event.dateLabel}{!isAddOnWorkspace ? ` · ${eventMeta.status === "submitted" ? "Submitted" : "Draft"} · ${eventProgress.completed}/${eventProgress.total}` : ""}
                 </small>
               </button>
             );
           })}
         </section>
 
-        <section className="event-header-card">
+        {!isAddOnWorkspace ? <section className="event-header-card">
           <div className="event-field-grid">
             <Field label="Date" value={activeEvent.dateLabel} />
             <Field label="Event Name" value={activeEvent.name} />
@@ -879,10 +835,6 @@ export default function ChecklistsClient({
                   {loadState !== "ready" ? <li>Saved checklist data must load successfully before submission.</li> : null}
                 </ul>
               ) : null}
-              {isAddOnWorkspace && !isSubmitted && readiness.missing.length > 0 ? <div>
-                <p className="meta">This saves the current add-on draft to Admin only. It does not order food, send anything to the KDS, or mark tasks complete.</p>
-                <button type="button" disabled={!isEditable || foodSaveBusy || Boolean(conflictByEvent[activeEvent.id])} onClick={() => void openChecklistForCloseout(activeEvent)}>Save add-on draft and open checklist</button>
-              </div> : null}
             </div>
             <button
               type="button"
@@ -901,7 +853,7 @@ export default function ChecklistsClient({
                     : "Submit Final Checklist"}
             </button>
           </div>
-        </section>
+        </section> : null}
 
         {!isAddOnWorkspace ? (
           <section className="paper-checklist">
@@ -952,443 +904,30 @@ export default function ChecklistsClient({
             ))}
           </section>
         ) : (
-          <section className="addon-layout">
-            <article className="addon-card">
-              <div className="addon-card-header">
-                <div>
-                  <span className="eyebrow">One Add-On Workspace</span>
-                  <h3>
-                    {activeAddOnTab === "food"
-                      ? "Food Add-Ons"
-                      : activeAddOnTab === "refills"
-                        ? "Refills"
-                        : "Entertainment & Drink Add-Ons"}
-                  </h3>
-                  <p>
-                    {activeAddOnTab === "entertainment"
-                      ? "Entertainment and drink changes stay out of Kitchen and are included in the final Admin record."
-                      : activeAddOnTab === "refills"
-                        ? "Refills send directly to the Kitchen Dashboard and GoTab KDS. No pricing is collected here."
-                        : "Food changes save here and are sent to the Kitchen Dashboard and GoTab KDS live."}
-                  </p>
-                </div>
-                <strong>
-                  {currency(
-                    activeAddOnTab === "entertainment"
-                      ? entertainmentSubtotal
-                      : activeAddOnTab === "food" ? activeFoodSubtotal : 0,
-                  )}
-                </strong>
-              </div>
-
-              <div className="addon-category-tabs" role="tablist" aria-label="Add-on categories">
-                <button
-                  aria-selected={activeAddOnTab === "food"}
-                  className={activeAddOnTab === "food" ? "active" : ""}
-                  onClick={() => setActiveAddOnTab("food")}
-                  role="tab"
-                  type="button"
-                >
-                  <span>Food</span>
-                  <small>Live to Kitchen</small>
-                </button>
-                <button
-                  aria-selected={activeAddOnTab === "refills"}
-                  className={activeAddOnTab === "refills" ? "active" : ""}
-                  onClick={() => setActiveAddOnTab("refills")}
-                  role="tab"
-                  type="button"
-                >
-                  <span>Refills</span>
-                  <small>Live to Kitchen + KDS</small>
-                </button>
-                <button
-                  aria-selected={activeAddOnTab === "entertainment"}
-                  className={activeAddOnTab === "entertainment" ? "active" : ""}
-                  onClick={() => setActiveAddOnTab("entertainment")}
-                  role="tab"
-                  type="button"
-                >
-                  <span>Entertainment</span>
-                  <small>Admin at event close</small>
-                </button>
-              </div>
-
-              {activeAddOnTab !== "entertainment" ? (
-                <div
-                  className={`kitchen-sync-banner kitchen-sync-${activeKitchenSyncState === "pending" ? "syncing" : activeKitchenSyncState}`}
-                  role="status"
-                >
-                  <div>
-                    <strong>
-                      {activeKitchenSyncState === "syncing"
-                        ? "Sending food changes to Kitchen…"
-                        : activeKitchenSyncState === "pending"
-                          ? "Kitchen saved · Sending to GoTab…"
-                        : activeKitchenSyncState === "live"
-                          ? "Kitchen saved · GoTab accepted"
-                          : activeKitchenSyncState === "error"
-                            ? "Food delivery needs attention"
-                            : "Submit each food item to Kitchen and GoTab"}
-                    </strong>
-                    <span>
-                      The complete Food and Entertainment add-on record is still
-                      submitted to Admin when the event is closed.
-                    </span>
-                  </div>
-                  {activeKitchenSyncState === "error" || activeKitchenSyncState === "pending" ? (
-                    <span>
-                      {kitchenSyncErrorByEvent[activeEvent.id] ||
-                        (activeKitchenSyncState === "pending" ? "No approval is needed. Delivery status updates automatically; do not submit again." : "Check the saved order status before submitting this item again.")}
-                    </span>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="addon-admin-banner">
-                  <strong>Admin-only until the event is submitted</strong>
-                  <span>
-                    Entertainment and drink add-ons will not appear on the Kitchen
-                    Dashboard.
-                  </span>
-                </div>
-              )}
-
-              {activeAddOnTab !== "entertainment" && deliveryByEvent[activeEvent.id]?.length ? <section className="addon-delivery-status" aria-label="Submitted food-order results">
-                <h3>Submitted food orders — {activeEvent.name}</h3>
-                <p>GoTab acceptance does not confirm that a person saw the physical KDS. Check the order reference before retrying an uncertain send.</p>
-                <ul>{deliveryByEvent[activeEvent.id].map((item) => <li key={item.requestId}><strong>{item.quantity} × {item.foodName}</strong> · {eventFoodDeliveryState(item).label}<small>Order: {item.orderReference ?? "Not yet available"}</small></li>)}</ul>
-              </section> : null}
-
-              <div className="addon-grid">
-                {activeAddOnTab === "refills" ? (
-                  <article className="addon-row-card refill-selector-card">
-                    <div className="addon-controls">
-                      <label className="control-block">
-                        <span>Bar</span>
-                        <select
-                          disabled={!isEditable}
-                          value={refillBar}
-                          onChange={(event) => {
-                            const nextBar = event.target.value as typeof refillBar;
-                            setRefillBar(nextBar);
-                            setRefillItemKey("");
-                          }}
-                        >
-                          <option>Taco Bar</option>
-                          <option value="Wing Bar">Wing Bar Refills</option>
-                          <option value="Appetizer Bar">Appetizer Bar Refills</option>
-                        </select>
-                      </label>
-                      <label className="control-block">
-                        <span>Item</span>
-                        <select
-                          disabled={!isEditable}
-                          value={activeRefillItem?.key ?? ""}
-                          onChange={(event) => setRefillItemKey(event.target.value)}
-                        >
-                          {refillItems.map((item) => (
-                            <option key={item.key} value={item.key}>{item.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="control-block quantity-block">
-                        <span>Quantity</span>
-                        <select
-                          disabled={!isEditable || !activeRefillItem || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`])}
-                          value={activeRefillItem ? activeChecklist.food[activeRefillItem.key].quantity : ""}
-                          onChange={(event) => activeRefillItem && updateFoodAddOn(activeEvent.id, activeRefillItem.key, { quantity: event.target.value })}
-                        >
-                          <option value="">0</option>
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                          <option value="3">3</option>
-                          <option value="4">4</option>
-                          <option value="5">5</option>
-                          <option value="6">6</option>
-                          <option value="7">7</option>
-                          <option value="8">8</option>
-                          <option value="9">9</option>
-                          <option value="10">10</option>
-                        </select>
-                      </label>
-                      <button
-                        className="submit-button"
-                        disabled={!canSendFood || !activeRefillItem || numeric(activeChecklist.food[activeRefillItem.key].quantity) < 1 || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`])}
-                        onClick={() => activeRefillItem && void submitFoodAddOn(activeEvent.id, activeRefillItem.key, "REFILL")}
-                        type="button"
-                      >
-                        {foodSaveBusy ? activeSaveState === "saving" ? "Saving…" : "Sending…" : activeRefillItem && ["submitting", "pending"].includes(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`]) ? "Sending…" : activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "sent" ? "GoTab accepted" : activeRefillItem && foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "uncertain" ? "Check saved order" : "Submit Refill"}
-                      </button>
-                    </div>
-                    <label className="control-block">
-                      <span>Notes for this refill</span>
-                      <textarea
-                        maxLength={500}
-                        disabled={!isEditable || !activeRefillItem || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`]) || foodSubmitByItem[`${activeEvent.id}:${activeRefillItem.key}`] === "sent"}
-                        value={activeRefillItem ? activeChecklist.food[activeRefillItem.key].notes ?? "" : ""}
-                        onChange={(event) => activeRefillItem && updateFoodAddOn(activeEvent.id, activeRefillItem.key, { notes: event.target.value })}
-                        placeholder="Optional instructions for this refill only."
-                      />
-                      <small>Sent with this request. Editing notes never resends food.</small>
-                    </label>
-                  </article>
-                ) : activeAddOnTab === "entertainment"
-                  ? entertainmentAddOns.map((item) => {
-                  const state = activeChecklist.entertainment[item.key];
-                  const unitPrice = entertainmentUnitPrice(item, state);
-                  const subtotal = unitPrice * numeric(state.quantity);
-                  const updateQuantity = (quantity: string) =>
-                    updateEventChecklist(activeEvent.id, (current) => ({
-                      ...current,
-                      entertainment: {
-                        ...current.entertainment,
-                        [item.key]: {
-                          ...current.entertainment[item.key],
-                          quantity,
-                        },
-                      },
-                    }));
-
-                  return (
-                    <article className="addon-row-card" key={item.key}>
-                      <div className="addon-row-top">
-                        <div>
-                          <h4>{item.label}</h4>
-                          <p>{item.unitLabel}</p>
-                        </div>
-                        <strong>{currency(subtotal)}</strong>
-                      </div>
-                      <div className="addon-controls">
-                        {item.kind === "rate-select" ? (
-                          <label className="control-block">
-                            <span>Rate</span>
-                            <select
-                              disabled={!isEditable}
-                              value={state.selectedRateKey}
-                              onChange={(event) =>
-                                updateEventChecklist(activeEvent.id, (current) => ({
-                                  ...current,
-                                  entertainment: {
-                                    ...current.entertainment,
-                                    [item.key]: {
-                                      ...current.entertainment[item.key],
-                                      selectedRateKey: event.target.value,
-                                    },
-                                  },
-                                }))
-                              }
-                            >
-                              {item.options?.map((option) => (
-                                <option key={option.key} value={option.key}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : item.kind === "manual-price" ? (
-                          <label className="control-block">
-                            <span>Price</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              min="0"
-                              step="0.01"
-                              disabled={!isEditable}
-                              value={state.manualPrice}
-                              onChange={(event) =>
-                                updateEventChecklist(activeEvent.id, (current) => ({
-                                  ...current,
-                                  entertainment: {
-                                    ...current.entertainment,
-                                    [item.key]: {
-                                      ...current.entertainment[item.key],
-                                      manualPrice: event.target.value,
-                                    },
-                                  },
-                                }))
-                              }
-                              placeholder="0.00"
-                            />
-                          </label>
-                        ) : (
-                          <div className="control-block locked-price">
-                            <span>Price</span>
-                            <strong>{currency(item.fixedPrice ?? 0)}</strong>
-                          </div>
-                        )}
-
-                        <label className="control-block quantity-block">
-                          <span>Quantity</span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="0"
-                            step="1"
-                            disabled={!isEditable}
-                            value={state.quantity}
-                            onChange={(event) => {
-                              const quantity = event.target.value;
-                              if (quantity !== "" && (!/^\d+$/.test(quantity) || !Number.isSafeInteger(Number(quantity)))) return;
-                              updateQuantity(quantity);
-                            }}
-                            placeholder="0"
-                          />
-                        </label>
-                      </div>
-                    </article>
-                  );
-                    })
-                  : activeFoodAddOns.map((item) => {
-                  const state = activeChecklist.food[item.key];
-                  const unitPrice = foodUnitPrice(item, state);
-                  const subtotal = unitPrice * numeric(state.quantity);
-
-                  return (
-                    <Fragment key={item.key}>
-                    <article className="addon-row-card">
-                      <div className="addon-row-top">
-                        <div>
-                          <h4>{item.label}</h4>
-                          <p>
-                            {item.kind === "manual-price"
-                              ? "Manual price"
-                              : item.kind === "quantity-only"
-                                ? "Quantity only"
-                                : "Locked price"}
-                          </p>
-                        </div>
-                        <strong>
-                          {item.kind === "quantity-only"
-                            ? "No price set"
-                            : currency(subtotal)}
-                        </strong>
-                      </div>
-                      <div className="addon-controls">
-                        {item.kind === "manual-price" ? (
-                          <label className="control-block">
-                            <span>Price</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              min="0"
-                              step="0.01"
-                              disabled={!isEditable}
-                              value={state.manualPrice}
-                              onChange={(event) =>
-                                updateFoodAddOn(activeEvent.id, item.key, {
-                                  manualPrice: event.target.value,
-                                })
-                              }
-                              placeholder="0.00"
-                            />
-                          </label>
-                        ) : item.kind === "quantity-only" ? (
-                          <div className="control-block locked-price">
-                            <span>Pricing</span>
-                            <strong>Not priced</strong>
-                          </div>
-                        ) : (
-                          <div className="control-block locked-price">
-                            <span>Price</span>
-                            <strong>{currency(item.fixedPrice ?? 0)}</strong>
-                          </div>
-                        )}
-
-                        <label className="control-block quantity-block">
-                          <span>Quantity</span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="0"
-                            step="1"
-                            disabled={!isEditable || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`])}
-                            value={state.quantity}
-                            onChange={(event) =>
-                              updateFoodAddOn(
-                                activeEvent.id,
-                                item.key,
-                                { quantity: event.target.value },
-                              )
-                            }
-                            placeholder="0"
-                          />
-                        </label>
-
-                        <label className="control-block">
-                          <span>Pan size</span>
-                          <select
-                            aria-label={`${item.label} pan size`}
-                            disabled={!isEditable || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`])}
-                            value={state.panSize}
-                            onChange={(event) =>
-                              updateFoodAddOn(
-                                activeEvent.id,
-                                item.key,
-                                {
-                                  panSize: event.target.value as "" | "1/3" | "1/2",
-                                },
-                              )
-                            }
-                          >
-                            <option value="">Automatic</option>
-                            <option value="1/3">1/3 pan</option>
-                            <option value="1/2">1/2 pan</option>
-                          </select>
-                        </label>
-                        <button
-                          className="submit-button"
-                          disabled={!canSendFood || numeric(state.quantity) < 1 || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`])}
-                          onClick={() => void submitFoodAddOn(activeEvent.id, item.key)}
-                          type="button"
-                        >
-                          {foodSaveBusy
-                            ? activeSaveState === "saving" ? "Saving…" : "Sending…"
-                            : ["submitting", "pending"].includes(foodSubmitByItem[`${activeEvent.id}:${item.key}`])
-                            ? "Sending…"
-                            : foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "sent"
-                              ? "GoTab accepted"
-                              : foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "uncertain"
-                                ? "Check saved order"
-                                : "Submit to Kitchen"}
-                        </button>
-                      </div>
-                      <label className="control-block">
-                        <span>Notes for this food request</span>
-                        <textarea
-                          maxLength={500}
-                          disabled={!isEditable || foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${item.key}`]) || foodSubmitByItem[`${activeEvent.id}:${item.key}`] === "sent"}
-                          value={state.notes ?? ""}
-                          onChange={(event) => updateFoodAddOn(activeEvent.id, item.key, { notes: event.target.value })}
-                          placeholder="Optional instructions for this order only."
-                        />
-                        <small>Sent with this request. Editing notes never resends food.</small>
-                      </label>
-                    </article>
-                    </Fragment>
-                  );
-                    })}
-              </div>
-            </article>
-
-            <aside className="totals-card">
-              <span className="eyebrow">Add-On Summary</span>
-              <div className="summary-line">
-                <span>Entertainment &amp; Drink</span>
-                <strong>{currency(entertainmentSubtotal)}</strong>
-              </div>
-              <div className="summary-line">
-                <span>Food</span>
-                <strong>{currency(foodSubtotal)}</strong>
-              </div>
-              <div className="summary-line grand-total">
-                <span>Total</span>
-                <strong>{currency(entertainmentSubtotal + foodSubtotal)}</strong>
-              </div>
-              <p className="meta">
-                Both categories are included when the final event record is
-                submitted to Admin.
-              </p>
-            </aside>
+          <section aria-label="Add-on ordering">
+            {loadState !== "ready" ? <div className="checklist-meta-card" role={loadState === "error" ? "alert" : "status"}>
+              <strong>{loadState === "error" ? "Unable to load saved add-ons. Ordering is paused." : "Loading saved add-ons…"}</strong>
+              {loadState === "error" ? <button type="button" onClick={() => window.location.reload()}>Reload saved add-ons</button> : null}
+            </div> : null}
+            <AddOnQuickOrder
+              key={`${activeEvent.id}:${activeEvent.date}`}
+              eventName={activeEvent.name}
+              eventDate={activeEvent.date}
+              errorMessage={kitchenSyncErrorByEvent[activeEvent.id]}
+              existingEntertainment={activeChecklist.entertainment}
+              getItemResult={(key) => {
+                const state = foodSubmitByItem[`${activeEvent.id}:${key}`];
+                return state === "sent" ? "accepted" : state === "pending" || state === "error" || state === "uncertain" ? state : null;
+              }}
+              disabled={!canSendFood}
+              isItemLocked={(key) => foodSubmissionLocked(foodSubmitByItem[`${activeEvent.id}:${key}`])}
+              onSubmit={(order) => submitQuickOrder(activeEvent.id, order)}
+            />
+            {activeKitchenSyncState === "pending" || activeKitchenSyncState === "error" ? <div className="checklist-meta-card" role={activeKitchenSyncState === "error" ? "alert" : "status"}>
+              <strong>{activeKitchenSyncState === "pending" ? "Saved · Waiting for GoTab acceptance" : "Order needs attention"}</strong>
+              <span>{kitchenSyncErrorByEvent[activeEvent.id] || "Check the saved order before submitting again."}</span>
+              {deliveryByEvent[activeEvent.id]?.filter((item) => !eventFoodDeliveryState(item).accepted).map((item) => <small key={item.requestId}>{item.quantity} × {item.foodName} · {eventFoodDeliveryState(item).label} · Order: {item.orderReference ?? "Not yet available"}</small>)}
+            </div> : null}
           </section>
         )}
     </PortalShell>
@@ -1418,52 +957,38 @@ export default function ChecklistsClient({
     }));
   }
 
-  async function openChecklistForCloseout(event: ChecklistEvent) {
-    const saved = await saveDrafts([event.id], { syncFoodAddOns: false });
-    if (saved.has(event.id)) window.location.assign(operationalEventHref("/checklists", operationalEventFromPlan(event)));
-  }
-
-  function updateFoodAddOn(
-    eventId: number,
-    key: string,
-    changes: { quantity?: string; manualPrice?: string; panSize?: "" | "1/3" | "1/2"; notes?: string },
-  ) {
-    if (metaByEvent[eventId]?.status === "submitted" || finalSubmissionEventIds.current.has(eventId)) return;
-    if (foodSubmissionLocked(foodSubmitByItem[`${eventId}:${key}`])) return;
-    revisionByEventRef.current[eventId] = (revisionByEventRef.current[eventId] ?? 0) + 1;
-    setChecklistsByEvent((current) => ({
-      ...current,
-      [eventId]: {
-        ...current[eventId],
-        food: {
-          ...current[eventId].food,
-          [key]: { ...current[eventId].food[key], ...changes },
-        },
-      },
-    }));
-    setFoodSubmitByItem((current) => ({
-      ...current,
-      [`${eventId}:${key}`]: "idle",
-    }));
-    setKitchenSyncByEvent((current) => ({
-      ...current,
-      [eventId]: "idle",
-    }));
-  }
-
-  async function submitFoodAddOn(eventId: number, key: string, sourceType: "EVENT_HOST_ADDON" | "REFILL" = "EVENT_HOST_ADDON") {
-    const checklist = checklistsByEvent[eventId];
+  async function submitQuickOrder(eventId: number, order: QuickOrderInput): Promise<QuickOrderResult> {
+    const current = checklistsByEvent[eventId];
     const event = events.find((item) => item.id === eventId);
-    if (!event || !checklist || metaByEvent[eventId]?.status === "submitted" || conflictByEvent[eventId] || finalSubmissionEventIds.current.has(eventId)) return;
-    const itemStateKey = `${eventId}:${key}`;
-    if (foodSubmissionLocked(foodSubmitByItem[itemStateKey])) return;
-    if (inFlightEventIds.current.has(eventId)) {
-      setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: "A save is already in progress for this event. Wait for it to finish before submitting food." }));
-      return;
+    const itemStateKey = `${eventId}:${order.key}`;
+    if (!event || !current || !isValidQuickOrder(order) || loadState !== "ready" ||
+      metaByEventRef.current[eventId]?.status === "submitted" || conflictByEvent[eventId] ||
+      finalSubmissionEventIds.current.has(eventId) || inFlightEventIds.current.has(eventId) ||
+      foodSubmissionLocked(foodSubmitByItem[itemStateKey])) return "error";
+    const foodOrder = order.category !== "entertainment";
+    const priorEntertainment = current.entertainment[order.key];
+    const entertainmentItem = entertainmentAddOns.find((item) => item.key === order.key);
+    const entertainmentQuantity = foodOrder ? null : addQuickOrderQuantity(priorEntertainment.quantity, order.quantity);
+    if (!foodOrder && (entertainmentQuantity === null || numeric(priorEntertainment.quantity) > 0 && entertainmentItem &&
+      entertainmentUnitPrice(entertainmentItem, priorEntertainment) !== entertainmentUnitPrice(entertainmentItem, order))) {
+      setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: "Use the existing event rate for this add-on. Earlier quantities and prices have not been changed." }));
+      setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "error" }));
+      return "error";
     }
+    const checklist: EventChecklistState = foodOrder
+      ? { ...current, food: { ...current.food, [order.key]: { ...current.food[order.key], quantity: order.quantity, panSize: order.panSize, notes: order.notes } } }
+      : { ...current, entertainment: { ...current.entertainment, [order.key]: {
+        ...current.entertainment[order.key],
+        quantity: entertainmentQuantity!,
+        selectedRateKey: order.selectedRateKey,
+        manualPrice: order.manualPrice,
+      } } };
+    // Keep keypad drafts local. Only this explicit Submit can save or dispatch.
     inFlightEventIds.current.add(eventId);
+    revisionByEventRef.current[eventId] = (revisionByEventRef.current[eventId] ?? 0) + 1;
     setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "submitting" }));
-    setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "syncing" }));
+    setSaveStateByEvent((current) => ({ ...current, [eventId]: "saving" }));
+    if (foodOrder) setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "syncing" }));
     setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: "" }));
     let outcomeUncertain = true;
     try {
@@ -1476,49 +1001,55 @@ export default function ChecklistsClient({
           eventDate: event.date,
           expectedUpdatedAt: metaByEventRef.current[eventId]?.updatedAt ?? null,
           checklist,
-          syncFoodAddOns: true,
-          syncFoodAddOnKeys: [key],
-          sourceType,
-          ...((staffName.trim() || checklist.bwa.trim()) ? { requesterName: staffName.trim() || checklist.bwa.trim() } : {}),
+          syncFoodAddOns: foodOrder,
+          ...(foodOrder ? { syncFoodAddOnKeys: [order.key], sourceType: order.category === "refills" ? "REFILL" : "EVENT_HOST_ADDON" } : {}),
+          ...((staffName.trim() || current.bwa.trim()) ? { requesterName: staffName.trim() || current.bwa.trim() } : {}),
         }),
       });
-      const payload = (await response.json()) as ChecklistSaveResponse;
-      outcomeUncertain = response.ok && payload.kitchenSync?.status === "error" && !payload.kitchenSync.exceptions &&
-        (!payload.kitchenSync.deliveries?.length || payload.kitchenSync.deliveries.some((delivery) => ["HELD", "SENDING", "UNKNOWN"].includes(delivery.status)));
-      rememberDelivery(eventId, payload.kitchenSync?.deliveries);
+      const payload = await response.json() as ChecklistSaveResponse;
       if (response.status === 409) setConflictByEvent((current) => ({ ...current, [eventId]: true }));
-      // A food delivery error can follow a successful checklist save. Keep its
-      // revision, otherwise the next deliberate retry would use a stale draft.
-      if (response.ok && payload.record) {
-        window.dispatchEvent(new Event("event-host:checklist-updated"));
-        metaByEventRef.current[eventId] = metaFromRecord(payload.record);
-        setMetaByEvent((current) => ({ ...current, [eventId]: metaFromRecord(payload.record) }));
+      if (!response.ok) {
+        // A conflict or rejected request is not evidence that an order was accepted.
+        outcomeUncertain = response.status >= 500;
+        throw new Error(payload.error ?? "Unable to save this order. Your entries are retained.");
       }
-      if (response.ok && payload.kitchenSync?.status === "pending" && payload.kitchenSync.requestIds?.length) {
+      if (!payload.record || payload.record.eventId !== eventId || payload.record.eventDate !== event.date ||
+        payload.record.status !== "draft" || !payload.record.updatedAt || !Number.isFinite(Date.parse(payload.record.updatedAt))) {
+        throw new Error("The saved order could not be verified for this event. Check the saved record before submitting again.");
+      }
+      metaByEventRef.current[eventId] = metaFromRecord(payload.record);
+      setMetaByEvent((current) => ({ ...current, [eventId]: metaFromRecord(payload.record) }));
+      setChecklistsByEvent((current) => ({ ...current, [eventId]: mergeRecordState(payload.record, event) }));
+      setSaveStateByEvent((current) => ({ ...current, [eventId]: "saved" }));
+      setDirtyEventIds((current) => current.filter((id) => id !== eventId));
+      window.dispatchEvent(new Event("event-host:checklist-updated"));
+      if (!foodOrder) {
+        setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "sent" }));
+        return "accepted";
+      }
+      rememberDelivery(eventId, payload.kitchenSync?.deliveries);
+      if (payload.kitchenSync?.status === "pending" && payload.kitchenSync.requestIds?.length) {
         setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "pending" }));
         setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "pending" }));
         setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: "No approval is needed. Delivery status updates automatically; do not submit again." }));
         setPendingFoodByItem((current) => ({ ...current, [itemStateKey]: { eventId, kitchenEventId: payload.kitchenSync!.eventId ?? String(eventId), requestIds: payload.kitchenSync!.requestIds! } }));
-        return;
+        return "pending";
       }
-      if (!response.ok || payload.kitchenSync?.status !== "live") {
-        if (outcomeUncertain) {
-          setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "uncertain" }));
-          setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "error" }));
-          setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: payload.kitchenSync?.error ?? "Check the saved order before submitting again." }));
-          return;
-        }
-        throw new Error(payload.error ?? payload.kitchenSync?.error ?? "Kitchen submission was not confirmed. Check the saved order before submitting again.");
+      if (payload.kitchenSync?.status !== "live") {
+        outcomeUncertain = !payload.kitchenSync?.exceptions &&
+          (!payload.kitchenSync?.deliveries?.length || payload.kitchenSync.deliveries.some((item) => ["HELD", "SENDING", "UNKNOWN"].includes(item.status)));
+        throw new Error(payload.kitchenSync?.error ?? "GoTab acceptance is not confirmed. Check the saved order before submitting again.");
       }
       setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: "sent" }));
       setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "live" }));
+      return "accepted";
     } catch (error) {
       setFoodSubmitByItem((current) => ({ ...current, [itemStateKey]: outcomeUncertain ? "uncertain" : "error" }));
+      setSaveStateByEvent((current) => ({ ...current, [eventId]: "error" }));
+      setSaveErrorByEvent((current) => ({ ...current, [eventId]: error instanceof Error ? error.message : "Unable to save this order." }));
       setKitchenSyncByEvent((current) => ({ ...current, [eventId]: "error" }));
-      setKitchenSyncErrorByEvent((current) => ({
-        ...current,
-        [eventId]: error instanceof Error ? error.message : "Kitchen and KDS sync failed.",
-      }));
+      setKitchenSyncErrorByEvent((current) => ({ ...current, [eventId]: error instanceof Error ? error.message : "Order acceptance could not be confirmed." }));
+      return outcomeUncertain ? "uncertain" : "error";
     } finally { inFlightEventIds.current.delete(eventId); }
   }
 
