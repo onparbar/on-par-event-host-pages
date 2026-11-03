@@ -9,7 +9,7 @@ import { eventFoodDeliveryState, type EventFoodDelivery } from "@/lib/gotab/deli
 import { formatEntertainmentIntervalHours } from "@/lib/entertainment/duration";
 import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
 
-const WORKSPACE_PATHS = new Set(["/checklists", "/floor-plans", "/entertainment-schedules", "/event-host-addons", "/itineraries"]);
+const WORKSPACE_PATHS = new Set(["/checklists", "/set-up", "/floor-plans", "/entertainment-schedules", "/event-host-addons", "/itineraries"]);
 type WorkspaceContextValue = {
   payload: WorkspacePayload | null;
   now: Date;

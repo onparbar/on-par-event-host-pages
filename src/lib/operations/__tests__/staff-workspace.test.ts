@@ -23,7 +23,7 @@ describe("staff workspace display preference", () => {
     expect(readPersistedStaffContext(raw)).toBe("");
   });
   it("keeps the exact event ID and date in every workspace tab, never VIP check-in", () => {
-    expect(STAFF_WORKSPACE_NAVIGATION.map((item) => item.label)).toEqual(["Checklists", "Floor Plans", "Entertainment", "Add-ons & Refills", "Itineraries"]);
+    expect(STAFF_WORKSPACE_NAVIGATION.map((item) => item.label)).toEqual(["Checklists", "Set Up", "Floor Plans", "Entertainment", "Add-ons & Refills", "Itineraries"]);
     for (const item of STAFF_WORKSPACE_NAVIGATION) {
       const href = operationalEventHref(item.href, event);
       const url = new URL(href, "https://event-host.invalid");

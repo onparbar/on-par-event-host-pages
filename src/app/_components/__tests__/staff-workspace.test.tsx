@@ -26,13 +26,13 @@ const plan: EventPlan = { id: 123, name: "Staff training", date: "2026-10-23", r
 
 describe("staff event workspace shell", () => {
   beforeEach(() => { mocks.pathname = "/checklists"; mocks.staffName = "Carlos"; mocks.requestedDate = "2026-10-23"; mocks.requestedEventId = "123"; });
-  it("renders the five left navigation tabs in order with the same event identity", () => {
+  it("renders the six left navigation tabs in order with the same event identity", () => {
     const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace", children: createElement("p", null, "Checklist tasks") }));
     expect(html).toContain("staff-event-workspace");
     const navigation = html.match(/<nav aria-label="My event workspace"[\s\S]*?<\/nav>/)?.[0] ?? "";
-    expect([...navigation.matchAll(/>(Checklists|Floor Plans|Entertainment|Add-ons &amp; Refills|Itineraries)<\/a>/g)].map((match) => match[1])).toEqual(["Checklists", "Floor Plans", "Entertainment", "Add-ons &amp; Refills", "Itineraries"]);
-    expect(navigation.match(/eventId=123/g)).toHaveLength(5);
-    expect(navigation.match(/date=2026-10-23/g)).toHaveLength(5);
+    expect([...navigation.matchAll(/>(Checklists|Set Up|Floor Plans|Entertainment|Add-ons &amp; Refills|Itineraries)<\/a>/g)].map((match) => match[1])).toEqual(["Checklists", "Set Up", "Floor Plans", "Entertainment", "Add-ons &amp; Refills", "Itineraries"]);
+    expect(navigation.match(/eventId=123/g)).toHaveLength(6);
+    expect(navigation.match(/date=2026-10-23/g)).toHaveLength(6);
     expect(navigation).not.toContain("vip-check-in");
     expect(html).toContain('aria-label="Event reminders"');
     expect(html).toContain("All operations");

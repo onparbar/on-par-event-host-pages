@@ -24,6 +24,7 @@ const PORTAL_NAVIGATION = [
   { href: "/entertainment-schedules", label: "Entertainment" },
   { href: "/itineraries", label: "Itineraries" },
   { href: "/checklists", label: "Checklists" },
+  { href: "/set-up", label: "Set Up" },
   { href: "/event-host-addons", label: "Add-Ons" },
   { href: "/vip-check-in", label: "VIP CHECK-IN" },
   { href: "/kitchen", label: "Kitchen" },

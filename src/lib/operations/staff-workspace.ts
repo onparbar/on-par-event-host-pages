@@ -5,6 +5,7 @@ import type { OperationalEventSummary } from "./command-center";
 export const STAFF_CONTEXT_STORAGE_KEY = "event-host:selected-staff:v1";
 export const STAFF_WORKSPACE_NAVIGATION = [
   { href: "/checklists", label: "Checklists" },
+  { href: "/set-up", label: "Set Up" },
   { href: "/floor-plans", label: "Floor Plans" },
   { href: "/entertainment-schedules", label: "Entertainment" },
   { href: "/event-host-addons", label: "Add-ons & Refills" },

@@ -94,6 +94,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             <strong>Event Checklists</strong>
             <span>Complete and submit the operational checklist for each active event.</span>
           </Link>
+          <Link className="home-link portal-module-card" href="/set-up">
+            <span className="portal-module-kicker">Table arrangements</span>
+            <strong>Set Up</strong>
+            <span>View event-specific equipment and the Taco Bar setup reference.</span>
+          </Link>
           <Link className="home-link portal-module-card" href="/event-host-addons">
             <span className="portal-module-kicker">Food &amp; entertainment</span>
             <strong>Event Add-Ons</strong>

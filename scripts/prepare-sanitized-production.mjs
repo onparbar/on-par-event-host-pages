@@ -30,6 +30,7 @@ const allowlist = [
   "vercel.json",
   "deploy/sanitized-production",
   "public/brand",
+  "public/setup",
   "public/entertainment-schedules",
   "public/floor-plans",
   "public/itinerary-assets",
