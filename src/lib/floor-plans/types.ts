@@ -85,6 +85,7 @@ export type FloorPlanSourceChange = {
   previousValue: string;
   currentValue: string;
   message: string;
+  assignmentsReconciled?: boolean;
 };
 
 export type FloorPlanEvent = {

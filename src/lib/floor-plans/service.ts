@@ -68,7 +68,7 @@ import { reservationTimingSource, sameReservationInterval } from "./reservation-
 import { floorPlanPlanningMonthRange, floorPlanPublicationDates } from "./publication";
 import { seatingCoverageMessage, summarizeEventSeating } from "./seating-summary";
 import { floorPlanStatusAfterSourceChange } from "./lifecycle";
-import { isDecemberOwnerHoldFloorPlanEvent, projectDecemberOwnerHoldFloorPlanVisibility, withoutDecemberOwnerHoldFloorPlanEvents } from "./owner-holds";
+import { isDecemberOwnerHoldFloorPlanEvent, isProtectedFloorPlanAssignment, projectDecemberOwnerHoldFloorPlanVisibility, withoutDecemberOwnerHoldFloorPlanEvents } from "./owner-holds";
 import { floorPlanStorageAtVersion, getFloorPlanStorage, type FloorPlanStorage } from "./storage";
 import { StaleSaveError } from "@/lib/stale-save";
 import {
@@ -1506,6 +1506,57 @@ export async function approveFloorPlan(
   return getFloorPlanDay(date, storage);
 }
 
+/** A source room change replaces only that event's automatic seating setup. */
+function reconcileContractRoomAssignments(saved: FloorPlanDocument | null, plan: FloorPlanDocument): FloorPlanDocument {
+  if (!saved || ["Completed", "Archived"].includes(plan.status)) return plan;
+  let next = plan;
+  for (const event of plan.events) {
+    const previous = saved.events.find((candidate) => candidate.id === event.id);
+    if (!previous || isVipOnlyFloorPlanEvent(event) || isDecemberOwnerHoldFloorPlanEvent(event, plan.eventDate)) continue;
+    const areas = (entry: FloorPlanEvent) => JSON.stringify([...new Set(entry.contractedAreaIds)].sort());
+    const roomChanged = areas(previous) !== areas(event);
+    const areaChange = (event.source.floorPlanChanges ?? []).find((change) => change.field === "contractedArea") ??
+      (!roomChanged ? previous.source.floorPlanChanges?.find((change) => change.field === "contractedArea" && !change.assignmentsReconciled) : undefined);
+    if (!roomChanged && (!areaChange || areaChange.assignmentsReconciled)) continue;
+    const setupRow = (row: FloorPlanReservation) => row.floorPlanEventId === event.id && row.reservationType !== "custom";
+    const removable = (row: FloorPlanReservation) => setupRow(row) && row.source === "generated" &&
+      !isProtectedFloorPlanAssignment(row) && !row.customGeometry;
+    const seed = projectDecemberOwnerHoldFloorPlanVisibility({ ...next, reservations: next.reservations.filter((row) => !removable(row)) });
+    const proposal = generateFloorPlanReservationProposal(seed, "fill-missing", event.id);
+    const missingDetails = event.source.reviewReasons.some((reason) => /Guest count is missing or invalid|Guest count was filled from .*package/i.test(reason));
+    const complete = proposal.complete && !missingDetails && !proposal.issues.some((issue) => issue.blocking || issue.code === "placement-unavailable");
+    const reservations = complete
+      ? [...next.reservations.filter((row) => row.floorPlanEventId !== event.id),
+          ...proposal.reservations.filter((row) => row.floorPlanEventId === event.id).map((row) =>
+            !seed.reservations.some((existing) => existing.id === row.id) ? { ...row, changeDetails: {
+              fields: ["created"], reason: "Recalculated generated seating and food tables after the contracted room changed.",
+            } } : row)]
+      : next.reservations;
+    const summary = summarizeEventSeating(event, reservations, { allReservations: projectDecemberOwnerHoldFloorPlanVisibility({ ...next, reservations }).reservations });
+    const before = summarizeEventSeating(previous, saved.reservations, { allReservations: saved.reservations });
+    const outsideStaffRows = reservations.some((row) => setupRow(row) && isProtectedFloorPlanAssignment(row) &&
+      !event.contractedAreaIds.includes("facility") && !event.contractedAreaIds.includes(row.areaId) &&
+      !event.contractedAreaIds.includes(getFloorPlanArea(row.areaId)?.parentAreaId ?? ""));
+    const review = !complete || outsideStaffRows || summary.issues.length > 0;
+    const message = complete
+      ? `Generated seating and food tables were recalculated for the contracted area. ${seatingCoverageMessage(event, summary)} Food tables: ${summary.foodAssigned} assigned / ${summary.foodRequired} required.${outsideStaffRows ? " Staff-selected assignments outside the new area were retained and require review." : ""}`
+      : `The new contracted area could not be reserved with full seating and food-table coverage. Existing assignments were retained; review the new area before setup. ${seatingCoverageMessage(event, summary)}`;
+    const changes: FloorPlanSourceChange[] = [...(event.source.floorPlanChanges ?? []).filter((change) => change.field !== "assignments" && change.field !== "contractedArea"),
+      ...(areaChange ? [{ ...areaChange, assignmentsReconciled: complete }] : []),
+      { eventId: event.id, field: "assignments", previousValue: `${before.coveredCapacity} full-event seats; ${before.foodAssigned} food tables`,
+        currentValue: `${summary.coveredCapacity} full-event seats; ${summary.foodAssigned} food tables`, message }];
+    const issues = proposal.issues.filter((issue) => issue.blocking);
+    if (review) issues.push({ eventId: event.id, code: "assignments-preserved", blocking: true, message });
+    const { seatingGenerationIssues: _previousIssues, ...source } = event.source;
+    next = { ...next, reservations,
+      events: next.events.map((candidate) => candidate.id === event.id ? { ...event, source: { ...source, floorPlanChanges: changes,
+        ...(issues.length ? { seatingGenerationIssues: issues } : {}) } } : candidate),
+      status: review && next.status !== "Updated After Approval" ? "Needs Review" : floorPlanStatusAfterSourceChange(next.status, true),
+    };
+  }
+  return next;
+}
+
 export async function refreshFloorPlanSources(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
@@ -1540,7 +1591,8 @@ export async function refreshFloorPlanSources(
   if (entertainmentRefreshed) sourceRefresh.reconnectTripleseat = false;
   const providerWarnings = entertainmentRefreshed ? refreshWarnings.map((warning) => warning === TRIPLESEAT_RECONNECT_WARNING
     ? "Tripleseat event details did not refresh; saved event details were retained." : warning) : refreshWarnings;
-  const plan = await reconciledPlan(date, storage);
+  const reconciled = await reconciledPlan(date, storage);
+  const plan = tripleseatRefreshed ? reconcileContractRoomAssignments(savedBeforeRefresh, reconciled) : reconciled;
   if (!plan.events.length) {
     if (
       savedBeforeRefresh &&
