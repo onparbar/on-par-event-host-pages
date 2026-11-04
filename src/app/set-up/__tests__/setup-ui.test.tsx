@@ -189,7 +189,7 @@ describe("read-only Set Up guide", () => {
     const setup = contractSetup(appetizerEvent);
     const html = render([appetizerEvent]);
     expect(html).toContain('aria-label="Event serving layout"');
-    expect(html).toContain('src="/setup/empty-buffet-table-v1.png"');
+    expect(html).toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
     expect(setup.servingSetup).toBeNull();
     const prep = html.split('aria-label="Purchased food and prep quantities"')[1].split("</section>")[0];
     for (const food of setup.purchasedFood) expect(prep).toContain(food);
@@ -235,13 +235,36 @@ describe("read-only Set Up guide", () => {
   it("places extra platters without doubling purchased quantities for mirrored service", () => {
     const plan = { ...basicBarEvents[0], guest_count: 101, food: [...basicBarEvents[0].food, "2 × Wing Platter", "2 × Desert Platter"] };
     const html = render([plan]);
-    expect(html).toContain('src="/setup/empty-buffet-table-v1.png"');
+    expect(html).toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
     expect(html).toContain('aria-label="Event serving layout"');
     expect(html).not.toContain("Food needing setup review");
     expect(html).toContain("do not double the purchased food quantities");
     expect(html).toContain("2 × Wing Platter");
     expect(html).toContain("2 × Desert Platter");
     expect(html).not.toContain("4 × Wing Platter");
+  });
+  it("keeps the selected two-chafer event on one serving line with one sauce and one dessert station", () => {
+    context.preferredEventId = String(appetizerEvent.id);
+    const html = render([event, appetizerEvent]);
+    const serving = html.split('aria-label="Event serving layout"')[1].split("</section>")[0];
+    const figure = serving.match(/<figure\b[\s\S]*?<\/figure>/)?.[0] ?? "";
+    expect(serving.match(/<figure\b/g)).toHaveLength(1);
+    expect(figure).toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
+    expect(figure.match(/data-serving-object="sauce-station"/g)).toHaveLength(1);
+    expect(figure.match(/data-serving-object="cold-platter-dessert"/g)).toHaveLength(1);
+    expect(figure).toContain('data-serving-object="sauce-marinara"');
+    expect(figure).toContain('data-serving-object="sauce-ranch"');
+    expect(figure).toContain('data-serving-object="sauce-bbq"');
+    expect(figure).toContain('data-serving-object="dessert-tongs"');
+    expect(serving).not.toContain("Layout continuation");
+    expect(serving).not.toContain("Tortilla warmers");
+    expect(serving).not.toContain("Black Beans");
+    expect(serving).toContain("one long black sauce plate with 3 spoons — one per sauce type");
+    expect(serving).toContain("one dessert platter on a clear riser with two tongs");
+    expect(serving).toContain("hold extra prepared food for refills");
+    expect(html).toContain("2 × Desert Platter");
+    expect(html).toContain("2 × Wing Platter");
+    expect(context.bridge).toHaveBeenCalledWith({ event: expect.objectContaining({ eventId: String(appetizerEvent.id), eventName: appetizerEvent.name }) });
   });
   it("does not invent a buffet layout for events with no food", () => {
     const html = render([{ ...event, food: [] }]);

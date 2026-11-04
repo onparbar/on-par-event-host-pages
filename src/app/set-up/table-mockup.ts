@@ -1,23 +1,21 @@
 import type { EventServingPlan, ServingObject } from "@/lib/operations/serving-plan";
+import { APPETIZER_WINGS_DESSERT_SETUP_OBJECTS } from "./setup-objects";
 
 export type Box = { left: number; top: number; width: number; height: number };
 export type Art = Box & { key: string; sprite: number; tableIndex: number; rotate?: number };
 export type Target = Box & { id: string; item: ServingObject; tableIndex: number };
-export type TableMockup = { art: Art[]; targets: Target[]; crowded: boolean; tableCount: number };
-type Group = { item: ServingObject; pair?: ServingObject; instance?: number; bowls?: ServingObject[] };
+export type TableMockup = { art: Art[]; targets: Target[]; crowded: boolean; tableCount: number; referenceImage?: string };
+type Group = { item: ServingObject; pair?: ServingObject };
 
 /** Decorative composition only. Never changes event food, equipment requirements or purchased quantities. */
 export function buildTableMockup(plan: EventServingPlan): TableMockup {
   if (plan.status === "no-food") return { art: [], targets: [], crowded: false, tableCount: 0 };
+  const reference = twoChaferReference(plan);
+  if (reference) return reference;
   const art: Art[] = [], targets: Target[] = [], groups: Group[] = [];
   for (const item of plan.objects.filter((entry) => entry.kind !== "carts")) {
     if (item.kind === "taco-stands" && groups.at(-1)?.item.kind === "tortillas") groups.at(-1)!.pair = item;
-    else if (item.kind === "cold-platter") {
-      for (let index = 0; index < (item.quantity ?? 1); index += 1) groups.push({ item, instance: index });
-    } else if (item.kind === "sauces" && item.children?.length) {
-      const bowls = item.children.flatMap((child) => Array.from({ length: child.quantity ?? 0 }, () => child));
-      for (let index = 0; index < Math.max(1, bowls.length); index += 3) groups.push({ item, bowls: bowls.slice(index, index + 3), instance: index / 3 });
-    } else groups.push({ item });
+    else groups.push({ item });
   }
   const weight = (item: ServingObject) => item.kind === "tortillas" ? 1 : item.kind === "lettuce-wraps" ? .6 : item.kind === "chafer" ? 1.4 : item.kind === "tier" ? 1.3 : item.kind === "sauces" ? .65 : .8;
   const boards: Group[][] = [[]];
@@ -57,14 +55,12 @@ export function buildTableMockup(plan: EventServingPlan): TableMockup {
     }
   }
 
-  const bowlInstances = new Map<string, number>();
   for (const [tableIndex, board] of boards.entries()) {
     let top = 29;
     for (const group of board) {
       const { item } = group, height = 13 * weight(item), centerY = top + height / 2;
       const box = item.kind === "chafer" ? rect(37.5, centerY - 9, 25, 18) : centered(centerY, Math.min(28, height * 1.35));
-      const suffix = group.instance === undefined ? "" : `-instance-${group.instance}`;
-      addTarget(item, box, tableIndex, suffix);
+      addTarget(item, box, tableIndex);
       if (item.kind === "tortillas") {
         targets.pop();
         for (const [index, centerX] of [34, 66].entries()) { const warmer = centered(centerY, 16, centerX); addArt(`${item.id}-${index}`, 9, warmer, tableIndex); addTarget(item, warmer, tableIndex, index === 0 ? "-left" : "-right"); }
@@ -90,28 +86,66 @@ export function buildTableMockup(plan: EventServingPlan): TableMockup {
           }
         }
       } else if (item.kind === "sauces") {
-        addArt(`${item.id}${suffix}-plate`, 6, box, tableIndex, 90);
-        const bowls = group.bowls ?? Array.from({ length: item.quantity ?? 0 }, () => item);
-        const size = Math.min(7, box.width / Math.max(1, bowls.length));
-        for (const [index, bowl] of bowls.entries()) {
-          const instance = bowlInstances.get(bowl.id) ?? 0; bowlInstances.set(bowl.id, instance + 1);
-          const bowlBox = centered(centerY, size, box.left + (index + .5) * box.width / bowls.length);
-          addArt(`${bowl.id}-bowl-${instance}`, 15, bowlBox, tableIndex);
-          addArt(`${bowl.id}-spoon-${instance}`, 8, rect(bowlBox.left + size * .2, bowlBox.top, size * .8), tableIndex);
-          if (bowl.id !== item.id) addTarget(bowl, bowlBox, tableIndex, `-bowl-${instance}`);
+        addArt(`${item.id}-plate`, 6, box, tableIndex, 90);
+        const sauces = item.children?.length ? item.children : [item];
+        const width = box.width / sauces.length;
+        for (const [index, sauce] of sauces.entries()) {
+          const slot = rect(box.left + index * width, box.top, width, box.height);
+          if (sauce.quantity !== null && sauce.quantity > 0) addArt(`${sauce.id}-spoon`, 8, rect(slot.left + width * .08, centerY - width * .105, width * .84, width * .21), tableIndex);
+          if (sauce.id !== item.id) addTarget(sauce, slot, tableIndex);
         }
       } else {
-        addArt(`${item.id}${suffix}-plate`, item.kind === "taco-stands" ? 10 : 6, box, tableIndex);
+        addArt(`${item.id}-plate`, item.kind === "taco-stands" ? 10 : 6, box, tableIndex);
         for (const child of item.children ?? []) if (child.kind === "utensils") {
           const tools = rect(box.left + box.width * .1, box.top + box.height * .1, box.width * .8, box.height * .8);
           const toolTarget = rect(box.left + box.width * .65, box.top + box.height * .15, box.width * .3, box.height * .7);
           // These reference risers already picture their approved two tongs.
-          if (item.kind === "lettuce-wraps" || item.id === "cold-platter-dessert") addTarget(child, toolTarget, tableIndex, suffix);
-          else drawTools(child, tools, tableIndex, suffix, item.kind === "cold-platter" ? item.quantity ?? 1 : 1, item.kind === "cold-platter" ? toolTarget : tools);
+          if (item.kind === "lettuce-wraps" || item.id === "cold-platter-dessert") addTarget(child, toolTarget, tableIndex);
+          else drawTools(child, tools, tableIndex, "", item.kind === "cold-platter" ? item.quantity ?? 1 : 1, item.kind === "cold-platter" ? toolTarget : tools);
         }
       }
       top += height;
     }
   }
   return { art, targets, crowded: boards.length > 1, tableCount: boards.length };
+}
+
+/** Reuse the approved whole-table illustration only when every pictured station matches. */
+function twoChaferReference(plan: EventServingPlan): TableMockup | null {
+  if (plan.unplacedFood.length) return null;
+  const carts = plan.objects.filter((item) => item.kind === "carts");
+  const chafers = plan.objects.filter((item) => item.kind === "chafer");
+  const sauces = plan.objects.filter((item) => item.kind === "sauces");
+  const desserts = plan.objects.filter((item) => item.id === "cold-platter-dessert");
+  if (plan.objects.length !== 5 || carts.length !== 1 || carts[0].quantity !== 2 || chafers.length !== 2 || sauces.length !== 1 || desserts.length !== 1 || desserts[0].kind !== "cold-platter") return null;
+  const sauceTypes = sauces[0].children ?? [];
+  if (sauceTypes.length !== 3 || sauceTypes.some((item) => item.quantity === null || item.quantity <= 0)) return null;
+  for (const [index, chafer] of chafers.entries()) {
+    const tools = chafer.children?.filter((item) => item.kind === "utensils") ?? [];
+    if (tools.length !== 2 || tools.some((item) => item.quantity !== (index === 0 ? 3 : 2) || item.contents.length !== 1 || item.contents[0] !== `${index === 0 ? 3 : 2} tongs`)) return null;
+  }
+  const targets: Target[] = [];
+  const anchor = (id: string): Box => {
+    const { left, top, width, height } = APPETIZER_WINGS_DESSERT_SETUP_OBJECTS.find((item) => item.id === id)!;
+    return { left, top, width, height };
+  };
+  const add = (item: ServingObject, box: Box, suffix = "") => targets.push({ id: `${item.id}${suffix}`, item, tableIndex: 0, ...box });
+  add(carts[0], anchor("marble-cart-left"), "-left");
+  add(carts[0], anchor("marble-cart-right"), "-right");
+  for (const item of carts[0].children ?? []) {
+    if (item.kind === "plates" || item.kind === "napkins") {
+      for (const side of ["left", "right"]) add(item, anchor(item.kind === "plates" ? `plate-stack-${side}` : `napkins-${side}`), `-${side}`);
+    } else if (item.kind === "forks") add(item, anchor("fork-caddy"));
+  }
+  for (const [index, item] of chafers.entries()) {
+    const station = index === 0 ? "chafer-one" : "chafer-two";
+    add(item, anchor(station));
+    for (const [side, tools] of (item.children ?? []).filter((child) => child.kind === "utensils").entries()) add(tools, anchor(`${station}-${side === 0 ? "left" : "right"}-utensil-plate`));
+  }
+  add(sauces[0], anchor("sauce-plate"));
+  sauceTypes.forEach((item, index) => add(item, anchor(`sauce-spoon-${["left", "center", "right"][index]}`)));
+  const dessert = desserts[0], box = anchor("dessert-riser");
+  add(dessert, { ...box, top: 78.8, height: box.top + box.height - 78.8 });
+  for (const tools of dessert.children ?? []) if (tools.kind === "utensils") add(tools, { left: box.left + box.width * .65, top: box.top + box.height * .15, width: box.width * .3, height: box.height * .7 });
+  return { art: [], targets, crowded: false, tableCount: 1, referenceImage: "/setup/appetizer-wings-dessert-reference-v1.png" };
 }

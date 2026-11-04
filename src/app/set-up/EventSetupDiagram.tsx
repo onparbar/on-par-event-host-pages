@@ -40,7 +40,7 @@ export default function EventSetupDiagram({ plan }: { plan: EventServingPlan }) 
       {Array.from({ length: mockup.tableCount }, (_, tableIndex) => <figure key={tableIndex} className={styles.figure} aria-label={tableIndex ? `Whole table mockup ${tableIndex + 1}` : "Whole table mockup"}>
         {mockup.tableCount > 1 ? <figcaption className={styles.tableTitle}>{tableIndex ? `Layout continuation ${tableIndex + 1}` : "Start of the serving line"}</figcaption> : null}
         <div className={styles.stage}><div className={`${styles.mockup} ${tableIndex ? styles.continuation : ""}`}>
-          <img className={styles.furniture} src="/setup/empty-buffet-table-v1.png" width="1024" height="1536" alt={tableIndex ? "Equipment layout continuation on a black table with an emerald-green runner." : "Whole black buffet table with an emerald-green runner and two marble serving carts."} />
+          <img className={styles.furniture} src={mockup.referenceImage ?? "/setup/empty-buffet-table-v1.png"} width="1024" height="1536" alt={mockup.referenceImage ? "One complete buffet table: two chafing dishes with side utensil plates, one long sauce plate with three spoons, a dessert riser with two tongs, and two marble serving carts." : tableIndex ? "Equipment layout continuation on a black table with an emerald-green runner." : "Whole black buffet table with an emerald-green runner and two marble serving carts."} />
           <div className={styles.artwork} aria-hidden="true">{mockup.art.filter((item) => item.tableIndex === tableIndex).map((item) => <span key={item.key} data-equipment-sprite={item.sprite} className={styles.sprite} style={{ ...position(item), ...equipmentStyle(item), ...(item.rotate ? { transform: `rotate(${item.rotate}deg)` } : {}) }} />)}</div>
           {mockup.targets.filter((target) => target.tableIndex === tableIndex).map((target) => {
             const item = target.item;
@@ -55,7 +55,7 @@ export default function EventSetupDiagram({ plan }: { plan: EventServingPlan }) 
     <dialog ref={dialog} id={dialogId} className={styles.dialog} aria-labelledby={`${dialogId}-title`} aria-describedby={`${dialogId}-description`}>
       <form method="dialog"><button type="submit" aria-label="Close setup item details">Close</button></form>
       <span className={styles.eyebrow}>Event setup item</span><h2 id={`${dialogId}-title`}>{selected?.label}</h2>
-      {selected ? <><p className={styles.quantity}>{quantity(selected)}</p><p id={`${dialogId}-description`}>{selected.description}</p>{selected.contents.length ? <ul>{selected.contents.map((content, index) => <li key={`${index}:${content}`}>{content}</li>)}</ul> : null}</> : <p id={`${dialogId}-description`} />}
+      {selected ? <><p className={styles.quantity}>{quantity(selected)}</p>{servingStationNote(selected) ? <p>{servingStationNote(selected)}</p> : null}<p id={`${dialogId}-description`}>{selected.description}</p>{selected.contents.length ? <ul>{selected.contents.map((content, index) => <li key={`${index}:${content}`}>{content}</li>)}</ul> : null}</> : <p id={`${dialogId}-description`} />}
     </dialog>
     <details className={styles.instructions}><summary>Build the serving line</summary><ObjectInstructions objects={plan.objects} /></details>
     <div className={styles.printGuide}><h3>Build the serving line</h3><ObjectInstructions objects={plan.objects} /></div>
@@ -89,5 +89,13 @@ function equipmentStyle(item: Art): CSSProperties {
 }
 
 function ObjectInstructions({ objects }: { objects: ServingObject[] }) {
-  return <ol>{objects.map((item) => <li key={item.id}><strong>{item.label} · {quantity(item)}{item.panSize ? ` · ${item.panSize} pan` : ""}</strong><p>{item.description}</p>{item.contents.length ? <p>Contents: {item.contents.join("; ")}</p> : null}{item.children?.length ? <ObjectInstructions objects={item.children} /> : null}</li>)}</ol>;
+  return <ol>{objects.map((item) => <li key={item.id}><strong>{item.label} · {quantity(item)}{item.panSize ? ` · ${item.panSize} pan` : ""}</strong>{servingStationNote(item) ? <p>{servingStationNote(item)}</p> : null}<p>{item.description}</p>{item.contents.length ? <p>Contents: {item.contents.join("; ")}</p> : null}{item.children?.length ? <ObjectInstructions objects={item.children} /> : null}</li>)}</ol>;
+}
+
+function servingStationNote(item: ServingObject) {
+  if (item.id === "sauce-station" && item.children?.length) return `Service setup: one long black sauce plate with ${item.children.length} spoons — one per sauce type. Full event totals include refill containers and spare serving tools; do not repeat the sauce station for each container.`;
+  if (["sauce-ranch", "sauce-bbq", "sauce-marinara"].includes(item.id)) return "Service setup: one spoon for this sauce type on the shared long black sauce plate. Full event totals include refill containers and spare serving tools.";
+  if (item.kind === "cold-platter") return `Service setup: one ${item.id === "cold-platter-dessert" ? "dessert platter on a clear riser" : "cold serving plate"} with two tongs. Serve the purchased quantity from this station and hold extra prepared food for refills. The full event quantities and spare serving tools remain listed separately.`;
+  if (item.id === "dessert-tongs") return "Service setup: two tongs at the shared dessert riser. The full serving-tool total also includes spares for the purchased platters.";
+  return null;
 }

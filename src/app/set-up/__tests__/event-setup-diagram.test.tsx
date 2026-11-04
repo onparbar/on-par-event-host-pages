@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { EventServingPlan, ServingObject } from "@/lib/operations/serving-plan";
+import type { EventPlan } from "@/lib/event-plans/types";
+import { buildEventServingPlan, type EventServingPlan, type ServingObject } from "@/lib/operations/serving-plan";
 import EventSetupDiagram from "../EventSetupDiagram";
 import { buildTableMockup } from "../table-mockup";
 
@@ -36,6 +37,11 @@ const plan: EventServingPlan = {
 const render = (value = plan) => renderToStaticMarkup(createElement(EventSetupDiagram, { plan: value }));
 const flatten = (items: ServingObject[]): ServingObject[] => items.flatMap((item) => [item, ...flatten(item.children ?? [])]);
 const photoFigures = (html: string) => [...html.matchAll(/<figure\b[\s\S]*?<\/figure>/g)].map((match) => match[0]).join("");
+const twoChaferEvent: EventPlan = {
+  id: 78, name: "Redacted two-chafer setup event", date: "2026-11-04", day: "Wednesday", time: "5:30 PM - 8:30 PM",
+  guest_count: 55, rooms: ["VIP 1"], color: "#18332F", food: ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Dessert Platter"],
+  drink_options: [], entertainment: [], verification_status: "Verified redacted source", source_updated_at: "2026-11-04T15:00:00Z",
+};
 
 describe("event-specific whole-table equipment mockups", () => {
   it("shows each complete table using the existing equipment artwork", () => {
@@ -67,6 +73,53 @@ describe("event-specific whole-table equipment mockups", () => {
     expect(html).toContain('method="dialog"');
     expect(html).toContain("Close setup item details");
     expect(html).not.toContain("<dialog open");
+  });
+
+  it("uses the approved two-chafer mockup with one sauce station and one dessert station for the matching event", () => {
+    const event = structuredClone(twoChaferEvent);
+    const value = buildEventServingPlan(event);
+    const before = structuredClone(value);
+    const html = render(value);
+    const figures = photoFigures(html);
+    expect(figures).toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
+    expect(figures).not.toContain('src="/setup/empty-buffet-table-v1.png"');
+    expect(figures.match(/<figure\b/g)).toHaveLength(1);
+    expect(figures.match(/data-serving-object="appetizer-chafer"/g)).toHaveLength(1);
+    expect(figures.match(/data-serving-object="platter-chafer-1"/g)).toHaveLength(1);
+    expect(figures.match(/data-serving-object="sauce-station"/g)).toHaveLength(1);
+    expect(figures.match(/data-serving-object="cold-platter-dessert"/g)).toHaveLength(1);
+    expect(figures.match(/data-serving-object="dessert-tongs"/g)).toHaveLength(1);
+    expect(figures).not.toContain("data-equipment-sprite=");
+    for (const target of buildTableMockup(value).targets) {
+      expect(figures).toContain(`data-serving-object="${target.item.id}"`);
+      expect(html).toContain(`value="${target.item.id}"`);
+    }
+    expect(html).toContain("110 plates · event total");
+    expect(html).toContain("Left long black plate: 3 tongs");
+    expect(html).toContain("Right long black plate: 3 tongs");
+    expect(html).toContain("Left long black plate: 2 tongs");
+    expect(html).toContain("Right long black plate: 2 tongs");
+    const printed = html.split(/<div class="[^"]*printGuide[^"]*">/)[1];
+    expect(printed).toContain("one long black sauce plate with 3 spoons — one per sauce type");
+    expect(printed).toContain("one dessert platter on a clear riser with two tongs");
+    expect(printed).toContain("Service setup: one spoon for this sauce type on the shared long black sauce plate.");
+    expect(printed).toContain("Service setup: two tongs at the shared dessert riser.");
+    expect(printed).toContain("hold extra prepared food for refills");
+    expect(printed).toContain("Full event totals include refill containers and spare serving tools");
+    for (const item of flatten(value.objects)) expect(printed).toContain(item.description);
+    expect(value).toEqual(before);
+    expect(event).toEqual(twoChaferEvent);
+  });
+
+  it("does not substitute the approved two-chafer mockup for a different or unresolved event", () => {
+    for (const food of [
+      ["15 × The Full Course + Taco Bar"],
+      ["2 × Wing Platter", "1 × Dessert Platter"],
+      [...twoChaferEvent.food, "1 × Unmapped Buffet"],
+    ]) {
+      const html = render(buildEventServingPlan({ ...twoChaferEvent, food }));
+      expect(photoFigures(html)).not.toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
+    }
   });
 
   it("identifies a closed chafer as a whole while retaining its exact pan contents in the picker", () => {

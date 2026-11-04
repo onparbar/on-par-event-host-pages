@@ -49,8 +49,11 @@ describe("event-specific whole-table composition", () => {
     expect(result.art.filter((item) => item.sprite === 5)).toHaveLength(1);
     expect(result.art.filter((item) => item.sprite === 4)).toHaveLength(1);
     expect(result.art.filter((item) => item.sprite === 7)).toHaveLength(10);
-    expect(result.art.filter((item) => item.sprite === 15)).toHaveLength(10);
-    expect(result.art.filter((item) => item.sprite === 8)).toHaveLength(10);
+    expect(result.art.filter((item) => item.sprite === 15)).toHaveLength(0);
+    expect(result.art.filter((item) => item.sprite === 8)).toHaveLength(2);
+    expect(result.targets.filter((target) => target.item.id === "sauce-station")).toHaveLength(1);
+    expect(result.targets.find((target) => target.item.id === "sauce-bbq")?.item.quantity).toBe(5);
+    expect(result.targets.find((target) => target.item.id === "sauce-ranch")?.item.quantity).toBe(5);
   });
 
   it("keeps horizontal tool crops in vertical rows inside each black chafer plate", () => {
@@ -90,13 +93,15 @@ describe("event-specific whole-table composition", () => {
     expect(tools.left).toBeGreaterThan(riser.left + riser.width / 2);
   });
 
-  it("draws each cold platter as empty equipment and keeps its two tongs without fake food", () => {
+  it("draws one cold serving station per kind without multiplying stations by purchased quantity", () => {
     const result = buildTableMockup(plan(["2 × Dessert Platter", "1 × Veggie Tray"]));
-    expect(result.targets.filter((target) => target.item.id === "cold-platter-dessert")).toHaveLength(2);
+    expect(result.targets.filter((target) => target.item.id === "cold-platter-dessert")).toHaveLength(1);
+    expect(result.targets.find((target) => target.item.id === "cold-platter-dessert")?.item.quantity).toBe(2);
     expect(result.targets.filter((target) => target.item.id === "cold-platter-veggie")).toHaveLength(1);
     // The dessert reference already includes two tongs on each plate; only veggie tools are composed separately.
     expect(result.art.filter((item) => item.sprite === 7)).toHaveLength(2);
-    expect(result.targets.filter((target) => target.item.id === "dessert-tongs")).toHaveLength(2);
+    expect(result.targets.filter((target) => target.item.id === "dessert-tongs")).toHaveLength(1);
+    expect(result.targets.find((target) => target.item.id === "dessert-tongs")?.item.quantity).toBe(4);
     expect(result.art.some((item) => item.key.startsWith("dessert-tongs"))).toBe(false);
     for (const plate of result.targets.filter((target) => target.item.id === "cold-platter-dessert")) {
       const tools = result.targets.find((target) => target.id === plate.id.replace("cold-platter-dessert", "dessert-tongs"))!;
@@ -125,7 +130,10 @@ describe("event-specific whole-table composition", () => {
     const large = buildTableMockup(plan(["10 × Wing Platter", "10 × Chicken Tender Platter"]));
     expect(large.tableCount).toBeGreaterThan(1); expect(large.crowded).toBe(true);
     expect(large.targets.filter((target) => target.item.kind === "chafer")).toHaveLength(10);
-    expect(large.art.filter((item) => item.sprite === 15)).toHaveLength(40);
+    expect(large.art.filter((item) => item.sprite === 15)).toHaveLength(0);
+    expect(large.art.filter((item) => item.sprite === 8)).toHaveLength(2);
+    expect(large.targets.filter((target) => target.item.id === "sauce-station")).toHaveLength(1);
+    expect(large.targets.find((target) => target.item.id === "sauce-station")?.item.quantity).toBe(40);
     expect(large.art.find((item) => item.sprite === 4)?.width).toBe(small.art.find((item) => item.sprite === 5)?.width);
     expect(large.targets.filter((target) => target.item.id === "service-cart")).toHaveLength(1);
     expect(large.targets.filter((target) => ["service-cart", "plates", "napkins", "forks"].includes(target.item.id)).every((target) => target.tableIndex === 0)).toBe(true);
@@ -137,6 +145,29 @@ describe("event-specific whole-table composition", () => {
     expect(mirrored.art).toEqual(single.art);
     expect(mirroredPlan.plates).toBe(202); expect(mirroredPlan.tacoStands).toBe(30);
     expect(mirrored.targets.find((target) => target.item.id === "plates")?.item.quantity).toBe(202);
+  });
+
+  it("uses the exact approved two-chafer reference as one table while preserving event-wide facts", () => {
+    const source = plan(["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Dessert Platter"], 55);
+    const before = structuredClone(source), result = buildTableMockup(source);
+    expect(result.referenceImage).toBe("/setup/appetizer-wings-dessert-reference-v1.png");
+    expect(result.tableCount).toBe(1); expect(result.crowded).toBe(false); expect(result.art).toEqual([]);
+    expect(result.targets.filter((target) => target.item.kind === "chafer")).toHaveLength(2);
+    expect(result.targets.filter((target) => target.item.id === "sauce-station")).toHaveLength(1);
+    expect(result.targets.filter((target) => target.item.id === "cold-platter-dessert")).toHaveLength(1);
+    expect(result.targets.filter((target) => target.item.id.startsWith("sauce-") && target.item.id !== "sauce-station")).toHaveLength(3);
+    expect(result.targets.some((target) => target.item.kind === "pan")).toBe(false);
+    expect(source.plates).toBe(110);
+    expect(result.targets.find((target) => target.item.id === "sauce-station")?.item.quantity).toBe(7);
+    expect(result.targets.find((target) => target.item.id === "cold-platter-dessert")?.item.quantity).toBe(2);
+    expect(source).toEqual(before); expect(buildTableMockup(source)).toEqual(result);
+  });
+
+  it("does not apply the fixed reference to extra, unmapped or mismatched stations", () => {
+    const exact = ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Dessert Platter"];
+    expect(buildTableMockup(plan([...exact, "1 × Unmapped Buffet"], 55)).referenceImage).toBeUndefined();
+    expect(buildTableMockup(plan([...exact, "1 × Veggie Tray"], 55)).referenceImage).toBeUndefined();
+    expect(buildTableMockup(plan(["55 × The Front Nine + Appetizer Bar", "1 × Wing Platter", "2 × Dessert Platter"], 55)).referenceImage).toBeUndefined();
   });
 
   it("retains unresolved equipment descriptions without inventing a sauce container count", () => {
