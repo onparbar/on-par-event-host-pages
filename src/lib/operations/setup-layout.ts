@@ -1,11 +1,22 @@
 import type { EventPlan } from "@/lib/event-plans/types";
 import { KITCHEN_RULE_CONFIG } from "@/lib/kitchen/config";
 import { normalizeKitchenSelections } from "@/lib/kitchen/normalize";
+import type { NormalizedKitchenSelection } from "@/lib/kitchen/types";
 import { contractSetup, type ContractSetup } from "./setup";
 
 export type SetupStation = { id: string; title: string; instructions: string; equipment: string[] };
+export type SetupTemplateId = "taco-bar" | "appetizer-wings-dessert";
+type SetupTemplate = {
+  id: SetupTemplateId;
+  version: string;
+  title: string;
+  stations: SetupStation[];
+  referenceChafingDishes: number;
+  imagePath: string;
+  imageAlt: string;
+};
 export type SetupLayout = {
-  templateId: "taco-bar" | null;
+  templateId: SetupTemplateId | null;
   status: "draft" | "needs-review" | "no-food";
   tableCount: number | null;
   mirrored: boolean;
@@ -25,17 +36,22 @@ export const SETUP_FURNITURE_DIMENSIONS = Object.freeze({
   cart: Object.freeze({ lengthInches: 21.5, widthInches: 15.5, count: 2, combinedLengthInches: 21.5, combinedWidthInches: 31 }),
 });
 
+export const SERVING_CART_SETUP_STATION: SetupStation = {
+  id: "service-cart", title: "Plates, napkins & forks",
+  instructions: "Place 2 marble serving carts side by side at the start, with plates, napkins and forks accessible from each side.",
+  equipment: ["2 marble serving carts, side by side", "Plate stack on each side", "Napkins on each side", "Forks accessible from each side"],
+};
+
 /** Reference positions supplied by staff, not a capacity or food-quantity rule. */
 export const TACO_BAR_SETUP_TEMPLATE = {
   id: "taco-bar" as const,
   version: "taco-bar-reference-v1",
   title: "Taco Bar setup reference",
+  referenceChafingDishes: 1,
+  imagePath: "/setup/taco-bar-reference-v1.png",
+  imageAlt: "Illustrative Taco Bar serving arrangement with two marble carts, tortilla warmers, clear risers, a centered chafing dish and a three-tier serving stack.",
   stations: [
-    {
-      id: "service-cart", title: "Plates, napkins & forks",
-      instructions: "Place 2 marble serving carts side by side at the start, with plates, napkins and forks accessible from each side.",
-      equipment: ["2 marble serving carts, side by side", "Plate stack on each side", "Napkins on each side", "Forks accessible from each side"],
-    },
+    SERVING_CART_SETUP_STATION,
     {
       id: "tortillas", title: "Tortilla warmers & taco stands",
       instructions: "Left to right: tortilla warmer with small tongs, taco stands in the center, tortilla warmer with small tongs. Use the clear risers shown in the reference.",
@@ -57,7 +73,57 @@ export const TACO_BAR_SETUP_TEMPLATE = {
       equipment: ["Three-tier serving stack", "Top: 2 small tongs", "Middle: 2 spoons", "Bottom: 2 spoons"],
     },
   ],
-} satisfies { id: "taco-bar"; version: string; title: string; stations: SetupStation[] };
+} satisfies SetupTemplate;
+
+export const APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE = {
+  id: "appetizer-wings-dessert" as const,
+  version: "appetizer-wings-dessert-reference-v1",
+  title: "Appetizer Bar, wings & dessert setup reference",
+  referenceChafingDishes: 2,
+  imagePath: "/setup/appetizer-wings-dessert-reference-v1.png",
+  imageAlt: "Illustrative Appetizer Bar, wings and dessert serving arrangement with two marble carts, two chafing dishes, a sauce plate and a raised dessert platter at the far end.",
+  stations: [
+    SERVING_CART_SETUP_STATION,
+    {
+      id: "chafer-one", title: "First chafing dish",
+      instructions: "After the two serving carts, place the first reference chafing dish. Put a long black plate on each side, with 3 tongs on each plate.",
+      equipment: ["First reference chafing dish", "Left long black plate: 3 tongs", "Right long black plate: 3 tongs"],
+    },
+    {
+      id: "chafer-two", title: "Second chafing dish",
+      instructions: "Place the second reference chafing dish next. Put a long black plate on each side, with 2 tongs on each plate.",
+      equipment: ["Second reference chafing dish", "Left long black plate: 2 tongs", "Right long black plate: 2 tongs"],
+    },
+    {
+      id: "sauces", title: "Sauce serving plate",
+      instructions: "After the second chafing dish, place the long black sauce plate with 3 spoons. The reference does not assign particular sauce contents.",
+      equipment: ["Long black sauce plate", "3 spoons"],
+    },
+    {
+      id: "dessert", title: "Raised dessert platter",
+      instructions: "At the far end, replace the three-tier stack with the dessert platter on a small clear riser, with 2 tongs. Purchased dessert quantities remain unchanged.",
+      equipment: ["Small clear riser", "Dessert platter", "2 tongs"],
+    },
+  ],
+} satisfies SetupTemplate;
+
+export const SETUP_TEMPLATES = {
+  "taco-bar": TACO_BAR_SETUP_TEMPLATE,
+  "appetizer-wings-dessert": APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE,
+} satisfies Record<SetupTemplateId, SetupTemplate>;
+
+/** Only the supplied purchased signature: 55 Front Nine/Appetizer Bar + 2 wings + 2 dessert. */
+function matchesAppetizerWingsDessert(selections: NormalizedKitchenSelection[]) {
+  const signature = selections.flatMap((selection) => selection.kinds.map((kind) => ({
+    kind, quantity: selection.quantity, provided: selection.quantityProvided,
+  })));
+  if (selections.some((selection) => selection.kinds.length === 0) || signature.length !== 4) return false;
+  const required = ["package:the-front-nine", "bar:appetizer", "platter:wings", "dessert"];
+  if (required.some((kind) => signature.filter((item) => item.kind === kind).length !== 1)) return false;
+  return signature.every((item) => item.kind === "bar:appetizer"
+    ? !item.provided || item.quantity === 55
+    : item.provided && item.quantity === (item.kind === "package:the-front-nine" ? 55 : 2));
+}
 
 /** Read-only draft. Never packs equipment to an assumed table size or changes prep. */
 export function buildSetupLayout(event: EventPlan): SetupLayout {
@@ -74,19 +140,22 @@ export function buildSetupLayout(event: EventPlan): SetupLayout {
   const kinds = selections.flatMap((selection) => selection.kinds);
   const bars = [...new Set(kinds.filter((kind) => kind.startsWith("bar:")))];
   const unknownFood = selections.some((selection) => selection.kinds.length === 0);
-  const templateId = bars.length === 1 && bars[0] === "bar:taco" && !unknownFood ? "taco-bar" : null;
-  const additionalFood = foodLabels.filter((_label, index) => !templateId || normalizedByLabel[index].some((selection) =>
+  const templateId: SetupTemplateId | null = bars.length === 1 && bars[0] === "bar:taco" && !unknownFood ? "taco-bar"
+    : setup.foodTables === 1 && foodLabels.length === event.food.length && matchesAppetizerWingsDessert(selections) ? "appetizer-wings-dessert" : null;
+  const template = templateId ? SETUP_TEMPLATES[templateId] : null;
+  const additionalFood = templateId === "appetizer-wings-dessert" ? [] : foodLabels.filter((_label, index) => !templateId || normalizedByLabel[index].some((selection) =>
     selection.kinds.some((kind) => kind.startsWith("platter:") || kind === "dessert" || kind.startsWith("sauce:"))));
   const review = [...setup.review, ...(event.review_reasons ?? []).filter((reason) => reason.trim())];
   if (!Number.isFinite(Date.parse(event.source_updated_at ?? ""))) review.push("A verified source update timestamp is required before confirming this setup.");
   if (!event.rooms.some((room) => room.trim())) review.push("The reserved area is missing; confirm the area before arranging the tables.");
   if (foodLabels.length) {
     review.push("Draft only — equipment placement is not to scale. Furniture dimensions are confirmed, but chafing-dish, tray, riser and stand footprints and their clearances are not verified; physical fit is not approved.");
-    if (!templateId) review.push("No complete setup template is available for this food combination. Do not substitute the Taco Bar layout for an unknown item or another bar.");
+    if (!templateId) review.push("No complete setup template is available for this food combination. Do not substitute a reference layout for an unknown item or unmatched food combination.");
     if (templateId && additionalFood.length) review.push("Additional purchased food is listed separately and has not been assigned an approved table position.");
     const servingCount = setup.servingSetup?.chafingDishes ?? setup.chafingDishes;
-    if (templateId && servingCount !== null && setup.foodTables !== null && servingCount > setup.foodTables) {
-      review.push(`The reference illustrates one chafing dish per table, but this event’s existing calculation calls for ${servingCount}. Additional equipment placement needs review; the illustration does not replace the calculated count.`);
+    if (template && servingCount !== null && setup.foodTables !== null && servingCount !== template.referenceChafingDishes * setup.foodTables) {
+      const referenceCount = template.referenceChafingDishes;
+      review.push(`The reference illustrates ${referenceCount === 1 ? "one chafing dish" : `${referenceCount} chafing dishes`} per table, but this event’s existing calculation calls for ${servingCount}. Equipment placement needs review; the illustration does not replace the calculated count.`);
     }
   }
   return {
@@ -102,9 +171,9 @@ export function buildSetupLayout(event: EventPlan): SetupLayout {
     source: {
       eventId: event.source_event_id ?? String(event.id),
       updatedAt: event.source_updated_at ?? null,
-      ruleVersion: `${TACO_BAR_SETUP_TEMPLATE.version} / ${KITCHEN_RULE_CONFIG.ruleVersion}`,
+      ruleVersion: `${template?.version ?? TACO_BAR_SETUP_TEMPLATE.version} / ${KITCHEN_RULE_CONFIG.ruleVersion}`,
     },
-    stations: templateId ? TACO_BAR_SETUP_TEMPLATE.stations.map((station) => ({ ...station, equipment: [...station.equipment] })) : [],
+    stations: template ? template.stations.map((station) => ({ ...station, equipment: [...station.equipment] })) : [],
     additionalFood,
   };
 }
