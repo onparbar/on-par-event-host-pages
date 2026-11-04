@@ -14,10 +14,11 @@ export const dynamic = "force-dynamic";
 export default async function SetupPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
   const { date: requestedDate } = await searchParams;
   const exactDate = Boolean(requestedDate && isValidEntertainmentDate(requestedDate));
+  const date = exactDate ? requestedDate! : easternDateValue(new Date());
   const [admin, window] = await Promise.all([
     loadAdminState(),
-    loadStaffEventPlans(exactDate ? requestedDate! : easternDateValue(new Date()), { exactDate }),
+    loadStaffEventPlans(date, { exactDate }),
   ]);
   const archived = new Set(admin.archivedEventIds);
-  return <SetupClient events={window.plans.filter((event) => !archived.has(event.id))} sourceWarning={window.sourceWarning} />;
+  return <SetupClient date={date} events={window.plans.filter((event) => !archived.has(event.id))} sourceWarning={window.sourceWarning} />;
 }

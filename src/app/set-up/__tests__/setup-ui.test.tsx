@@ -32,10 +32,44 @@ const basicBarEvents: EventPlan[] = [
   { ...event, id: 82, name: "Redacted basic Wing Bar", food: ["17 × The Full Course + Wing Bar"] },
 ];
 
-function render(events = [event], sourceWarning = "") { return renderToStaticMarkup(createElement(SetupClient, { events, sourceWarning })); }
+function render(events = [event], sourceWarning = "", date = event.date) { return renderToStaticMarkup(createElement(SetupClient, { events, sourceWarning, date })); }
 beforeEach(() => { context.ready = true; context.preferredEventId = null; vi.clearAllMocks(); });
 
 describe("read-only Set Up guide", () => {
+  it("offers a date-only GET navigation without carrying the old event identity", () => {
+    const html = render();
+    const form = html.match(/<form[^>]*aria-label="Browse setup by date"[\s\S]*?<\/form>/)?.[0] ?? "";
+    expect(form).toContain('action="/set-up"');
+    expect(form).toContain('method="get"');
+    expect(form).toContain('type="date"');
+    expect(form).toContain('name="date"');
+    expect(form).toContain('value="2026-11-03"');
+    expect(form).toContain("View day");
+    expect(form).not.toContain('name="eventId"');
+    expect(form).not.toContain("min=");
+    expect(form).not.toContain("max=");
+  });
+  it("keeps date browsing available when the selected day has no events", () => {
+    const html = render([], "Source warning retained", "2026-12-18");
+    expect(html).toContain('aria-label="Browse setup by date"');
+    expect(html).toContain('value="2026-12-18"');
+    expect(html).toContain("No events available");
+    expect(html).toContain("Source warning retained");
+    expect(context.bridge).not.toHaveBeenCalled();
+  });
+  it("can browse away from an unavailable explicit event without substituting another party", () => {
+    context.preferredEventId = "missing-event";
+    const html = render([event], "", "2026-12-18");
+    expect(html).toContain('value="2026-12-18"');
+    expect(html).toContain("The selected event is unavailable");
+    expect(html).not.toContain("Purchased food &amp; prep quantities");
+    expect(context.bridge).not.toHaveBeenCalled();
+  });
+  it("uses the selected event date when the event dropdown crosses days", () => {
+    context.preferredEventId = String(appetizerEvent.id);
+    const html = render([event, appetizerEvent]);
+    expect(html).toContain('type="date" required="" name="date" value="2026-11-04"');
+  });
   it.each([event, appetizerEvent, ...basicBarEvents])("shows the visual reference before serving instructions without the equipment summary: $name", (plan) => {
     const html = render([plan]);
     const reference = html.indexOf("What the setup should resemble");

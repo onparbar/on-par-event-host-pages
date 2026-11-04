@@ -20,7 +20,7 @@ function sourceTime(value: string | null) {
     : "Source update time unavailable";
 }
 
-export default function SetupClient({ events, sourceWarning = "" }: { events: EventPlan[]; sourceWarning?: string }) {
+export default function SetupClient({ events, date, sourceWarning = "" }: { events: EventPlan[]; date: string; sourceWarning?: string }) {
   const { ready, preferredEventId, selectEvent, clearEvent } = useEventContext();
   const [activeEventId, setActiveEventId] = useState(events[0]?.id ?? 0);
   const event = checklistEventForSelection(events, preferredEventId, activeEventId);
@@ -28,6 +28,7 @@ export default function SetupClient({ events, sourceWarning = "" }: { events: Ev
   if (!ready) return <PortalShell sectionTitle="Set Up" sectionSubtitle="Table layouts & equipment" mainClassName="page"><p role="status">Loading the selected event…</p></PortalShell>;
   if (!event) return <PortalShell sectionTitle="Set Up" sectionSubtitle="Table layouts & equipment" mainClassName="page">
     <PortalPageHeader eyebrow="Event preparation" title="Event Set Up" description="Choose an event to view its setup requirements." />
+    <div className={styles.eventRow}><SetupDateNavigation date={date} /></div>
     {sourceWarning ? <p className={styles.notice} role="alert">{sourceWarning}</p> : null}
     <section className={styles.card}><h2>{preferredEventId ? "The selected event is unavailable" : "No events available"}</h2><p>{preferredEventId ? "No different party has been substituted. Check the event date or choose another event." : "No active events were returned for this date. Refresh the source from the existing Kitchen or Floor Plans sync controls if needed."}</p>{preferredEventId ? <button type="button" onClick={clearEvent}>Choose another event</button> : null}</section>
     <ReferenceLibrary />
@@ -38,6 +39,7 @@ export default function SetupClient({ events, sourceWarning = "" }: { events: Ev
     <EventSelectionBridge event={operationalEventFromPlan(event)} />
     <PortalPageHeader eyebrow="Event preparation" title="Event Set Up" description="A visual starting point for the team. Confirm the contract, equipment, and final placement before setting the table." aside={<button className={styles.printButton} type="button" onClick={() => window.print()}>Print setup guide</button>} />
     <div className={styles.eventRow}>
+      <SetupDateNavigation date={event.date} />
       <label className={styles.eventSelect}><span>Event</span><select value={event.source_event_id ?? String(event.id)} onChange={(change) => {
         const selected = events.find((item) => (item.source_event_id ?? String(item.id)) === change.target.value);
         if (selected) { setActiveEventId(selected.id); selectEvent(operationalEventFromPlan(selected)); }
@@ -63,6 +65,13 @@ export default function SetupClient({ events, sourceWarning = "" }: { events: Ev
     </section>
     <details className={styles.source}><summary>Source & rule reference</summary><p>Event source: {layout.source.eventId}</p><p>{sourceTime(layout.source.updatedAt)}</p><p>Rule version: {layout.source.ruleVersion}</p><p>Generated from the existing verified event information and deterministic kitchen rules. The reference illustration is not a quantity calculation.</p></details>
   </PortalShell>;
+}
+
+function SetupDateNavigation({ date }: { date: string }) {
+  return <form key={date} action="/set-up" method="get" className={styles.dateNavigation} aria-label="Browse setup by date">
+    <label><span>Event date</span><input type="date" required name="date" defaultValue={date} /></label>
+    <button type="submit">View day</button>
+  </form>;
 }
 
 export function StationGuide({ stations, templateId = "taco-bar" }: { stations: SetupLayout["stations"]; templateId?: SetupTemplateId }) {

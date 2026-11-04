@@ -17,6 +17,7 @@ describe("Set Up event feed", () => {
     const tree = await SetupPage({ searchParams: Promise.resolve({}) });
     expect(loadStaffEventPlans).toHaveBeenCalledWith("2026-11-03", { exactDate: false });
     expect(tree.props.events).toEqual([event]);
+    expect(tree.props.date).toBe("2026-11-03");
   });
   it("honors an explicit valid date, filters archived events and retains source warnings", async () => {
     vi.mocked(loadAdminState).mockResolvedValue({ archivedEventIds: [78] } as Awaited<ReturnType<typeof loadAdminState>>);
@@ -25,11 +26,20 @@ describe("Set Up event feed", () => {
     expect(loadStaffEventPlans).toHaveBeenCalledWith("2026-11-03", { exactDate: true });
     expect(tree.props.events.map((item: typeof event) => item.id)).toEqual([77]);
     expect(tree.props.sourceWarning).toBe("Source warning retained");
+    expect(tree.props.date).toBe("2026-11-03");
+  });
+  it.each(["2026-10-31", "2026-12-18", "2027-01-01"])("can browse another day, including an empty day: %s", async (date) => {
+    vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [], sync: null, sourceWarning: "", unfinishedEventIds: [] });
+    const tree = await SetupPage({ searchParams: Promise.resolve({ date }) });
+    expect(loadStaffEventPlans).toHaveBeenCalledExactlyOnceWith(date, { exactDate: true });
+    expect(tree.props.date).toBe(date);
+    expect(tree.props.events).toEqual([]);
   });
   it("does not pass an invalid date to the source loader", async () => {
     vi.useFakeTimers(); vi.setSystemTime("2026-11-03T17:00:00Z");
     vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [], sync: null, sourceWarning: "", unfinishedEventIds: [] });
-    await SetupPage({ searchParams: Promise.resolve({ date: "2026-02-30" }) });
+    const tree = await SetupPage({ searchParams: Promise.resolve({ date: "2026-02-30" }) });
     expect(loadStaffEventPlans).toHaveBeenCalledWith("2026-11-03", { exactDate: false });
+    expect(tree.props.date).toBe("2026-11-03");
   });
 });
