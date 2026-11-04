@@ -53,11 +53,11 @@ describe("dashboard visual refresh boundaries", () => {
     expect(checklist).toContain('<progress aria-label="Checklist completion"');
     expect(checklist).toContain('max={Math.max(1, progress.total)} value={progress.completed}');
   });
-  it("shows the exact submission blockers without bypassing closeout validation", () => {
-    expect(checklist).toContain('aria-label="Checklist submission requirements"');
-    expect(checklist).toContain("readiness.missing.map((task)");
+  it("omits duplicate submission instructions without bypassing closeout validation", () => {
+    expect(checklist).not.toContain('aria-label="Checklist submission requirements"');
+    expect(checklist).not.toContain("Draft saves automatically");
     expect(checklist).toContain("readiness.warningMessages.map((message)");
-    expect(checklist).toContain("Reconfirm with your staff name and completion time:");
+    expect(checklist).toContain("checklistSections.map((section)");
     expect(checklist).toContain("readiness.canSubmit || warningsConfirmed && readiness.canSubmitAfterWarningConfirmation");
     expect(checklist).toContain("warningConfirmation.employeeName === warningActor");
     expect(checklist).toContain("confirmation?.sourceFingerprint === currentReadiness.warningFingerprint");

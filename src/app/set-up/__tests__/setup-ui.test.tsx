@@ -32,15 +32,26 @@ function render(events = [event], sourceWarning = "") { return renderToStaticMar
 beforeEach(() => { context.ready = true; context.preferredEventId = null; vi.clearAllMocks(); });
 
 describe("read-only Set Up guide", () => {
-  it("shows the reference and exact existing prep/serving counts without applying the image count", () => {
+  it.each([event, appetizerEvent])("shows the visual reference before serving instructions without the equipment summary: $name", (plan) => {
+    const html = render([plan]);
+    const reference = html.indexOf("What the setup should resemble");
+    const instructions = html.indexOf("Build the serving line");
+    expect(html.indexOf("<select")).toBeGreaterThan(-1);
+    expect(reference).toBeGreaterThan(html.indexOf("<select"));
+    expect(instructions).toBeGreaterThan(reference);
+    expect(html).not.toContain('aria-label="Contract setup requirements"');
+    expect(html).not.toContain("Chafing dishes — prepared pans");
+    expect(html).not.toContain("use the event equipment counts above");
+    expect(html).toContain('aria-label="Purchased food and prep quantities"');
+  });
+  it("shows the reference and exact existing prep quantities without applying the image count", () => {
     const html = render();
-    expect(html).toContain("Furniture dimensions confirmed · Equipment placement is a draft");
-    expect(html).toContain("equipment placement is illustrative, not to scale");
-    expect(html).toContain("Equipment footprints and clearances are still needed to confirm physical fit");
+    expect(html).not.toContain('aria-label="Layout draft limitations"');
+    expect(html).not.toContain("Furniture dimensions confirmed · Equipment placement is a draft");
+    expect(html).toContain("equipment placement is not to scale");
+    expect(html).toContain("physical fit is not approved");
     expect(html).toContain("AI-generated reference illustration");
     expect(html).toContain('src="/setup/taco-bar-reference-v1.png"');
-    expect(html).toContain("Chafing dishes — prepared pans</span><strong>3</strong>");
-    expect(html).toContain("Serving chafing dishes</span><strong>2</strong>");
     expect(html).toContain("The reference depicts one central chafer");
     expect(html).toContain("Additional food · Placement needs review");
     expect(html).toContain("1 × Chicken Tender Platter");
@@ -62,8 +73,7 @@ describe("read-only Set Up guide", () => {
   });
   it("shows mirrored equipment as a draft without doubling purchased food", () => {
     const html = render([{ ...event, guest_count: 101 }]);
-    expect(html).toContain("Food tables</span><strong>2</strong>");
-    expect(html).toContain("Mirrored setup required");
+    expect(html).toContain("Two food tables are indicated by the current guest-count rule");
     expect(html).toContain("do not double the purchased food quantities");
     expect(html).toContain("Listed once · quantities unchanged");
   });
@@ -128,9 +138,7 @@ describe("read-only Set Up guide", () => {
     expect(html).toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
     expect(html).not.toContain('src="/setup/taco-bar-reference-v1.png"');
     expect(html).toContain("The reference depicts 2 serving chafing dishes, not all prepared-pan containers");
-    expect(html).toContain(`Chafing dishes — prepared pans</span><strong>${setup.chafingDishes}</strong>`);
     expect(setup.servingSetup).toBeNull();
-    expect(html).toContain("Serving chafing dishes</span><strong>Confirm placement</strong>");
     const prep = html.split('aria-label="Purchased food and prep quantities"')[1].split("</section>")[0];
     for (const food of setup.purchasedFood) expect(prep).toContain(food);
     for (const food of setup.food) {
@@ -181,7 +189,6 @@ describe("read-only Set Up guide", () => {
   });
   it("does not invent a buffet layout for events with no food", () => {
     const html = render([{ ...event, food: [] }]);
-    expect(html).toContain("No food layout applied");
     expect(html).toContain("No buffet layout has been applied");
     expect(html).not.toContain('aria-label="Taco Bar station guide"');
     expect(html).not.toContain("Food-service standard");
@@ -192,7 +199,8 @@ describe("read-only Set Up guide", () => {
     expect(html).toContain("Guest count needs review");
     expect(html).toContain("Area needs review");
     expect(html).toContain("Source update time unavailable");
-    expect(html).toContain("Needs review");
+    expect(html).toContain('aria-label="Setup review items"');
+    expect(html).toContain("Chicken Tender Platter is missing its required platter quantity.");
   });
   it("does not publish or choose a party before navigation context is ready", () => {
     context.ready = false;

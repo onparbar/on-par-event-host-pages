@@ -806,36 +806,12 @@ export default function ChecklistsClient({
             </label>
           </section> : null}
           <div className="checklist-actions">
-            <div className="action-copy">
-              <strong>
-                {isSubmitted
-                  ? isAddOnWorkspace
-                    ? "Final event record submitted"
-                    : "Final checklist submitted"
-                  : "Draft saves automatically"}
-              </strong>
+            {isSubmitted ? <div className="action-copy">
+              <strong>Final checklist submitted</strong>
               <span className="meta">
-                {isSubmitted
-                  ? "Submitted checklists are locked to preserve the final event record."
-                  : canSubmit
-                    ? isAddOnWorkspace
-                      ? "Submit at the end of the event to send the complete add-on record to Admin."
-                      : "Use the submit button when the event checklist is final."
-                    : isAddOnWorkspace
-                      ? "Final submission closes the same event checklist. Add-on quantities can be saved separately; finish critical tasks in Checklists and confirm retained warnings before closing the record."
-                      : "Enter the BWA, finish critical tasks with completion evidence, and confirm any retained contract warnings before submitting."}
+                Submitted checklists are locked to preserve the final event record.
               </span>
-              {!isSubmitted && !canSubmit ? (
-                <ul aria-label="Checklist submission requirements" className="meta">
-                  {!activeChecklist.bwa.trim() ? <li>Enter the BWA name.</li> : null}
-                  {readiness.missing.map((task) => <li key={task.key}>{activeChecklist.tasks[task.key] ? "Reconfirm with your staff name and completion time: " : "Complete: "}{task.label}</li>)}
-                  {readiness.warningMessages.length && !warningsConfirmed ? <li>Review and confirm the contract warnings above; they will remain flagged for Admin.</li> : null}
-                  {conflictByEvent[activeEvent.id] ? <li>Review the newer saved version using “Reload latest and review” above.</li> : null}
-                  {activeSaveState === "saving" ? <li>Wait for the current draft save to finish.</li> : null}
-                  {loadState !== "ready" ? <li>Saved checklist data must load successfully before submission.</li> : null}
-                </ul>
-              ) : null}
-            </div>
+            </div> : null}
             <button
               type="button"
               className={`submit-button${isSubmitted ? " submitted" : ""}`}

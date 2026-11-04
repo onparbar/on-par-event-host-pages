@@ -56,6 +56,19 @@ function cardTask(plan: ChecklistEvent = event) {
 beforeEach(() => { hooks.index = 0; hooks.staffName = "Staff"; hooks.bwa = "BWA"; hooks.status = "draft"; hooks.checked = false; hooks.states = []; });
 
 describe("staff checklist task availability", () => {
+  it.each([false, true])("omits the duplicate draft summary while retaining checklist fields, tasks, and submission checks: %s", (needs_review) => {
+    hooks.bwa = "";
+    const tree = render({ ...event, needs_review })!;
+    const html = renderToStaticMarkup(createElement("div", null, tree.props.children));
+    expect(html).not.toContain("Draft saves automatically");
+    expect(html).not.toContain("Checklist submission requirements");
+    expect(html).not.toContain("Enter the BWA, finish critical tasks with completion evidence");
+    expect(html).toContain("BWA");
+    expect(findTask(tree, "Confirm food, drink card, and entertainment details with the contract")).not.toBeNull();
+    expect(html).toContain('<button type="button" class="submit-button" disabled="">Submit Final Checklist</button>');
+    if (needs_review) expect(html).toContain('aria-label="Contract warning confirmation"');
+  });
+
   it.each([false, true])("never displays a Not applicable label, including contract warnings: %s", (needs_review) => {
     const tree = render({ ...event, needs_review })!;
     const html = renderToStaticMarkup(createElement("div", null, tree.props.children));

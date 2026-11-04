@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
-import { PortalPageHeader, PortalShell, PortalStatusBadge } from "@/app/_components/PortalShell";
+import { PortalPageHeader, PortalShell } from "@/app/_components/PortalShell";
 import { checklistEventForSelection } from "@/lib/checklist-model";
 import type { EventPlan } from "@/lib/event-plans/types";
 import { formatEventDate } from "@/lib/event-format";
@@ -45,23 +45,18 @@ export default function SetupClient({ events, sourceWarning = "" }: { events: Ev
       <div><strong className={styles.printEventName}>{event.name}</strong><strong>{event.rooms.join(" · ") || "Area needs review"}</strong><small>{formatEventDate(event.date)} · {event.time} · {event.guest_count > 0 ? `${event.guest_count} guests` : "Guest count needs review"}</small></div>
     </div>
     {sourceWarning ? <p className={styles.notice} role="alert">{sourceWarning}</p> : null}
-    <section className={styles.draftNotice} aria-label="Layout draft limitations"><PortalStatusBadge tone={layout.status === "needs-review" ? "warning" : "neutral"}>{layout.status === "no-food" ? "No food layout applied" : layout.status === "needs-review" ? "Needs Review" : "Draft layout"}</PortalStatusBadge><div><strong>Furniture dimensions confirmed · Equipment placement is a draft</strong><p>Furniture outlines use the supplied dimensions; equipment placement is illustrative, not to scale. Equipment footprints and clearances are still needed to confirm physical fit. This guide does not approve final placement or change reservations, tasks, or kitchen orders.</p></div></section>
     {layout.status !== "no-food" ? <p className={styles.notice}>Food-service standard: use two marble serving carts, side by side, with plates, napkins and forks accessible from each side.</p> : null}
-    <section className={styles.requirements} aria-label="Contract setup requirements">
-      <div><span>Food tables</span><strong>{layout.tableCount ?? "Needs review"}</strong><small>{layout.mirrored ? "Mirrored setup required" : "Existing kitchen setup rule"}</small></div>
-      <div><span>Chafing dishes — prepared pans</span><strong>{layout.chafingDishes ?? "Needs review"}</strong><small>Calculated from the purchased food</small></div>
-      <div><span>Serving chafing dishes</span><strong>{layout.servingChafingDishes ?? "Confirm placement"}</strong><small>Only shown when an existing serving rule applies</small></div>
-    </section>
     {layout.mirrored ? <p className={styles.notice}>Two food tables are indicated by the current guest-count rule. Plan mirrored service, but do not double the purchased food quantities. Final table placement still needs confirmation.</p> : null}
     <div className={styles.mainGrid}>
+      {layout.templateId ? <ReferenceIllustration key={`${event.source_event_id ?? event.id}:${event.date}:${layout.templateId}`} applied templateId={layout.templateId} /> : null}
       <div className={styles.guideColumn}>
         {layout.templateId ? <StationGuide key={`${event.source_event_id ?? event.id}:${event.date}:${layout.templateId}`} stations={layout.stations} templateId={layout.templateId} /> : <section className={styles.card}>
-          <span className={styles.eyebrow}>Layout coverage</span><h2>{layout.status === "no-food" ? "No food is listed for this event" : "This menu needs a setup template"}</h2><p>{layout.status === "no-food" ? "No buffet layout has been applied. Review the contract if food should be included." : "No reference layout has been applied to this event. Its purchased food and calculated equipment remain listed below; library references are available to view only."}</p>
+          <span className={styles.eyebrow}>Layout coverage</span><h2>{layout.status === "no-food" ? "No food is listed for this event" : "This menu needs a setup template"}</h2><p>{layout.status === "no-food" ? "No buffet layout has been applied. Review the contract if food should be included." : "No reference layout has been applied to this event. Its purchased food and prep quantities remain listed below; library references are available to view only."}</p>
         </section>}
         {layout.additionalFood.length ? <section className={styles.reviewCard} aria-label="Additional food placement"><h2>Additional food · Placement needs review</h2><p>These items have not been assigned a reference position. Allow space for their equipment after equipment footprints and clearances are confirmed.</p><ul>{layout.additionalFood.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}</ul></section> : null}
         {layout.review.length ? <section className={styles.reviewCard} aria-label="Setup review items"><h2>Before the team sets up</h2><ul>{layout.review.map((reason) => <li key={reason}>{reason}</li>)}</ul></section> : null}
       </div>
-      {layout.templateId ? <ReferenceIllustration key={`${event.source_event_id ?? event.id}:${event.date}:${layout.templateId}`} applied templateId={layout.templateId} /> : <ReferenceLibrary key={`${event.source_event_id ?? event.id}:${event.date}`} />}
+      {!layout.templateId ? <ReferenceLibrary key={`${event.source_event_id ?? event.id}:${event.date}`} /> : null}
     </div>
     <section className={styles.card} aria-label="Purchased food and prep quantities"><div className={styles.sectionHeading}><div><span className={styles.eyebrow}>Contract reference</span><h2>Purchased food & prep quantities</h2></div><span>Listed once · quantities unchanged</span></div><ul className={styles.purchased}>{layout.purchasedFood.length ? layout.purchasedFood.map((item, index) => <li key={`${index}:${item}`}>{item}</li>) : <li>No food listed.</li>}</ul>
       {layout.food.length ? <div className={styles.tableScroll}><table><thead><tr><th scope="col">Food</th><th scope="col">Prep quantity</th><th scope="col">Prepared pans</th></tr></thead><tbody>{layout.food.map((item, index) => <tr key={`${index}:${item.name}`}><th scope="row">{item.name}</th><td>{item.quantity === null ? "Needs review" : `${item.quantity} ${item.unit}`}</td><td>{item.pans === null ? item.panSize ? "Needs review" : "—" : `${item.pans}${item.panSize ? ` × ${item.panSize} pans` : " pans"}`}</td></tr>)}</tbody></table></div> : null}
@@ -76,7 +71,7 @@ export function StationGuide({ stations, templateId = "taco-bar" }: { stations: 
   const template = SETUP_TEMPLATES[templateId];
   const referenceName = template.title.replace(/ setup reference$/, "");
   if (!selected) return null;
-  return <section className={styles.card} aria-label={`${referenceName} station guide`}><div className={styles.sectionHeading}><div><span className={styles.eyebrow}>{referenceName} base reference</span><h2>Build the serving line</h2></div><span>Tap a station for details</span></div><p className={styles.caption}>Furniture outlines are proportional to the supplied dimensions. Numbered equipment zones show the reference sequence, not equipment size or confirmed fit. {template.referenceChafingDishes === 1 ? "The reference depicts one central chafer" : `The reference depicts ${template.referenceChafingDishes} serving chafing dishes, not all prepared-pan containers`}; use the event equipment counts above and confirm any additional placement.</p>
+  return <section className={styles.card} aria-label={`${referenceName} station guide`}><div className={styles.sectionHeading}><div><span className={styles.eyebrow}>{referenceName} base reference</span><h2>Build the serving line</h2></div><span>Tap a station for details</span></div><p className={styles.caption}>Furniture outlines are proportional to the supplied dimensions. Numbered equipment zones show the reference sequence, not equipment size or confirmed fit. {template.referenceChafingDishes === 1 ? "The reference depicts one central chafer" : `The reference depicts ${template.referenceChafingDishes} serving chafing dishes, not all prepared-pan containers`}; follow the event’s calculated requirements and confirm any additional placement.</p>
     <div className={styles.stationLayout}>
       <div className={styles.schematic} aria-label={`Measured furniture with illustrative ${referenceName} stations`}>
         <button className={styles.cartStation} type="button" aria-pressed={stationIndex === 0} aria-controls="setup-station-details" onClick={() => setStationIndex(0)}>
