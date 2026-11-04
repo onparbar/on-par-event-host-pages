@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE, TACO_BAR_SETUP_TEMPLATE } from "@/lib/operations/setup-layout";
-import { APPETIZER_WINGS_DESSERT_SETUP_OBJECTS, TACO_BAR_SETUP_OBJECTS } from "../setup-objects";
+import { APPETIZER_WING_BAR_SETUP_TEMPLATE, APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE, TACO_BAR_SETUP_TEMPLATE } from "@/lib/operations/setup-layout";
+import { APPETIZER_WING_BAR_SETUP_OBJECTS, APPETIZER_WINGS_DESSERT_SETUP_OBJECTS, TACO_BAR_SETUP_OBJECTS } from "../setup-objects";
 
 describe("Taco Bar reference object hotspots", () => {
   it("gives every reference object a unique stable identifier, readable name and purpose", () => {
@@ -169,6 +169,95 @@ describe("Appetizer Bar, wings and dessert reference object hotspots", () => {
           y >= top && y <= top + Math.max(24, object.height / 100 * height);
       });
       expect(hits.at(-1)?.id, utensil.id).toBe(utensil.id);
+    }
+  });
+});
+
+describe("Basic Appetizer Bar and Wing Bar reference object hotspots", () => {
+  const objects = APPETIZER_WING_BAR_SETUP_OBJECTS;
+  const index = (id: string) => objects.findIndex((object) => object.id === id);
+  const byId = new Map(objects.map((object) => [object.id, object]));
+  const utensils = objects.filter((object) => object.id.includes("tongs") || object.id.startsWith("sauce-spoon-"));
+  const smallObjects = [...utensils, ...objects.filter((object) => object.id.startsWith("sauce-container-"))];
+
+  it("identifies all 24 furniture, supply and equipment objects with unique supported labels", () => {
+    expect(objects).toHaveLength(24);
+    expect(new Set(objects.map((object) => object.id)).size).toBe(objects.length);
+    expect(new Set(objects.map((object) => object.label)).size).toBe(objects.length);
+    for (const object of objects) {
+      expect(object.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      expect(object.label.trim()).toBe(object.label);
+      expect(object.label.length).toBeGreaterThan(3);
+      expect(object.description.length).toBeGreaterThan(30);
+      expect(APPETIZER_WING_BAR_SETUP_TEMPLATE.stations.map((station) => station.id)).toContain(object.stationId);
+    }
+    for (const id of ["buffet-table", "marble-cart-left", "marble-cart-right", "plate-stack-left", "plate-stack-right",
+      "napkins-left", "napkins-right", "fork-caddy", "bar-chafer", "chafer-left-utensil-plate", "chafer-right-utensil-plate",
+      "sauce-plate", "sauce-container-left", "sauce-container-center", "sauce-container-right", "chafer-left-tongs-upper",
+      "chafer-left-tongs-middle", "chafer-left-tongs-lower", "chafer-right-tongs-upper", "chafer-right-tongs-middle",
+      "chafer-right-tongs-lower", "sauce-spoon-left", "sauce-spoon-center", "sauce-spoon-right"]) expect(byId.has(id), id).toBe(true);
+    expect(objects.some((object) => /dessert|tortilla|taco|tier|chafer-two/.test(object.id))).toBe(false);
+  });
+
+  it("keeps one chafer with three tongs per side and three separate sauce containers and spoons", () => {
+    expect(objects.filter((object) => object.id === "bar-chafer")).toHaveLength(1);
+    expect(objects.filter((object) => object.id.includes("tongs"))).toHaveLength(6);
+    expect(objects.filter((object) => object.id.startsWith("sauce-container-"))).toHaveLength(3);
+    expect(objects.filter((object) => object.id.startsWith("sauce-spoon-"))).toHaveLength(3);
+    for (const side of ["left", "right"]) {
+      expect(objects.filter((object) => object.id.startsWith(`chafer-${side}-tongs-`))).toHaveLength(3);
+      expect(byId.get(`chafer-${side}-utensil-plate`)!.description).toContain("3 tongs");
+    }
+    expect(byId.get("sauce-plate")!.description).toContain("3 sauce containers and 3 spoons");
+    expect(byId.get("bar-chafer")!.description).toContain("does not assign pan contents");
+    expect(byId.get("sauce-container-left")!.description).toContain("contract");
+    expect(byId.get("buffet-table")!.description).toContain("does not confirm physical fit");
+    expect(objects.map((object) => object.description).join(" ")).not.toMatch(/salsa|sour cream|beef|chicken|beans|cheese|tomato|onion|serves \d+|per guest/i);
+  });
+
+  it("keeps every authored rectangle inside the actual reference image", () => {
+    for (const object of objects) {
+      for (const value of [object.left, object.top, object.width, object.height]) expect(Number.isFinite(value)).toBe(true);
+      expect(object.left).toBeGreaterThanOrEqual(0);
+      expect(object.top).toBeGreaterThanOrEqual(0);
+      expect(object.width).toBeGreaterThan(0);
+      expect(object.height).toBeGreaterThan(0);
+      expect(object.left + object.width).toBeLessThanOrEqual(100);
+      expect(object.top + object.height).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("keeps furniture and support plates beneath their supply, tong, container and spoon targets", () => {
+    expect(index("buffet-table")).toBe(0);
+    for (const side of ["left", "right"]) {
+      expect(index(`marble-cart-${side}`)).toBeLessThan(index(`plate-stack-${side}`));
+      for (const level of ["upper", "middle", "lower"]) expect(index(`chafer-${side}-utensil-plate`)).toBeLessThan(index(`chafer-${side}-tongs-${level}`));
+    }
+    for (const position of ["left", "center", "right"]) {
+      expect(index("sauce-plate")).toBeLessThan(index(`sauce-container-${position}`));
+      expect(index("sauce-plate")).toBeLessThan(index(`sauce-spoon-${position}`));
+    }
+  });
+
+  it("keeps neighboring tongs and spoons nonoverlapping in authored percentage geometry", () => {
+    for (let left = 0; left < utensils.length; left++) for (let right = left + 1; right < utensils.length; right++) {
+      const a = utensils[left], b = utensils[right];
+      const overlaps = a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
+      expect(overlaps, `${a.id} overlaps ${b.id}`).toBe(false);
+    }
+  });
+
+  it.each([220, 280, 552])("keeps every small object center selectable with 24px targets at %ipx image width", (width) => {
+    const height = width * 1.5;
+    for (const target of smallObjects) {
+      const x = (target.left + target.width / 2) / 100 * width;
+      const y = (target.top + target.height / 2) / 100 * height;
+      const hits = objects.filter((object) => {
+        const left = object.left / 100 * width, top = object.top / 100 * height;
+        return x >= left && x <= left + Math.max(24, object.width / 100 * width) &&
+          y >= top && y <= top + Math.max(24, object.height / 100 * height);
+      });
+      expect(hits.at(-1)?.id, target.id).toBe(target.id);
     }
   });
 });

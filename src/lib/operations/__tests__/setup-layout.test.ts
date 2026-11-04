@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EventPlan } from "@/lib/event-plans/types";
 import { KITCHEN_RULE_CONFIG } from "@/lib/kitchen/config";
 import { contractSetup } from "../setup";
-import { APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE, buildSetupLayout, SERVING_CART_SETUP_STATION, SETUP_FURNITURE_DIMENSIONS, SETUP_TEMPLATES, TACO_BAR_SETUP_TEMPLATE } from "../setup-layout";
+import { APPETIZER_WING_BAR_SETUP_TEMPLATE, APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE, buildSetupLayout, SERVING_CART_SETUP_STATION, SETUP_FURNITURE_DIMENSIONS, SETUP_TEMPLATES, TACO_BAR_SETUP_TEMPLATE } from "../setup-layout";
 
 const event: EventPlan = {
   id: 42, name: "Redacted Taco Bar event", date: "2026-11-03", day: "Tuesday",
@@ -73,8 +73,6 @@ describe("read-only event setup drafts", () => {
   });
 
   it.each([
-    ["50 × The Full Course + Wing Bar"],
-    ["50 × The Full Course + Appetizer Bar"],
     ["50 × The Full Course + Taco Bar + Wing Bar"],
     ["50 × The Full Course + Taco Bar", "1 × Unknown feast"],
     ["1 × Wing Platter"],
@@ -197,12 +195,12 @@ describe("exact Appetizer Bar, wings and dessert reference", () => {
     expect(plan).toEqual(original);
   });
 
-  it.each([0, 101, 200, 201])("does not apply the one-table reference to unknown or mirrored setup for %i guests", (guest_count) => {
+  it.each([0, 101, 200, 201])("does not apply the specific one-table reference to unknown or mirrored setup for %i guests", (guest_count) => {
     const plan = { ...appetizerEvent, guest_count };
     const layout = buildSetupLayout(plan);
-    expect(layout.templateId).toBeNull();
-    expect(layout.stations).toEqual([]);
-    expect(layout.additionalFood).toEqual(plan.food);
+    expect(layout.templateId).toBe("appetizer-wing-bar");
+    expect(layout.stations.map((station) => station.id)).toEqual(["service-cart", "bar-chafer", "bar-sauces"]);
+    expect(layout.additionalFood).toEqual(["2 × Wing Platter", "2 × Desert Platter"]);
     expect(layout.tableCount).toBe(contractSetup(plan).foodTables);
     expect(layout.chafingDishes).toBe(contractSetup(plan).chafingDishes);
   });
@@ -228,19 +226,18 @@ describe("exact Appetizer Bar, wings and dessert reference", () => {
     ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Desert Platter", "1 × Dessert Platter"],
     ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Desert Platter", "Wing Bar"],
     ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Desert Platter", "No food"],
-  ].map((food) => ({ food })))("rejects missing, changed, duplicate, extra or unknown purchases: $food", ({ food }) => {
+  ].map((food) => ({ food })))("does not apply the specific two-chafer template to missing, changed, duplicate, extra or unknown purchases: $food", ({ food }) => {
     const plan = { ...appetizerEvent, food };
     const layout = buildSetupLayout(plan);
-    expect(layout.templateId).toBeNull();
-    expect(layout.stations).toEqual([]);
+    expect(layout.templateId).not.toBe("appetizer-wings-dessert");
     expect(layout.additionalFood).not.toEqual([]);
     expect(layout.status).toBe("needs-review");
     expect(layout.food).toEqual(contractSetup(plan).food);
-    expect(layout.review.join(" ")).toContain("No complete setup template");
+    expect(layout.review.join(" ")).toContain(layout.templateId ? "has not been assigned an approved table position" : "No complete setup template");
   });
 
   it("shares the two-cart starting station without changing either reference’s serving tools", () => {
-    expect(Object.keys(SETUP_TEMPLATES)).toEqual(["taco-bar", "appetizer-wings-dessert"]);
+    expect(Object.keys(SETUP_TEMPLATES)).toEqual(["taco-bar", "appetizer-wings-dessert", "appetizer-wing-bar"]);
     for (const template of Object.values(SETUP_TEMPLATES)) {
       expect(template.stations[0]).toBe(SERVING_CART_SETUP_STATION);
       expect(template.stations[0].instructions).toContain("2 marble serving carts side by side");
@@ -286,6 +283,130 @@ describe("exact Appetizer Bar, wings and dessert reference", () => {
     layout.stations[1].instructions = "changed";
     expect(buildSetupLayout(plan).stations).toEqual(APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE.stations);
     expect(buildSetupLayout(event).stations[0]).toEqual(SERVING_CART_SETUP_STATION);
+    expect(plan).toEqual(original);
+  });
+});
+
+describe("basic Appetizer Bar or Wing Bar setup reference", () => {
+  it.each([
+    ["50 × The Full Course + Appetizer Bar"],
+    ["50 × The Full Course", "Appetizer Bar"],
+    ["50 × The Front Nine with Appetizer Bar"],
+    ["50 × The Full Course + Wing Bar"],
+    ["50 × The Full Course", "Wing Bar"],
+    ["50 × The Front Nine with Wing Bar"],
+  ].map((food) => ({ food })))("recognizes one known bar through existing canonical normalization: $food", ({ food }) => {
+    const plan = { ...event, food };
+    const setup = contractSetup(plan);
+    const layout = buildSetupLayout(plan);
+    expect(layout.templateId).toBe("appetizer-wing-bar");
+    expect(layout.stations.map((station) => station.id)).toEqual(["service-cart", "bar-chafer", "bar-sauces"]);
+    expect(layout.additionalFood).toEqual([]);
+    expect(layout.tableCount).toBe(setup.foodTables);
+    expect(layout.chafingDishes).toBe(setup.chafingDishes);
+    expect(layout.servingChafingDishes).toBe(setup.servingSetup?.chafingDishes ?? null);
+    expect(layout.food).toEqual(setup.food);
+    expect(layout.purchasedFood).toEqual(food);
+    for (const warning of setup.review) expect(layout.review).toContain(warning);
+    expect(layout.source.ruleVersion).toBe(`${APPETIZER_WING_BAR_SETUP_TEMPLATE.version} / ${KITCHEN_RULE_CONFIG.ruleVersion}`);
+    expect(layout.status).toBe("needs-review");
+  });
+
+  it.each(["Appetizer Bar", "Wing Bar"].flatMap((bar) => [100, 101, 200, 201].map((guests) => ({ bar, guests }))))("preserves the existing $guests-guest boundary for $bar without doubling prep", ({ bar, guests }) => {
+    const plan = { ...event, guest_count: guests, food: [`${guests} × The Full Course + ${bar}`] };
+    const original = structuredClone(plan);
+    const setup = contractSetup(plan);
+    const layout = buildSetupLayout(plan);
+    expect(layout.templateId).toBe("appetizer-wing-bar");
+    expect(layout.tableCount).toBe(guests > 100 ? 2 : 1);
+    expect(layout.mirrored).toBe(guests > 100);
+    expect(layout.food).toEqual(setup.food);
+    expect(layout.purchasedFood).toEqual(plan.food);
+    expect(layout.chafingDishes).toBe(setup.chafingDishes);
+    expect(layout.servingChafingDishes).toBe(setup.servingSetup?.chafingDishes ?? null);
+    expect(layout.stations[0].instructions).toContain("2 marble serving carts side by side at the start of each serving line");
+    expect(layout.stations[1].instructions).toContain("one reference serving chafing dish per table");
+    for (const warning of setup.review) expect(layout.review).toContain(warning);
+    expect(plan).toEqual(original);
+  });
+
+  it.each(["Appetizer Bar", "Wing Bar"])("keeps additional %s platters, desserts and sauces unplaced instead of absorbing them into one chafer", (bar) => {
+    const extras = ["1 × Chicken Tender Platter", "2 × Dessert Platter", "1 × Ranch"];
+    const plan = { ...event, food: [`50 × The Full Course + ${bar}`, ...extras] };
+    const setup = contractSetup(plan);
+    const layout = buildSetupLayout(plan);
+    expect(layout.templateId).toBe("appetizer-wing-bar");
+    expect(layout.additionalFood).toEqual(extras);
+    expect(layout.review.join(" ")).toContain("has not been assigned an approved table position");
+    expect(layout.chafingDishes).toBe(setup.chafingDishes);
+    expect(layout.servingChafingDishes).toBe(setup.servingSetup?.chafingDishes ?? null);
+    expect(layout.food).toEqual(setup.food);
+    expect(layout.purchasedFood).toEqual(plan.food);
+    const servingCount = setup.servingSetup?.chafingDishes ?? setup.chafingDishes;
+    if (servingCount !== null && servingCount !== setup.foodTables) {
+      expect(layout.review.join(" ")).toContain("reference illustrates one chafing dish per table");
+      expect(layout.review.join(" ")).toContain(`existing calculation calls for ${servingCount}`);
+    }
+  });
+
+  it.each([
+    ["50 × The Full Course + Appetizer Bar + Wing Bar"],
+    ["50 × The Full Course + Appetizer Bar + Taco Bar"],
+    ["50 × The Full Course + Wing Bar + Taco Bar"],
+    ["50 × The Full Course + Appetizer Bar", "1 × Unknown feast"],
+    ["50 × The Full Course + Wing Bar", "1 × Unknown feast"],
+  ].map((food) => ({ food })))("refuses mixed bars or unknown food without guessing a serving arrangement: $food", ({ food }) => {
+    const layout = buildSetupLayout({ ...event, food });
+    expect(layout.templateId).toBeNull();
+    expect(layout.stations).toEqual([]);
+    expect(layout.additionalFood).toEqual(food);
+    expect(layout.review.join(" ")).toContain("No complete setup template");
+    expect(layout.status).toBe("needs-review");
+  });
+
+  it("keeps the specific two-chafer appetizer/wings/dessert reference ahead of the generic bar reference", () => {
+    expect(buildSetupLayout(appetizerEvent).templateId).toBe("appetizer-wings-dessert");
+    expect(buildSetupLayout({ ...appetizerEvent, food: ["54 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Desert Platter"] })).toMatchObject({
+      templateId: "appetizer-wing-bar", additionalFood: ["2 × Wing Platter", "2 × Desert Platter"],
+    });
+  });
+
+  it("keeps the one-chafer reference and exact serving tools separate from food calculations", () => {
+    const template = APPETIZER_WING_BAR_SETUP_TEMPLATE;
+    expect(SETUP_TEMPLATES["appetizer-wing-bar"]).toBe(template);
+    expect(template.referenceChafingDishes).toBe(1);
+    expect(template.title).toBe("Appetizer Bar & Wing Bar setup reference");
+    expect(template.imagePath).toBe("/setup/appetizer-wing-bar-reference-v1.png");
+    expect(template.stations[0]).toBe(SERVING_CART_SETUP_STATION);
+    expect(template.stations[1].equipment).toEqual(["Reference chafing dish", "Left long black plate: 3 tongs", "Right long black plate: 3 tongs"]);
+    expect(template.stations[2].equipment).toEqual(["Long black sauce plate", "3 sauce containers", "3 spoons"]);
+    expect(template.stations[2].instructions).toContain("At the end of the table");
+    expect(template.stations[2].instructions).toContain("Use the contract to identify the sauce contents");
+    expect(template.stations[2].instructions).toContain("does not select sauces or change purchased sauce quantities");
+  });
+
+  it.each(["Appetizer Bar", "Wing Bar"])("retains source and missing-quantity warnings for %s without mutating inputs or shared references", (bar) => {
+    const plan = { ...event, guest_count: 0, food: [`50 × The Full Course + ${bar}`, "Chicken Tender Platter"],
+      needs_review: true, review_reasons: ["Contract changed"], source_event_id: "vip-basic-bar-reference", source_updated_at: null, rooms: [] };
+    const original = structuredClone(plan);
+    const setup = contractSetup(plan);
+    const layout = buildSetupLayout(plan);
+    expect(layout.templateId).toBe("appetizer-wing-bar");
+    expect(layout.status).toBe("needs-review");
+    expect(layout.tableCount).toBeNull();
+    expect(layout.additionalFood).toEqual(["Chicken Tender Platter"]);
+    expect(layout.food).toEqual(setup.food);
+    expect(layout.source).toMatchObject({ eventId: "vip-basic-bar-reference", updatedAt: null });
+    expect(layout.review).toContain("Contract changed");
+    expect(layout.review).toContain("A purchased platter quantity is missing or invalid; tongs need review.");
+    expect(layout.review.join(" ")).toContain("Guest count is required");
+    expect(layout.review.join(" ")).toContain("source update timestamp");
+    expect(layout.review.join(" ")).toContain("reserved area is missing");
+    expect(layout.review.join(" ")).toContain("physical fit is not approved");
+    for (const warning of setup.review) expect(layout.review).toContain(warning);
+    layout.stations[0].equipment.push("not real equipment");
+    layout.stations[1].instructions = "changed";
+    expect(buildSetupLayout(plan).stations).toEqual(APPETIZER_WING_BAR_SETUP_TEMPLATE.stations);
     expect(plan).toEqual(original);
   });
 });

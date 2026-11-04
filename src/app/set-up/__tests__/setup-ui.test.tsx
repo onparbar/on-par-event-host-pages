@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventPlan } from "@/lib/event-plans/types";
 import SetupClient, { ReferenceIllustration, StationGuide } from "../SetupClient";
-import { APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE, TACO_BAR_SETUP_TEMPLATE } from "@/lib/operations/setup-layout";
+import { APPETIZER_WING_BAR_SETUP_TEMPLATE, APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE, TACO_BAR_SETUP_TEMPLATE } from "@/lib/operations/setup-layout";
 import { contractSetup } from "@/lib/operations/setup";
-import { APPETIZER_WINGS_DESSERT_SETUP_OBJECTS, TACO_BAR_SETUP_OBJECTS } from "../setup-objects";
+import { APPETIZER_WING_BAR_SETUP_OBJECTS, APPETIZER_WINGS_DESSERT_SETUP_OBJECTS, TACO_BAR_SETUP_OBJECTS } from "../setup-objects";
 
 const context = vi.hoisted(() => ({ ready: true, preferredEventId: null as string | null, selectEvent: vi.fn(), clearEvent: vi.fn(), bridge: vi.fn() }));
 vi.mock("@/app/_components/EventContext", () => ({
@@ -27,12 +27,16 @@ const appetizerEvent: EventPlan = {
   ...event, id: 78, name: "Redacted Appetizer Bar event", date: "2026-11-04", day: "Wednesday", guest_count: 55,
   food: ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Desert Platter"],
 };
+const basicBarEvents: EventPlan[] = [
+  { ...event, id: 81, name: "Redacted basic Appetizer Bar", food: ["17 × The Front Nine + Appetizer Bar"] },
+  { ...event, id: 82, name: "Redacted basic Wing Bar", food: ["17 × The Full Course + Wing Bar"] },
+];
 
 function render(events = [event], sourceWarning = "") { return renderToStaticMarkup(createElement(SetupClient, { events, sourceWarning })); }
 beforeEach(() => { context.ready = true; context.preferredEventId = null; vi.clearAllMocks(); });
 
 describe("read-only Set Up guide", () => {
-  it.each([event, appetizerEvent])("shows the visual reference before serving instructions without the equipment summary: $name", (plan) => {
+  it.each([event, appetizerEvent, ...basicBarEvents])("shows the visual reference before serving instructions without the equipment summary: $name", (plan) => {
     const html = render([plan]);
     const reference = html.indexOf("What the setup should resemble");
     const instructions = html.indexOf("Build the serving line");
@@ -84,6 +88,7 @@ describe("read-only Set Up guide", () => {
     expect(html).toContain("1 spoon and 2 large tongs");
     expect(html).toContain("2 small tongs on top, 2 spoons in the middle and 2 spoons on the bottom");
     expect(html).toContain("Reference equipment only");
+    expect(html).toContain("grid-template-rows:repeat(4, minmax(0, 1fr))");
   });
   it("makes every reference object an accessible item target with a picker fallback", () => {
     const html = renderToStaticMarkup(createElement(ReferenceIllustration, { applied: true }));
@@ -122,11 +127,12 @@ describe("read-only Set Up guide", () => {
     expect(html).toContain("Event source: vip-sample-a");
     expect(html).toContain("Nov 3, 2026, 10:00 AM Eastern");
   });
-  it("does not apply the Taco Bar reference to unsupported food", () => {
-    const html = render([{ ...event, food: ["17 × The Full Course + Wing Bar"] }]);
+  it("does not apply a reference to unsupported food", () => {
+    const html = render([{ ...event, food: ["1 × Unmapped Buffet"] }]);
     expect(html).toContain("This menu needs a setup template");
     expect(html).toContain("Taco Bar reference library · Not applied to this event");
     expect(html).toContain("Appetizer Bar, wings &amp; dessert reference library · Not applied to this event");
+    expect(html).toContain("Appetizer Bar &amp; Wing Bar reference library · Not applied to this event");
     expect(html).not.toContain('aria-label="Taco Bar station guide"');
     expect(html).not.toContain("<details open");
   });
@@ -177,15 +183,74 @@ describe("read-only Set Up guide", () => {
     expect(html).toContain('method="dialog"');
     expect(html).not.toContain("<dialog open");
   });
-  it("offers both collapsed library references instead of applying the new layout to a different menu or mirrored setup", () => {
-    for (const unmatched of [{ ...appetizerEvent, guest_count: 101 }, { ...appetizerEvent, food: [...appetizerEvent.food, "1 × Chicken Tender Platter"] }]) {
+  it("provides an accessible picture target and picker option for every one-chafer reference object", () => {
+    const html = renderToStaticMarkup(createElement(ReferenceIllustration, { applied: true, templateId: "appetizer-wing-bar" }));
+    expect(APPETIZER_WING_BAR_SETUP_OBJECTS).toHaveLength(24);
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(24);
+    for (const item of APPETIZER_WING_BAR_SETUP_OBJECTS) {
+      expect(html).toContain(`data-setup-object="${item.id}"`);
+      expect(html).toContain(`value="${item.id}"`);
+    }
+    expect(html).toContain('method="dialog"');
+    expect(html).not.toContain("<dialog open");
+    expect(html).toContain("Reference placement only");
+  });
+  it("offers all three collapsed library references instead of applying a layout to unknown or conflicting bars", () => {
+    for (const unmatched of [{ ...appetizerEvent, food: [...appetizerEvent.food, "1 × Unmapped Buffet"] }, { ...event, food: ["17 × The Front Nine + Appetizer Bar", "17 × Wing Bar"] }]) {
       const html = render([unmatched]);
       expect(html).toContain("This menu needs a setup template");
       expect(html).toContain("Taco Bar reference library · Not applied to this event");
       expect(html).toContain("Appetizer Bar, wings &amp; dessert reference library · Not applied to this event");
+      expect(html).toContain("Appetizer Bar &amp; Wing Bar reference library · Not applied to this event");
       expect(html).not.toContain('aria-label="Appetizer Bar, wings &amp; dessert station guide"');
       expect(html).not.toContain("<details open");
     }
+  });
+  it.each(basicBarEvents)("uses the one-chafer reference for $name without changing purchased or prepared amounts", (plan) => {
+    const before = structuredClone(plan);
+    const setup = contractSetup(plan);
+    const html = render([plan]);
+    expect(html).toContain('src="/setup/appetizer-wing-bar-reference-v1.png"');
+    expect(html).not.toContain('src="/setup/taco-bar-reference-v1.png"');
+    expect(html).not.toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
+    expect(html).toContain('aria-label="Appetizer Bar &amp; Wing Bar station guide"');
+    expect(html).toContain("The reference depicts one central chafer");
+    expect(html).not.toContain('aria-label="Contract setup requirements"');
+    expect(html).not.toContain('aria-label="Layout draft limitations"');
+    const prep = html.split('aria-label="Purchased food and prep quantities"')[1].split("</section>")[0];
+    for (const food of setup.purchasedFood) expect(prep).toContain(food);
+    for (const food of setup.food) {
+      expect(prep).toContain(food.quantity === null ? "Needs review" : `${food.quantity} ${food.unit}`);
+      if (food.pans !== null) expect(prep).toContain(`${food.pans}${food.panSize ? ` × ${food.panSize} pans` : " pans"}`);
+    }
+    expect(html).toContain("physical fit is not approved");
+    expect(plan).toEqual(before);
+  });
+  it("keeps the one-chafer guide to three stations and prints each station’s exact tools", () => {
+    const html = renderToStaticMarkup(createElement(StationGuide, { stations: APPETIZER_WING_BAR_SETUP_TEMPLATE.stations, templateId: "appetizer-wing-bar" }));
+    expect(html.match(/aria-controls="setup-station-details"/g)).toHaveLength(3);
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).toContain("grid-template-rows:repeat(2, minmax(0, 1fr))");
+    expect(html).toContain("Left long black plate: 3 tongs");
+    expect(html).toContain("Right long black plate: 3 tongs");
+    expect(html).toContain("3 sauce containers");
+    expect(html).toContain("3 spoons");
+    expect(html).toContain("96 × 36 in");
+    expect(html).toContain("Each cart: 21.5 × 15.5 in");
+    expect(html).not.toContain("Second chafing dish");
+    expect(html).not.toContain("Raised dessert platter");
+    expect(html).not.toContain("Tortilla warmers");
+  });
+  it("keeps extra platters unplaced and mirrored food quantities unchanged for the basic reference", () => {
+    const plan = { ...basicBarEvents[0], guest_count: 101, food: [...basicBarEvents[0].food, "2 × Wing Platter", "2 × Desert Platter"] };
+    const html = render([plan]);
+    expect(html).toContain('src="/setup/appetizer-wing-bar-reference-v1.png"');
+    expect(html).toContain("Additional food · Placement needs review");
+    expect(html).toContain("These items have not been assigned a reference position");
+    expect(html).toContain("do not double the purchased food quantities");
+    expect(html).toContain("2 × Wing Platter");
+    expect(html).toContain("2 × Desert Platter");
+    expect(html).not.toContain("4 × Wing Platter");
   });
   it("does not invent a buffet layout for events with no food", () => {
     const html = render([{ ...event, food: [] }]);

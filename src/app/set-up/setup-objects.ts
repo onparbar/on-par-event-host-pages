@@ -2,7 +2,7 @@ export type SetupReferenceObject = {
   id: string;
   label: string;
   description: string;
-  stationId: "service-cart" | "tortillas" | "lettuce-wraps" | "hot-food" | "cold-sides" | "chafer-one" | "chafer-two" | "sauces" | "dessert";
+  stationId: "service-cart" | "tortillas" | "lettuce-wraps" | "hot-food" | "cold-sides" | "chafer-one" | "chafer-two" | "sauces" | "dessert" | "bar-chafer" | "bar-sauces";
   left: number;
   top: number;
   width: number;
@@ -284,5 +284,105 @@ export const APPETIZER_WINGS_DESSERT_SETUP_OBJECTS: readonly SetupReferenceObjec
   {
     id: "dessert-tongs-right", label: "Dessert platter — right tongs", stationId: "dessert", left: 53, top: 80.4, width: 9.5, height: 6,
     description: "The second of the 2 tongs kept with the raised dessert platter. Keep both tongs with the platter at the far end of the serving line.",
+  },
+];
+
+/** Hotspots authored against the inspected 1024 × 1536 one-chafer reference. */
+export const APPETIZER_WING_BAR_SETUP_OBJECTS: readonly SetupReferenceObject[] = [
+  {
+    id: "buffet-table", label: "Buffet table", stationId: "bar-chafer", left: 15.8, top: 26.5, width: 69, height: 72.5,
+    description: "The 8 ft × 3 ft buffet table supports the reference serving line. Its measured size does not confirm physical fit or the equipment clearances.",
+  },
+  {
+    id: "marble-cart-left", label: "Left marble serving cart", stationId: "service-cart", left: 26.8, top: 6.8, width: 23.2, height: 19.6,
+    description: "One of the two 21.5 × 15.5 inch marble serving carts at the start of this serving line. Arrange the carts side by side with supplies accessible from each side.",
+  },
+  {
+    id: "marble-cart-right", label: "Right marble serving cart", stationId: "service-cart", left: 50.2, top: 6.8, width: 23.2, height: 19.6,
+    description: "The second marble cart sits beside the first. Together the carts have a 21.5 × 31 inch footprint; confirm access and clearances separately.",
+  },
+  {
+    id: "chafer-left-utensil-plate", label: "Left black utensil plate", stationId: "bar-chafer", left: 25.4, top: 38.1, width: 12.6, height: 19.5,
+    description: "Place a long black plate on the left of the single reference serving chafing dish, with 3 tongs on this plate. The reference does not assign their food contents.",
+  },
+  {
+    id: "chafer-right-utensil-plate", label: "Right black utensil plate", stationId: "bar-chafer", left: 62.3, top: 38.1, width: 13.1, height: 19.5,
+    description: "Place a long black plate on the right of the single reference serving chafing dish, with 3 tongs on this plate as well. Keep these tools together at this station.",
+  },
+  {
+    id: "sauce-plate", label: "End-of-table black sauce plate", stationId: "bar-sauces", left: 27.8, top: 79.9, width: 44.1, height: 9.1,
+    description: "Place this long black plate at the end of the table with 3 sauce containers and 3 spoons. Check the contract for sauce contents; pictured tools do not change purchased quantities.",
+  },
+  {
+    id: "plate-stack-left", label: "Left plate stack", stationId: "service-cart", left: 29.9, top: 8.3, width: 15, height: 8.5,
+    description: "Place plates on this side of the marble carts for guests collecting their serving supplies. The illustration does not calculate the number of plates to provide.",
+  },
+  {
+    id: "plate-stack-right", label: "Right plate stack", stationId: "service-cart", left: 55.2, top: 8.3, width: 15.8, height: 8.5,
+    description: "Provide a plate stack on the other side of the marble carts too. Keep supplies reachable from each side of the serving line.",
+  },
+  {
+    id: "napkins-left", label: "Left napkins", stationId: "service-cart", left: 33.5, top: 1.8, width: 8.1, height: 6.7,
+    description: "Keep napkins with the serving supplies on this side of the carts, accessible to guests collecting plates and forks.",
+  },
+  {
+    id: "napkins-right", label: "Right napkins", stationId: "service-cart", left: 59.1, top: 1.8, width: 8.1, height: 6.7,
+    description: "Provide napkins on the opposite side of the carts too, so guests can collect supplies from either side of the serving line.",
+  },
+  {
+    id: "fork-caddy", label: "Fork caddy", stationId: "service-cart", left: 46.2, top: 3.9, width: 7.6, height: 11.7,
+    description: "The central caddy holds the guest forks. Place it where forks are accessible from each side of the two marble serving carts.",
+  },
+  {
+    id: "bar-chafer", label: "Bar serving chafing dish", stationId: "bar-chafer", left: 39, top: 36.4, width: 22.3, height: 21.8,
+    description: "This single serving chafing dish belongs to the basic reference line. Use the event’s calculated equipment separately; the picture does not assign pan contents, additional platters or all prepared-pan containers.",
+  },
+  {
+    id: "sauce-container-left", label: "Left sauce container", stationId: "bar-sauces", left: 32.5, top: 80, width: 7.8, height: 5.2,
+    description: "The left of the 3 sauce containers on the end-of-table plate. Use the contract to identify its contents; the empty pictured container does not select a sauce.",
+  },
+  {
+    id: "sauce-container-center", label: "Center sauce container", stationId: "bar-sauces", left: 45.5, top: 80, width: 7.8, height: 5.2,
+    description: "The center of the 3 sauce containers on the long black plate. Its sauce contents and purchased quantity must come from the contract, not the illustration.",
+  },
+  {
+    id: "sauce-container-right", label: "Right sauce container", stationId: "bar-sauces", left: 58.6, top: 80, width: 8, height: 5.2,
+    description: "The right of the 3 sauce containers on the end plate. Confirm the actual sauce from the contract and keep a serving spoon at each container.",
+  },
+  {
+    id: "chafer-left-tongs-upper", label: "Left chafing-dish tongs — upper", stationId: "bar-chafer", left: 27.1, top: 40.1, width: 10, height: 4.5,
+    description: "The upper of the 3 tongs on the left black plate beside the reference chafing dish. The reference locates the tool without assigning a food to it.",
+  },
+  {
+    id: "chafer-left-tongs-middle", label: "Left chafing-dish tongs — middle", stationId: "bar-chafer", left: 27, top: 45.1, width: 9.8, height: 4.7,
+    description: "The middle of the 3 tongs on the left black plate. Keep all 3 tongs together beside the single reference serving chafing dish.",
+  },
+  {
+    id: "chafer-left-tongs-lower", label: "Left chafing-dish tongs — lower", stationId: "bar-chafer", left: 26.4, top: 50.7, width: 10.1, height: 4.8,
+    description: "The lower of the 3 tongs on the left black plate. Select its actual food use separately from the reference placement.",
+  },
+  {
+    id: "chafer-right-tongs-upper", label: "Right chafing-dish tongs — upper", stationId: "bar-chafer", left: 63.5, top: 40.2, width: 9.3, height: 4.4,
+    description: "The upper of the 3 tongs on the right black plate beside the reference chafing dish. The illustration does not decide which food it serves.",
+  },
+  {
+    id: "chafer-right-tongs-middle", label: "Right chafing-dish tongs — middle", stationId: "bar-chafer", left: 63.8, top: 45.2, width: 9.3, height: 4.6,
+    description: "The middle of the 3 tongs on the right black plate. Keep the reference tools together at this serving station.",
+  },
+  {
+    id: "chafer-right-tongs-lower", label: "Right chafing-dish tongs — lower", stationId: "bar-chafer", left: 64.4, top: 50.7, width: 9.4, height: 4.9,
+    description: "The lower of the 3 tongs on the right black plate. Its pictured location is a guide, not a calculated food or prep quantity.",
+  },
+  {
+    id: "sauce-spoon-left", label: "Left sauce spoon", stationId: "bar-sauces", left: 32.1, top: 84, width: 11, height: 3.9,
+    description: "One of the 3 spoons on the end-of-table sauce plate, paired with the left sauce container. Confirm its actual sauce from the contract.",
+  },
+  {
+    id: "sauce-spoon-center", label: "Center sauce spoon", stationId: "bar-sauces", left: 45.4, top: 84, width: 10.9, height: 3.9,
+    description: "One of the 3 spoons on the end-of-table sauce plate, paired with the center container. The reference does not select its sauce contents.",
+  },
+  {
+    id: "sauce-spoon-right", label: "Right sauce spoon", stationId: "bar-sauces", left: 59, top: 84, width: 10.9, height: 3.9,
+    description: "The third sauce spoon on the end-of-table plate, paired with the right container. Keep one spoon available for each of the 3 containers.",
   },
 ];

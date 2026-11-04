@@ -8,11 +8,11 @@ import type { EventPlan } from "@/lib/event-plans/types";
 import { formatEventDate } from "@/lib/event-format";
 import { operationalEventFromPlan } from "@/lib/operations/event-context";
 import { buildSetupLayout, SETUP_FURNITURE_DIMENSIONS, SETUP_TEMPLATES, type SetupLayout } from "@/lib/operations/setup-layout";
-import { APPETIZER_WINGS_DESSERT_SETUP_OBJECTS, TACO_BAR_SETUP_OBJECTS, type SetupReferenceObject } from "./setup-objects";
+import { APPETIZER_WING_BAR_SETUP_OBJECTS, APPETIZER_WINGS_DESSERT_SETUP_OBJECTS, TACO_BAR_SETUP_OBJECTS, type SetupReferenceObject } from "./setup-objects";
 import styles from "./Setup.module.css";
 
 type SetupTemplateId = keyof typeof SETUP_TEMPLATES;
-const REFERENCE_OBJECTS = { "taco-bar": TACO_BAR_SETUP_OBJECTS, "appetizer-wings-dessert": APPETIZER_WINGS_DESSERT_SETUP_OBJECTS };
+const REFERENCE_OBJECTS = { "taco-bar": TACO_BAR_SETUP_OBJECTS, "appetizer-wings-dessert": APPETIZER_WINGS_DESSERT_SETUP_OBJECTS, "appetizer-wing-bar": APPETIZER_WING_BAR_SETUP_OBJECTS };
 
 function sourceTime(value: string | null) {
   return value && Number.isFinite(Date.parse(value))
@@ -45,7 +45,7 @@ export default function SetupClient({ events, sourceWarning = "" }: { events: Ev
       <div><strong className={styles.printEventName}>{event.name}</strong><strong>{event.rooms.join(" · ") || "Area needs review"}</strong><small>{formatEventDate(event.date)} · {event.time} · {event.guest_count > 0 ? `${event.guest_count} guests` : "Guest count needs review"}</small></div>
     </div>
     {sourceWarning ? <p className={styles.notice} role="alert">{sourceWarning}</p> : null}
-    {layout.status !== "no-food" ? <p className={styles.notice}>Food-service standard: use two marble serving carts, side by side, with plates, napkins and forks accessible from each side.</p> : null}
+    {layout.status !== "no-food" ? <p className={styles.notice}>Food-service standard: use two marble serving carts per serving line, side by side, with plates, napkins and forks accessible from each side.</p> : null}
     {layout.mirrored ? <p className={styles.notice}>Two food tables are indicated by the current guest-count rule. Plan mirrored service, but do not double the purchased food quantities. Final table placement still needs confirmation.</p> : null}
     <div className={styles.mainGrid}>
       {layout.templateId ? <ReferenceIllustration key={`${event.source_event_id ?? event.id}:${event.date}:${layout.templateId}`} applied templateId={layout.templateId} /> : null}
@@ -79,7 +79,7 @@ export function StationGuide({ stations, templateId = "taco-bar" }: { stations: 
           <span className={styles.cartTitle}><span className={styles.stationNumber}>1</span>{stations[0].title}</span>
         </button>
         <p className={styles.furnitureLabel}>Two carts · combined 21.5 × 31 in<br />Each cart: 21.5 × 15.5 in</p>
-        <div className={styles.tableOutline} style={{ aspectRatio: `${SETUP_FURNITURE_DIMENSIONS.table.widthInches} / ${SETUP_FURNITURE_DIMENSIONS.table.lengthInches}` }}>{stations.slice(1).map((station, index) => <button className={styles.station} key={station.id} type="button" aria-pressed={index + 1 === stationIndex} aria-controls="setup-station-details" onClick={() => setStationIndex(index + 1)}><span className={styles.stationNumber}>{index + 2}</span><StationSymbol index={index + 1} stationId={station.id} /><span>{station.title}</span></button>)}</div>
+        <div className={styles.tableOutline} style={{ aspectRatio: `${SETUP_FURNITURE_DIMENSIONS.table.widthInches} / ${SETUP_FURNITURE_DIMENSIONS.table.lengthInches}`, gridTemplateRows: `repeat(${stations.length - 1}, minmax(0, 1fr))` }}>{stations.slice(1).map((station, index) => <button className={styles.station} key={station.id} type="button" aria-pressed={index + 1 === stationIndex} aria-controls="setup-station-details" onClick={() => setStationIndex(index + 1)}><span className={styles.stationNumber}>{index + 2}</span><StationSymbol index={index + 1} stationId={station.id} /><span>{station.title}</span></button>)}</div>
         <p className={styles.furnitureLabel}>Buffet table · 8 ft × 3 ft<br />96 × 36 in</p>
       </div>
       <div id="setup-station-details" className={styles.stationDetails} aria-live="polite"><span className={styles.eyebrow}>Station {stationIndex + 1}</span><h3>{selected.title}</h3><p>{selected.instructions}</p><ul>{selected.equipment.map((item) => <li key={item}>{item}</li>)}</ul><p className={styles.caption}>Reference equipment only. Event-specific requirements and any unresolved warnings take priority.</p></div>
@@ -89,7 +89,8 @@ export function StationGuide({ stations, templateId = "taco-bar" }: { stations: 
 }
 
 function StationSymbol({ index, stationId }: { index: number; stationId: string }) {
-  if (stationId === "chafer-one" || stationId === "chafer-two") return <svg viewBox="0 0 180 74" aria-hidden="true" className={styles.stationSymbol}><rect x="53" y="9" width="74" height="56" rx="8" /><path d="M75 34h30v7H75z" /><rect x="9" y="12" width="28" height="50" rx="2" /><rect x="143" y="12" width="28" height="50" rx="2" />{(stationId === "chafer-one" ? [22, 35, 48] : [28, 43]).map((y) => <path key={y} d={`M13 ${y}h20M147 ${y}h20`} />)}</svg>;
+  if (stationId === "chafer-one" || stationId === "chafer-two" || stationId === "bar-chafer") return <svg viewBox="0 0 180 74" aria-hidden="true" className={styles.stationSymbol}><rect x="53" y="9" width="74" height="56" rx="8" /><path d="M75 34h30v7H75z" /><rect x="9" y="12" width="28" height="50" rx="2" /><rect x="143" y="12" width="28" height="50" rx="2" />{(stationId === "chafer-two" ? [28, 43] : [22, 35, 48]).map((y) => <path key={y} d={`M13 ${y}h20M147 ${y}h20`} />)}</svg>;
+  if (stationId === "bar-sauces") return <svg viewBox="0 0 180 74" aria-hidden="true" className={styles.stationSymbol}><rect x="18" y="10" width="144" height="54" rx="4" />{[50, 90, 130].map((x) => <g key={x}><circle cx={x} cy="32" r="13" /><ellipse cx={x} cy="30" rx="4" ry="6" /><path d={`M${x} 36v21`} /></g>)}</svg>;
   if (stationId === "sauces") return <svg viewBox="0 0 180 74" aria-hidden="true" className={styles.stationSymbol}><rect x="28" y="12" width="124" height="50" rx="4" />{[58, 90, 122].map((x) => <g key={x}><ellipse cx={x} cy="29" rx="7" ry="10" /><path d={`M${x} 39v16`} /></g>)}</svg>;
   if (stationId === "dessert") return <svg viewBox="0 0 180 74" aria-hidden="true" className={styles.stationSymbol}><path d="M34 20h112v36H34zM34 56l12 8h112V28l-12-8M146 56l12 8" /><rect x="47" y="24" width="86" height="26" rx="5" /><path d="M61 30l21 13M63 27l21 13M98 30l21 13M100 27l21 13" /></svg>;
   return <svg viewBox="0 0 180 74" aria-hidden="true" className={styles.stationSymbol}>

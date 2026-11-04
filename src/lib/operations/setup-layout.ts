@@ -5,7 +5,7 @@ import type { NormalizedKitchenSelection } from "@/lib/kitchen/types";
 import { contractSetup, type ContractSetup } from "./setup";
 
 export type SetupStation = { id: string; title: string; instructions: string; equipment: string[] };
-export type SetupTemplateId = "taco-bar" | "appetizer-wings-dessert";
+export type SetupTemplateId = "taco-bar" | "appetizer-wings-dessert" | "appetizer-wing-bar";
 type SetupTemplate = {
   id: SetupTemplateId;
   version: string;
@@ -38,7 +38,7 @@ export const SETUP_FURNITURE_DIMENSIONS = Object.freeze({
 
 export const SERVING_CART_SETUP_STATION: SetupStation = {
   id: "service-cart", title: "Plates, napkins & forks",
-  instructions: "Place 2 marble serving carts side by side at the start, with plates, napkins and forks accessible from each side.",
+  instructions: "Place 2 marble serving carts side by side at the start of each serving line, with plates, napkins and forks accessible from each side.",
   equipment: ["2 marble serving carts, side by side", "Plate stack on each side", "Napkins on each side", "Forks accessible from each side"],
 };
 
@@ -107,9 +107,32 @@ export const APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE = {
   ],
 } satisfies SetupTemplate;
 
+export const APPETIZER_WING_BAR_SETUP_TEMPLATE = {
+  id: "appetizer-wing-bar" as const,
+  version: "appetizer-wing-bar-reference-v1",
+  title: "Appetizer Bar & Wing Bar setup reference",
+  referenceChafingDishes: 1,
+  imagePath: "/setup/appetizer-wing-bar-reference-v1.png",
+  imageAlt: "Illustrative Appetizer Bar or Wing Bar serving line on an emerald-green runner with two marble carts, one chafing dish, a long black plate with 3 tongs on each side, and an end sauce plate with 3 containers and 3 spoons.",
+  stations: [
+    SERVING_CART_SETUP_STATION,
+    {
+      id: "bar-chafer", title: "Bar serving chafing dish",
+      instructions: "Use one reference serving chafing dish per table, with a long black plate on each side and 3 tongs on each plate. Check this event’s calculated equipment separately; additional platters are not assigned to this dish.",
+      equipment: ["Reference chafing dish", "Left long black plate: 3 tongs", "Right long black plate: 3 tongs"],
+    },
+    {
+      id: "bar-sauces", title: "End-of-table sauce plate",
+      instructions: "At the end of the table, place a long black plate with 3 sauce containers and 3 spoons, one spoon per container. Use the contract to identify the sauce contents; the reference does not select sauces or change purchased sauce quantities.",
+      equipment: ["Long black sauce plate", "3 sauce containers", "3 spoons"],
+    },
+  ],
+} satisfies SetupTemplate;
+
 export const SETUP_TEMPLATES = {
   "taco-bar": TACO_BAR_SETUP_TEMPLATE,
   "appetizer-wings-dessert": APPETIZER_WINGS_DESSERT_SETUP_TEMPLATE,
+  "appetizer-wing-bar": APPETIZER_WING_BAR_SETUP_TEMPLATE,
 } satisfies Record<SetupTemplateId, SetupTemplate>;
 
 /** Only the supplied purchased signature: 55 Front Nine/Appetizer Bar + 2 wings + 2 dessert. */
@@ -140,8 +163,10 @@ export function buildSetupLayout(event: EventPlan): SetupLayout {
   const kinds = selections.flatMap((selection) => selection.kinds);
   const bars = [...new Set(kinds.filter((kind) => kind.startsWith("bar:")))];
   const unknownFood = selections.some((selection) => selection.kinds.length === 0);
-  const templateId: SetupTemplateId | null = bars.length === 1 && bars[0] === "bar:taco" && !unknownFood ? "taco-bar"
-    : setup.foodTables === 1 && foodLabels.length === event.food.length && matchesAppetizerWingsDessert(selections) ? "appetizer-wings-dessert" : null;
+  const singleKnownBar = bars.length === 1 && !unknownFood;
+  const templateId: SetupTemplateId | null = setup.foodTables === 1 && foodLabels.length === event.food.length && matchesAppetizerWingsDessert(selections) ? "appetizer-wings-dessert"
+    : singleKnownBar && bars[0] === "bar:taco" ? "taco-bar"
+      : singleKnownBar && (bars[0] === "bar:appetizer" || bars[0] === "bar:wing") ? "appetizer-wing-bar" : null;
   const template = templateId ? SETUP_TEMPLATES[templateId] : null;
   const additionalFood = templateId === "appetizer-wings-dessert" ? [] : foodLabels.filter((_label, index) => !templateId || normalizedByLabel[index].some((selection) =>
     selection.kinds.some((kind) => kind.startsWith("platter:") || kind === "dessert" || kind.startsWith("sauce:"))));
