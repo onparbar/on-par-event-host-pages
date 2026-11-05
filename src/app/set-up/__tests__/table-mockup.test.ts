@@ -12,6 +12,7 @@ describe("event-specific whole-table composition", () => {
     ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Dessert Platter"],
     ["3 × Wing Platter", "2 × Chicken Tender Platter", "1 × Veggie Tray", "1 × Dessert Platter"],
     ["15 × The Full Course + Wing Bar"],
+    ["35 × The Front Nine + Taco Bar", "1 × Chicken Tender Platter", "1 × Dessert Platter"],
     ["10 × Wing Platter", "10 × Chicken Tender Platter", "10 × Mozzarella Stick Platter"],
   ].map((food) => ({ food })))("retains every top-level object, stable bounded positions and model quantities: $food", ({ food }) => {
     const source = plan(food), before = structuredClone(source), result = buildTableMockup(source);
@@ -21,9 +22,12 @@ describe("event-specific whole-table composition", () => {
     expect(new Set(result.art.map((item) => item.key)).size).toBe(result.art.length);
     for (const box of [...result.targets, ...result.art]) {
       expect(box.tableIndex).toBeGreaterThanOrEqual(0); expect(box.tableIndex).toBeLessThan(result.tableCount);
-      expect(box.left).toBeGreaterThanOrEqual(0); expect(box.top).toBeGreaterThanOrEqual(0);
+      const rotated = "rotate" in box && box.rotate === 90;
+      const visibleWidth = rotated ? box.height * 1.5 : box.width, visibleHeight = rotated ? box.width * 2 / 3 : box.height;
+      const left = box.left + (box.width - visibleWidth) / 2, top = box.top + (box.height - visibleHeight) / 2;
+      expect(left).toBeGreaterThanOrEqual(0); expect(top).toBeGreaterThanOrEqual(0);
       expect(box.width).toBeGreaterThan(0); expect(box.height).toBeGreaterThan(0);
-      expect(box.left + box.width).toBeLessThanOrEqual(100); expect(box.top + box.height).toBeLessThanOrEqual(100);
+      expect(left + visibleWidth).toBeLessThanOrEqual(100); expect(top + visibleHeight).toBeLessThanOrEqual(100);
     }
     for (const item of result.art) { expect(item.sprite).toBeGreaterThanOrEqual(0); expect(item.sprite).toBeLessThan(16); expect([11, 13, 14]).not.toContain(item.sprite); }
     expect(buildTableMockup(source)).toEqual(result); expect(source).toEqual(before);
@@ -125,8 +129,7 @@ describe("event-specific whole-table composition", () => {
     expect(result.art.some((item) => [11, 13, 14].includes(item.sprite))).toBe(false);
   });
 
-  it("spills large menus onto additional boards without shrinking equipment or repeating carts", () => {
-    const small = buildTableMockup(plan(["1 × Wing Platter"]));
+  it("spills genuinely dense menus onto additional boards with bounded compact sizes and no repeated carts", () => {
     const large = buildTableMockup(plan(["10 × Wing Platter", "10 × Chicken Tender Platter"]));
     expect(large.tableCount).toBeGreaterThan(1); expect(large.crowded).toBe(true);
     expect(large.targets.filter((target) => target.item.kind === "chafer")).toHaveLength(10);
@@ -134,7 +137,7 @@ describe("event-specific whole-table composition", () => {
     expect(large.art.filter((item) => item.sprite === 8)).toHaveLength(2);
     expect(large.targets.filter((target) => target.item.id === "sauce-station")).toHaveLength(1);
     expect(large.targets.find((target) => target.item.id === "sauce-station")?.item.quantity).toBe(40);
-    expect(large.art.find((item) => item.sprite === 4)?.width).toBe(small.art.find((item) => item.sprite === 5)?.width);
+    expect(large.art.find((item) => item.sprite === 4)?.width).toBeGreaterThanOrEqual(20);
     expect(large.targets.filter((target) => target.item.id === "service-cart")).toHaveLength(1);
     expect(large.targets.filter((target) => ["service-cart", "plates", "napkins", "forks"].includes(target.item.id)).every((target) => target.tableIndex === 0)).toBe(true);
   });
@@ -172,8 +175,49 @@ describe("event-specific whole-table composition", () => {
 
   it("retains unresolved equipment descriptions without inventing a sauce container count", () => {
     const result = buildTableMockup(plan(["15 × The Full Course + Wing Bar"]));
-    expect(result.targets.find((target) => target.item.id === "wing-ranch")?.item.quantity).toBeNull();
-    expect(result.art.some((item) => item.key.startsWith("wing-ranch-bowl-"))).toBe(false);
+    expect(result.targets.find((target) => target.item.id === "sauce-ranch")?.item.quantity).toBeNull();
+    expect(result.targets.find((target) => target.item.id === "sauce-station")?.item.quantity).toBeNull();
+    expect(result.art.some((item) => item.key === "sauce-ranch-spoon")).toBe(true);
+    expect(result.art.some((item) => item.sprite === 15)).toBe(false);
+  });
+
+  it.each(["Appetizer Bar", "Wing Bar"])("centers standalone %s stations within the visible buffet", (bar) => {
+    const source = plan([`15 × The Full Course + ${bar}`]), result = buildTableMockup(source);
+    const rootIds = new Set(source.objects.filter((item) => item.kind !== "carts").map((item) => item.id));
+    const stations = result.targets.filter((target) => rootIds.has(target.item.id));
+    expect(result.tableCount).toBe(1); expect(result.dessertSupport).toBeUndefined();
+    for (const station of stations) expect(station.left + station.width / 2).toBe(50);
+    const top = Math.min(...stations.map((station) => station.top)), bottom = Math.max(...stations.map((station) => station.top + station.height));
+    expect(top).toBeGreaterThan(32); expect(bottom).toBeLessThan(91);
+    expect(Math.abs((top + bottom) / 2 - 61.5)).toBeLessThan(2);
+  });
+
+  it("compacts the redacted November 5 menu onto one buffet and attaches only dessert to a round cocktail surface", () => {
+    const source = plan(["35 × The Front Nine + Taco Bar", "1 × Chicken Tender Platter", "1 × Dessert Platter"], 35);
+    const before = structuredClone(source), result = buildTableMockup(source);
+    expect(result.referenceImage).toBeUndefined(); expect(result.tableCount).toBe(1); expect(result.crowded).toBe(false);
+    expect(result.dessertSupport).toEqual({ tableIndex: 0, kind: "round-cocktail" });
+    const buffet = result.targets.filter((target) => target.surface !== "dessert-cocktail");
+    expect(buffet.filter((target) => target.item.kind === "chafer")).toHaveLength(2);
+    for (const id of ["taco-tortillas", "taco-stands", "taco-lettuce-wraps", "taco-tier", "sauce-station"]) expect(buffet.some((target) => target.item.id === id)).toBe(true);
+    expect(result.targets.filter((target) => target.surface === "dessert-cocktail").map((target) => target.item.id)).toEqual(["cold-platter-dessert", "dessert-tongs"]);
+    expect(result.art.filter((item) => item.surface === "dessert-cocktail").map((item) => item.key)).toEqual(["cold-platter-dessert-plate"]);
+    const rootIds = new Set(source.objects.filter((item) => !["carts", "taco-stands"].includes(item.kind)).map((item) => item.id));
+    const stations = buffet.filter((target) => rootIds.has(target.item.id));
+    const rows = [...new Map(stations.map((station) => [station.item.id, { top: station.top, bottom: station.top + station.height }])).values()];
+    for (const [index, row] of rows.entries()) {
+      expect(row.top).toBeGreaterThanOrEqual(27); expect(row.bottom).toBeLessThanOrEqual(96);
+      if (index) expect(row.top).toBeGreaterThanOrEqual(rows[index - 1].bottom);
+    }
+    expect(source).toEqual(before); expect(buildTableMockup(source)).toEqual(result);
+    expect(source.plates).toBe(70); expect(source.tacoStands).toBe(70);
+  });
+
+  it("does not create a dessert-only rectangular continuation for dense menus", () => {
+    const source = plan(["10 × Wing Platter", "10 × Chicken Tender Platter", "2 × Dessert Platter"]), result = buildTableMockup(source);
+    expect(result.tableCount).toBeGreaterThan(1);
+    for (let index = 0; index < result.tableCount; index += 1) expect(result.targets.some((target) => target.tableIndex === index && target.item.kind === "chafer")).toBe(true);
+    expect(result.targets.filter((target) => target.item.id === "cold-platter-dessert")).toHaveLength(1);
   });
 
   it("keeps unknown foods unassigned and returns no composition for no food", () => {

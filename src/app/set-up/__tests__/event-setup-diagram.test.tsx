@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { EventPlan } from "@/lib/event-plans/types";
 import { buildEventServingPlan, type EventServingPlan, type ServingObject } from "@/lib/operations/serving-plan";
+import { contractSetup } from "@/lib/operations/setup";
 import EventSetupDiagram from "../EventSetupDiagram";
 import { buildTableMockup } from "../table-mockup";
 
@@ -37,10 +38,16 @@ const plan: EventServingPlan = {
 const render = (value = plan) => renderToStaticMarkup(createElement(EventSetupDiagram, { plan: value }));
 const flatten = (items: ServingObject[]): ServingObject[] => items.flatMap((item) => [item, ...flatten(item.children ?? [])]);
 const photoFigures = (html: string) => [...html.matchAll(/<figure\b[\s\S]*?<\/figure>/g)].map((match) => match[0]).join("");
+const objectButton = (html: string, id: string) => html.match(new RegExp(`<button\\b[^>]*data-serving-object="${id}"[^>]*>`))?.[0] ?? "";
 const twoChaferEvent: EventPlan = {
   id: 78, name: "Redacted two-chafer setup event", date: "2026-11-04", day: "Wednesday", time: "5:30 PM - 8:30 PM",
   guest_count: 55, rooms: ["VIP 1"], color: "#18332F", food: ["55 × The Front Nine + Appetizer Bar", "2 × Wing Platter", "2 × Dessert Platter"],
   drink_options: [], entertainment: [], verification_status: "Verified redacted source", source_updated_at: "2026-11-04T15:00:00Z",
+};
+const novemberFifthEvent: EventPlan = {
+  ...twoChaferEvent, id: 89, name: "Redacted November 5 Taco Bar event", date: "2026-11-05", day: "Thursday",
+  guest_count: 35, food: ["35 × The Front Nine + Taco Bar", "1 × Chicken Tender Platter", "1 × Dessert Platter"],
+  source_event_id: "redacted-november-5", source_updated_at: "2026-11-05T15:00:00Z",
 };
 
 describe("event-specific whole-table equipment mockups", () => {
@@ -120,6 +127,113 @@ describe("event-specific whole-table equipment mockups", () => {
       const html = render(buildEventServingPlan({ ...twoChaferEvent, food }));
       expect(photoFigures(html)).not.toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
     }
+  });
+
+  it("keeps the redacted November 5 Taco Bar and tender stations on one buffet with an attached dessert table", () => {
+    const event = structuredClone(novemberFifthEvent);
+    const prep = contractSetup(event);
+    const value = buildEventServingPlan(event);
+    const before = structuredClone(value);
+    const html = render(value);
+    const figures = photoFigures(html);
+    expect(figures.match(/<figure\b/g)).toHaveLength(1);
+    expect(figures).toContain('aria-label="Whole table mockup"');
+    expect(html).not.toContain("Layout continuation");
+    for (const id of ["service-cart", "taco-tortillas", "taco-stands", "taco-lettuce-wraps", "taco-tier", "taco-chafer", "platter-chafer-1", "sauce-station"]) {
+      expect(objectButton(figures, id)).toContain('data-serving-surface="buffet"');
+      expect(html).toContain(`value="${id}"`);
+    }
+    expect(value.objects.filter((item) => item.kind === "chafer")).toHaveLength(2);
+    expect(html).toContain("70 plates · event total");
+    expect(html).toContain("70 taco stands · event total");
+    for (const text of ["Black Beans", "Chicken", "Beef", "Chicken Tenders", "Lettuce; Cheese", "Onion; Tomato", "Salsa; Sour Cream"]) expect(html).toContain(text);
+    for (const id of ["cold-platter-dessert", "dessert-tongs"]) {
+      expect(objectButton(figures, id)).toContain('data-serving-surface="dessert-cocktail"');
+      expect(figures.match(new RegExp(`data-serving-object="${id}"`, "g"))).toHaveLength(1);
+    }
+    expect(figures).toContain('aria-label="Dessert cocktail table at the end of the buffet"');
+    expect(objectButton(figures, "dessert-support-table")).toContain('aria-haspopup="dialog"');
+    expect(html).toContain('value="dessert-support-table"');
+    const printed = html.split(/<div class="[^"]*printGuide[^"]*">/)[1];
+    expect(printed).toContain("Round black cocktail table · 1 cocktail table per serving line");
+    expect(printed).toContain("two tongs");
+    expect(printed).toContain("This support table does not change purchased food, kitchen prep or booked seating");
+    expect(value).toEqual(before);
+    expect(event).toEqual(novemberFifthEvent);
+    expect(contractSetup(event)).toEqual(prep);
+  });
+
+  it.each([
+    { food: "15 × The Front Nine + Appetizer Bar", chafer: "appetizer-chafer", sauces: ["sauce-marinara", "sauce-ranch", "sauce-bbq"], spoons: 3 },
+    { food: "15 × The Full Course + Wing Bar", chafer: "wing-chafer", sauces: ["sauce-bbq", "sauce-ranch"], spoons: 2 },
+  ])("centers the standalone $chafer and shows each required sauce on one shared plate", ({ food, chafer, sauces, spoons }) => {
+    const value = buildEventServingPlan({ ...twoChaferEvent, guest_count: 15, food: [food] });
+    const html = render(value);
+    const figures = photoFigures(html);
+    const target = buildTableMockup(value).targets.find((item) => item.item.id === chafer)!;
+    expect(target.left + target.width / 2).toBeCloseTo(50);
+    expect(target.top + target.height / 2).toBeGreaterThan(50);
+    expect(objectButton(figures, chafer)).toContain('data-serving-surface="buffet"');
+    expect(figures.match(/data-serving-object="sauce-station"/g)).toHaveLength(1);
+    for (const id of sauces) {
+      expect(objectButton(figures, id)).toContain('aria-haspopup="dialog"');
+      expect(html).toContain(`value="${id}"`);
+    }
+    expect(html).toContain(`one long black sauce plate with ${spoons} spoons — one per sauce type`);
+    expect(figures).not.toContain('data-serving-object="taco-chafer"');
+    if (chafer === "wing-chafer") {
+      expect(value.objects.find((item) => item.id === "sauce-station")?.quantity).toBeNull();
+      expect(html).toContain("Check flagged items");
+      expect(html).toContain("Ranch");
+      expect(html).toContain("complete event container and matching-spoon quantity remains unresolved");
+    } else expect(html).toContain("Marinara");
+  });
+
+  it("puts overflow dessert and its tongs on the cocktail surface without duplicating them on the buffet", () => {
+    const value = buildEventServingPlan({ ...twoChaferEvent, guest_count: 35, food: ["35 × The Front Nine + Appetizer Bar", "4 × Wing Platter", "1 × Veggie Tray", "1 × Dessert Platter"] });
+    const html = render(value);
+    const figures = photoFigures(html);
+    expect(value.objects.filter((item) => item.kind === "chafer")).toHaveLength(3);
+    expect(figures.match(/<figure\b/g)).toHaveLength(1);
+    for (const id of ["cold-platter-dessert", "dessert-tongs"]) {
+      const buttons = [...figures.matchAll(new RegExp(`<button\\b[^>]*data-serving-object="${id}"[^>]*>`, "g"))];
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0][0]).toContain('data-serving-surface="dessert-cocktail"');
+    }
+    expect(html).toContain('value="dessert-support-table"');
+    for (const item of flatten(value.objects)) expect(html).toContain(item.description);
+  });
+
+  it("keeps mirrored dessert support visual-only and event-wide food, plates and stands unchanged", () => {
+    const value = buildEventServingPlan({ ...novemberFifthEvent, guest_count: 101 });
+    const before = structuredClone(value);
+    const html = render(value);
+    expect(html).toContain("Two mirrored serving lines");
+    expect(html).toContain("202 plates · event total");
+    expect(html).toContain("70 taco stands · event total");
+    expect(html).not.toContain("404 plates");
+    expect(html).not.toContain("140 taco stands");
+    expect(html).toContain("1 cocktail table per serving line");
+    expect(html).toContain("Food is shared between the lines, not doubled");
+    expect(value.objects.some((item) => item.id === "dessert-support-table")).toBe(false);
+    expect(value).toEqual(before);
+  });
+
+  it("keeps unresolved food unpictured and preserves all source evidence", () => {
+    const event = { ...novemberFifthEvent, food: [...novemberFifthEvent.food, "1 × Unmapped Buffet"] };
+    const before = structuredClone(event);
+    const value = buildEventServingPlan(event);
+    const source = structuredClone(value.source);
+    const html = render(value);
+    expect(html).toContain("Check flagged items");
+    expect(value.unplacedFood).toContain("1 × Unmapped Buffet");
+    expect(photoFigures(html)).not.toContain("Unmapped Buffet");
+    expect(html).not.toContain('src="/setup/appetizer-wings-dessert-reference-v1.png"');
+    expect(value.source).toEqual(source);
+    expect(value.source.eventId).toBe("redacted-november-5");
+    expect(value.source.updatedAt).toBe("2026-11-05T15:00:00Z");
+    expect(value.source.rawSelections).toEqual(event.food);
+    expect(event).toEqual(before);
   });
 
   it("identifies a closed chafer as a whole while retaining its exact pan contents in the picker", () => {

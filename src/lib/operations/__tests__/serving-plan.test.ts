@@ -78,6 +78,95 @@ describe("deterministic event serving plan", () => {
     expect(items.find((item) => item.id === "sauce-station")?.description).toContain("one spoon per container");
   });
 
+  it("keeps required Wing Bar BBQ and unresolved Ranch in one shared serving station", () => {
+    const result = plan(["15 × The Full Course + Wing Bar"]);
+    const station = result.objects.find((item) => item.id === "sauce-station")!;
+    expect(result.objects.filter((item) => item.kind === "sauces")).toEqual([station]);
+    expect(station.quantity).toBeNull();
+    expect(station.description).toContain("one shared long black sauce plate with one spoon per sauce type");
+    expect(station.children).toEqual([
+      expect.objectContaining({ id: "sauce-bbq", quantity: 1, contents: ["BBQ"] }),
+      expect.objectContaining({ id: "sauce-ranch", quantity: null, contents: ["Ranch"] }),
+    ]);
+    expect(station.children?.find((item) => item.id === "sauce-ranch")?.description).toContain("complete event container and matching-spoon quantity remains unresolved");
+    expect(flat(result.objects).some((item) => item.id === "wing-ranch")).toBe(false);
+    expect(result.review.join(" ")).toContain("Wing Bar ranch container quantity needs review");
+    expect(result.review.join(" ")).toContain("Ranch is required, but the number of sauce bowls is not approved.");
+    expect(result.status).toBe("needs-review");
+  });
+
+  it("keeps the Appetizer Bar’s approved Marinara, Ranch and BBQ amounts in one shared station", () => {
+    const result = plan(["15 × The Front Nine + Appetizer Bar"]);
+    const station = result.objects.find((item) => item.id === "sauce-station")!;
+    expect(result.objects.filter((item) => item.kind === "sauces")).toEqual([station]);
+    expect(station.quantity).toBe(3);
+    expect(station.children?.map((item) => [item.id, item.quantity])).toEqual([["sauce-marinara", 1], ["sauce-ranch", 1], ["sauce-bbq", 1]]);
+    expect(station.description).toContain("one shared long black sauce plate");
+    expect(result.review.join(" ")).not.toContain("Wing Bar ranch");
+  });
+
+  it.each([1, 2, 10])("retains BBQ and Ranch per purchased Wing/Tender Platter, not per prepared pan, for %i of each", (quantity) => {
+    const event = { ...base, food: [`${quantity} × Wing Platter`, `${quantity} × Chicken Tender Platter`] };
+    const before = structuredClone(event);
+    const prep = contractSetup(event);
+    const result = buildEventServingPlan(event);
+    const station = result.objects.find((item) => item.id === "sauce-station")!;
+    expect(station.quantity).toBe(quantity * 4);
+    expect(station.children?.map((item) => [item.id, item.quantity])).toEqual([["sauce-bbq", quantity * 2], ["sauce-ranch", quantity * 2]]);
+    expect(contractSetup(event)).toEqual(prep);
+    expect(event).toEqual(before);
+  });
+
+  it("preserves approved Ranch from platters without presenting it as the complete Wing Bar event amount", () => {
+    const event = { ...base, source_event_id: "vip-redacted-wing-tender", food: ["15 × The Full Course + Wing Bar", "2 × Chicken Tender Platter"] };
+    const before = structuredClone(event);
+    const prep = contractSetup(event);
+    const result = buildEventServingPlan(event);
+    const station = result.objects.find((item) => item.id === "sauce-station")!;
+    expect(station.quantity).toBeNull();
+    expect(station.children?.map((item) => [item.id, item.quantity])).toEqual([["sauce-bbq", 3], ["sauce-ranch", null]]);
+    expect(station.children?.find((item) => item.id === "sauce-ranch")?.description).toContain("2 approved Ranch containers with 2 matching spoons are counted from other selected food");
+    expect(result.review.join(" ")).toContain("additional quantity required for Wing Bar is not approved");
+    expect(result.source).toEqual({ eventId: event.source_event_id, updatedAt: event.source_updated_at, eventRuleVersion: event.rule_version, rawSelections: event.food });
+    expect(result.ruleVersion).toBe("event-serving-2026-11-05.1");
+    expect(contractSetup(event)).toEqual(prep);
+    expect(event).toEqual(before);
+    expect(buildEventServingPlan(event)).toEqual(result);
+  });
+
+  it("merges mixed bars and platters by sauce type without losing Marinara or guessing Wing Bar Ranch", () => {
+    const event = { ...base, food: ["15 × The Full Course + Wing Bar", "15 × The Front Nine + Appetizer Bar", "1 × Mozzarella Stick Platter", "2 × Chicken Tender Platter"] };
+    const before = structuredClone(event);
+    const prep = contractSetup(event);
+    const result = buildEventServingPlan(event);
+    const station = result.objects.find((item) => item.id === "sauce-station")!;
+    expect(result.objects.filter((item) => item.kind === "sauces")).toEqual([station]);
+    expect(station.quantity).toBeNull();
+    expect(station.children?.find((item) => item.id === "sauce-bbq")?.quantity).toBe(4);
+    expect(station.children?.find((item) => item.id === "sauce-marinara")?.quantity).toBe(2);
+    expect(station.children?.find((item) => item.id === "sauce-ranch")).toMatchObject({ quantity: null, contents: ["Ranch"] });
+    expect(station.children?.find((item) => item.id === "sauce-ranch")?.description).toContain("3 approved Ranch containers with 3 matching spoons");
+    expect(new Set(station.children?.map((item) => item.id)).size).toBe(3);
+    expect(contractSetup(event)).toEqual(prep);
+    expect(event).toEqual(before);
+  });
+
+  it.each([100, 101, 200, 201])("keeps shared sauce requirements event-wide and unresolved prep warnings at %i guests", (guests) => {
+    const event = { ...base, guest_count: guests, food: ["25 × The Full Course + Wing Bar", "2 × Chicken Tender Platter"] };
+    const before = structuredClone(event);
+    const prep = contractSetup(event);
+    const result = buildEventServingPlan(event);
+    const station = result.objects.find((item) => item.id === "sauce-station")!;
+    expect(result.servingLines).toBe(guests > 100 ? 2 : 1);
+    expect(station.quantity).toBeNull();
+    expect(station.children?.map((item) => [item.id, item.quantity])).toEqual([["sauce-bbq", 3], ["sauce-ranch", null]]);
+    expect(result.review.join(" ")).toContain("Wing Bar ranch container quantity needs review");
+    if (guests > 200) expect(result.review.join(" ")).toContain("additional/reserve dishes");
+    expect(result.source.rawSelections).toEqual(event.food);
+    expect(contractSetup(event)).toEqual(prep);
+    expect(event).toEqual(before);
+  });
+
   it("builds the Taco Bar contents and 2 stands per contracted guest, with 2 plates per event guest", () => {
     const result = plan(["15 × The Full Course + Taco Bar"]);
     const items = flat(result.objects);

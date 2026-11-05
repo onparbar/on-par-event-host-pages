@@ -14,10 +14,13 @@
 .mockup { position: relative; width: 100%; aspect-ratio: 2 / 3; isolation: isolate; }
 .furniture { display: block; width: 100%; height: auto; border-radius: 8px; }
 .continuation { clip-path: inset(26% 0 0); margin-top: -39%; }
+.cocktailStage { position: relative; width: 62%; aspect-ratio: 1; isolation: isolate; margin-top: -2%; }
+.cocktailCaption { max-width: 290px; margin: 10px 0 0; color: #526d52; font-size: .75rem; line-height: 1.5; text-align: center; }
 .artwork { position: absolute; inset: 0; pointer-events: none; }
 .sprite { position: absolute; display: block; background-repeat: no-repeat; pointer-events: none; }
 .hotspot { position: absolute; padding: 0; min-width: 16px; min-height: 16px; border: 1px solid transparent; border-radius: 6px; background: transparent; cursor: help; }
 .hotspot:hover, .hotspot:focus-visible { outline: 3px solid #297025; outline-offset: 1px; background: #29702518; }
+.cocktailStage .cocktailFurniture { inset: 0; width: 100%; height: 100%; border-radius: 50%; border: 2px solid #111; background: radial-gradient(ellipse at 40% 30%, #353535, #171717 65%, #090909); box-shadow: inset 0 0 0 7px #252525, 0 5px 8px #0003; }
 .hotspot:focus-visible, .picker select:focus-visible, .dialog button:focus-visible, .instructions summary:focus-visible { outline: 3px solid #297025; outline-offset: 3px; }
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .measurements { margin: 12px auto; max-width: 760px; color: #526d52; font-size: .75rem; line-height: 1.5; }
@@ -40,9 +43,10 @@
 @media print {
   .card { padding: 14px; border: 1px solid #000; border-radius: 0; box-shadow: none; background: #fff; color: #000; }
   .picker, .dialog, .instructions, .status, .hotspot { display: none !important; }
+  .cocktailFurniture { display: block !important; }
   .figure { width: 210px; break-inside: avoid; }
   .stage { border: 0; background: #fff; padding: 0; }
   .printGuide { display: block; }
   .printGuide li { break-inside: avoid; }
-  .eyebrow, .intro, .mirrored, .totals, .measurements { color: #000; background: #fff; border-color: #000; }
+  .eyebrow, .intro, .mirrored, .totals, .measurements, .cocktailCaption { color: #000; background: #fff; border-color: #000; }
 }

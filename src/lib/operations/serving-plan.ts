@@ -7,7 +7,7 @@ import { contractSetup } from "./setup";
 export type ServingObject = {
   id: string;
   label: string;
-  kind: "carts" | "plates" | "napkins" | "forks" | "tortillas" | "taco-stands" | "lettuce-wraps" | "chafer" | "pan" | "utensils" | "sauces" | "tier" | "cold-platter";
+  kind: "table" | "carts" | "plates" | "napkins" | "forks" | "tortillas" | "taco-stands" | "lettuce-wraps" | "chafer" | "pan" | "utensils" | "sauces" | "tier" | "cold-platter";
   description: string;
   quantity: number | null;
   unit: string;
@@ -29,7 +29,7 @@ export type EventServingPlan = {
   source: { eventId: string; updatedAt: string | null; eventRuleVersion: string | null; rawSelections: string[] };
 };
 
-export const EVENT_SERVING_RULE_VERSION = "event-serving-2026-11-04.1";
+export const EVENT_SERVING_RULE_VERSION = "event-serving-2026-11-05.1";
 const positiveInteger = (value: number) => Number.isSafeInteger(value) && value > 0;
 
 function object(id: string, kind: ServingObject["kind"], label: string, description: string, quantity: number | null, unit: string, contents: string[] = [], children?: ServingObject[]): ServingObject {
@@ -117,6 +117,7 @@ export function buildEventServingPlan(event: EventPlan): EventServingPlan {
   ])] : [];
   let tacoStands: number | null = 0;
   const sauceCounts = new Map<string, number>();
+  const unresolvedSauces = new Set<string>();
   const addSauce = (name: string, count: number) => sauceCounts.set(name, (sauceCounts.get(name) ?? 0) + count);
   if (bars.includes("bar:taco")) {
     const tacoGuests = tacoGuestCount(grouped, review);
@@ -141,7 +142,7 @@ export function buildEventServingPlan(event: EventPlan): EventServingPlan {
     // The approved reference has three tongs on each side; celery is cold and never assigned a hot pan.
     objects.push(chafer("wing-chafer", "Wing Bar chafing dish", ["Wings", "French Fries"], "1/2", 3), object("wing-celery", "cold-platter", "Wing Bar celery plate", "Contents: celery. Keep this cold side on a plate, not inside the chafing dish.", 1, "cold plate per serving line", ["Celery"]));
     addSauce("BBQ", 1);
-    objects.push(object("wing-ranch", "sauces", "Wing Bar ranch", "Ranch is required for the Wing Bar, but its existing bowl quantity remains unresolved. Confirm containers and matching spoons before setup.", null, "containers and spoons", ["Ranch"]));
+    unresolvedSauces.add("Ranch");
     review.push("Wing Bar ranch container quantity needs review; no quantity has been guessed.");
   }
   const hotFoods: string[] = [];
@@ -190,9 +191,16 @@ export function buildEventServingPlan(event: EventPlan): EventServingPlan {
     objects.push(chafer(`platter-chafer-${number}`, `Platter chafing dish ${number}`, hotFoods.slice(offset, offset + capacity), thirds ? "1/3" : "1/2"));
     offset += capacity; number += 1;
   }
-  if (sauceCounts.size) {
-    const sauces = [...sauceCounts].map(([name, quantity]) => object(`sauce-${name.toLowerCase()}`, "sauces", `${name} sauce`, `${quantity} ${name} containers with ${quantity} spoons for the entire event: one spoon per container. Platter sauce quantities are based on purchased platters, not on prepared pans. Split containers across mirrored lines without multiplying the purchased sauces.`, quantity, "containers and matching spoons for entire event", [name]));
-    objects.push(object("sauce-station", "sauces", "Sauce serving plates", "Place sauce containers on long black plates with one spoon per container. Totals are event-wide, not per serving line.", sauces.reduce((sum, item) => sum + (item.quantity ?? 0), 0), "containers and matching spoons for entire event", sauces.map((item) => item.label), sauces));
+  if (sauceCounts.size || unresolvedSauces.size) {
+    const sauces = [...new Set([...sauceCounts.keys(), ...unresolvedSauces])].map((name) => {
+      const approved = sauceCounts.get(name) ?? 0;
+      const unresolved = unresolvedSauces.has(name);
+      const description = unresolved
+        ? `${approved ? `${approved} approved ${name} containers with ${approved} matching spoons are counted from other selected food. ` : ""}${name} is required for the Wing Bar, but the complete event container and matching-spoon quantity remains unresolved. Confirm the additional amount before kitchen prep.`
+        : `${approved} ${name} containers with ${approved} spoons for the entire event: one spoon per container. Platter sauce quantities are based on purchased platters, not on prepared pans. Split containers across mirrored lines without multiplying the purchased sauces.`;
+      return object(`sauce-${name.toLowerCase()}`, "sauces", `${name} sauce`, description, unresolved ? null : approved, "containers and matching spoons for entire event", [name]);
+    });
+    objects.push(object("sauce-station", "sauces", "Sauce serving plates", "Use one shared long black sauce plate with one spoon per sauce type for service. Full container and matching-spoon totals include refills and spare tools, with one spoon per container. Totals are event-wide, not per serving line.", unresolvedSauces.size ? null : sauces.reduce((sum, item) => sum + (item.quantity ?? 0), 0), "containers and matching spoons for entire event", sauces.map((item) => item.label), sauces));
   }
   objects.push(...cold);
   if (servingLines === 2) review.push("Mirror serving equipment on two food tables. Split the purchased food, plates, taco stands and sauce totals across the lines; do not double purchased quantities.");

@@ -14,9 +14,14 @@ function quantity(item: ServingObject) {
 }
 
 export default function EventSetupDiagram({ plan }: { plan: EventServingPlan }) {
-  const objects = allObjects(plan.objects);
   const mockup = buildTableMockup(plan);
-  const items = objects;
+  const supportTable: ServingObject | null = mockup.dessertSupport ? {
+    id: "dessert-support-table", kind: "table", label: "Round black cocktail table",
+    quantity: 1, unit: "cocktail table per serving line", contents: ["Dessert Platter"],
+    description: "Place a round black cocktail table at the end of the rectangular buffet table for the dessert platter on its clear riser with two tongs. Keep the main serving line on the buffet table. Cocktail-table measurements and equipment clearances are not supplied; confirm spacing before setup. This support table does not change purchased food, kitchen prep or booked seating.",
+  } : null;
+  const displayObjects = supportTable ? [...plan.objects, supportTable] : plan.objects;
+  const items = allObjects(displayObjects);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = items.find((item) => item.id === selectedId);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -31,6 +36,13 @@ export default function EventSetupDiagram({ plan }: { plan: EventServingPlan }) 
     if (item.id === selected?.id) dialog.current?.showModal();
     else setSelectedId(item.id);
   };
+  const equipment = (tableIndex: number, surface: "buffet" | "dessert-cocktail" = "buffet") => <>
+    <div className={styles.artwork} aria-hidden="true">{mockup.art.filter((item) => item.tableIndex === tableIndex && (item.surface ?? "buffet") === surface).map((item) => <span key={item.key} data-equipment-sprite={item.sprite} className={styles.sprite} style={{ ...position(item), ...equipmentStyle(item), ...(item.rotate ? { transform: `rotate(${item.rotate}deg)` } : {}) }} />)}</div>
+    {mockup.targets.filter((target) => target.tableIndex === tableIndex && (target.surface ?? "buffet") === surface).map((target) => {
+      const item = target.item;
+      return <button key={target.id} className={styles.hotspot} data-serving-object={item.id} data-table-index={tableIndex} data-serving-surface={surface} type="button" style={position(target)} aria-label={`Identify: ${item.label}`} aria-haspopup="dialog" aria-controls={dialogId} title={item.label} onClick={() => identify(item)}><span className={styles.srOnly}>{item.label} · {quantity(item)}{item.contents.length ? ` · ${item.contents.join(" · ")}` : ""}</span></button>;
+    })}
+  </>;
   return <section className={styles.card} aria-label="Event serving layout">
     <div className={styles.heading}><div><span className={styles.eyebrow}>Contract-driven setup</span><h2>What the setup should resemble</h2></div><span className={styles.status}>{plan.status === "needs-review" ? "Check flagged items" : "Serving plan ready"}</span></div>
     <p className={styles.intro}>Tap any item on the table to see its name, this event’s food contents, quantities and serving tools.</p>
@@ -41,12 +53,15 @@ export default function EventSetupDiagram({ plan }: { plan: EventServingPlan }) 
         {mockup.tableCount > 1 ? <figcaption className={styles.tableTitle}>{tableIndex ? `Layout continuation ${tableIndex + 1}` : "Start of the serving line"}</figcaption> : null}
         <div className={styles.stage}><div className={`${styles.mockup} ${tableIndex ? styles.continuation : ""}`}>
           <img className={styles.furniture} src={mockup.referenceImage ?? "/setup/empty-buffet-table-v1.png"} width="1024" height="1536" alt={mockup.referenceImage ? "One complete buffet table: two chafing dishes with side utensil plates, one long sauce plate with three spoons, a dessert riser with two tongs, and two marble serving carts." : tableIndex ? "Equipment layout continuation on a black table with an emerald-green runner." : "Whole black buffet table with an emerald-green runner and two marble serving carts."} />
-          <div className={styles.artwork} aria-hidden="true">{mockup.art.filter((item) => item.tableIndex === tableIndex).map((item) => <span key={item.key} data-equipment-sprite={item.sprite} className={styles.sprite} style={{ ...position(item), ...equipmentStyle(item), ...(item.rotate ? { transform: `rotate(${item.rotate}deg)` } : {}) }} />)}</div>
-          {mockup.targets.filter((target) => target.tableIndex === tableIndex).map((target) => {
-            const item = target.item;
-            return <button key={target.id} className={styles.hotspot} data-serving-object={item.id} data-table-index={tableIndex} type="button" style={position(target)} aria-label={`Identify: ${item.label}`} aria-haspopup="dialog" aria-controls={dialogId} title={item.label} onClick={() => identify(item)}><span className={styles.srOnly}>{item.label} · {quantity(item)}{item.contents.length ? ` · ${item.contents.join(" · ")}` : ""}</span></button>;
-          })}
-        </div></div>
+          {equipment(tableIndex)}
+        </div>
+        {supportTable && mockup.dessertSupport?.tableIndex === tableIndex ? <>
+          <div className={styles.cocktailStage} role="group" aria-label="Dessert cocktail table at the end of the buffet">
+            <button className={`${styles.hotspot} ${styles.cocktailFurniture}`} data-serving-object={supportTable.id} type="button" aria-label={`Identify: ${supportTable.label}`} aria-haspopup="dialog" aria-controls={dialogId} onClick={() => identify(supportTable)}><span className={styles.srOnly}>{supportTable.label}</span></button>
+            {equipment(tableIndex, "dessert-cocktail")}
+          </div>
+          <p className={styles.cocktailCaption}>Dessert on a round black cocktail table at the end of the buffet.</p>
+        </> : null}</div>
       </figure>)}
     </div>
     <p className={styles.measurements}>Rearranged equipment mockup · Not a scale drawing or physical-fit approval. Follow the clicked descriptions for this event’s exact contents and quantities. Buffet table: 8 ft × 3 ft (96 × 36 in). Two marble carts per serving line, each 21.5 × 15.5 in; together 21.5 × 31 in.</p>
@@ -57,8 +72,8 @@ export default function EventSetupDiagram({ plan }: { plan: EventServingPlan }) 
       <span className={styles.eyebrow}>Event setup item</span><h2 id={`${dialogId}-title`}>{selected?.label}</h2>
       {selected ? <><p className={styles.quantity}>{quantity(selected)}</p>{servingStationNote(selected) ? <p>{servingStationNote(selected)}</p> : null}<p id={`${dialogId}-description`}>{selected.description}</p>{selected.contents.length ? <ul>{selected.contents.map((content, index) => <li key={`${index}:${content}`}>{content}</li>)}</ul> : null}</> : <p id={`${dialogId}-description`} />}
     </dialog>
-    <details className={styles.instructions}><summary>Build the serving line</summary><ObjectInstructions objects={plan.objects} /></details>
-    <div className={styles.printGuide}><h3>Build the serving line</h3><ObjectInstructions objects={plan.objects} /></div>
+    <details className={styles.instructions}><summary>Build the serving line</summary><ObjectInstructions objects={displayObjects} /></details>
+    <div className={styles.printGuide}><h3>Build the serving line</h3><ObjectInstructions objects={displayObjects} /></div>
   </section>;
 }
 
