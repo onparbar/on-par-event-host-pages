@@ -13,11 +13,21 @@ afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
 describe("Set Up event feed", () => {
   it("loads the current Eastern date without running a sync or dispatch action", async () => {
     vi.useFakeTimers(); vi.setSystemTime("2026-11-04T02:00:00Z");
-    vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [event], sync: null, sourceWarning: "", unfinishedEventIds: [] });
+    vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [
+      { ...event, id: 76, date: "2026-11-02" }, event, { ...event, id: 79, date: "2026-11-04" },
+    ], sync: null, sourceWarning: "", unfinishedEventIds: [] });
     const tree = await SetupPage({ searchParams: Promise.resolve({}) });
-    expect(loadStaffEventPlans).toHaveBeenCalledWith("2026-11-03", { exactDate: false });
+    expect(loadStaffEventPlans).toHaveBeenCalledWith("2026-11-03", { exactDate: true });
     expect(tree.props.events).toEqual([event]);
     expect(tree.props.date).toBe("2026-11-03");
+  });
+  it("advances to the next Eastern day at local midnight and does not reuse yesterday's party", async () => {
+    vi.useFakeTimers(); vi.setSystemTime("2026-11-04T05:00:00Z");
+    vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [event], sync: null, sourceWarning: "", unfinishedEventIds: [] });
+    const tree = await SetupPage({ searchParams: Promise.resolve({}) });
+    expect(loadStaffEventPlans).toHaveBeenCalledExactlyOnceWith("2026-11-04", { exactDate: true });
+    expect(tree.props.date).toBe("2026-11-04");
+    expect(tree.props.events).toEqual([]);
   });
   it("honors an explicit valid date, filters archived events and retains source warnings", async () => {
     vi.mocked(loadAdminState).mockResolvedValue({ archivedEventIds: [78] } as Awaited<ReturnType<typeof loadAdminState>>);
@@ -39,7 +49,7 @@ describe("Set Up event feed", () => {
     vi.useFakeTimers(); vi.setSystemTime("2026-11-03T17:00:00Z");
     vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [], sync: null, sourceWarning: "", unfinishedEventIds: [] });
     const tree = await SetupPage({ searchParams: Promise.resolve({ date: "2026-02-30" }) });
-    expect(loadStaffEventPlans).toHaveBeenCalledWith("2026-11-03", { exactDate: false });
+    expect(loadStaffEventPlans).toHaveBeenCalledWith("2026-11-03", { exactDate: true });
     expect(tree.props.date).toBe("2026-11-03");
   });
 });

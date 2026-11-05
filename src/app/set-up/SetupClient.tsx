@@ -19,22 +19,22 @@ function sourceTime(value: string | null) {
 }
 
 export default function SetupClient({ events, date, sourceWarning = "" }: { events: EventPlan[]; date: string; sourceWarning?: string }) {
-  const { ready, preferredEventId, selectEvent, clearEvent } = useEventContext();
+  const { ready, requestedEventId, selectEvent, clearEvent } = useEventContext();
   const [activeEventId, setActiveEventId] = useState(events[0]?.id ?? 0);
-  const event = checklistEventForSelection(events, preferredEventId, activeEventId);
+  const event = checklistEventForSelection(events, requestedEventId, activeEventId);
 
   if (!ready) return <PortalShell sectionTitle="Set Up" sectionSubtitle="Table layouts & equipment" mainClassName="page"><p role="status">Loading the selected event…</p></PortalShell>;
   if (!event) return <PortalShell sectionTitle="Set Up" sectionSubtitle="Table layouts & equipment" mainClassName="page">
     <PortalPageHeader eyebrow="Event preparation" title="Event Set Up" description="Choose an event to view its setup requirements." />
     <div className={styles.eventRow}><SetupDateNavigation date={date} /></div>
     {sourceWarning ? <p className={styles.notice} role="alert">{sourceWarning}</p> : null}
-    <section className={styles.card}><h2>{preferredEventId ? "The selected event is unavailable" : "No events available"}</h2><p>{preferredEventId ? "No different party has been substituted. Check the event date or choose another event." : "No active events were returned for this date. Refresh the source from the existing Kitchen or Floor Plans sync controls if needed."}</p>{preferredEventId ? <button type="button" onClick={clearEvent}>Choose another event</button> : null}</section>
+    <section className={styles.card}><h2>{requestedEventId ? "The selected event is unavailable" : "No events available"}</h2><p>{requestedEventId ? "No different party has been substituted. Check the event date or choose another event." : "No active events were returned for this date. Refresh the source from the existing Kitchen or Floor Plans sync controls if needed."}</p>{requestedEventId ? <button type="button" onClick={clearEvent}>Choose another event</button> : null}</section>
   </PortalShell>;
 
   const layout = buildSetupLayout(event);
   const servingPlan = buildEventServingPlan(event);
   return <PortalShell sectionTitle="Set Up" sectionSubtitle="Table layouts & equipment" mainClassName={`page ${styles.page}`}>
-    <EventSelectionBridge event={operationalEventFromPlan(event)} />
+    {requestedEventId ? <EventSelectionBridge event={operationalEventFromPlan(event)} /> : null}
     <PortalPageHeader eyebrow="Event preparation" title="Event Set Up" description="Built from this event’s contract. Tap any item to see its food contents, serving tools, and quantities." aside={<button className={styles.printButton} type="button" onClick={() => window.print()}>Print setup guide</button>} />
     <div className={styles.eventRow}>
       <SetupDateNavigation date={event.date} />

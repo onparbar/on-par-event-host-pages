@@ -10,6 +10,10 @@
       "schedule": "5 10 * * *"
     },
     {
+      "path": "/api/event-plans/pre-event-refresh",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/gotab/reconcile",
       "schedule": "*/5 * * * *"
     }

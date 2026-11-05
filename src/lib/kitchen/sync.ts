@@ -450,6 +450,75 @@ export async function getKitchenDay(
   };
 }
 
+function resolveKitchenSourceEvents(
+  date: string,
+  allUpstreamEvents: readonly KitchenSourceEvent[],
+  includeUnmatchedEvidence: boolean,
+) {
+  const matchesEvidence = (candidate: KitchenSourceEvent, source: KitchenSourceEvent) =>
+    candidate.eventId === source.eventId ||
+    (!String(candidate.eventId).startsWith("vip-") && eventMatchesConfirmedContract(
+      candidate.localDate,
+      candidate.eventName,
+      source.localDate,
+      source.eventName,
+    ));
+  const upstreamEvents = allUpstreamEvents.filter((event) =>
+    isOperationalKitchenStatus(event.status, event.fullBuyout),
+  );
+  const confirmedEvents = confirmedContractKitchenSourcesForDate(date).filter((source) => {
+    const matchingSource = allUpstreamEvents.find((candidate) => matchesEvidence(candidate, source));
+    return matchingSource
+      ? isOperationalKitchenStatus(matchingSource.status, matchingSource.fullBuyout) &&
+        !sourceIsAtLeastAsNew(matchingSource.sourceUpdatedAt, source.sourceUpdatedAt)
+      : includeUnmatchedEvidence;
+  });
+  return uniqueKitchenSourceIdentities([
+    ...upstreamEvents.filter((candidate) => !confirmedEvents.some((source) => matchesEvidence(candidate, source))),
+    ...confirmedEvents,
+  ], (event) => String(event.eventId));
+}
+
+/** Refresh Tripleseat's verified day without touching On Par or deleting staff history. */
+export async function refreshTripleseatKitchenDay(
+  date: string,
+  options: Pick<KitchenSyncDependencies, "adapter" | "storage" | "now"> = {},
+): Promise<{ eventCount: number; retainedUnverifiedCount: number }> {
+  assertKitchenDate(date);
+  const { adapter, storage } = dependencies(options);
+  if (adapter.sourceMode !== "live") {
+    throw new KitchenSyncError("Live Tripleseat is required for the scheduled kitchen refresh.");
+  }
+
+  await storage.startSync(date);
+  try {
+    const liveEvents = (await adapter.fetchEventsForDate(date)).filter((source) =>
+      source.localDate === date &&
+      !source.vipBooking && !String(source.eventId).startsWith("vip-") &&
+      !["CANCELLED", "CANCELED"].includes(source.status?.trim().toUpperCase() ?? ""),
+    );
+    const sourceEvents = resolveKitchenSourceEvents(date, liveEvents, false);
+    const priorDay = await storage.getDay(date);
+    const refreshedIds = new Set(sourceEvents.map((source) => String(source.eventId)));
+    const retainedUnverifiedCount = activeKitchenChecklists(priorDay.events, options.now).filter(
+      ({ event }) => !event.vipBooking && !String(event.eventId).startsWith("vip-") && !refreshedIds.has(String(event.eventId)),
+    ).length;
+    for (const sourceEvent of sourceEvents) {
+      await storage.saveEvent({ sourceEvent, checklist: generateKitchenChecklist(sourceEvent) });
+    }
+    await storage.completeSync(date, sourceEvents.length);
+    return { eventCount: sourceEvents.length, retainedUnverifiedCount };
+  } catch (error) {
+    const message = safeSyncError(error);
+    try {
+      await storage.failSync(date, message);
+    } catch {
+      // Preserve the safe upstream or storage error when sync status cannot be saved.
+    }
+    throw new KitchenSyncError(message);
+  }
+}
+
 export async function syncKitchenDay(
   date: string,
   options: KitchenSyncDependencies = {},
@@ -472,50 +541,10 @@ export async function syncKitchenDay(
       adapter.fetchEventsForDate(date),
       vipPrepClient.configured ? vipPrepClient.fetchRange(date, date) : null,
     ]);
-    const allUpstreamEvents = [
+    const sourceEvents = resolveKitchenSourceEvents(date, [
       ...tripleseatEvents,
       ...vipPrepKitchenEvents(vipPayload?.reservations ?? []),
-    ];
-    const upstreamEvents = allUpstreamEvents.filter((event) =>
-      isOperationalKitchenStatus(event.status, event.fullBuyout),
-    );
-    const confirmedEvents = confirmedContractKitchenSourcesForDate(date).filter(
-      (source) => {
-        const matchingSource = allUpstreamEvents.find(
-          (candidate) =>
-            candidate.eventId === source.eventId ||
-            (!String(candidate.eventId).startsWith("vip-") && eventMatchesConfirmedContract(
-              candidate.localDate,
-              candidate.eventName,
-              source.localDate,
-              source.eventName,
-            )),
-        );
-        return !(
-          matchingSource &&
-          (!isOperationalKitchenStatus(matchingSource.status, matchingSource.fullBuyout) ||
-            sourceIsAtLeastAsNew(
-              matchingSource.sourceUpdatedAt,
-              source.sourceUpdatedAt,
-            ))
-        );
-      },
-    );
-    const sourceEvents = uniqueKitchenSourceIdentities([
-      ...upstreamEvents.filter(
-        (candidate) =>
-          !confirmedEvents.some((source) =>
-            candidate.eventId === source.eventId ||
-            (!String(candidate.eventId).startsWith("vip-") && eventMatchesConfirmedContract(
-              candidate.localDate,
-              candidate.eventName,
-              source.localDate,
-              source.eventName,
-            )),
-        ),
-      ),
-      ...confirmedEvents,
-    ], (event) => String(event.eventId));
+    ], true);
     const previousKitchenDay = await storage.getDay(date);
     const storedEvents = sourceEvents.map((source) => {
       const sourceEvent = withVipPreorderChange(source, previousKitchenDay.events.find((event) => String(event.event.eventId) === String(source.eventId)));

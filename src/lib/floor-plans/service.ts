@@ -19,7 +19,7 @@ import {
 import { TRIPLESEAT_RECONNECT_WARNING, type EntertainmentReservation, type SourceRefreshResult } from "@/lib/entertainment/types";
 import { buildEventPlan } from "@/lib/event-plans/domain";
 import { getEventPlanStorage } from "@/lib/event-plans/storage";
-import { syncEventPlanWindow } from "@/lib/event-plans/sync";
+import { syncEventPlanWindow, type EventPlanSyncOptions } from "@/lib/event-plans/sync";
 import type {
   EventPlan,
   TripleseatEventPlanSource,
@@ -213,7 +213,7 @@ function vipEventPlan(reservation: VipPrepReservation): EventPlan {
   };
 }
 
-type FloorPlanReadOptions = { vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">; readOnly?: boolean };
+type FloorPlanReadOptions = { vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">; readOnly?: boolean; refreshedTripleseatAt?: string };
 
 async function sourceEventsForDate(date: string, options: FloorPlanReadOptions = {}) {
   const eventPlanStorage = getEventPlanStorage();
@@ -242,7 +242,13 @@ async function sourceEventsForDate(date: string, options: FloorPlanReadOptions =
         }
       : null;
   } catch {
+    if (options.refreshedTripleseatAt) throw new Error("The refreshed Tripleseat event plans could not be loaded.");
     warnings.push("Tripleseat source could not be loaded; its saved floor-plan assignments are retained.");
+  }
+  if (options.refreshedTripleseatAt) {
+    sourceWindowWasSynchronized = true;
+    lastSuccessfulSyncAt = options.refreshedTripleseatAt;
+    synchronizedWindow = { startDate: date, endDate: date };
   }
   const tripleseatRows: FloorPlanSourceRow[] = stored.length
     ? stored.map((row) => ({
@@ -1561,37 +1567,48 @@ export async function refreshFloorPlanSources(
   date: string,
   storage: FloorPlanStorage = getFloorPlanStorage(),
   expectedVersion?: number,
+  options: Pick<EventPlanSyncOptions, "now" | "adapter" | "recordRollingSync"> = {},
 ) {
   if (expectedVersion !== undefined) storage = floorPlanStorageAtVersion(storage, expectedVersion);
   const savedBeforeRefresh = await storage.get(date);
   const refreshWarnings: string[] = [];
   let tripleseatRefreshed = false;
   let entertainmentRefreshed = false;
+  let refreshedTripleseatAt: string | undefined;
   const sourceRefresh: SourceRefreshResult = { tripleseat: "error", onParBookings: new VipPrepClient().configured ? "error" : "not-configured", reconnectTripleseat: false };
   try {
-    await syncEventPlanWindow({ startDate: date, endDate: date }, { legacyPlans: [] });
+    await syncEventPlanWindow({ startDate: date, endDate: date }, { legacyPlans: [], ...options });
     tripleseatRefreshed = true;
+    if (options.recordRollingSync === false) refreshedTripleseatAt = (options.now ?? new Date()).toISOString();
   } catch (error) {
+    if (options.recordRollingSync === false) throw error;
     sourceRefresh.reconnectTripleseat = requiresTripleseatReconnect(error);
     refreshWarnings.push(sourceRefresh.reconnectTripleseat ? TRIPLESEAT_RECONNECT_WARNING :
       "Tripleseat could not be refreshed. On Par Bookings is refreshed independently and saved Tripleseat assignments are retained.");
   }
   try {
-    const entertainment = await syncEntertainmentDay(date);
+    const entertainment = await (options.recordRollingSync === false
+      ? syncEntertainmentDay(date, { adapter: options.adapter, protectConcurrentEdits: true })
+      : syncEntertainmentDay(date));
     refreshWarnings.push(...entertainment.warnings);
     entertainmentRefreshed = entertainment.sourceRefresh?.tripleseat === "success";
     sourceRefresh.onParBookings = entertainment.sourceRefresh?.onParBookings ?? sourceRefresh.onParBookings;
     sourceRefresh.reconnectTripleseat ||= entertainment.sourceRefresh?.reconnectTripleseat === true;
   } catch (error) {
+    if (options.recordRollingSync === false) throw error;
     sourceRefresh.reconnectTripleseat ||= requiresTripleseatReconnect(error);
     refreshWarnings.push(requiresTripleseatReconnect(error) ? TRIPLESEAT_RECONNECT_WARNING :
       "The shared entertainment source could not be refreshed; its saved assignments remain available.");
   }
   sourceRefresh.tripleseat = tripleseatRefreshed && entertainmentRefreshed ? "success" : tripleseatRefreshed || entertainmentRefreshed ? "partial" : "error";
+  if (options.recordRollingSync === false && sourceRefresh.tripleseat !== "success") {
+    throw new Error("The Tripleseat entertainment refresh was incomplete.");
+  }
   if (entertainmentRefreshed) sourceRefresh.reconnectTripleseat = false;
   const providerWarnings = entertainmentRefreshed ? refreshWarnings.map((warning) => warning === TRIPLESEAT_RECONNECT_WARNING
     ? "Tripleseat event details did not refresh; saved event details were retained." : warning) : refreshWarnings;
-  const reconciled = await reconciledPlan(date, storage);
+  const readOptions = refreshedTripleseatAt ? { refreshedTripleseatAt, readOnly: true } : undefined;
+  const reconciled = await reconciledPlan(date, storage, readOptions);
   const plan = tripleseatRefreshed ? reconcileContractRoomAssignments(savedBeforeRefresh, reconciled) : reconciled;
   if (!plan.events.length) {
     if (
@@ -1609,7 +1626,7 @@ export async function refreshFloorPlanSources(
         "Removed floor-plan holds after the source confirmed no active reservations.",
       );
     }
-    const empty = await getFloorPlanDay(date, storage);
+    const empty = await getFloorPlanDay(date, storage, readOptions);
     return { ...empty, sourceRefresh, warnings: [...new Set([...empty.warnings, ...providerWarnings])] };
   }
   await storage.save(
@@ -1619,6 +1636,6 @@ export async function refreshFloorPlanSources(
     },
     tripleseatRefreshed ? "Synchronized live Tripleseat floor-plan fields." : "Retained saved Tripleseat floor-plan fields after a failed refresh.",
   );
-  const payload = await getFloorPlanDay(date, storage);
+  const payload = await getFloorPlanDay(date, storage, readOptions);
   return { ...payload, sourceRefresh, warnings: [...new Set([...payload.warnings, ...providerWarnings])] };
 }

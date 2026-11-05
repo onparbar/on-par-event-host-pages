@@ -100,6 +100,29 @@ const legacyPlan: EventPlan = {
 };
 
 describe("rolling Event Host plan synchronization", () => {
+  it("updates an affected event without changing the daily rolling sync status", async () => {
+    const storage = createMemoryEventPlanStorage();
+    await syncEventPlanWindow({ startDate: "2026-08-15", endDate: "2026-08-29" }, {
+      storage, legacyPlans: [], adapter: liveAdapter(async () => [source()]),
+    });
+    const dailySync = await storage.getSyncState();
+    const day = { startDate: "2026-08-15", endDate: "2026-08-15" };
+    const scoped = await syncEventPlanWindow(day, {
+      storage, legacyPlans: [], recordRollingSync: false,
+      adapter: liveAdapter(async () => [source({ rooms: ["VIP 2"], guestCount: 42 })]),
+    });
+    expect(scoped.plans[0]).toMatchObject({ rooms: ["VIP 2"], guest_count: 42 });
+    expect(scoped.sync).toBeNull();
+    expect(await storage.getSyncState()).toEqual(dailySync);
+
+    await expect(syncEventPlanWindow(day, {
+      storage, legacyPlans: [], recordRollingSync: false,
+      adapter: liveAdapter(async () => { throw new Error("Source unavailable"); }),
+    })).rejects.toThrow("Source unavailable");
+    expect(await storage.getSyncState()).toEqual(dailySync);
+    expect((await storage.plansForWindow(day))[0].plan).toMatchObject({ rooms: ["VIP 2"], guest_count: 42 });
+  });
+
   it("loads stored past event plans for the admin itinerary archive", async () => {
     const storage = createMemoryEventPlanStorage();
     await syncEventPlanWindow(

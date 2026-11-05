@@ -67,7 +67,7 @@ function PortalNavigation({
           <Link
             aria-current={active ? "page" : undefined}
             className={active ? "is-active" : undefined}
-            href={item.href === "/floor-plans" ? operationalEventRequestHref(item.href, null, requestedDate ?? selectedEvent?.date ?? null) : eventHref(item.href)}
+            href={item.href === "/set-up" ? item.href : item.href === "/floor-plans" ? operationalEventRequestHref(item.href, null, requestedDate ?? selectedEvent?.date ?? null) : eventHref(item.href)}
             key={item.href}
             onClick={onNavigate}
           >

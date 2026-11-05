@@ -30,6 +30,8 @@ export type EventPlanSyncOptions = {
   adapter?: TripleseatAdapter;
   storage?: EventPlanStorage;
   legacyPlans?: readonly EventPlan[];
+  /** A scoped pre-event refresh must not replace the rolling window's status. */
+  recordRollingSync?: boolean;
 };
 
 export type EventPlanSyncResult = StoredEventPlanWindow & {
@@ -149,6 +151,7 @@ export async function syncEventPlanWindow(
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEventPlanStorage();
   const legacyPlans = options.legacyPlans ?? legacyEventPlans;
+  const recordRollingSync = options.recordRollingSync !== false;
 
   if (
     adapter.sourceMode !== "live" ||
@@ -159,7 +162,7 @@ export async function syncEventPlanWindow(
     );
   }
 
-  await storage.start(window);
+  if (recordRollingSync) await storage.start(window);
   try {
     const fetchedSources = await adapter.fetchEventPlansForRange(
       window.startDate,
@@ -227,15 +230,15 @@ export async function syncEventPlanWindow(
         sourceUpdatedAt: sources[index].sourceUpdatedAt,
       })),
     );
-    await storage.finish(plans.length);
+    if (recordRollingSync) await storage.finish(plans.length);
     return {
       plans,
-      sync: syncStateFromStorage(await storage.getSyncState()),
+      sync: recordRollingSync ? syncStateFromStorage(await storage.getSyncState()) : null,
       sourceMode: "live",
     };
   } catch (error) {
     try {
-      await storage.fail(errorMessage(error));
+      if (recordRollingSync) await storage.fail(errorMessage(error));
     } catch {
       // Preserve the original synchronization error.
     }

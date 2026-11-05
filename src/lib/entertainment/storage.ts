@@ -35,7 +35,17 @@ export type SaveSyncInput = {
     warningsCreated: number;
     conflictsFound: number;
   };
-};
+} & (
+  | { protectConcurrentEdits?: false }
+  | { protectConcurrentEdits: true; existingEvents: EntertainmentEventSnapshot[] }
+);
+
+export class EntertainmentSyncRevisionError extends Error {
+  constructor() {
+    super("Entertainment changed during the scheduled refresh. Saved edits were retained.");
+    this.name = "EntertainmentSyncRevisionError";
+  }
+}
 
 export interface EntertainmentStorage {
   readonly persistence: "database" | "memory";
@@ -497,9 +507,69 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
     );
   }
 
-  async saveSync(input: SaveSyncInput) {
-    const eventRows = input.events.map(eventToRow);
-    const reservationRows = input.reservations.map(reservationToRow);
+  private async patchSyncRevision(
+    table: string,
+    key: Record<string, string>,
+    row: Partial<EventRow> | Partial<ReservationRow>,
+  ) {
+    const updated = await this.jsonRequest<unknown[]>(table, new URLSearchParams(key), {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify(row),
+    });
+    if (updated.length !== 1) throw new EntertainmentSyncRevisionError();
+  }
+
+  private async saveGuardedSyncRows(
+    input: Extract<SaveSyncInput, { protectConcurrentEdits: true }>,
+    eventRows: EventRow[],
+    reservationRows: ReservationRow[],
+  ) {
+    const events = new Map(input.existingEvents.map(eventToRow).map((row) => [row.event_id, row]));
+    const reservations = new Map(input.existingReservations.map(reservationToRow).map((row) => [row.id, row]));
+    const newEvents: EventRow[] = [];
+    const newReservations: ReservationRow[] = [];
+    for (const row of eventRows) {
+      const previous = events.get(row.event_id);
+      events.delete(row.event_id);
+      if (!previous) newEvents.push(row);
+      else if (JSON.stringify(previous) !== JSON.stringify(row)) {
+        await this.patchSyncRevision("entertainment_event_snapshots", {
+          event_id: `eq.${row.event_id}`, synced_at: `eq.${previous.synced_at}`,
+        }, row);
+      }
+    }
+    for (const row of reservationRows) {
+      const previous = reservations.get(row.id);
+      if (!previous) newReservations.push(row);
+      else if (JSON.stringify(previous) !== JSON.stringify(row)) {
+        await this.patchSyncRevision("entertainment_reservations", {
+          id: `eq.${row.id}`, updated_at: `eq.${previous.updated_at}`,
+        }, row);
+      }
+    }
+    // A concurrent insert (including a duplicate source key) fails safely instead
+    // of overwriting the row. Only deactivate events observed before the import.
+    for (const [table, rows] of [
+      ["entertainment_event_snapshots", newEvents],
+      ["entertainment_reservations", newReservations],
+    ] as const) {
+      if (rows.length > 0) {
+        await this.emptyRequest(table, undefined, {
+          method: "POST",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify(rows),
+        });
+      }
+    }
+    for (const row of events.values()) {
+      await this.patchSyncRevision("entertainment_event_snapshots", {
+        event_id: `eq.${row.event_id}`, synced_at: `eq.${row.synced_at}`,
+      }, { active: false, synced_at: new Date().toISOString() });
+    }
+  }
+
+  private async saveSyncRows(date: string, eventRows: EventRow[], reservationRows: ReservationRow[]) {
     if (eventRows.length > 0) {
       await this.emptyRequest(
         "entertainment_event_snapshots",
@@ -529,11 +599,11 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
       "entertainment_event_snapshots",
       new URLSearchParams({
         select: "event_id",
-        operating_date: `eq.${input.date}`,
+        operating_date: `eq.${date}`,
         active: "eq.true",
       }),
     );
-    const incomingEventIds = new Set(input.events.map((event) => event.eventId));
+    const incomingEventIds = new Set(eventRows.map((row) => row.event_id));
     await Promise.all(
       currentEventRows
         .filter((row) => !incomingEventIds.has(row.event_id))
@@ -549,7 +619,16 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
           ),
         ),
     );
+  }
 
+  async saveSync(input: SaveSyncInput) {
+    const eventRows = input.events.map(eventToRow);
+    const reservationRows = input.reservations.map(reservationToRow);
+    if (input.protectConcurrentEdits) {
+      await this.saveGuardedSyncRows(input, eventRows, reservationRows);
+    } else {
+      await this.saveSyncRows(input.date, eventRows, reservationRows);
+    }
     const existingById = new Map(
       input.existingReservations.map((reservation) => [
         reservation.id,
@@ -763,6 +842,27 @@ export class MemoryEntertainmentStorage implements EntertainmentStorage {
         reservation,
       ]),
     );
+    let events = input.events;
+    let reservations = input.reservations;
+    if (input.protectConcurrentEdits) {
+      const existingEvents = new Map(input.existingEvents.map((event) => [event.eventId, event]));
+      const currentEvents = (this.events.get(input.date) ?? []).filter((event) => event.active);
+      const currentReservations = this.reservations.get(input.date) ?? [];
+      if (input.existingEvents.some((event) => !currentEvents.some((current) =>
+        current.eventId === event.eventId && current.syncedAt === event.syncedAt)) ||
+        input.existingReservations.some((reservation) => !currentReservations.some((current) =>
+          current.id === reservation.id && current.updatedAt === reservation.updatedAt)) ||
+        input.events.some((event) => !existingEvents.has(event.eventId) &&
+          [...this.events.values()].some((day) => day.some((current) =>
+            current.eventId === event.eventId || current.tripleseatEventId === event.tripleseatEventId))) ||
+        input.reservations.some((reservation) => !existingById.has(reservation.id) &&
+          [...this.reservations.values()].some((day) => day.some((current) =>
+            current.id === reservation.id || (reservation.syncKey && current.syncKey === reservation.syncKey))))) {
+        throw new EntertainmentSyncRevisionError();
+      }
+      events = [...events, ...currentEvents.filter((event) => !existingEvents.has(event.eventId))];
+      reservations = [...reservations, ...currentReservations.filter((reservation) => !existingById.has(reservation.id))];
+    }
     for (const reservation of input.reservations) {
       const existing = existingById.get(reservation.id);
       const action =
@@ -793,8 +893,8 @@ export class MemoryEntertainmentStorage implements EntertainmentStorage {
         ]);
       }
     }
-    this.events.set(input.date, structuredClone(input.events));
-    this.reservations.set(input.date, structuredClone(input.reservations));
+    this.events.set(input.date, structuredClone(events));
+    this.reservations.set(input.date, structuredClone(reservations));
     const previous = this.sync.get(input.date);
     this.sync.set(input.date, {
       operatingDate: input.date,

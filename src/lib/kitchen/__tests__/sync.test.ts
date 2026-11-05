@@ -11,6 +11,7 @@ import {
   getKitchenEventFoodAddOns,
   getKitchenDay,
   normalizeKitchenEventAddOnFood,
+  refreshTripleseatKitchenDay,
   syncKitchenDay,
   syncVipBookingDay,
   updateKitchenEventFoodAddOns,
@@ -25,7 +26,7 @@ import type {
   TripleseatKitchenSourceEvent,
 } from "../tripleseat";
 import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
-import { vipPrepKitchenEvents } from "../../vip-prep/client";
+import { VipPrepClient, vipPrepKitchenEvents } from "../../vip-prep/client";
 
 function testAdapter(
   getEvents: () => TripleseatKitchenSourceEvent[],
@@ -55,6 +56,100 @@ function testAdapter(
 function viewingTime(date: string) {
   return new Date(`${date}T12:00:00-04:00`);
 }
+
+describe("scheduled Tripleseat-only kitchen refresh", () => {
+  const date = "2026-08-15";
+  const original: TripleseatKitchenSourceEvent = {
+    ...MOCK_KITCHEN_EVENTS[2],
+    eventId: "12345",
+    localDate: date,
+    statusVerified: true,
+    documentMetadata: [],
+  };
+  const liveAdapter = (getEvents: () => TripleseatKitchenSourceEvent[]): TripleseatAdapter => ({
+    ...testAdapter(getEvents),
+    sourceMode: "live",
+  });
+
+  it("refreshes only exact-date Tripleseat sources and preserves saved VIP, prep and add-on records", async () => {
+    const storage = createMemoryKitchenStorage();
+    const priorMissing = { ...original, eventId: "67890" };
+    const vip = vipPrepKitchenEvents(vipPrepPayload.reservations)[0];
+    for (const sourceEvent of [original, priorMissing, vip]) {
+      await storage.saveEvent({ sourceEvent, checklist: generateKitchenChecklist(sourceEvent) });
+    }
+    await storage.saveManualAssignments("12345", ["Brooke"], ["Carlos"], "Brooke", "Carlos", ["Brooke"]);
+    await storage.saveItemPrepped("12345", "appetizer-chicken-tenders", true, "Brooke", "2026-08-15T17:00:00Z");
+    await storage.saveItemReadiness("12345", "appetizer-chicken-tenders", true);
+    for (const id of ["12345", "67890"]) {
+      await updateKitchenEventFoodAddOns(id, { wings: { quantity: 1 } }, { storage });
+    }
+    const vipBefore = (await storage.getDay(date)).events.find((entry) => entry.event.eventId === vip.eventId);
+    const missingAddOnsBefore = await storage.getFoodAddOns("67890");
+    const addOnsBefore = await storage.getFoodAddOns("12345");
+    const replaceDay = vi.spyOn(storage, "replaceDay");
+    const saveEvent = vi.spyOn(storage, "saveEvent");
+    const vipConfigured = vi.spyOn(VipPrepClient.prototype, "configured", "get").mockReturnValue(true);
+    const fetchRange = vi.spyOn(VipPrepClient.prototype, "fetchRange").mockRejectedValue(new Error("Unexpected VIP refresh"));
+    const revised = { ...original, room: "VIP 1", guestCount: 44, sourceUpdatedAt: "2026-08-15T17:30:00Z" };
+    const adapter = liveAdapter(() => [
+      revised,
+      { ...original, eventId: "another-day", localDate: "2026-08-16" },
+      { ...original, eventId: "cancelled", status: "CANCELLED", fullBuyout: true },
+      { ...original, eventId: "lost", status: "LOST" },
+      { ...original, ...vip },
+    ]);
+    try {
+      await expect(refreshTripleseatKitchenDay(date, { adapter, storage, now: viewingTime(date) }))
+        .resolves.toEqual({ eventCount: 1, retainedUnverifiedCount: 1 });
+      expect(fetchRange).not.toHaveBeenCalled();
+      expect(replaceDay).not.toHaveBeenCalled();
+      expect(saveEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sourceEvent: revised }));
+    } finally {
+      fetchRange.mockRestore();
+      vipConfigured.mockRestore();
+    }
+
+    const day = await storage.getDay(date);
+    expect(day.sync).toMatchObject({ status: "success", eventCount: 1, lastSuccessfulSyncAt: expect.any(String) });
+    expect(day.events).toHaveLength(3);
+    expect(day.events.find((entry) => entry.event.eventId === "12345")).toMatchObject({
+      event: { room: "VIP 1", guestCount: 44, sourceUpdatedAt: revised.sourceUpdatedAt },
+      foodRunners: ["Brooke"], pocs: ["Carlos"], preppedBy: "Brooke", verifiedBy: "Carlos", setup: ["Brooke"],
+      preppedItemDetails: { "appetizer-chicken-tenders": { employeeName: "Brooke", preppedAt: "2026-08-15T17:00:00Z" } },
+      completedItemKeys: ["appetizer-chicken-tenders"],
+    });
+    expect(day.events.find((entry) => entry.event.eventId === vip.eventId)).toEqual(vipBefore);
+    await expect(storage.getFoodAddOns("12345")).resolves.toEqual(addOnsBefore);
+    await expect(storage.getFoodAddOns("67890")).resolves.toEqual(missingAddOnsBefore);
+    expect((await storage.getDay("2026-08-16")).events).toEqual([]);
+  });
+
+  it("records a failed attempt without discarding the last success or saved checklists", async () => {
+    const storage = createMemoryKitchenStorage();
+    await refreshTripleseatKitchenDay(date, { adapter: liveAdapter(() => [original]), storage });
+    const before = await storage.getDay(date);
+    const adapter = liveAdapter(() => { throw new Error("private upstream detail"); });
+    await expect(refreshTripleseatKitchenDay(date, { adapter, storage })).rejects.toThrow("Kitchen synchronization failed.");
+    const after = await storage.getDay(date);
+    expect(after.events).toEqual(before.events);
+    expect(after.sync).toMatchObject({ status: "error", lastSuccessfulSyncAt: before.sync?.lastSuccessfulSyncAt, errorMessage: "Kitchen synchronization failed." });
+  });
+
+  it("rejects the mock adapter and does not restore an absent contract fallback", async () => {
+    const storage = createMemoryKitchenStorage();
+    const fetchEvents = vi.fn(() => [original]);
+    await expect(refreshTripleseatKitchenDay(date, { adapter: testAdapter(fetchEvents), storage })).rejects.toThrow("Live Tripleseat is required");
+    expect(fetchEvents).not.toHaveBeenCalled();
+    expect((await storage.getDay(date)).sync).toBeNull();
+
+    const evidenceDate = "2026-08-21";
+    expect(confirmedContractKitchenSourcesForDate(evidenceDate)).not.toHaveLength(0);
+    await expect(refreshTripleseatKitchenDay(evidenceDate, { adapter: liveAdapter(() => []), storage }))
+      .resolves.toEqual({ eventCount: 0, retainedUnverifiedCount: 0 });
+    expect((await storage.getDay(evidenceDate)).events).toEqual([]);
+  });
+});
 
 describe("kitchen synchronization", () => {
   it("refreshes VIP bookings without Tripleseat sync and preserves other kitchen events", async () => {

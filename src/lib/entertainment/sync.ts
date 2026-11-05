@@ -22,6 +22,7 @@ import {
   isHexColor,
 } from "./resources";
 import {
+  EntertainmentSyncRevisionError,
   getEntertainmentStorage,
   getMissingEntertainmentEnvironmentVariables,
   type EntertainmentStorage,
@@ -64,6 +65,7 @@ export type EntertainmentDependencies = {
   localEvents?: LocalEntertainmentEvent[];
   vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
   readOnly?: boolean;
+  protectConcurrentEdits?: boolean;
   floorPlanStorage?: Pick<FloorPlanStorage, "get">;
   floorPlanEvents?: readonly FloorPlanEvent[];
 };
@@ -123,6 +125,7 @@ export function requiresTripleseatReconnect(error: unknown) {
 }
 
 function safeSyncError(error: unknown) {
+  if (error instanceof EntertainmentSyncRevisionError) return error.message;
   if (requiresTripleseatReconnect(error)) return TRIPLESEAT_RECONNECT_WARNING;
   if (!(error instanceof Error)) {
     return "Entertainment synchronization failed.";
@@ -672,7 +675,7 @@ export async function syncEntertainmentDay(
     ]);
     const vipPayload = vipResult.status === "fulfilled" ? vipResult.value : null;
     if (tripleseatResult.status === "rejected") {
-      if (!vipPayload) throw tripleseatResult.reason;
+      if (!vipPayload || options.protectConcurrentEdits) throw tripleseatResult.reason;
       const now = new Date().toISOString();
       const built = preserveManualEventColors(buildEntertainmentSchedule({
         sourceEvents: vipPrepEntertainmentEvents(vipPayload.reservations), localEvents: context.localEvents,
@@ -778,14 +781,17 @@ export async function syncEntertainmentDay(
       ),
       conflictsFound: conflicts.length,
     };
-    await storage.saveSync({
+    const saveInput = {
       date,
       events: preserved.events,
       reservations: preserved.reservations,
       existingReservations: stored.reservations,
       stats,
-    });
-    const payload = await getEntertainmentDay(date, { ...options, adapter, storage, vipPrepClient: {
+    };
+    await storage.saveSync(options.protectConcurrentEdits
+      ? { ...saveInput, protectConcurrentEdits: true, existingEvents: stored.events }
+      : saveInput);
+    const payload = await getEntertainmentDay(date, { ...options, readOnly: options.readOnly || options.protectConcurrentEdits, adapter, storage, vipPrepClient: {
       configured: vipPrepClient.configured,
       async fetchRange() {
         if (!vipPayload) throw new Error("On Par Bookings was unavailable during this refresh.");

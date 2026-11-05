@@ -49,6 +49,14 @@ describe("staff event workspace shell", () => {
     expect(global).not.toContain('/floor-plans?date=2026-10-23&amp;eventId=123');
     expect(workspace).toContain('href="/floor-plans?date=2026-10-23&amp;eventId=123"');
   });
+  it("opens the main Set Up tab without an old date or party while preserving the exact workspace link", () => {
+    const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace", children: "Tasks" }));
+    const global = html.match(/<nav aria-label="Portal navigation"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    const workspace = html.match(/<nav aria-label="My event workspace"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect(global).toContain('href="/set-up"');
+    expect(global).not.toContain('/set-up?');
+    expect(workspace).toContain('href="/set-up?date=2026-10-23&amp;eventId=123"');
+  });
   it("does not wrap the all-party floor plan in a remembered event's workspace", () => {
     mocks.pathname = "/floor-plans";
     mocks.requestedEventId = null;

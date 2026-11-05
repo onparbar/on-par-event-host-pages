@@ -5,7 +5,7 @@ import type { EventPlan } from "@/lib/event-plans/types";
 import SetupClient from "../SetupClient";
 import { contractSetup } from "@/lib/operations/setup";
 
-const context = vi.hoisted(() => ({ ready: true, preferredEventId: null as string | null, selectEvent: vi.fn(), clearEvent: vi.fn(), bridge: vi.fn() }));
+const context = vi.hoisted(() => ({ ready: true, requestedEventId: null as string | null, preferredEventId: null as string | null, selectEvent: vi.fn(), clearEvent: vi.fn(), bridge: vi.fn() }));
 vi.mock("@/app/_components/EventContext", () => ({
   useEventContext: () => context,
   EventSelectionBridge: (props: unknown) => { context.bridge(props); return null; },
@@ -31,7 +31,7 @@ const basicBarEvents: EventPlan[] = [
 ];
 
 function render(events = [event], sourceWarning = "", date = event.date) { return renderToStaticMarkup(createElement(SetupClient, { events, sourceWarning, date })); }
-beforeEach(() => { context.ready = true; context.preferredEventId = null; vi.clearAllMocks(); });
+beforeEach(() => { context.ready = true; context.requestedEventId = null; context.preferredEventId = null; vi.clearAllMocks(); });
 
 describe("read-only Set Up guide", () => {
   it("offers a date-only GET navigation without carrying the old event identity", () => {
@@ -56,17 +56,25 @@ describe("read-only Set Up guide", () => {
     expect(context.bridge).not.toHaveBeenCalled();
   });
   it("can browse away from an unavailable explicit event without substituting another party", () => {
-    context.preferredEventId = "missing-event";
+    context.requestedEventId = "missing-event";
     const html = render([event], "", "2026-12-18");
     expect(html).toContain('value="2026-12-18"');
     expect(html).toContain("The selected event is unavailable");
     expect(html).not.toContain("Purchased food &amp; prep quantities");
     expect(context.bridge).not.toHaveBeenCalled();
   });
-  it("uses the selected event date when the event dropdown crosses days", () => {
-    context.preferredEventId = String(appetizerEvent.id);
-    const html = render([event, appetizerEvent]);
+  it("keeps the selected date and party when opened through an event workspace link", () => {
+    context.requestedEventId = String(appetizerEvent.id);
+    const html = render([appetizerEvent], "", appetizerEvent.date);
     expect(html).toContain('type="date" required="" name="date" value="2026-11-04"');
+    expect(context.bridge).toHaveBeenCalledOnce();
+  });
+  it("shows the current day's first party without replacing a remembered workspace selection", () => {
+    context.preferredEventId = String(appetizerEvent.id);
+    const html = render();
+    expect(html).toContain(event.name);
+    expect(html).not.toContain("The selected event is unavailable");
+    expect(context.bridge).not.toHaveBeenCalled();
   });
   it.each([event, appetizerEvent, ...basicBarEvents])("shows the visual reference before serving instructions without the equipment summary: $name", (plan) => {
     const html = render([plan]);
@@ -143,7 +151,7 @@ describe("read-only Set Up guide", () => {
     expect(serving).not.toContain('data-serving-object="taco-tier"');
   });
   it("does not substitute an available event when an explicit event is missing", () => {
-    context.preferredEventId = "999";
+    context.requestedEventId = "999";
     const html = render();
     expect(html).toContain("The selected event is unavailable");
     expect(html).toContain("No different party has been substituted");
@@ -151,7 +159,7 @@ describe("read-only Set Up guide", () => {
     expect(context.bridge).not.toHaveBeenCalled();
   });
   it("retains the exact VIP source identity instead of using a different numeric party", () => {
-    context.preferredEventId = "vip-sample-a";
+    context.requestedEventId = "vip-sample-a";
     const vip = { ...event, id: 808, source_event_id: "vip-sample-a", name: "Redacted VIP event" };
     const html = render([event, vip]);
     expect(html).toContain('value="vip-sample-a" selected=""');
@@ -244,8 +252,8 @@ describe("read-only Set Up guide", () => {
     expect(html).not.toContain("4 × Wing Platter");
   });
   it("keeps the selected two-chafer event on one serving line with one sauce and one dessert station", () => {
-    context.preferredEventId = String(appetizerEvent.id);
-    const html = render([event, appetizerEvent]);
+    context.requestedEventId = String(appetizerEvent.id);
+    const html = render([appetizerEvent], "", appetizerEvent.date);
     const serving = html.split('aria-label="Event serving layout"')[1].split("</section>")[0];
     const figure = serving.match(/<figure\b[\s\S]*?<\/figure>/)?.[0] ?? "";
     expect(serving.match(/<figure\b/g)).toHaveLength(1);

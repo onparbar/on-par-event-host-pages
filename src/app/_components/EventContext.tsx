@@ -77,7 +77,9 @@ export function EventContextProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const selectedEvent = stored && eventMatchesNavigation(stored, requestedId, requestedDate) ? stored : null;
+  // The standalone Set Up tab browses a day without resuming a remembered party.
+  const setupDayView = pathname === "/set-up" && !requestedId;
+  const selectedEvent = !setupDayView && stored && eventMatchesNavigation(stored, requestedId, requestedDate) ? stored : null;
   const setStaffName = useCallback((name: string) => {
     const safe = validatedStaffName(name);
     setStoredStaffName(safe);

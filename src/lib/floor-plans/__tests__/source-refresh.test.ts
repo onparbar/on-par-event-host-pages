@@ -48,6 +48,14 @@ async function refresh() {
 }
 
 describe("floor-plan provider refresh result", () => {
+  it("does not save a partial scheduled refresh over the existing staff floor plan", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const saved = await storage.save(document(), "Seed staff work.");
+    scheduleSync.mockResolvedValue(schedule({ tripleseat: "error", onParBookings: "success", reconnectTripleseat: true }));
+    await expect(refreshFloorPlanSources(DATE, storage, saved.version, { recordRollingSync: false })).rejects.toThrow("incomplete");
+    expect(await storage.get(DATE)).toEqual(saved);
+  });
+
   it("reports success only when event-plan and entertainment Tripleseat reads both succeeded", async () => {
     scheduleSync.mockResolvedValue(schedule({ tripleseat: "success", onParBookings: "success", reconnectTripleseat: false }));
     const payload = await refresh();
