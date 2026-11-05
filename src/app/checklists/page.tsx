@@ -45,6 +45,7 @@ export default async function ChecklistsPage({
     <ChecklistsClient
       activeEventIds={activeEventIds}
       events={checklistEvents}
+      initialRecords={eventPlanWindow.savedChecklistRecords ?? null}
       sourceWarning={eventPlanWindow.sourceWarning}
     />
   );

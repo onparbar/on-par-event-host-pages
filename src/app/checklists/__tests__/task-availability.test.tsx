@@ -19,7 +19,6 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
       if (hooks.checked) state.taskEvidence!["prepaid-drink-cards-labeled"] = { employeeName: "Earlier Staff", completedAt: "2026-10-27T14:29:00Z" };
     }
     if (index === 2) value[77].status = hooks.status;
-    if (index === 11) value = "ready";
     hooks.states[index] = value;
     return [value, vi.fn((next: unknown) => { value = typeof next === "function" ? next(value) : next; hooks.states[index] = value; })];
   },
@@ -46,7 +45,7 @@ function findTask(node: unknown, text: string): ReactElement<{ children: ReactEl
 
 function render(plan: ChecklistEvent = event) {
   hooks.index = 0;
-  return ChecklistsClient({ activeEventIds: [77], events: [plan] });
+  return ChecklistsClient({ activeEventIds: [77], events: [plan], initialRecords: [] });
 }
 function cardTask(plan: ChecklistEvent = event) {
   const row = findTask(render(plan), "Ensure any prepaid drink cards have been created and labeled")!;

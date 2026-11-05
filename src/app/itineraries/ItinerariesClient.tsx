@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { EventSelectionBridge, useEventContext } from "@/app/_components/EventContext";
 import { operationalEventFromPlan } from "@/lib/operations/event-context";
 import {
@@ -14,9 +14,12 @@ import { formatEventDate } from "@/lib/event-format";
 import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
 import { changedItinerarySections, itineraryDrinkLines, itineraryEntertainmentGroups } from "@/lib/itineraries/presentation";
 import type {
+  EventPlan,
   EventPlanOperationalNote,
   ItineraryAsset,
 } from "@/lib/event-plans/types";
+
+export type ItineraryChoice = Pick<EventPlan, "id" | "source_event_id" | "date" | "name" | "time" | "guest_count" | "rooms">;
 
 function compactTimeRange(value: string) {
   return value.replace(/\s*-\s*/g, " – ").replace(/\s+/g, " ");
@@ -188,43 +191,61 @@ export function ItineraryDashboard({ event, online }: { event: ItineraryAsset; o
 
 export default function ItinerariesClient({
   items,
-  initialEventId,
+  selectedItinerary,
 }: {
-  items: ItineraryAsset[];
-  initialEventId?: number;
+  items: ItineraryChoice[];
+  selectedItinerary: ItineraryAsset | null;
 }) {
   const router = useRouter();
-  const { preferredEventId, ready: eventContextReady, selectEvent } = useEventContext();
-  const activeEventId = preferredEventId ?? (initialEventId ? String(initialEventId) : null);
+  const { preferredEventId, requestedEventId, selectedEvent, ready: eventContextReady, selectEvent } = useEventContext();
+  const [navigating, startNavigation] = useTransition();
   const [refreshState, setRefreshState] = useState<
     "idle" | "refreshing" | "error"
   >("idle");
   const [isOnline, setIsOnline] = useState(true);
   const [changedSections, setChangedSections] = useState<Record<number, string[]>>({});
   const previousRevisions = useRef(new Map<number, NonNullable<ItineraryAsset["revision"]>>());
-  const activeEvent = activeEventId
-    ? items.find((event) => String(event.id) === activeEventId)
-    : eventContextReady ? items[0] : undefined;
+  const choice = preferredEventId
+    ? items.find((item) => (item.source_event_id === preferredEventId || String(item.id) === preferredEventId) && (!selectedEvent || item.date === selectedEvent.date))
+    : eventContextReady && selectedItinerary ? items.find((item) => item.id === selectedItinerary.id && item.date === selectedItinerary.date) : undefined;
+  const choiceLoaded = Boolean(choice && selectedItinerary && choice.id === selectedItinerary.id && choice.date === selectedItinerary.date && choice.source_event_id === selectedItinerary.source_event_id);
+  const activeEvent = choiceLoaded && !navigating ? selectedItinerary : null;
+  const rememberedChoice = preferredEventId && !requestedEventId && !choiceLoaded ? choice : undefined;
+  const itineraryDate = selectedItinerary?.date;
 
   useEffect(() => {
-    const changed: Record<number, string[]> = {};
-    for (const item of items) {
-      const previous = previousRevisions.current.get(item.id);
-      if (previous && item.revision) {
-        const sections = changedItinerarySections(previous, item.revision);
-        if (sections.length) changed[item.id] = sections;
-      }
-      if (item.revision) previousRevisions.current.set(item.id, item.revision);
+    if (!eventContextReady || !rememberedChoice) return;
+    startNavigation(() => selectEvent(operationalEventFromPlan(rememberedChoice)));
+  }, [eventContextReady, rememberedChoice, selectEvent]);
+
+  function openItinerary(item: ItineraryChoice) {
+    startNavigation(() => selectEvent(operationalEventFromPlan(item)));
+  }
+
+  useEffect(() => {
+    if (!selectedItinerary?.revision) return;
+    const { id, revision } = selectedItinerary;
+    const previous = previousRevisions.current.get(id);
+    if (previous) {
+      const sections = changedItinerarySections(previous, revision);
+      if (sections.length) setChangedSections((current) => ({ ...current, [id]: sections }));
     }
-    if (Object.keys(changed).length) setChangedSections((current) => ({ ...current, ...changed }));
-  }, [items]);
+    previousRevisions.current.set(id, revision);
+  }, [selectedItinerary]);
 
   useEffect(() => {
+    let lastRefreshAt = 0;
     const refresh = () => {
       setIsOnline(navigator.onLine);
-      if (navigator.onLine && document.visibilityState === "visible") router.refresh();
+      if (navigating || !navigator.onLine || document.visibilityState !== "visible" || Date.now() - lastRefreshAt < 1_000) return;
+      lastRefreshAt = Date.now();
+      router.refresh();
     };
     const offline = () => setIsOnline(false);
+    const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(ENTERTAINMENT_UPDATE_CHANNEL);
+    channel?.addEventListener("message", (message: MessageEvent<{ date?: string }>) => {
+      if (!itineraryDate || !message.data?.date || message.data.date === itineraryDate) refresh();
+    });
     setIsOnline(navigator.onLine);
     const timer = window.setInterval(refresh, 60_000);
     window.addEventListener("focus", refresh);
@@ -232,20 +253,14 @@ export default function ItinerariesClient({
     window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", refresh);
     return () => {
+      channel?.close();
       window.clearInterval(timer);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("online", refresh);
       window.removeEventListener("offline", offline);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [router]);
-
-  useEffect(() => {
-    if (typeof BroadcastChannel === "undefined") return;
-    const channel = new BroadcastChannel(ENTERTAINMENT_UPDATE_CHANNEL);
-    channel.addEventListener("message", () => router.refresh());
-    return () => channel.close();
-  }, [router]);
+  }, [router, itineraryDate, navigating]);
 
   async function refreshEventPlans() {
     setRefreshState("refreshing");
@@ -265,8 +280,8 @@ export default function ItinerariesClient({
   if (!activeEvent) return (
     <PortalShell mainClassName="page itinerary-page" sectionSubtitle="Event details" sectionTitle="Itineraries">
       <PortalPageHeader description="Choose an available event to review its current itinerary." eyebrow="Event Host workspace" title="Itineraries" />
-      <p role="status">{!eventContextReady ? "Loading your selected event…" : activeEventId ? "The selected event is not available in this itinerary window. Choose another event below; no different party has been selected automatically." : "No itineraries are available."}</p>
-      {items.map((event) => <button className="event-switcher" key={event.id} onClick={() => selectEvent(operationalEventFromPlan(event))} type="button">{event.name} · {formatEventDate(event.date)}</button>)}
+      <p role="status">{!eventContextReady || navigating || rememberedChoice ? "Loading your selected itinerary…" : preferredEventId ? "The selected event is not available in this itinerary window. Choose another event below; no different party has been selected automatically." : "No itineraries are available for the selected day."}</p>
+      {items.map((event) => <button className="event-switcher" key={event.id} onClick={() => openItinerary(event)} type="button">{event.name} · {formatEventDate(event.date)}</button>)}
     </PortalShell>
   );
 
@@ -327,7 +342,7 @@ export default function ItinerariesClient({
             <button
               className={`event-switcher${isActive ? " active" : ""}`}
               key={event.id}
-              onClick={() => selectEvent(operationalEventFromPlan(event))}
+              onClick={() => openItinerary(event)}
               type="button"
             >
               <span>{event.name}</span>

@@ -129,6 +129,7 @@ describe("read-only staff event feed", () => {
       loadPlans: vi.fn().mockResolvedValue({ plans: [], sync: null }), findPlan,
       loadChecklists: vi.fn().mockResolvedValue([record, submitted, moved]), vipClient: { configured: false, fetchRange: vi.fn() } });
     expect(result.plans).toEqual([old]); expect(result.unfinishedEventIds).toEqual([old.id]);
+    expect(result.savedChecklistRecords).toEqual([record]);
     expect(findPlan).toHaveBeenCalledWith(old.id); expect(findPlan).not.toHaveBeenCalledWith(submitted.eventId);
     expect(result.sourceWarning).toContain("No different party was substituted");
   });
@@ -157,6 +158,26 @@ describe("read-only staff event feed", () => {
     expect(loadPlans).toHaveBeenCalledWith({ now: new Date(`${plan.date}T12:00:00Z`), window: { startDate: plan.date, endDate: plan.date } });
     expect(fetchRange).toHaveBeenCalledExactlyOnceWith(plan.date, plan.date); expect(findPlan).not.toHaveBeenCalled();
     expect(result.plans).toHaveLength(2);
+    expect(result.savedChecklistRecords).toEqual([]);
+  });
+  it("reuses one saved-record read and sends only rows matching the exact plan date and ID", async () => {
+    const second = { ...plan, id: 456 };
+    const record: ChecklistRecord = { ...defaultChecklistState(plan.date), eventId: plan.id, eventName: plan.name,
+      eventDate: plan.date, poc: "", status: "submitted", updatedAt: "2026-10-24T01:00:00Z", submittedAt: "2026-10-24T01:00:00Z" };
+    const loadChecklists = vi.fn().mockResolvedValue([record, { ...record, eventId: 0 }, { ...record, eventId: second.id, eventDate: "2026-10-24" }]);
+    const options = { exactDate: true, includeUnsubmitted: true, loadPlans: vi.fn().mockResolvedValue({ plans: [plan, second], sync: null }),
+      loadChecklists, vipClient: { configured: false, fetchRange: vi.fn() } };
+    const result = await loadStaffEventPlans(plan.date, options);
+    expect(loadChecklists).toHaveBeenCalledOnce();
+    expect(result.savedChecklistRecords).toEqual([record]);
+    expect(result.unfinishedEventIds).toEqual([]);
+
+    loadChecklists.mockRejectedValue(new Error("Private database failure"));
+    const failed = await loadStaffEventPlans(plan.date, options);
+    expect(failed.plans).toEqual(result.plans);
+    expect(failed.savedChecklistRecords).toBeNull();
+    expect(failed.sourceWarning).toContain("Saved unfinished checklists could not be loaded");
+    expect(failed.sourceWarning).not.toContain("Private database failure");
   });
   it("recovers a past VIP draft from its saved exact date and fails closed on an unavailable source", async () => {
     const sourceId = vipPrepExternalId(reservation);

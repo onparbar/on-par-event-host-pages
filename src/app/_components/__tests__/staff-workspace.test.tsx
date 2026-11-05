@@ -21,6 +21,7 @@ vi.mock("../EventWorkspace", () => ({ EventWorkspaceReminders: () => createEleme
 
 import { PortalHeader, PortalShell } from "../PortalShell";
 import { EventCommandCenter } from "../EventCommandCenter";
+import Loading from "../../loading";
 
 const plan: EventPlan = { id: 123, name: "Staff training", date: "2026-10-23", rooms: ["VIP 1"], time: "2:00 PM – 4:00 PM", day: "Friday", guest_count: 20, color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified" };
 
@@ -40,6 +41,13 @@ describe("staff event workspace shell", () => {
   it("keeps the event name, full time range, guests, area, and employee in the header", () => {
     const html = renderToStaticMarkup(createElement(PortalHeader, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace" }));
     for (const text of ["Staff training", "2:00 PM – 4:00 PM", "20 guests", "VIP 1", "Employee: Carlos", "Change Staff", "Switch Event"]) expect(html).toContain(text);
+  });
+  it("keeps navigation available while loading without showing the old event or its controls", () => {
+    const html = renderToStaticMarkup(createElement(Loading));
+    expect(html).toContain('aria-label="Portal navigation"');
+    expect(html).toContain('role="status">Loading this section…');
+    expect(html).not.toContain("Staff training");
+    expect(html).not.toContain('aria-label="Event reminders"');
   });
   it("opens the main Floor Plans tab with only the date while keeping the selected-event sidebar link exact", () => {
     const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace", children: "Tasks" }));

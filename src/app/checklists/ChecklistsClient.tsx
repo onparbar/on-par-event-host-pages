@@ -59,25 +59,33 @@ type ChecklistSaveResponse = {
   };
 };
 
-function buildInitialChecklistMap(events: readonly ChecklistEvent[]) {
-  return Object.fromEntries(events.map((event) => [event.id, defaultChecklistState(event.date)]));
+const EMPTY_META: EventChecklistMeta = { status: "draft", updatedAt: null, submittedAt: null };
+
+function recordForEvent(records: ReadonlyMap<number, ChecklistRecord>, event: ChecklistEvent) {
+  const record = records.get(event.id);
+  return record?.eventDate === event.date ? record : undefined;
 }
 
-function buildInitialMetaMap(events: readonly ChecklistEvent[]) {
-  return Object.fromEntries(
-    events.map((event) => [
-      event.id,
-      {
-        status: "draft" as ChecklistRecordStatus,
-        updatedAt: null,
-        submittedAt: null,
-      },
-    ]),
-  );
+function buildInitialChecklistMap(events: readonly ChecklistEvent[], records: ReadonlyMap<number, ChecklistRecord>) {
+  return Object.fromEntries(events.map((event) => {
+    const record = recordForEvent(records, event);
+    return [event.id, record ? mergeRecordState(record, event) : defaultChecklistState(event.date)];
+  }));
 }
 
-function buildInitialSaveStateMap(events: readonly ChecklistEvent[]) {
-  return Object.fromEntries(events.map((event) => [event.id, "idle" as SaveState]));
+function buildInitialMetaMap(events: readonly ChecklistEvent[], records: ReadonlyMap<number, ChecklistRecord>) {
+  return Object.fromEntries(events.map((event) => {
+    const record = recordForEvent(records, event);
+    return [event.id, record ? metaFromRecord(record) : { ...EMPTY_META }];
+  }));
+}
+
+function saveStateForRecord(record?: ChecklistRecord): SaveState {
+  return record?.status === "submitted" ? "submitted" : record?.updatedAt ? "saved" : "idle";
+}
+
+function snapshotIsCurrent(record: ChecklistRecord | undefined, previous: EventChecklistMeta | undefined) {
+  return !previous?.updatedAt || Boolean(record?.updatedAt && Date.parse(record.updatedAt) >= Date.parse(previous.updatedAt));
 }
 
 function buildInitialKitchenSyncMap(events: readonly ChecklistEvent[]) {
@@ -130,15 +138,18 @@ function mergeRecordState(record: ChecklistRecord, event: ChecklistEvent) {
 export default function ChecklistsClient({
   activeEventIds,
   events,
+  initialRecords,
   workspace = "checklist",
   sourceWarning = "",
 }: {
   activeEventIds: number[];
   events: ChecklistEvent[];
+  initialRecords: ChecklistRecord[] | null;
   workspace?: ChecklistWorkspace;
   sourceWarning?: string;
 }) {
   const { preferredEventId, ready: contextReady, selectEvent, clearEvent, staffName } = useEventContext();
+  const savedRecordsById = useMemo(() => new Map(initialRecords?.map((record) => [record.eventId, record])), [initialRecords]);
   const eligibleEvents = useMemo(
     () =>
       activeEventIds
@@ -150,13 +161,13 @@ export default function ChecklistsClient({
   );
   const [activeEventId, setActiveEventId] = useState<number>(eligibleEvents[0]?.id ?? 0);
   const [checklistsByEvent, setChecklistsByEvent] = useState<Record<number, EventChecklistState>>(
-    () => buildInitialChecklistMap(events),
+    () => buildInitialChecklistMap(events, savedRecordsById),
   );
   const [metaByEvent, setMetaByEvent] = useState<Record<number, EventChecklistMeta>>(
-    () => buildInitialMetaMap(events),
+    () => buildInitialMetaMap(events, savedRecordsById),
   );
   const [saveStateByEvent, setSaveStateByEvent] = useState<Record<number, SaveState>>(
-    () => buildInitialSaveStateMap(events),
+    () => Object.fromEntries(events.map((event) => [event.id, saveStateForRecord(recordForEvent(savedRecordsById, event))])),
   );
   const [kitchenSyncByEvent, setKitchenSyncByEvent] =
     useState<Record<number, KitchenSyncState>>(
@@ -175,14 +186,15 @@ export default function ChecklistsClient({
       ...(current[eventId] ?? []).filter((prior) => !items.some((item) => item.requestId === prior.requestId)), ...items,
     ] }));
   }
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const loadState = initialRecords === null ? "error" : "ready";
   const [saveErrorByEvent, setSaveErrorByEvent] = useState<Record<number, string>>({});
   const [conflictByEvent, setConflictByEvent] = useState<Record<number, boolean>>({});
+  const [navigationBlocked, setNavigationBlocked] = useState(false);
   const [warningConfirmationByEvent, setWarningConfirmationByEvent] = useState<Record<number, { sourceFingerprint: string; employeeName: string }>>({});
   const inFlightEventIds = useRef(new Set<number>());
   const finalSubmissionEventIds = useRef(new Set<number>());
   const metaByEventRef = useRef(metaByEvent);
-  metaByEventRef.current = metaByEvent;
+  const appliedSnapshot = useRef({ events, savedRecordsById });
   const revisionByEventRef = useRef<Record<number, number>>(
     buildInitialRevisionMap(events),
   );
@@ -192,13 +204,26 @@ export default function ChecklistsClient({
   const pageDescription = isAddOnWorkspace
     ? "Choose an item, enter the quantity, and submit."
     : "Complete event tasks with drafts saved automatically to the shared event record.";
+  const draftSavePending = dirtyEventIds.some((eventId) => inFlightEventIds.current.has(eventId) || (
+    loadState === "ready" && !conflictByEvent[eventId] && saveStateByEvent[eventId] !== "error" &&
+    metaByEvent[eventId]?.status !== "submitted" && events.some((event) => event.id === eventId)
+  ));
+
+  function beforeNavigate() {
+    if (draftSavePending) {
+      setNavigationBlocked(true);
+      return false;
+    }
+    return !dirtyEventIds.length || window.confirm("This tab has unsaved checklist changes. Leave and discard those changes?");
+  }
 
   useEffect(() => {
     function receiveWorkspaceUpdate(event: Event) {
       const record = (event as CustomEvent<{ record?: ChecklistRecord }>).detail?.record;
       if (!record) return;
       const plan = events.find((item) => item.id === record.eventId);
-      if (!plan || metaByEventRef.current[record.eventId]?.updatedAt === record.updatedAt) return;
+      const previous = metaByEventRef.current[record.eventId];
+      if (!plan || plan.date !== record.eventDate || previous?.updatedAt === record.updatedAt || !snapshotIsCurrent(record, previous)) return;
       if (dirtyEventIds.includes(record.eventId) || inFlightEventIds.current.has(record.eventId)) {
         setConflictByEvent((current) => ({ ...current, [record.eventId]: true }));
         return;
@@ -249,67 +274,30 @@ export default function ChecklistsClient({
   }, [pendingFoodByItem]);
 
   useEffect(() => {
-    let isCancelled = false;
+    const previous = appliedSnapshot.current;
+    if (previous.events === events && previous.savedRecordsById === savedRecordsById) return;
+    appliedSnapshot.current = { events, savedRecordsById };
+    if (loadState !== "ready") return;
 
-    async function loadSavedChecklists() {
-      try {
-        const response = await fetch("/api/checklists", {
-          cache: "no-store",
-        });
+    // A server navigation may have started before a local edit, save, or live refresh.
+    const updates = events.flatMap((event) => {
+      if ((revisionByEventRef.current[event.id] ?? 0) > 0 || inFlightEventIds.current.has(event.id)) return [];
+      const record = recordForEvent(savedRecordsById, event);
+      if (!snapshotIsCurrent(record, metaByEventRef.current[event.id])) return [];
+      return [{ id: event.id, checklist: record ? mergeRecordState(record, event) : defaultChecklistState(event.date),
+        meta: record ? metaFromRecord(record) : { ...EMPTY_META }, save: saveStateForRecord(record) }];
+    });
+    if (!updates.length) return;
+    const nextMeta = Object.fromEntries(updates.map(({ id, meta }) => [id, meta]));
+    metaByEventRef.current = { ...metaByEventRef.current, ...nextMeta };
+    setChecklistsByEvent((current) => ({ ...current, ...Object.fromEntries(updates.map(({ id, checklist }) => [id, checklist])) }));
+    setMetaByEvent((current) => ({ ...current, ...nextMeta }));
+    setSaveStateByEvent((current) => ({ ...current, ...Object.fromEntries(updates.map(({ id, save }) => [id, save])) }));
+  }, [events, loadState, savedRecordsById]);
 
-        if (!response.ok) {
-          throw new Error("Unable to load saved checklists.");
-        }
-
-        const payload = (await response.json()) as { records?: ChecklistRecord[] };
-        const recordsById = new Map((payload.records ?? []).map((record) => [record.eventId, record]));
-        if (isCancelled) {
-          return;
-        }
-
-        setChecklistsByEvent((current) =>
-          Object.fromEntries(
-            events.map((event) => {
-              const record = recordsById.get(event.id);
-              if ((revisionByEventRef.current[event.id] ?? 0) > 0 || inFlightEventIds.current.has(event.id)) return [event.id, current[event.id] ?? defaultChecklistState(event.date)];
-              return [event.id, record ? mergeRecordState(record, event) : current[event.id] ?? defaultChecklistState(event.date)];
-            }),
-          ),
-        );
-        setMetaByEvent((current) => {
-          const next = { ...current };
-          for (const event of events) {
-            if ((revisionByEventRef.current[event.id] ?? 0) > 0 || inFlightEventIds.current.has(event.id)) continue;
-            const record = recordsById.get(event.id);
-            if (record) {
-              next[event.id] = metaFromRecord(record);
-            }
-          }
-          return next;
-        });
-        setSaveStateByEvent((current) => {
-          const next = { ...current };
-          for (const event of events) {
-            if ((revisionByEventRef.current[event.id] ?? 0) > 0 || inFlightEventIds.current.has(event.id)) continue;
-            const record = recordsById.get(event.id);
-            next[event.id] = record?.status === "submitted" ? "submitted" : "idle";
-          }
-          return next;
-        });
-        setLoadState("ready");
-      } catch {
-        if (!isCancelled) {
-          setLoadState("error");
-        }
-      }
-    }
-
-    void loadSavedChecklists();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [events]);
+  useEffect(() => {
+    if (!draftSavePending) setNavigationBlocked(false);
+  }, [draftSavePending]);
 
   const visibleEvents = useMemo(
     () =>
@@ -340,6 +328,7 @@ export default function ChecklistsClient({
 
   const saveDrafts = useEffectEvent(async (eventIds: number[], options?: { syncFoodAddOns: false }) => {
     const savedEventIds = new Set<number>();
+    if (loadState !== "ready") return savedEventIds;
     const availableIds = eventIds.filter((eventId) => !conflictByEvent[eventId] && !inFlightEventIds.current.has(eventId) &&
       metaByEvent[eventId]?.status !== "submitted" && events.some((event) => event.id === eventId) && checklistsByEvent[eventId]);
     const revisionSnapshot = Object.fromEntries(eventIds.map((eventId) => [eventId, revisionByEventRef.current[eventId] ?? 0]));
@@ -480,7 +469,7 @@ export default function ChecklistsClient({
     const event = events.find((item) => item.id === eventId);
     const checklist = checklistsByEvent[eventId];
 
-    if (!event || !checklist || conflictByEvent[eventId] || inFlightEventIds.current.has(eventId)) {
+    if (loadState !== "ready" || !event || !checklist || metaByEventRef.current[eventId]?.status === "submitted" || conflictByEvent[eventId] || inFlightEventIds.current.has(eventId)) {
       return;
     }
     const currentReadiness = checklistReadiness(event, checklist);
@@ -592,7 +581,8 @@ export default function ChecklistsClient({
         if (cancelled || inFlightEventIds.current.has(pollingEventId!) || (revisionByEventRef.current[pollingEventId!] ?? 0) !== revision) return;
         const record = body.records?.find((item) => item.eventId === pollingEventId);
         const event = events.find((item) => item.id === pollingEventId);
-        if (!record || !event || metaByEventRef.current[record.eventId]?.updatedAt === record.updatedAt) return;
+        const previous = metaByEventRef.current[pollingEventId!];
+        if (!record || !event || record.eventDate !== event.date || previous?.updatedAt === record.updatedAt || !snapshotIsCurrent(record, previous)) return;
         setChecklistsByEvent((current) => ({ ...current, [record.eventId]: mergeRecordState(record, event) }));
         metaByEventRef.current[record.eventId] = metaFromRecord(record);
         setMetaByEvent((current) => ({ ...current, [record.eventId]: metaFromRecord(record) }));
@@ -615,8 +605,13 @@ export default function ChecklistsClient({
     return <PortalShell mainClassName="page checklist-page" sectionTitle={sectionTitle} sectionSubtitle="Event workspace"><p role="status">Loading the selected event workspace…</p></PortalShell>;
   }
 
+  const savedRecordsError = loadState === "error" ? <section className="checklist-meta-card" role="alert">
+    <strong>{isAddOnWorkspace ? "Unable to load saved add-ons. Ordering is paused." : "Unable to load saved checklists. Editing is paused."}</strong>
+    <button type="button" onClick={() => { if (!dirtyEventIds.length || window.confirm("Discard this screen’s unsaved drafts and reload?")) window.location.reload(); }}>{isAddOnWorkspace ? "Reload saved add-ons" : "Reload saved checklists"}</button>
+  </section> : null;
+
   if (preferredEventId && !checklistEventForSelection(visibleEvents, preferredEventId, 0)) {
-    return <PortalShell mainClassName="page checklist-page" sectionTitle={sectionTitle} sectionSubtitle="Selected event"><section className="checklist-meta-card"><strong>The selected event is not available in this active workspace.</strong><p>It may already be submitted or outside the active event window. No other party has been selected automatically.</p><button type="button" onClick={clearEvent}>Choose another event</button></section></PortalShell>;
+    return <PortalShell mainClassName="page checklist-page" sectionTitle={sectionTitle} sectionSubtitle="Selected event">{savedRecordsError}<section className="checklist-meta-card"><strong>The selected event is not available in this active workspace.</strong><p>It may already be submitted or outside the active event window. No other party has been selected automatically.</p><button type="button" onClick={clearEvent}>Choose another event</button></section></PortalShell>;
   }
 
   if (!visibleEvents.length) {
@@ -636,6 +631,8 @@ export default function ChecklistsClient({
           eyebrow="Event Host workspace"
           title={pageTitle}
         />
+        {savedRecordsError}
+        {sourceWarning ? <section className="checklist-meta-card" role="alert">{sourceWarning}</section> : null}
         <section className="checklist-meta-card">
           <span className="eyebrow">{isAddOnWorkspace ? "Add-On Queue" : "Checklist Queue"}</span>
           <strong>
@@ -650,7 +647,7 @@ export default function ChecklistsClient({
   }
 
   if (!activeEvent || !activeChecklist || !activeMeta) {
-    return null;
+    return <PortalShell mainClassName="page checklist-page" sectionTitle={sectionTitle} sectionSubtitle="Event workspace"><p role="status">Loading the selected event workspace…</p></PortalShell>;
   }
 
   const isSubmitted = activeMeta.status === "submitted";
@@ -666,8 +663,8 @@ export default function ChecklistsClient({
   const progress = readiness;
 
   let saveMessage = "Draft not saved yet.";
-  if (loadState === "loading") {
-    saveMessage = "Loading saved checklist…";
+  if (loadState === "error") {
+    saveMessage = "Saved checklists unavailable. Editing is paused.";
   } else if (activeSaveState === "saving") {
     saveMessage = "Saving draft to Supabase…";
   } else if (activeSaveState === "submitting") {
@@ -676,12 +673,13 @@ export default function ChecklistsClient({
     saveMessage = `Submitted ${formatTimestamp(activeMeta.submittedAt)}`;
   } else if (activeSaveState === "saved" && activeMeta.updatedAt) {
     saveMessage = `Draft saved ${formatTimestamp(activeMeta.updatedAt)}`;
-  } else if (activeSaveState === "error" || loadState === "error") {
+  } else if (activeSaveState === "error") {
     saveMessage = saveErrorByEvent[activeEvent.id] ?? "Save unavailable. Your draft is retained on this screen; do not close it before resolving the error.";
   }
 
   return (
     <PortalShell
+      beforeNavigate={beforeNavigate}
       mainClassName="page checklist-page"
       sectionSubtitle={isAddOnWorkspace ? "Food & entertainment" : "Tablet workflow"}
       sectionTitle={sectionTitle}
@@ -702,6 +700,8 @@ export default function ChecklistsClient({
         title={pageTitle}
       />
       {sourceWarning ? <section className="checklist-meta-card" role="alert">{sourceWarning}</section> : null}
+      {!isAddOnWorkspace ? savedRecordsError : null}
+      {navigationBlocked && draftSavePending ? <p className="portal-navigation-notice" role="status">Please wait for your checklist draft to save before switching tabs.</p> : null}
 
       {conflictByEvent[activeEvent.id] ? <section className="checklist-meta-card" role="alert">
         <strong>A newer saved version exists. Your draft is still here.</strong>
@@ -881,10 +881,7 @@ export default function ChecklistsClient({
           </section>
         ) : (
           <section aria-label="Add-on ordering">
-            {loadState !== "ready" ? <div className="checklist-meta-card" role={loadState === "error" ? "alert" : "status"}>
-              <strong>{loadState === "error" ? "Unable to load saved add-ons. Ordering is paused." : "Loading saved add-ons…"}</strong>
-              {loadState === "error" ? <button type="button" onClick={() => window.location.reload()}>Reload saved add-ons</button> : null}
-            </div> : null}
+            {savedRecordsError}
             <AddOnQuickOrder
               key={`${activeEvent.id}:${activeEvent.date}`}
               eventName={activeEvent.name}
@@ -910,7 +907,7 @@ export default function ChecklistsClient({
   );
 
   function updateEventChecklist(eventId: number, updater: (current: EventChecklistState) => EventChecklistState) {
-    if (metaByEvent[eventId]?.status === "submitted" || finalSubmissionEventIds.current.has(eventId)) {
+    if (loadState !== "ready" || metaByEventRef.current[eventId]?.status === "submitted" || finalSubmissionEventIds.current.has(eventId)) {
       return;
     }
 
@@ -1035,15 +1032,19 @@ export default function ChecklistsClient({
       delete next[eventId];
       return next;
     });
-    if (inFlightEventIds.current.has(eventId) || !window.confirm("Discard this screen’s unsaved draft and load the latest saved checklist?")) return;
+    const event = events.find((item) => item.id === eventId);
+    if (!event || inFlightEventIds.current.has(eventId) || !window.confirm("Discard this screen’s unsaved draft and load the latest saved checklist?")) return;
+    const revision = revisionByEventRef.current[eventId] ?? 0;
     try {
-      const response = await fetch("/api/checklists", { cache: "no-store" });
+      const response = await fetch(`/api/checklists?eventId=${encodeURIComponent(String(eventId))}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Unable to reload. Your draft has been kept.");
       const payload = await response.json() as { records?: ChecklistRecord[] };
       const record = payload.records?.find((item) => item.eventId === eventId);
-      const event = events.find((item) => item.id === eventId);
-      if (!event) return;
-      const meta = record ? metaFromRecord(record) : { status: "draft" as const, updatedAt: null, submittedAt: null };
+      if (inFlightEventIds.current.has(eventId) || (revisionByEventRef.current[eventId] ?? 0) !== revision ||
+        (record && record.eventDate !== event.date) || !snapshotIsCurrent(record, metaByEventRef.current[eventId])) {
+        throw new Error("A newer draft or different event was detected. Your draft has been kept.");
+      }
+      const meta = record ? metaFromRecord(record) : { ...EMPTY_META };
       metaByEventRef.current[eventId] = meta;
       revisionByEventRef.current[eventId] = 0;
       setMetaByEvent((current) => ({ ...current, [eventId]: meta }));

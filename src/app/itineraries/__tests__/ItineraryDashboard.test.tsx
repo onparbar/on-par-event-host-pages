@@ -6,10 +6,12 @@ import { operationalEventFromPlan } from "@/lib/operations/event-context";
 import ItinerariesClient, { ItineraryDashboard } from "../ItinerariesClient";
 
 const event: ItineraryAsset = { id: 123, name: "Training event", date: "2026-10-21", day: "Wednesday", time: "6:00 PM - 8:00 PM", guest_count: 20, rooms: ["VIP 1"], color: "#297025", food: ["Dessert Platter: 1"], drink_options: [], entertainment: [], verification_status: "Needs review" };
+const anotherEvent: ItineraryAsset = { ...event, id: 124, name: "Another training event", date: "2026-10-22" };
+const context = vi.hoisted(() => ({ requestedEventId: "123" as string | null, preferredEventId: "123", ready: true }));
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/itineraries", useRouter: () => ({}) }));
 vi.mock("@/app/_components/EventContext", () => ({
-  useEventContext: () => ({ ready: true, selectedEvent: operationalEventFromPlan(event), requestedEventId: "123", preferredEventId: "123", staffName: "Training staff", eventHref: (path: string) => path }),
+  useEventContext: () => ({ ...context, selectedEvent: context.ready ? operationalEventFromPlan(context.preferredEventId === "123" ? event : anotherEvent) : null, staffName: "Training staff", eventHref: (path: string) => path }),
   EventSelectionBridge: () => null,
 }));
 vi.mock("@/app/_components/EventWorkspace", () => ({
@@ -18,12 +20,40 @@ vi.mock("@/app/_components/EventWorkspace", () => ({
 }));
 
 it("keeps the printable itinerary and staff reminders without the operating timeline card", () => {
-  const html = renderToStaticMarkup(createElement(ItinerariesClient, { items: [event] }));
+  const html = renderToStaticMarkup(createElement(ItinerariesClient, { items: [event, anotherEvent], selectedItinerary: event }));
   expect(html).toContain("Guest Experience Plan");
   expect(html).toContain("Dessert Platter: 1");
+  expect(html).toContain(anotherEvent.name);
   expect(html).toContain("Print review copy");
   expect(html).toContain('aria-label="Event reminders"');
   expect(html).not.toContain('aria-label="Event operating itinerary"');
+});
+
+it("shows a loading state for a remembered event until its own details load, with no wrong-event print control", () => {
+  context.requestedEventId = null;
+  context.preferredEventId = "124";
+  try {
+    const html = renderToStaticMarkup(createElement(ItinerariesClient, { items: [event, anotherEvent], selectedItinerary: event }));
+    expect(html).toContain("Loading your selected itinerary…");
+    expect(html).toContain(anotherEvent.name);
+    expect(html).not.toContain("Guest Experience Plan");
+    expect(html).not.toContain("Print review copy");
+  } finally {
+    context.requestedEventId = "123";
+    context.preferredEventId = "123";
+  }
+});
+
+it("renders the explicit loaded itinerary before browser session preferences resolve", () => {
+  context.ready = false;
+  try {
+    const html = renderToStaticMarkup(createElement(ItinerariesClient, { items: [event, anotherEvent], selectedItinerary: event }));
+    expect(html).toContain("Guest Experience Plan");
+    expect(html).toContain("Print review copy");
+    expect(html).not.toContain("Loading your selected itinerary…");
+  } finally {
+    context.ready = true;
+  }
 });
 
 describe("printable itinerary card", () => {

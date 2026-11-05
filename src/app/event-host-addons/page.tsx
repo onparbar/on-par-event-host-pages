@@ -33,6 +33,7 @@ export default async function EventHostAddOnsPage({ searchParams }: { searchPara
     <ChecklistsClient
       activeEventIds={activeEventIds}
       events={checklistEvents}
+      initialRecords={eventPlanWindow.savedChecklistRecords ?? null}
       workspace="addons"
       sourceWarning={eventPlanWindow.sourceWarning}
     />

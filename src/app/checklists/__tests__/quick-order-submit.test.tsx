@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import type { ChecklistEvent } from "@/lib/checklist-events";
 import type { ChecklistRecord, EventChecklistState } from "@/lib/checklist-model";
+import { defaultChecklistState } from "@/lib/checklist-model";
 import AddOnQuickOrder, { type QuickOrderInput } from "../AddOnQuickOrder";
 import ChecklistsClient from "../ChecklistsClient";
 
@@ -22,19 +23,7 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
   useState: (initial: unknown) => {
     const index = hooks.stateIndex++;
     if (!Object.hasOwn(hooks.states, index)) {
-      let value = typeof initial === "function" ? initial() : initial;
-      if (index === 1) for (const state of Object.values(value) as EventChecklistState[]) {
-        state.bwa = "Saved BWA"; state.poc = "Saved POC";
-        state.extrasAdded = "Existing staff notes";
-        state.remainingDrinkCardBalance = "Existing balance note";
-        state.tasks["shift-lead-checkout"] = true;
-        state.taskEvidence!["shift-lead-checkout"] = { employeeName: "Earlier Staff", completedAt: "2026-11-03T14:00:00Z" };
-        state.food.wings.quantity = "2";
-        state.entertainment["mini-golf"].quantity = "5";
-      }
-      if (index === 2) for (const meta of Object.values(value) as { updatedAt: string | null }[]) meta.updatedAt = "2026-11-03T15:00:00Z";
-      if (index === 11) value = "ready";
-      hooks.states[index] = value;
+      hooks.states[index] = typeof initial === "function" ? initial() : initial;
     }
     return [hooks.states[index], (next: unknown) => { hooks.states[index] = typeof next === "function" ? next(hooks.states[index]) : next; }];
   },
@@ -47,7 +36,22 @@ const event: ChecklistEvent = { id: 77, name: "Redacted event", date: "2026-11-0
   rooms: ["VIP 1"], guest_count: 20, color: "#18332F", food: ["1 × Wing Platter"], drink_options: [], entertainment: [], verification_status: "Verified",
   source_updated_at: "2026-11-03T14:00:00Z", poc: "" };
 const otherEvent: ChecklistEvent = { ...event, id: 88, source_event_id: "vip-redacted-booking", name: "Other redacted VIP" };
+const events = [event, otherEvent];
+let initialRecords: ChecklistRecord[] | null;
 const foodOrder: QuickOrderInput = { category: "food", key: "wings", quantity: "3", panSize: "1/2", notes: "Sauce on side", selectedRateKey: "sun-thu", manualPrice: "" };
+
+function initialRecord(event: ChecklistEvent): ChecklistRecord {
+  const state = defaultChecklistState(event.date);
+  state.bwa = "Saved BWA"; state.poc = "Saved POC";
+  state.extrasAdded = "Existing staff notes";
+  state.remainingDrinkCardBalance = "Existing balance note";
+  state.tasks["shift-lead-checkout"] = true;
+  state.taskEvidence!["shift-lead-checkout"] = { employeeName: "Earlier Staff", completedAt: "2026-11-03T14:00:00Z" };
+  state.food.wings.quantity = "2";
+  state.entertainment["mini-golf"].quantity = "5";
+  return { ...state, eventId: event.id, eventName: event.name, eventDate: event.date, poc: "Saved POC",
+    status: "draft", updatedAt: "2026-11-03T15:00:00Z", submittedAt: null };
+}
 
 function findElement(node: unknown, match: (element: ReactElement<any>) => boolean): ReactElement<any> | null {
   if (!node || typeof node !== "object") return null;
@@ -61,9 +65,9 @@ function treeText(node: unknown): string {
   if (Array.isArray(node)) return node.map(treeText).join(" ");
   return node && typeof node === "object" ? treeText((node as ReactElement<any>).props?.children) : "";
 }
-function render() {
+function render(workspace: "addons" | "checklist" = "addons") {
   hooks.stateIndex = 0; hooks.refIndex = 0; hooks.effects = [];
-  return ChecklistsClient({ activeEventIds: [77, 88], events: [event, otherEvent], workspace: "addons" })!;
+  return ChecklistsClient({ activeEventIds: [77, 88], events, initialRecords, workspace })!;
 }
 function quickOrder() { return findElement(render(), (element) => element.type === AddOnQuickOrder)!; }
 function submit(order = foodOrder) { return quickOrder().props.onSubmit(order) as Promise<string>; }
@@ -82,11 +86,72 @@ function acceptFetch() {
 beforeEach(() => {
   hooks.states = []; hooks.refs = []; hooks.timers = []; hooks.effects = [];
   hooks.stateIndex = 0; hooks.refIndex = 0; hooks.staffName = "Brooke"; hooks.preferredEventId = null;
+  initialRecords = events.map(initialRecord);
   vi.stubGlobal("window", { dispatchEvent: vi.fn(), location: { reload: vi.fn() }, setTimeout: vi.fn((callback) => { hooks.timers.push(callback); return hooks.timers.length; }), clearTimeout: vi.fn() });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("simplified add-on explicit submission", () => {
+  it("uses saved server data immediately without fetching all checklist records again", () => {
+    const fetch = acceptFetch();
+    const tree = render();
+    expect(findElement(tree, (element) => element.type === AddOnQuickOrder)?.props.disabled).toBe(false);
+    expect(currentState().food.wings.quantity).toBe("2");
+    expect(hooks.states[2][77].updatedAt).toBe("2026-11-03T15:00:00Z");
+    hooks.effects[2]();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps a newer cross-tab record when a slower read or navigation snapshot arrives", async () => {
+    const initial = initialRecord(event);
+    const newest = { ...initial, bwa: "Newer staff", updatedAt: "2026-11-03T15:02:00Z" };
+    const older = { ...initial, bwa: "Older staff", updatedAt: "2026-11-03T15:01:00Z" };
+    const fetch = vi.fn().mockResolvedValue(Response.json({ records: [older] }));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("document", { visibilityState: "visible" });
+    const listeners = new Map<string, (event?: Event) => Promise<void> | void>();
+    Object.assign(window, { addEventListener: (name: string, listener: (event?: Event) => Promise<void> | void) => listeners.set(name, listener), setInterval: vi.fn() });
+
+    render();
+    hooks.effects[0]();
+    hooks.effects.at(-1)!();
+    const pending = listeners.get("focus")!();
+    listeners.get("event-host:workspace-updated")!({ detail: { record: newest } } as CustomEvent);
+    await pending;
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/checklists?eventId=77", { cache: "no-store" });
+    expect(currentState().bwa).toBe("Newer staff");
+
+    initialRecords = [older];
+    render();
+    hooks.effects[2]();
+    expect(currentState().bwa).toBe("Newer staff");
+    expect(hooks.states[2][77].updatedAt).toBe(newest.updatedAt);
+  });
+
+  it("retains a local draft and blocks a tab switch while its autosave is pending", () => {
+    const tree = render("checklist");
+    expect(tree.props.beforeNavigate()).toBe(true);
+    findElement(tree, (element) => element.props?.label === "BWA")!.props.onChange("Unsaved BWA");
+    initialRecords = [{ ...initialRecord(event), bwa: "Different saved BWA", updatedAt: "2026-11-03T15:02:00Z" }];
+    expect(render("checklist").props.beforeNavigate()).toBe(false);
+    hooks.effects[2]();
+    expect(currentState().bwa).toBe("Unsaved BWA");
+    expect(treeText(render("checklist"))).toContain("Please wait for your checklist draft to save before switching tabs.");
+  });
+
+  it("asks before leaving a dirty draft that cannot currently save", () => {
+    const tree = render("checklist");
+    findElement(tree, (element) => element.props?.label === "BWA")!.props.onChange("Unsaved BWA");
+    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+    Object.assign(window, { confirm });
+    initialRecords = null;
+    const guard = render("checklist").props.beforeNavigate;
+    expect(guard()).toBe(false);
+    expect(guard()).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(currentState().bwa).toBe("Unsaved BWA");
+  });
+
   it("sends the exact new keypad quantity, selected key, source and saved revision in one PUT", async () => {
     const fetch = acceptFetch(); render();
     const before = structuredClone(currentState());
@@ -218,7 +283,7 @@ describe("simplified add-on explicit submission", () => {
   });
 
   it("shows an actionable saved-record load error instead of leaving silently disabled controls", () => {
-    const fetch = acceptFetch(); render(); hooks.states[11] = "error";
+    const fetch = acceptFetch(); initialRecords = null;
     const tree = render(); expect(quickOrder().props.disabled).toBe(true); expect(fetch).not.toHaveBeenCalled();
     const alert = findElement(tree, (element) => element.props?.role === "alert" && /load|unavailable/i.test(treeText(element)));
     expect(alert).not.toBeNull();
@@ -239,9 +304,10 @@ describe("simplified add-on explicit submission", () => {
     const fetch = acceptFetch(); expect(await submit({ ...foodOrder, quantity })).toBe("error"); expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("does not send before saved records load or after submission", async () => {
-    const fetch = acceptFetch(); render(); hooks.states[11] = "loading";
-    expect(await submit()).toBe("error"); hooks.states[11] = "ready";
+  it("does not send when saved records are unavailable or after submission", async () => {
+    const fetch = acceptFetch(); const records = initialRecords; initialRecords = null;
+    expect(await submit()).toBe("error"); initialRecords = records;
+    render(); hooks.effects[2]();
     const handler = quickOrder().props.onSubmit; hooks.states[2][77].status = "submitted";
     // An old dialog callback must respect current submitted metadata as well as the visible lock.
     expect(await handler(foodOrder)).toBe("error");

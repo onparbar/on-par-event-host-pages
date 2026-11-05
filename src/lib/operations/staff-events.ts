@@ -34,13 +34,13 @@ export async function loadStaffEventPlans(date: string, options: {
   const [window, vip, unfinished] = await Promise.all([
     (options.loadPlans ?? loadEventPlanWindow)({ now: new Date(`${date}T12:00:00Z`), window: { startDate, endDate } }),
     client.configured ? client.fetchRange(startDate, date).then((payload) => ({ reservations: payload.reservations, syncedAt: payload.generatedAt, warning: "" })).catch(() => ({ reservations: [] as VipPrepReservation[], syncedAt: undefined, warning: "VIP bookings could not be refreshed. Corporate events remain available; do not substitute a different party." })) : Promise.resolve({ reservations: [] as VipPrepReservation[], syncedAt: undefined, warning: "VIP booking source is not configured. Corporate events remain available." }),
-    options.includeUnsubmitted ? (options.loadChecklists ?? listChecklistRecords)().then((records) => ({ records, warning: "" })).catch(() => ({ records: [], warning: "Saved unfinished checklists could not be loaded. Existing source events remain visible; retry before relying on the recovery list." })) : Promise.resolve({ records: [], warning: "" }),
+    options.includeUnsubmitted ? (options.loadChecklists ?? listChecklistRecords)().then((records) => ({ records, warning: "" })).catch(() => ({ records: null, warning: "Saved unfinished checklists could not be loaded. Existing source events remain visible; retry before relying on the recovery list." })) : Promise.resolve({ records: null, warning: "" }),
   ]);
   const corporate = [...window.plans];
   const reservations = [...vip.reservations];
   const recoveryWarnings: string[] = [];
   const vipByDate = new Map<string, Promise<VipPrepReservation[]>>();
-  const pastDrafts = unfinished.records.filter((record) => record.status === "draft" && isValidEntertainmentDate(record.eventDate) &&
+  const pastDrafts = (unfinished.records ?? []).filter((record) => record.status === "draft" && isValidEntertainmentDate(record.eventDate) &&
     record.eventDate < startDate && (!options.exactDate || record.eventDate === date));
   for (let index = 0; index < pastDrafts.length; index += 4) {
     const recovered = await Promise.all(pastDrafts.slice(index, index + 4).map(async (record) => {
@@ -76,6 +76,9 @@ export async function loadStaffEventPlans(date: string, options: {
   const rawIds = [...corporate.map((plan) => plan.id), ...reservations.filter(isActiveVipPrepReservation).map((reservation) => numericVipEventId(vipPrepExternalId(reservation)))];
   const collisionWarning = new Set(rawIds).size < rawIds.length
     ? "Some event selectors are unavailable because legacy numeric event IDs collide. No parties were merged. Open Floor Plans, Kitchen, or VIP CHECK-IN using the exact date and source reservation ID; the exact VIP workspace remains read-only until numeric checklist ownership is reconciled." : "";
-  const unfinishedEventIds = plans.filter((plan) => unfinished.records.some((record) => record.status === "draft" && record.eventId === plan.id && record.eventDate === plan.date)).map((plan) => plan.id);
-  return { ...window, plans, unfinishedEventIds, sourceWarning: [...new Set([vip.warning, unfinished.warning, ...recoveryWarnings, collisionWarning].filter(Boolean))].join(" ") };
+  const planDates = new Map(plans.map((plan) => [plan.id, plan.date]));
+  const savedChecklistRecords = unfinished.records?.filter((record) => planDates.get(record.eventId) === record.eventDate) ?? null;
+  const draftIds = new Set(savedChecklistRecords?.filter((record) => record.status === "draft").map((record) => record.eventId));
+  const unfinishedEventIds = plans.filter((plan) => draftIds.has(plan.id)).map((plan) => plan.id);
+  return { ...window, plans, unfinishedEventIds, ...(options.includeUnsubmitted ? { savedChecklistRecords } : {}), sourceWarning: [...new Set([vip.warning, unfinished.warning, ...recoveryWarnings, collisionWarning].filter(Boolean))].join(" ") };
 }
