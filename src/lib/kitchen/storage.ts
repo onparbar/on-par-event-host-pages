@@ -16,6 +16,7 @@ import type {
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const WEBHOOK_PROCESSING_LEASE_MS = 10 * 60 * 1000;
 const WEBHOOK_DEDUPLICATION_WINDOW_MS = 10 * 60 * 1000;
+const UNVERIFIED_SYNC_RECORDS_PREFIX = "__unverified_kitchen_records__:";
 export type KitchenSyncStatus = "running" | "success" | "error";
 
 export type KitchenSyncState = {
@@ -26,6 +27,7 @@ export type KitchenSyncState = {
   lastSuccessfulSyncAt: string | null;
   eventCount: number;
   errorMessage: string | null;
+  unverifiedEventIds?: readonly string[];
 };
 
 export type StoredKitchenEvent = {
@@ -126,7 +128,7 @@ export interface KitchenStorage {
     expectedRevision: number | null,
   ): Promise<StoredKitchenFoodAddOns>;
   startSync(date: string): Promise<void>;
-  completeSync(date: string, eventCount: number): Promise<void>;
+  completeSync(date: string, eventCount: number, unverifiedEventIds?: readonly string[]): Promise<void>;
   failSync(date: string, errorMessage: string): Promise<void>;
   claimWebhook(receipt: WebhookReceipt): Promise<boolean>;
   completeWebhook(
@@ -396,6 +398,15 @@ function syncStateFromRow(row: SyncRow | undefined): KitchenSyncState | null {
     return null;
   }
 
+  let unverifiedEventIds: string[] = [];
+  if (row.status === "success" && row.error_message?.startsWith(UNVERIFIED_SYNC_RECORDS_PREFIX)) {
+    try {
+      const parsed: unknown = JSON.parse(row.error_message.slice(UNVERIFIED_SYNC_RECORDS_PREFIX.length));
+      if (Array.isArray(parsed)) unverifiedEventIds = parsed.filter((id): id is string => typeof id === "string");
+    } catch {
+      // Unreadable metadata is not a source failure.
+    }
+  }
   return {
     eventDate: row.event_date,
     status: row.status,
@@ -403,7 +414,8 @@ function syncStateFromRow(row: SyncRow | undefined): KitchenSyncState | null {
     completedAt: row.completed_at,
     lastSuccessfulSyncAt: row.last_successful_sync_at,
     eventCount: row.event_count ?? 0,
-    errorMessage: row.error_message,
+    errorMessage: row.status === "error" ? row.error_message : null,
+    ...(unverifiedEventIds.length ? { unverifiedEventIds } : {}),
   };
 }
 
@@ -1013,7 +1025,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     );
   }
 
-  async completeSync(date: string, eventCount: number) {
+  async completeSync(date: string, eventCount: number, unverifiedEventIds: readonly string[] = []) {
     const now = new Date().toISOString();
     await this.emptyRequest(
       "kitchen_sync_runs",
@@ -1026,7 +1038,8 @@ export class SupabaseKitchenStorage implements KitchenStorage {
           completed_at: now,
           last_successful_sync_at: now,
           event_count: eventCount,
-          error_message: null,
+          // With a successful status this existing field holds internal warning metadata, not an error.
+          error_message: unverifiedEventIds.length ? UNVERIFIED_SYNC_RECORDS_PREFIX + JSON.stringify(unverifiedEventIds) : null,
           updated_at: now,
         }),
       },
@@ -1479,7 +1492,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
     });
   }
 
-  async completeSync(date: string, eventCount: number) {
+  async completeSync(date: string, eventCount: number, unverifiedEventIds: readonly string[] = []) {
     const now = new Date().toISOString();
     const previous = this.syncRuns.get(date);
     this.syncRuns.set(date, {
@@ -1490,6 +1503,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
       lastSuccessfulSyncAt: now,
       eventCount,
       errorMessage: null,
+      ...(unverifiedEventIds.length ? { unverifiedEventIds: [...unverifiedEventIds] } : {}),
     });
   }
 

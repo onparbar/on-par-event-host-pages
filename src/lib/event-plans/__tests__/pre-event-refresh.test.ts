@@ -58,6 +58,11 @@ describe("pre-event refresh timing", () => {
     expect(preEventRefreshDueAt(event({ localDate: "2026-11-01", eventStartAt: "1:30 AM" }), new Date("2026-11-01T05:00:00Z"))).toBeNull();
     expect(preEventRefreshDueAt(event({ localDate: "2026-11-01", eventStartAt: "2026-11-01T01:30:00-05:00" }), new Date("2026-11-01T05:30:00Z"))).toBe(Date.parse("2026-11-01T05:30:00Z"));
   });
+
+  it("follows operational full-buyout eligibility without refreshing cancellations", () => {
+    expect(preEventRefreshDueAt(event({ status: "PROSPECT", fullBuyout: true }), NOW)).toBe(NOW.getTime());
+    expect(preEventRefreshDueAt(event({ status: "CANCELLED", fullBuyout: true }), NOW)).toBeNull();
+  });
 });
 
 describe("scheduled Tripleseat refresh", () => {

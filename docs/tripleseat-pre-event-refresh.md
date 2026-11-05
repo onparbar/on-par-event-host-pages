@@ -6,4 +6,4 @@ The job uses the existing `CRON_SECRET` and live Tripleseat integration. It is d
 
 The existing daily import still discovers new bookings. The one-hour trigger uses the saved start time, so a newly created booking or an event moved earlier must first be picked up by an import or manual sync. A change after the pre-event refresh still needs a manual sync. Reload an open Floor Plans or Entertainment page to see saved changes.
 
-The cron result lists dates only. A failed date is eligible for retry on the next check while it still has a due event; use the manual sync if the event starts before the source recovers. `retainedKitchenRecords` counts saved Kitchen entries not re-verified by that refresh, which should be checked against the current contract before use.
+The cron result lists dates only. A failed date is eligible for retry on the next check while it still has a due event; use the manual sync if the event starts before the source recovers. `retainedKitchenRecords` counts saved Kitchen entries not re-verified by that refresh. Kitchen marks those entries Needs Review until verified against the current contract.

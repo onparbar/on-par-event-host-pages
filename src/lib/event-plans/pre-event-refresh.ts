@@ -10,6 +10,7 @@ import { refreshTripleseatKitchenDay } from "@/lib/kitchen/sync";
 import { getTripleseatAdapter, type TripleseatAdapter } from "@/lib/kitchen/tripleseat";
 import { isPreviewReviewOnly } from "@/lib/operations/preview-review";
 import { getEventPlanStorage, type EventPlanStorage, type StoredEventPlan } from "./storage";
+import { isOperationalEventStatus } from "./sync";
 
 const ONE_HOUR = 60 * 60_000;
 const SYNC_INTERVAL = 5 * 60_000;
@@ -18,7 +19,8 @@ export function preEventRefreshDueAt(row: StoredEventPlan, now: Date) {
   const source = row.sourceSnapshot;
   if (!Number.isFinite(now.getTime()) || !row.active || !/^\d+$/.test(row.eventId) || source.eventId !== row.eventId ||
       source.localDate !== row.eventDate || (source.sourceSystem != null && source.sourceSystem !== "tripleseat") ||
-      /^(?:lost|prospect|cancelled|canceled)$/i.test(String(source.status ?? "").trim()) ||
+      !isOperationalEventStatus(source.status, source.fullBuyout === true) ||
+      /^(?:cancelled|canceled)$/i.test(String(source.status ?? "").trim()) ||
       typeof source.eventStartAt !== "string") return null;
   const { startAt } = kitchenEventInterval({ localDate: row.eventDate, startTime: source.eventStartAt, endTime: null });
   if (startAt == null || now.getTime() < startAt - ONE_HOUR || now.getTime() >= startAt) return null;

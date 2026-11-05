@@ -70,6 +70,12 @@ describe("scheduled Tripleseat-only kitchen refresh", () => {
     ...testAdapter(getEvents),
     sourceMode: "live",
   });
+  const readOptions = {
+    now: viewingTime(date),
+    vipPrepClient: { configured: false, fetchRange: async () => { throw new Error("VIP prep must not be fetched."); } },
+    floorPlanStorage: { get: async () => null },
+    persistSourceChanges: false,
+  };
 
   it("refreshes only exact-date Tripleseat sources and preserves saved VIP, prep and add-on records", async () => {
     const storage = createMemoryKitchenStorage();
@@ -123,6 +129,22 @@ describe("scheduled Tripleseat-only kitchen refresh", () => {
     await expect(storage.getFoodAddOns("12345")).resolves.toEqual(addOnsBefore);
     await expect(storage.getFoodAddOns("67890")).resolves.toEqual(missingAddOnsBefore);
     expect((await storage.getDay("2026-08-16")).events).toEqual([]);
+
+    const visible = await getKitchenDay(date, { ...readOptions, adapter, storage });
+    expect(visible.syncStatus).toBe("success");
+    expect(visible.syncError).toBeNull();
+    expect(visible.warnings).toContainEqual(expect.stringContaining("could not verify some saved kitchen checklists"));
+    expect(visible.warnings.join(" ")).not.toContain("67890");
+    expect(visible.events.filter((checklist) => checklist.warnings.some((warning) =>
+      warning.code === "SOURCE_STALE" && warning.message.includes("did not verify"))).map((checklist) => checklist.event.eventId)).toEqual(["67890"]);
+    expect(visible.events.find((entry) => entry.event.eventId === "67890")?.needsReview).toBe(true);
+
+    await refreshTripleseatKitchenDay(date, { adapter: liveAdapter(() => [revised, priorMissing]), storage, now: readOptions.now });
+    const refreshed = await getKitchenDay(date, { ...readOptions, adapter, storage });
+    expect(refreshed.syncStatus).toBe("success");
+    expect(refreshed.syncError).toBeNull();
+    expect(refreshed.warnings).not.toContainEqual(expect.stringContaining("could not verify some saved kitchen checklists"));
+    expect(refreshed.events.flatMap((checklist) => checklist.warnings)).not.toContainEqual(expect.objectContaining({ code: "SOURCE_STALE" }));
   });
 
   it("records a failed attempt without discarding the last success or saved checklists", async () => {
@@ -134,6 +156,35 @@ describe("scheduled Tripleseat-only kitchen refresh", () => {
     const after = await storage.getDay(date);
     expect(after.events).toEqual(before.events);
     expect(after.sync).toMatchObject({ status: "error", lastSuccessfulSyncAt: before.sync?.lastSuccessfulSyncAt, errorMessage: "Kitchen synchronization failed." });
+    const visible = await getKitchenDay(date, { ...readOptions, adapter, storage });
+    expect(visible.syncError).toBe("Kitchen synchronization failed.");
+    expect(visible.events[0]?.warnings).toContainEqual(expect.objectContaining({ code: "SOURCE_SYNC_FAILED" }));
+  });
+
+  it("round-trips retained IDs as internal success metadata without changing failed sync messages", async () => {
+    let syncRow: Record<string, unknown> = { event_date: date, started_at: new Date().toISOString() };
+    const storage = new SupabaseKitchenStorage({
+      env: { NODE_ENV: "test", SUPABASE_URL: "https://example.test", SUPABASE_SECRET_KEY: "test-only-key" },
+      fetchImpl: async (input, init) => {
+        if (new URL(String(input)).pathname.endsWith("/kitchen_sync_runs")) {
+          if (init?.method === "PATCH") {
+            syncRow = { ...syncRow, ...JSON.parse(String(init.body)) };
+            return new Response(null, { status: 204 });
+          }
+          return Response.json([syncRow]);
+        }
+        return Response.json([]);
+      },
+    });
+    await storage.completeSync(date, 1, ["67890"]);
+    expect((await storage.getDay(date)).sync).toMatchObject({
+      status: "success", errorMessage: null, unverifiedEventIds: ["67890"],
+    });
+    await storage.completeSync(date, 2);
+    expect((await storage.getDay(date)).sync).not.toHaveProperty("unverifiedEventIds");
+    expect(syncRow.error_message).toBeNull();
+    await storage.failSync(date, "Source is unavailable.");
+    expect((await storage.getDay(date)).sync).toMatchObject({ status: "error", errorMessage: "Source is unavailable." });
   });
 
   it("rejects the mock adapter and does not restore an absent contract fallback", async () => {

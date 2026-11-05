@@ -164,10 +164,12 @@ function markSourceWarning(
   events: KitchenChecklist[],
   code: "SOURCE_STALE" | "SOURCE_SYNC_FAILED",
   message: string,
+  eventIds?: ReadonlySet<string>,
 ) {
   return events.map((event) => {
     // An unrelated Tripleseat failure says nothing about the booking feed.
-    if (String(event.event.eventId).startsWith("vip-")) return event;
+    const eventId = String(event.event.eventId);
+    if (eventId.startsWith("vip-") || (eventIds && !eventIds.has(eventId))) return event;
     if (event.warnings.some((warning) => warning.code === code)) {
       return event;
     }
@@ -341,20 +343,29 @@ export async function getKitchenDay(
   const liveSourceUnavailable =
     adapter.sourceMode === "mock" &&
     storage.persistence === "database";
+  const unverifiedEventIds = new Set(stored.sync?.unverifiedEventIds);
+  const savedEvents = dedupeConfirmedContractKitchenEvents(stored.events);
   const storedEventsWithSourceStatus =
     stored.sync?.status === "error"
       ? markSourceWarning(
-          dedupeConfirmedContractKitchenEvents(stored.events),
+          savedEvents,
           "SOURCE_SYNC_FAILED",
           "The latest Tripleseat sync failed; this stored checklist may be stale.",
         )
       : liveSourceUnavailable
         ? markSourceWarning(
-            dedupeConfirmedContractKitchenEvents(stored.events),
+            savedEvents,
             "SOURCE_STALE",
             "Live Tripleseat configuration is unavailable; this stored checklist may be stale.",
           )
-        : dedupeConfirmedContractKitchenEvents(stored.events);
+        : unverifiedEventIds.size > 0
+          ? markSourceWarning(
+              savedEvents,
+              "SOURCE_STALE",
+              "Tripleseat did not verify this saved checklist during the latest refresh. Confirm the current contract before prepping.",
+              unverifiedEventIds,
+            )
+          : savedEvents;
   const storedAndVipEvents = [
     ...storedEventsWithSourceStatus.filter(
       (event) =>
@@ -425,7 +436,7 @@ export async function getKitchenDay(
     sourceMode: diagnostics.sourceMode,
     source: diagnostics.sourceMode,
     syncStatus: stored.sync?.status ?? "never",
-    syncError: stored.sync?.errorMessage ?? null,
+    syncError: stored.sync?.status === "error" ? stored.sync.errorMessage : null,
     vipBookingSync: {
       status: liveVipResult.refreshed ? "success" : liveVipResult.error ? "error" : "unconfigured",
       lastSuccessfulRefreshAt: liveVipResult.refreshedAt ?? stored.events.map((event) => event.event.vipBooking?.lastRefreshedAt)
@@ -439,6 +450,9 @@ export async function getKitchenDay(
       ...(contractPersistenceWarning ? [contractPersistenceWarning] : []),
       ...(vipPersistenceWarning ? [vipPersistenceWarning] : []),
       ...(floorPlanResult.error ? [floorPlanResult.error] : []),
+      ...(events.some(({ event }) => unverifiedEventIds.has(String(event.eventId)))
+        ? ["Tripleseat could not verify some saved kitchen checklists. Confirm the current contract for items marked Needs Review."]
+        : []),
     ]),
     missingEnvironmentVariables: unique([
       ...diagnostics.missingEnvironmentVariables,
@@ -500,14 +514,14 @@ export async function refreshTripleseatKitchenDay(
     const sourceEvents = resolveKitchenSourceEvents(date, liveEvents, false);
     const priorDay = await storage.getDay(date);
     const refreshedIds = new Set(sourceEvents.map((source) => String(source.eventId)));
-    const retainedUnverifiedCount = activeKitchenChecklists(priorDay.events, options.now).filter(
-      ({ event }) => !event.vipBooking && !String(event.eventId).startsWith("vip-") && !refreshedIds.has(String(event.eventId)),
-    ).length;
+    const unverifiedEventIds = activeKitchenChecklists(priorDay.events, options.now)
+      .filter(({ event }) => !event.vipBooking && !String(event.eventId).startsWith("vip-") && !refreshedIds.has(String(event.eventId)))
+      .map(({ event }) => String(event.eventId));
     for (const sourceEvent of sourceEvents) {
       await storage.saveEvent({ sourceEvent, checklist: generateKitchenChecklist(sourceEvent) });
     }
-    await storage.completeSync(date, sourceEvents.length);
-    return { eventCount: sourceEvents.length, retainedUnverifiedCount };
+    await storage.completeSync(date, sourceEvents.length, unverifiedEventIds);
+    return { eventCount: sourceEvents.length, retainedUnverifiedCount: unverifiedEventIds.length };
   } catch (error) {
     const message = safeSyncError(error);
     try {
