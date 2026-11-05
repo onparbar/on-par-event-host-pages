@@ -1,10 +1,30 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ItineraryAsset } from "@/lib/event-plans/types";
-import { ItineraryDashboard } from "../ItinerariesClient";
+import { operationalEventFromPlan } from "@/lib/operations/event-context";
+import ItinerariesClient, { ItineraryDashboard } from "../ItinerariesClient";
 
 const event: ItineraryAsset = { id: 123, name: "Training event", date: "2026-10-21", day: "Wednesday", time: "6:00 PM - 8:00 PM", guest_count: 20, rooms: ["VIP 1"], color: "#297025", food: ["Dessert Platter: 1"], drink_options: [], entertainment: [], verification_status: "Needs review" };
+
+vi.mock("next/navigation", () => ({ usePathname: () => "/itineraries", useRouter: () => ({}) }));
+vi.mock("@/app/_components/EventContext", () => ({
+  useEventContext: () => ({ ready: true, selectedEvent: operationalEventFromPlan(event), requestedEventId: "123", preferredEventId: "123", staffName: "Training staff", eventHref: (path: string) => path }),
+  EventSelectionBridge: () => null,
+}));
+vi.mock("@/app/_components/EventWorkspace", () => ({
+  EventWorkspaceTimeline: () => createElement("section", { "aria-label": "Event operating itinerary" }, "Event operating timeline"),
+  EventWorkspaceReminders: () => createElement("section", { "aria-label": "Event reminders" }),
+}));
+
+it("keeps the printable itinerary and staff reminders without the operating timeline card", () => {
+  const html = renderToStaticMarkup(createElement(ItinerariesClient, { items: [event] }));
+  expect(html).toContain("Guest Experience Plan");
+  expect(html).toContain("Dessert Platter: 1");
+  expect(html).toContain("Print review copy");
+  expect(html).toContain('aria-label="Event reminders"');
+  expect(html).not.toContain('aria-label="Event operating itinerary"');
+});
 
 describe("printable itinerary card", () => {
   it("places saved Admin instructions in the printable card, retaining source-only notes separately", () => {

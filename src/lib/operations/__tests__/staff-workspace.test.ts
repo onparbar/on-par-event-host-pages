@@ -10,6 +10,7 @@ const plan: EventPlan = { id: 123, name: event.eventName, date: event.date, room
 describe("staff workspace display preference", () => {
   it("accepts only existing roster names and does not accept a code or invented employee", () => {
     expect(validatedStaffName(" Carlos ")).toBe("Carlos");
+    expect(validatedStaffName(" Thays ")).toBe("Thays");
     expect(validatedStaffName("1234")).toBe("");
     expect(validatedStaffName("Unlisted Employee")).toBe("");
     expect(validatedStaffName({ name: "Carlos" })).toBe("");

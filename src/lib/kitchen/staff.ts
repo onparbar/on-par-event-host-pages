@@ -3,5 +3,5 @@ export const KITCHEN_STAFF_ROSTER = [
   "Adrian", "Alanis", "Ashleigh", "Austin", "Brooke", "Cameron", "Carlos",
   "Chase", "Daniel", "Derek", "Diana", "Emily", "Enrique", "Estuardo",
   "Geldi", "Jasmonica", "Julio", "Kaleb", "Karla", "Lex", "Lindsey", "Molly",
-  "Rocky", "Ryan", "Samantha", "Saul", "Selena", "Staci", "Taylor", "Tina", "Veronica",
+  "Rocky", "Ryan", "Samantha", "Saul", "Selena", "Staci", "Taylor", "Thays", "Tina", "Veronica",
 ] as const;

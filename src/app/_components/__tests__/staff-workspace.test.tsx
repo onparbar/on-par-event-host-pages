@@ -79,6 +79,7 @@ describe("staff event workspace shell", () => {
     const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace", children: "Tasks" }));
     expect(html).toContain('id="workspace-employee"');
     expect(html).toContain("Select your name");
+    expect(html).toContain('<option value="Thays">Thays</option>');
     expect(html).not.toContain('aria-label="My event workspace"');
     expect(html).not.toContain('type="password"');
   });

@@ -106,6 +106,7 @@ describe("Supabase kitchen storage authentication", () => {
       "Selena",
       "Staci",
       "Taylor",
+      "Thays",
       "Tina",
       "Veronica",
     ]);
