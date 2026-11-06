@@ -75,6 +75,8 @@ export type KitchenSyncDependencies = {
   floorPlanStorage?: Pick<FloorPlanStorage, "get">;
   /** Projection-only diagnostics must not initialize or refresh saved records. */
   persistSourceChanges?: boolean;
+  /** Confirmed prep-only evidence must not be used by order synchronization. */
+  staffPrep?: boolean;
 };
 
 export class KitchenSyncError extends Error {
@@ -234,9 +236,10 @@ export async function getKitchenDay(
   assertKitchenDate(date);
   const persistSourceChanges = options.persistSourceChanges !== false && !isPreviewReviewOnly();
   const { adapter, storage } = dependencies(options);
+  const readStoredDay = () => options.staffPrep ? storage.getDay(date, { staffPrep: true }) : storage.getDay(date);
   const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
   const [initialStored, diagnostics, liveVipResult, floorPlanResult] = await Promise.all([
-    storage.getDay(date),
+    readStoredDay(),
     Promise.resolve(adapter.getDiagnostics()),
     vipPrepClient.configured
       ? vipPrepClient.fetchRange(date, date).then(
@@ -289,7 +292,7 @@ export async function getKitchenDay(
           checklist: generateKitchenChecklist(sourceEvent),
         });
       }
-      stored = await storage.getDay(date);
+      stored = await readStoredDay();
     } catch {
       contractPersistenceWarning =
         "Confirmed contract food is visible, but its kitchen checklist could not be saved for staff edits.";
@@ -330,7 +333,7 @@ export async function getKitchenDay(
           checklist: { ...checklist, event: { ...checklist.event, vipBooking } },
         });
       }
-      stored = await storage.getDay(date);
+      stored = await readStoredDay();
     } catch {
       vipPersistenceWarning =
         "VIP booking prep is visible, but its kitchen checklist could not be saved for staff edits and add-ons.";

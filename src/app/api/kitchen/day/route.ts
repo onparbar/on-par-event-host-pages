@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const day = await getKitchenDay(date);
+    const day = await getKitchenDay(date, { staffPrep: true });
     const integrationStorage = new GoTabIntegrationStorage();
     const delivery = await integrationStorage
       .listEventFoodDelivery(day.events.map((event) => String(event.event.eventId)))

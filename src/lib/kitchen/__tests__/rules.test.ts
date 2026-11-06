@@ -176,6 +176,33 @@ describe("time calculations", () => {
     expect(warningCodes(missing)).toContain("MISSING_GUEST_COUNT");
   });
 
+  it("uses a confirmed Taco Bar portion count for prep without changing the original selections or overall headcount", () => {
+    const event = sourceEvent([
+      { name: "The Full Course", quantity: 15, isFood: true },
+      { name: "Taco Bar", isFood: true },
+    ], { guestCount: null });
+    const raw = generateKitchenChecklist(event);
+    const confirmed = generateKitchenChecklist(event, KITCHEN_RULE_CONFIG, [], 15);
+    expect(raw.sections).toEqual([]);
+    expect(confirmed.event.guestCount).toBeNull();
+    expect(confirmed.normalizedSelections).toEqual(raw.normalizedSelections);
+    expect(confirmed.sections.find((section) => section.category === "taco")?.label).toContain("15 guests (contract confirmed)");
+    expect(row(confirmed, "taco-beef").quantity).toBe(5);
+    expect(row(confirmed, "taco-chicken").quantity).toBe(5);
+    expect(row(confirmed, "taco-black-beans").quantity).toBe(1);
+    expect(confirmed.chafingDishes.bars).toBe(1);
+  });
+
+  it("does not use the prep-only Taco Bar count over a current guest count or conflicting menu data", () => {
+    const counted = packageEvent("Taco Bar", 24);
+    expect(generateKitchenChecklist(counted, KITCHEN_RULE_CONFIG, [], 15)).toEqual(generateKitchenChecklist(counted));
+    const explicit = sourceEvent([{ name: "The Full Course", quantity: 15 }, { name: "Taco Bar", quantity: 21 }], { guestCount: null });
+    const multiple = { ...explicit, selections: [{ name: "The Full Course", quantity: 15 }, { name: "Taco Bar" }, { name: "Wing Bar" }] };
+    for (const source of [explicit, multiple]) {
+      expect(generateKitchenChecklist(source, KITCHEN_RULE_CONFIG, [], 15)).toEqual(generateKitchenChecklist(source));
+    }
+  });
+
   it("uses a composite bar quantity as the guest count when the event guest count is blank", () => {
     const checklist = generateKitchenChecklist(
       sourceEvent(

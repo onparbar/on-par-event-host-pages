@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { translateEventHostFoodAddOns } from "./addons";
 import type { KitchenEventAddOnFood } from "./addons";
 import { KITCHEN_RULE_CONFIG } from "./config";
@@ -90,7 +91,7 @@ function assignmentTimestamp(expected?: string | null) {
 
 export interface KitchenStorage {
   readonly persistence: "database" | "memory";
-  getDay(date: string): Promise<StoredKitchenDay>;
+  getDay(date: string, options?: { staffPrep?: boolean }): Promise<StoredKitchenDay>;
   getEventDate(eventId: string): Promise<string | null>;
   saveEvent(event: StoredKitchenEvent): Promise<void>;
   replaceDay(date: string, events: readonly StoredKitchenEvent[]): Promise<void>;
@@ -246,19 +247,32 @@ function checklistForCurrentRules(
   sourceEvent: KitchenSourceEvent | undefined,
   storedChecklist: KitchenChecklist,
   liveFoodAddOns: readonly KitchenLiveFoodAddOn[],
+  staffPrep: boolean,
 ): KitchenChecklist {
+  const confirmedTacoGuests = staffPrep && sourceEvent ? confirmedTacoPrepGuests(sourceEvent) : null;
   if (
     sourceEvent &&
     (storedChecklist.ruleVersion !== KITCHEN_RULE_CONFIG.ruleVersion ||
-      liveFoodAddOns.length > 0)
+      liveFoodAddOns.length > 0 || confirmedTacoGuests != null)
   ) {
     return generateKitchenChecklist(
       sourceEvent,
       KITCHEN_RULE_CONFIG,
       liveFoodAddOns,
+      confirmedTacoGuests,
     );
   }
   return clone(storedChecklist);
+}
+
+function confirmedTacoPrepGuests(source: KitchenSourceEvent): number | null {
+  if (source.localDate !== "2026-11-06" || source.vipBooking || source.guestCount != null) return null;
+  const revision = Date.parse(source.sourceUpdatedAt ?? "");
+  if (!Number.isFinite(revision)) return null;
+  // Staff confirmed 15 Taco Bar servings for this exact Tripleseat revision.
+  // Store only the fingerprint of event ID, booking ID, date and revision in Git.
+  const fingerprint = createHash("sha256").update([source.eventId, source.bookingId, source.localDate, new Date(revision).toISOString()].join("|")).digest("hex");
+  return fingerprint === "da72d555a12d4f85b007c730d4b7e7e5925c92c62e54ea7ce27f89dfe1e25347" ? 15 : null;
 }
 
 function cleanBaseUrl(value: string) {
@@ -491,7 +505,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
     }
   }
 
-  async getDay(date: string): Promise<StoredKitchenDay> {
+  async getDay(date: string, { staffPrep = false } = {}): Promise<StoredKitchenDay> {
     const checklistParams = new URLSearchParams({
       select: "event_id,checklist",
       event_date: `eq.${date}`,
@@ -634,6 +648,7 @@ export class SupabaseKitchenStorage implements KitchenStorage {
         sourceEvent,
         row.checklist,
         liveFoodAddOns,
+        staffPrep,
       );
       return {
         ...derivedChecklist,
@@ -1223,7 +1238,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
   >();
   private tokenState: EncryptedTokenState | null = null;
 
-  async getDay(date: string): Promise<StoredKitchenDay> {
+  async getDay(date: string, { staffPrep = false } = {}): Promise<StoredKitchenDay> {
     const stored = this.days.get(date) ?? [];
     const events = stored.map(({ sourceEvent, checklist }) => {
       const eventId = String(checklist.event.eventId);
@@ -1238,6 +1253,7 @@ export class MemoryKitchenStorage implements KitchenStorage {
         sourceEvent,
         checklist,
         liveFoodAddOns,
+        staffPrep,
       );
       return {
         ...derivedChecklist,

@@ -772,6 +772,19 @@ describe("Supabase kitchen storage authentication", () => {
     });
   });
 
+  it("does not infer a confirmed prep count for a different event on the same date", async () => {
+    const storage = createMemoryKitchenStorage();
+    const event = {
+      ...sourceEvent("different-event"), localDate: "2026-11-06", sourceUpdatedAt: "2026-11-04T13:39:00Z", guestCount: null,
+      selections: [{ name: "The Full Course", quantity: 15 }, { name: "Taco Bar" }],
+    };
+    await storage.saveEvent({ sourceEvent: event, checklist: generateKitchenChecklist(event) });
+    const day = await storage.getDay(event.localDate, { staffPrep: true });
+    expect(day.events).toHaveLength(1);
+    expect(day.events[0].sections).toEqual([]);
+    expect(day.events[0].event.guestCount).toBeNull();
+  });
+
   it("reads and writes dedicated food add-ons with exact IDs and the service role", async () => {
     const requests: { url: string; init?: RequestInit }[] = [];
     const storage = new SupabaseKitchenStorage({

@@ -505,6 +505,7 @@ export function generateKitchenChecklist(
   sourceEvent: KitchenSourceEvent,
   config: KitchenRuleConfig = KITCHEN_RULE_CONFIG,
   liveFoodAddOns: readonly KitchenLiveFoodAddOn[] = [],
+  confirmedTacoGuestCount: number | null = null,
 ): KitchenChecklist {
   const selections = normalizeKitchenSelections(sourceEvent.selections);
   const liveAddOnEffects =
@@ -619,6 +620,13 @@ export function generateKitchenChecklist(
     selections,
   );
   const effectiveGuestCount = guestCountResolution.guestCount;
+  // A separately verified Taco Bar portion count is not the event headcount.
+  const confirmedTacoGuests = effectiveGuestCount == null &&
+    activeBars.length === 1 && activeBars[0] === "taco" &&
+    validGuestCount(confirmedTacoGuestCount) &&
+    !selections.some((selection) => selection.quantityProvided && selection.kinds.includes("bar:taco"))
+    ? confirmedTacoGuestCount
+    : null;
 
   if (packageMarkers.length > 0 && selectedBars.length === 0) {
     addWarning(warnings, warningKeys, {
@@ -701,7 +709,9 @@ export function generateKitchenChecklist(
   if (effectiveGuestCount == null) {
     addWarning(warnings, warningKeys, {
       code: "MISSING_GUEST_COUNT",
-      message: "Guest count is missing.",
+      message: confirmedTacoGuests == null
+        ? "Guest count is missing."
+        : `Overall event guest count is missing. Taco Bar prep uses the confirmed contract quantity of ${confirmedTacoGuests} guests.`,
       requiresReview: true,
       scope: "event",
     });
@@ -757,7 +767,7 @@ export function generateKitchenChecklist(
   let barQuantitiesApproved = true;
 
   if (activeBars.includes("taco")) {
-    const guestCount = effectiveGuestCount;
+    const guestCount = effectiveGuestCount ?? confirmedTacoGuests;
     const batchCount = validGuestCount(guestCount)
       ? getTacoBatchCount(guestCount, config)
       : null;
@@ -1324,14 +1334,15 @@ export function generateKitchenChecklist(
 
   let barChafingDishes: number | null = 0;
   if (activeBars.length > 0) {
+    const barGuests = effectiveGuestCount ?? confirmedTacoGuests;
     if (
-      !validGuestCount(effectiveGuestCount) ||
+      !validGuestCount(barGuests) ||
       !barQuantitiesApproved
     ) {
       barChafingDishes = null;
     } else {
       const tablesPerBar =
-        effectiveGuestCount > config.barTables.doubleAboveGuestCount
+        barGuests > config.barTables.doubleAboveGuestCount
           ? config.barTables.mirroredTablesPerBar
           : config.barTables.normalTablesPerBar;
       const separatelyCountedBars = activeBars.filter(
@@ -1462,7 +1473,9 @@ export function generateKitchenChecklist(
   );
   const sections = sectionCategories.map((category) => ({
     category,
-    label: CATEGORY_LABELS[category],
+    label: category === "taco" && confirmedTacoGuests != null
+      ? `${CATEGORY_LABELS[category]} — ${confirmedTacoGuests} guests (contract confirmed)`
+      : CATEGORY_LABELS[category],
     rows: rowsByCategory.get(category) ?? [],
   }));
 
