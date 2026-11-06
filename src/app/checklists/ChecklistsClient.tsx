@@ -811,7 +811,7 @@ export default function ChecklistsClient({
               <span className="meta">
                 Submitted checklists are locked to preserve the final event record.
               </span>
-            </div> : null}
+            </div> : !activeChecklist.bwa.trim() ? <span className="meta">Enter the BWA name before submitting.</span> : null}
             <button
               type="button"
               className={`submit-button${isSubmitted ? " submitted" : ""}`}
@@ -833,27 +833,6 @@ export default function ChecklistsClient({
 
         {!isAddOnWorkspace ? (
           <section className="paper-checklist">
-            <article className="task-section-card">
-              <header className="task-section-header">Contract-driven Event Setup</header>
-              <div className="task-list">
-                <dl className="setup-equipment-grid">
-                  <div><dt>Food tables</dt><dd data-needs-review={setup.foodTables === null}>{setup.foodTables ?? "Needs review"}</dd></div>
-                  <div><dt>{setup.servingSetup ? "Serving chafing dishes" : "Chafing dishes"}</dt><dd data-needs-review={setup.chafingDishes === null}>{setup.servingSetup ? setup.servingSetup.chafingDishes : setup.chafingDishes ?? "Needs review"}</dd></div>
-                  <div><dt>Tongs</dt><dd data-needs-review={setup.tongs === null}>{setup.tongs ?? "Needs review"}</dd></div>
-                  <div><dt>Sauce containers</dt><dd data-needs-review={setup.sauceContainers === null}>{setup.sauceContainers ?? "Needs review"}</dd></div>
-                  <div><dt>Spoons</dt><dd data-needs-review={setup.spoons === null}>{setup.spoons ?? "Needs review"}</dd></div>
-                </dl>
-                {setup.mirrored ? <p className="setup-mirror-note">Mirrored setup: duplicate equipment and supplies, not food quantities or charges.</p> : null}
-                {setup.servingSetup ? <div role="note" aria-label="Serving chafing setup"><strong>Serving setup — extra pans are refills</strong><ul>{setup.servingSetup.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}</ul></div> : null}
-                <strong>Purchased food — quantities unchanged</strong>
-                <ul>{setup.purchasedFood.map((food, index) => <li key={`${index}:${food}`}>{food}</li>)}</ul>
-                <ul>{setup.food.map((food) => <li key={food.name}>{food.name}: {food.quantity === null ? "Quantity needs review" : `${food.quantity} ${food.unit}`}{food.pans !== null && food.panSize ? ` · ${food.pans} ${food.panSize} pans` : ""}</li>)}</ul>
-                <p className="meta">Chicken tenders and wings include ranch; mozzarella sticks include marinara. One spoon per sauce container; two tongs per purchased platter. Use approved kitchen packing for shared chafing dishes. Plates, napkins, linen, and unmapped bar supplies must be checked against the contract; no quantities are guessed.</p>
-                {setup.review.length ? <ul role="alert">{setup.review.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}
-              </div>
-            </article>
-            <p className="meta">Task completions record the staff name from this session, or the BWA name above, and the completion time. Names are staff-entered, not authenticated identity. Enter the BWA before final submission; only Admin can reopen a submitted checklist.</p>
-            {readiness.review.length ? <p role="alert">Contract warnings affect {readiness.review.length} critical task(s). Complete these tasks and confirm the warnings before submission. The warnings remain in Admin.</p> : null}
             {checklistSections.map((section) => (
               <article className="task-section-card" key={section.key}>
                 <header className="task-section-header">{section.title}</header>

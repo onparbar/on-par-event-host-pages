@@ -32,12 +32,11 @@ describe("dashboard visual refresh boundaries", () => {
     expect(css).toContain("ui-sans-serif, system-ui");
     expect(css).not.toMatch(/@import|@font-face|url\(/);
   });
-  it("keeps screen decoration out of print and preserves compact setup facts", () => {
+  it("keeps screen decoration out of print", () => {
     const blocks = mediaBlocks();
     const print = blocks.filter((block) => block.media === "@media print");
     expect(print).toHaveLength(1);
     expect(print[0].body).toContain(".checklist-progress { display: none; }");
-    expect(print[0].body).toContain(".setup-equipment-grid");
     expect(print[0].body).not.toMatch(/\b(?:background|color|position|height|width)\s*:/);
   });
   it("does not hide operational content, change map geometry, or collapse tablet navigation", () => {
@@ -47,9 +46,9 @@ describe("dashboard visual refresh boundaries", () => {
     expect(css).toContain(".task-row { min-height: 64px");
     expect(css).toContain("@media screen and (max-width: 640px)");
   });
-  it("presents existing setup quantities and progress without inventing new counts", () => {
-    for (const key of ["foodTables", "tongs", "sauceContainers", "spoons"]) expect(checklist).toContain(`{setup.${key} ?? "Needs review"}`);
-    expect(checklist).toContain('setup.servingSetup ? setup.servingSetup.chafingDishes : setup.chafingDishes ?? "Needs review"');
+  it("presents checklist progress without repeating setup quantities", () => {
+    expect(checklist).not.toContain("Contract-driven Event Setup");
+    expect(css).not.toContain(".setup-equipment-grid");
     expect(checklist).toContain('<progress aria-label="Checklist completion"');
     expect(checklist).toContain('max={Math.max(1, progress.total)} value={progress.completed}');
   });

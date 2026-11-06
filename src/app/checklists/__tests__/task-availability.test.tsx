@@ -63,6 +63,7 @@ describe("staff checklist task availability", () => {
     expect(html).not.toContain("Checklist submission requirements");
     expect(html).not.toContain("Enter the BWA, finish critical tasks with completion evidence");
     expect(html).toContain("BWA");
+    expect(html).toContain("Enter the BWA name before submitting.");
     expect(findTask(tree, "Confirm food, drink card, and entertainment details with the contract")).not.toBeNull();
     expect(html).toContain('<button type="button" class="submit-button" disabled="">Submit Final Checklist</button>');
     if (needs_review) expect(html).toContain('aria-label="Contract warning confirmation"');
@@ -111,14 +112,23 @@ describe("staff checklist task availability", () => {
     expect(html).not.toContain("Available if needed");
   });
 
-  it("shows two serving chafers and the unchanged full prep quantities in the redacted real case", () => {
-    const tree = render({ ...event, food: ["17 × The Full Course", "Taco Bar", "1 × Chicken Tender Platter", "1 × Wing Platter", "1 × Veggie Tray"], drink_options: ["Food + Beverage package"] })!;
+  it("omits the duplicate setup card but keeps the actual setup tasks and contract warning confirmation", () => {
+    const tree = render({ ...event, food: ["17 × The Full Course", "Taco Bar", "1 × Chicken Tender Platter", "1 × Wing Platter", "1 × Veggie Tray"], drink_options: ["Food + Beverage package"], needs_review: true })!;
     const html = renderToStaticMarkup(createElement("div", null, tree.props.children));
-    expect(html).toContain('Serving chafing dishes</dt><dd data-needs-review="false">2</dd>');
-    expect(html).toContain("Wings and chicken tenders share one serving chafing dish");
-    expect(html).toContain("remaining prepared pans for refills");
-    expect(html).toContain("Chicken Tenders: 64 each · 2 1/2 pans");
-    expect(html).toContain("Wings: 64 each · 2 1/2 pans");
+    expect(html).not.toContain("Contract-driven Event Setup");
+    expect(html).not.toContain("Purchased food — quantities unchanged");
+    expect(html).not.toContain("Contract warnings affect");
+    expect(html).not.toContain("Enter the BWA name before submitting.");
+    expect(html).toContain('aria-label="Contract warning confirmation"');
+
+    const task = findTask(tree, "Get necessary chaffing dishes placed")!;
+    expect(renderToStaticMarkup(task)).toContain("Critical");
+    const checkbox = task.props.children[0] as ReactElement<{ disabled: boolean; onChange: (event: { target: { checked: boolean } }) => void }>;
+    expect(checkbox.props.disabled).toBe(false);
+    checkbox.props.onChange({ target: { checked: true } });
+    const state = (hooks.states[1] as Record<number, EventChecklistState>)[77];
+    expect(state.tasks["chaffing-dishes-placed"]).toBe(true);
+    expect(state.taskEvidence?.["chaffing-dishes-placed"]?.sourceFingerprint).toEqual(expect.any(String));
   });
 
   it("still protects submitted checklists and requires a staff-entered name", () => {

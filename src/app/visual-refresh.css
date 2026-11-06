@@ -95,12 +95,6 @@
   .checklist-page .task-row:has(input:checked) { background: #f1f7f0; }
   .checklist-page .task-row input { width: 24px; height: 24px; margin: 0; accent-color: var(--ope-action-green); }
   .checklist-page .task-row > span > small { margin-top: 5px; font-size: .75rem; }
-  .setup-equipment-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 12px 0 18px; }
-  .setup-equipment-grid > div { padding: 14px; border: 1px solid var(--workspace-ui-line); border-radius: 10px; background: #f8faf9; }
-  .setup-equipment-grid dt { color: var(--workspace-ui-muted); font-size: .7rem; font-weight: 600; }
-  .setup-equipment-grid dd { color: var(--ope-forest); font-size: 1.5rem; font-weight: 650; line-height: 1.3; margin: 8px 0 0; font-variant-numeric: tabular-nums; }
-  .setup-equipment-grid dd[data-needs-review="true"] { color: var(--portal-warning); font-size: 1rem; line-height: 1.5; }
-  .setup-mirror-note { border-left: 3px solid var(--ope-muted-green); padding: 8px 12px; background: #f1f5f2; color: var(--ope-forest); font-size: .8rem; }
 
   .event-workspace-reminders { gap: 12px; padding-top: 18px; margin-top: 20px; border-top-color: var(--workspace-ui-line); font-size: .8rem; }
   .workspace-section-heading { gap: 5px; }
@@ -140,7 +134,6 @@
 
 @media screen and (max-width: 1100px) {
   .staff-event-workspace { grid-template-columns: 208px minmax(0, 1fr); }
-  .setup-equipment-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media screen and (max-width: 720px) {
@@ -149,7 +142,6 @@
   .event-command-card { padding: 18px; }
   .portal-page-header { flex-wrap: wrap; align-items: stretch; }
   .checklist-page .event-header-card, .event-workspace-panel { padding: 16px; }
-  .setup-equipment-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-timeline li { grid-template-columns: 1fr; gap: 10px; padding-inline: 10px; }
 }
 
@@ -160,8 +152,4 @@
 
 @media print {
   .checklist-progress { display: none; }
-  .setup-equipment-grid { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0; }
-  .setup-equipment-grid > div { display: flex; gap: 4px; }
-  .setup-equipment-grid dt::after { content: ":"; }
-  .setup-equipment-grid dd { margin: 0; font-weight: 700; }
 }
