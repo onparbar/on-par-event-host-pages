@@ -24,6 +24,7 @@ export const AREA_ALIASES: Readonly<Record<string, string>> = {
   "wild axe tables": "wat-tables",
   "wild axe throwing tables": "wat-tables",
   "geg tables": "geg-tables",
+  geg: "geg-tables",
   "great escape tables": "geg-tables",
   "big show": "big-show-karaoke",
   "the big show": "big-show-karaoke",

@@ -5,9 +5,9 @@ import {
   type ReservationMutationInput,
 } from "@/lib/entertainment/sync";
 import {
-  entertainmentUnauthorized,
-  requireEntertainmentSession,
-} from "../_auth";
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,8 +29,8 @@ function conflictResponse(error: EntertainmentConflictError) {
   );
 }
 export async function POST(request: Request) {
-  if (!(await requireEntertainmentSession())) {
-    return entertainmentUnauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
   let body: ReservationMutationInput;
   try {

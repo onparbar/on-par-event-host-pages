@@ -2,15 +2,17 @@ import { cookies } from "next/headers";
 import AdminAccessGate from "./AdminAccessGate";
 import AdminClient from "./AdminClient";
 import { hasAdminSession } from "@/lib/admin-auth";
-import { loadAdminState, loadChecklistRecords } from "@/lib/admin-state";
+import { loadAdminStateSnapshot, loadChecklistRecords } from "@/lib/admin-state";
 import { emptyAdminState } from "@/lib/admin-types";
 import { checklistEvents } from "@/lib/checklist-events";
 import {
   entertainmentSchedules,
   floorPlans,
   floorPlanSpecialPages,
+  itineraries,
 } from "@/lib/events";
 import { loadAdminOperations } from "@/lib/admin-operations-loader";
+import { loadHistoricalEventPlans } from "@/lib/event-plans/sync";
 
 export const metadata = {
   title: "Admin | On Par Event Host",
@@ -51,21 +53,36 @@ export default async function AdminPage() {
     return <AdminAccessGate />;
   }
 
-  const [initialState, records, operations] = await Promise.all([
-    loadLocalPreviewFallback(loadAdminState, emptyAdminState()),
+  const today = easternToday();
+  const [initialSnapshot, records, operations, historicalEventPlans] = await Promise.all([
+    loadLocalPreviewFallback(loadAdminStateSnapshot, { state: emptyAdminState(), updatedAt: null }),
     loadLocalPreviewFallback(loadChecklistRecords, []),
     loadAdminOperations(),
+    loadHistoricalEventPlans(today),
   ]);
-  const today = easternToday();
+  const staticItinerariesById = new Map(
+    itineraries.map((item) => [item.id, item]),
+  );
+  const archivedItineraries = historicalEventPlans
+    .filter((item) => item.date < today)
+    .map((item) => ({
+      ...item,
+      ...(staticItinerariesById.get(item.id)?.pdf
+        ? { pdf: staticItinerariesById.get(item.id)?.pdf }
+        : {}),
+    }))
+    .sort((left, right) => right.date.localeCompare(left.date));
   const checklistEventSummaries = checklistEvents.map(
     ({ id, name, date, time, poc }) => ({ id, name, date, time, poc }),
   );
   return (
     <AdminClient
       checklistEventSummaries={checklistEventSummaries}
+      archivedItineraries={archivedItineraries}
       entertainmentSchedules={entertainmentSchedules}
       floorPlans={[...floorPlans, ...floorPlanSpecialPages]}
-      initialState={initialState}
+      initialState={initialSnapshot.state}
+      initialUpdatedAt={initialSnapshot.updatedAt}
       localPreview={process.env.NODE_ENV !== "production"}
       operations={operations}
       records={records}

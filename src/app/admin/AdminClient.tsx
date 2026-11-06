@@ -1,9 +1,10 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import EditableAssetSection from "@/app/_components/EditableAssetSection";
 import AdminFloorPlanAssets from "./AdminFloorPlanAssets";
+import WorkspaceSettings from "./WorkspaceSettings";
 import {
   PortalPageHeader,
   PortalShell,
@@ -15,6 +16,8 @@ import {
   foodAddOns,
   type ChecklistRecord,
 } from "@/lib/checklist-model";
+import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY } from "@/lib/checklist-readiness";
+import { AUTO_SUBMISSION_KEY, readAutomaticSubmission } from "@/lib/operations/checklist-auto-submission";
 import type { AdminState } from "@/lib/admin-types";
 import type {
   AdminContractEvidence,
@@ -23,6 +26,7 @@ import type {
   AdminOperationsPayload,
 } from "@/lib/admin-operations";
 import { formatEventDate } from "@/lib/event-format";
+import type { ItineraryAsset } from "@/lib/event-plans/types";
 
 type AdminDateAsset = {
   date: string;
@@ -41,17 +45,19 @@ type ChecklistEventSummary = {
 };
 
 type AdminClientProps = {
+  archivedItineraries: ItineraryAsset[];
   checklistEventSummaries: ChecklistEventSummary[];
   entertainmentSchedules: AdminDateAsset[];
   floorPlans: AdminDateAsset[];
   initialState: AdminState;
+  initialUpdatedAt?: string | null;
   localPreview: boolean;
   operations: AdminOperationsPayload;
   records: ChecklistRecord[];
   today: string;
 };
 
-type AdminTab = "readiness" | "assets" | "completed";
+type AdminTab = "readiness" | "assets" | "completed" | "archived-itineraries";
 
 type EvidenceState = "idle" | "loading" | "ready" | "error";
 
@@ -92,15 +98,102 @@ function submittedAddOnLines(record: ChecklistRecord) {
 
 function completedTaskCount(record: ChecklistRecord) {
   const total = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-  const completed = Object.values(record.tasks ?? {}).filter(Boolean).length;
+  const completed = checklistSections.flatMap((section) => section.items).filter((item) => record.tasks?.[item.key] === true).length;
   return { completed, total };
 }
 
+export function completedChecklistEventName(
+  record: Pick<ChecklistRecord, "eventId" | "eventName">,
+  fallbackName?: string,
+) {
+  return record.eventName.trim() || fallbackName?.trim() || `Event ${record.eventId}`;
+}
+
+export function ChecklistCloseoutWarnings({
+  record,
+}: {
+  record: Pick<ChecklistRecord, "status" | "tasks" | "taskEvidence">;
+}) {
+  const receipt = record.taskEvidence?.[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY];
+  const warnings = receipt?.contractWarnings;
+  if (
+    record.status !== "submitted"
+    || record.tasks?.[CHECKLIST_CLOSEOUT_CONFIRMATION_KEY] !== true
+    || !receipt
+    || typeof receipt.employeeName !== "string"
+    || !receipt.employeeName.trim()
+    || typeof receipt.completedAt !== "string"
+    || !Number.isFinite(Date.parse(receipt.completedAt))
+    || typeof receipt.sourceFingerprint !== "string"
+    || !receipt.sourceFingerprint.trim()
+    || !Array.isArray(warnings)
+    || !warnings.length
+    || !warnings.every((warning) => typeof warning === "string" && warning.trim())
+  ) {
+    return null;
+  }
+
+  return (
+    <section className="event-workspace-panel" aria-label="Retained contract warnings">
+      <PortalStatusBadge tone="warning">Submitted with contract warnings — Needs Review</PortalStatusBadge>
+      <p>
+        Confirmed by {receipt.employeeName} · <time dateTime={receipt.completedAt}>{formatOperationsTimestamp(receipt.completedAt)} Eastern</time>
+      </p>
+      <p>Staff confirmation does not resolve these contract warnings.</p>
+      <ul>{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+    </section>
+  );
+}
+
+export function AutomaticChecklistSubmission({
+  record,
+}: {
+  record: Pick<ChecklistRecord, "status" | "tasks" | "taskEvidence">;
+}) {
+  const receipt = record.status === "submitted" && record.tasks?.[AUTO_SUBMISSION_KEY] === true
+    ? readAutomaticSubmission(record) : null;
+  if (!receipt) return null;
+  const needsAttention = receipt.missingBwa || receipt.missingPoc || receipt.missingTaskKeys.length > 0 || receipt.contractWarnings.length > 0;
+  const taskLabels = new Map(checklistSections.flatMap((section) => section.items.map((item) => [item.key, item.label] as const)));
+
+  return <section className="event-workspace-panel" aria-label="Automatic checklist submission">
+    <PortalStatusBadge>Automatically submitted</PortalStatusBadge>
+    {needsAttention ? <PortalStatusBadge tone="warning">Needs attention</PortalStatusBadge> : null}
+    <p>Filed by the system after the one-hour event closeout deadline. This preserves saved progress; it does not mark unfinished work complete or confirm it was performed.</p>
+    <p>Event ended <time dateTime={receipt.eventEndedAt}>{formatOperationsTimestamp(receipt.eventEndedAt)} Eastern</time>. Scheduled submission <time dateTime={receipt.scheduledFor}>{formatOperationsTimestamp(receipt.scheduledFor)} Eastern</time>.</p>
+    <p>Automatically submitted <time dateTime={receipt.submittedAt}>{formatOperationsTimestamp(receipt.submittedAt)} Eastern</time>.</p>
+    {receipt.missingBwa || receipt.missingPoc ? <ul>
+      {receipt.missingBwa ? <li>BWA name was not entered.</li> : null}
+      {receipt.missingPoc ? <li>POC name was not entered.</li> : null}
+    </ul> : null}
+    {receipt.missingTaskKeys.length ? <><strong>Unfinished or unverified tasks at submission</strong><ul>{receipt.missingTaskKeys.map((key) => <li key={key}>{taskLabels.get(key) ?? key}</li>)}</ul></> : null}
+    {receipt.contractWarnings.length ? <><strong>Retained contract warnings</strong><ul>{receipt.contractWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></> : null}
+    <p>Use Un-submit checklist if saved information needs correction.</p>
+  </section>;
+}
+
+function itineraryMonthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function itineraryMonthLabel(monthKey: string) {
+  const parsed = new Date(`${monthKey}-01T12:00:00`);
+  return Number.isNaN(parsed.getTime())
+    ? monthKey
+    : new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "America/New_York",
+      }).format(parsed);
+}
+
 export default function AdminClient({
+  archivedItineraries,
   checklistEventSummaries,
   entertainmentSchedules,
   floorPlans,
   initialState,
+  initialUpdatedAt = null,
   localPreview,
   operations,
   records,
@@ -112,23 +205,67 @@ export default function AdminClient({
   >("floor-plans");
   const [adminState, setAdminState] = useState<AdminState>(initialState);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("");
+  const savedRevisionRef = useRef(initialUpdatedAt);
+  const saveQueueRef = useRef(Promise.resolve());
+  const saveBlockedRef = useRef(false);
   const [evidenceEventId, setEvidenceEventId] = useState<number | null>(null);
   const [evidence, setEvidence] = useState<AdminContractEvidence | null>(null);
   const [evidenceState, setEvidenceState] = useState<EvidenceState>("idle");
+  const [checklistRecords, setChecklistRecords] = useState(records);
+  const [unsubmitEventId, setUnsubmitEventId] = useState<number | null>(null);
+  const [unsubmitError, setUnsubmitError] = useState<string | null>(null);
   const closeEvidenceDrawer = useCallback(() => setEvidenceEventId(null), []);
 
-  const submittedRecords = records
+  const submittedRecords = checklistRecords
     .filter((record) => record.status === "submitted" && record.eventId !== 99990001)
     .sort((left, right) => (right.submittedAt || "").localeCompare(left.submittedAt || ""));
 
+  const archivedItineraryMonths = Array.from(
+    archivedItineraries.reduce((groups, item) => {
+      const key = itineraryMonthKey(item.date);
+      const current = groups.get(key) ?? [];
+      current.push(item);
+      groups.set(key, current);
+      return groups;
+    }, new Map<string, ItineraryAsset[]>()),
+  ).sort(([left], [right]) => right.localeCompare(left));
+
+  async function unsubmitChecklist(eventId: number) {
+    setUnsubmitEventId(eventId);
+    setUnsubmitError(null);
+    try {
+      const response = await fetch(`/api/admin/checklists/${eventId}/unsubmit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { record?: ChecklistRecord; error?: string }
+        | null;
+      if (!response.ok || !payload?.record) {
+        throw new Error(payload?.error || "Unable to un-submit checklist.");
+      }
+      setChecklistRecords((current) =>
+        current.map((record) =>
+          record.eventId === eventId ? payload.record! : record,
+        ),
+      );
+    } catch (error) {
+      setUnsubmitError(error instanceof Error ? error.message : "Unable to un-submit checklist.");
+    } finally {
+      setUnsubmitEventId(null);
+    }
+  }
+
   useEffect(() => {
-    if (adminState === initialState) {
+    if (adminState === initialState || saveBlockedRef.current) {
       return;
     }
 
     setSaveState("saving");
     const timeoutId = window.setTimeout(() => {
-      startTransition(async () => {
+      saveQueueRef.current = saveQueueRef.current.then(async () => {
+        if (saveBlockedRef.current) return;
         try {
           const response = await fetch("/api/admin-state", {
             method: "PUT",
@@ -137,16 +274,21 @@ export default function AdminClient({
             },
             body: JSON.stringify({
               state: adminState,
+              expectedUpdatedAt: savedRevisionRef.current,
             }),
           });
 
-          if (!response.ok) {
-            throw new Error("Unable to save admin changes.");
+          const payload = await response.json() as { error?: string; record?: ChecklistRecord };
+          if (!response.ok || !payload.record) {
+            if (response.status === 409) saveBlockedRef.current = true;
+            throw new Error(payload.error ?? "Unable to save admin changes. Local edits are retained.");
           }
+          savedRevisionRef.current = payload.record.updatedAt;
 
           setSaveState("saved");
           window.setTimeout(() => setSaveState("idle"), 1400);
-        } catch {
+        } catch (error) {
+          setSaveError(error instanceof Error ? error.message : "Save failed; local edits retained.");
           setSaveState("error");
         }
       });
@@ -269,6 +411,9 @@ export default function AdminClient({
         eyebrow="Protected operations"
         title="Admin Dashboard"
       />
+      {saveState === "error" ? <section className="checklist-meta-card" role="alert"><strong>{saveError}</strong><p>Your local edits have been retained. Review them before reloading.</p><button type="button" onClick={() => {
+        if (window.confirm("Discard unsaved Admin changes and reload the latest saved state?")) window.location.reload();
+      }}>Reload latest and review</button></section> : null}
 
         {localPreview ? (
           <section className="admin-local-preview-notice" role="status">
@@ -300,8 +445,19 @@ export default function AdminClient({
             <strong>Event Add-Ons</strong>
             <span>Enter Food and Entertainment additions; only Food is mirrored live to Kitchen.</span>
           </Link>
+          <Link className="portal-operation-card" href="/admin/itineraries">
+            <span className="portal-module-kicker">Admin display edits</span>
+            <strong>Edit Itineraries</strong>
+            <span>Edit current or past itinerary details, save changes, or restore the source copy.</span>
+          </Link>
+          <Link className="portal-operation-card" href="/admin/integrations/gotab">
+            <span className="portal-module-kicker">Dry-run integration</span>
+            <strong>GoTab Kitchen Dispatch</strong>
+            <span>Verify server configuration, location access, product reads, and dispatch safety.</span>
+          </Link>
         </section>
 
+        <WorkspaceSettings />
         <section className="sheet-tab-strip" aria-label="Admin sections">
           <button aria-pressed={activeTab === "readiness"} className={`sheet-tab${activeTab === "readiness" ? " active" : ""}`} onClick={() => setActiveTab("readiness")} type="button">
             Event Readiness
@@ -311,6 +467,9 @@ export default function AdminClient({
           </button>
           <button aria-pressed={activeTab === "completed"} className={`sheet-tab${activeTab === "completed" ? " active" : ""}`} onClick={() => setActiveTab("completed")} type="button">
             Completed Checklists
+          </button>
+          <button aria-pressed={activeTab === "archived-itineraries"} className={`sheet-tab${activeTab === "archived-itineraries" ? " active" : ""}`} onClick={() => setActiveTab("archived-itineraries")} type="button">
+            Past Itineraries
           </button>
         </section>
 
@@ -399,6 +558,43 @@ export default function AdminClient({
               </>
             )}
           </>
+        ) : activeTab === "archived-itineraries" ? (
+          <section className="asset-section admin-archive-folder">
+            <h3>Past Itineraries</h3>
+            <p className="meta">Archived itinerary files from parties before today.</p>
+            {archivedItineraryMonths.length ? (
+              <div className="admin-archive-list">
+                {archivedItineraryMonths.map(([monthKey, items]) => (
+                  <details className="admin-archive-month" key={monthKey}>
+                    <summary>{itineraryMonthLabel(monthKey)} <span className="meta">({items.length} events)</span></summary>
+                    <div className="admin-archive-month-events">
+                      {items.map((item) => (
+                        <div className="admin-archive-item" key={item.id}>
+                          <div>
+                            <strong>{item.name}</strong>
+                            <span className="meta">{formatEventDate(item.date)} · {item.guest_count} guests</span>
+                          </div>
+                          {item.pdf ? (
+                            <a href={item.pdf} target="_blank" rel="noreferrer">
+                              Open itinerary
+                            </a>
+                          ) : (
+                            <a
+                              href={`/itineraries?eventId=${item.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open itinerary view
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            ) : <p className="meta">No past itineraries are available.</p>}
+          </section>
         ) : (
           <section className="completed-grid">
             {submittedRecords.length ? (
@@ -408,16 +604,22 @@ export default function AdminClient({
                 );
                 const addOnLines = submittedAddOnLines(record);
                 const progress = completedTaskCount(record);
+                const eventName = completedChecklistEventName(record, event?.name);
+                const eventDate = record.eventDate || event?.date;
+                const automatic = record.tasks?.[AUTO_SUBMISSION_KEY] === true ? readAutomaticSubmission(record) : null;
+                const poc = record.poc.trim() || (!automatic ? event?.poc : undefined);
                 return (
                   <article className="asset-section completed-card" key={record.eventId}>
-                    <h3>{event?.name ?? `Event ${record.eventId}`}</h3>
+                    <h3>{eventName}</h3>
                     <p className="meta">
-                      {event ? formatEventDate(event.date) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{event?.poc ? ` | ${event.poc}` : ""}
+                      {eventDate ? formatEventDate(eventDate) : "Unknown date"}{event?.time ? ` | ${event.time}` : ""}{poc ? ` | ${poc}` : ""}
                     </p>
+                    <AutomaticChecklistSubmission record={record} />
+                    <ChecklistCloseoutWarnings record={record} />
                     <div className="completed-meta-grid">
                       <div className="checklist-meta-card">
-                        <span className="eyebrow">Submitted</span>
-                        <strong>{record.submittedAt ? new Date(record.submittedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Unknown"}</strong>
+                        <span className="eyebrow">{automatic ? "Automatically submitted" : "Submitted"}</span>
+                        <strong>{automatic ? `${formatOperationsTimestamp(automatic.submittedAt)} Eastern` : record.submittedAt ? new Date(record.submittedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Unknown"}</strong>
                         <span className="meta">{progress.completed}/{progress.total} tasks complete</span>
                       </div>
                       <div className="checklist-meta-card">
@@ -444,15 +646,26 @@ export default function AdminClient({
                         )}
                       </div>
                     </div>
+                    <div className="completed-card-actions">
+                      <button
+                        className="button-link"
+                        disabled={unsubmitEventId === record.eventId}
+                        onClick={() => void unsubmitChecklist(record.eventId)}
+                        type="button"
+                      >
+                        {unsubmitEventId === record.eventId ? "Un-submitting…" : "Un-submit checklist"}
+                      </button>
+                    </div>
                   </article>
                 );
               })
             ) : (
               <section className="asset-section">
                 <h3>Completed Checklists</h3>
-                <p className="meta">Submitted checklist and add-on sheets will appear here after a BWA submits them from the checklist page.</p>
+                <p className="meta">Checklist and add-on sheets appear here after staff submit them or the system automatically files saved progress one hour after the event ends. Automatic submissions retain unfinished tasks and warnings for Admin review.</p>
               </section>
             )}
+            {unsubmitError ? <p className="portal-form-error" role="alert">{unsubmitError}</p> : null}
           </section>
         )}
       </div>

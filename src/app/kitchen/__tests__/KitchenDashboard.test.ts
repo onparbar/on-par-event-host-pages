@@ -4,44 +4,21 @@ import { describe, expect, it, vi } from "vitest";
 import { MOCK_KITCHEN_EVENTS } from "../../../lib/kitchen/fixtures";
 import { quantityAwareReadinessKey } from "../../../lib/kitchen/readiness";
 import { generateKitchenChecklist } from "../../../lib/kitchen/rules";
-import { kitchenFocusSnapshot } from "../../../lib/kitchen/focus";
 import {
   clockParts,
+  ChecklistPanel,
+  clampKitchenZoom,
   ensureAudioContextRunning,
+  formatPreppedTimestamp,
   formatTime,
-  KitchenEventFocusPanel,
   KitchenChecklistSheet,
+  KitchenEventAccordion,
+  nextKitchenZoom,
+  printableEventChecklists,
   shouldApplyKitchenDayResponse,
   soundAlertButtonLabel,
   timeSortValue,
 } from "../KitchenDashboard";
-
-describe("kitchen event focus panel", () => {
-  it("renders the current event, countdown, and next event", () => {
-    const current = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
-    const next = generateKitchenChecklist({
-      ...MOCK_KITCHEN_EVENTS[1],
-      startTime: "18:30",
-      endTime: "20:00",
-    });
-    const now = new Date("2026-07-28T16:00:00.000Z");
-    const snapshot = kitchenFocusSnapshot([current, next], now);
-    const html = renderToStaticMarkup(
-      createElement(KitchenEventFocusPanel, {
-        current: snapshot.current,
-        currentEventCount: snapshot.currentEventCount,
-        next: snapshot.next,
-        now,
-      }),
-    );
-
-    expect(html).toContain("Current event");
-    expect(html).toContain("Next event");
-    expect(html).toContain(current.event.name);
-    expect(html).toContain(next.event.name);
-    expect(html).toContain("remaining");
-  });
-});
 
 describe("kitchen dashboard time display", () => {
   it("rejects invalid clock values instead of displaying plausible times", () => {
@@ -72,6 +49,9 @@ describe("kitchen dashboard time display", () => {
       "7:05 PM",
     );
     expect(formatTime("2026-07-29T16:05:00")).toBe("4:05 PM");
+    expect(formatPreppedTimestamp("2026-08-14T16:05:00.000Z")).toBe(
+      "Aug 14, 12:05 PM",
+    );
   });
 });
 
@@ -105,6 +85,13 @@ describe("kitchen sound alerts", () => {
     expect(soundAlertButtonLabel("error")).not.toBe("Sound alerts on");
   });
 
+  it("labels the armed and enabled states as automatic sound alerts", () => {
+    expect(soundAlertButtonLabel("waiting")).toBe("Sound alerts armed");
+    expect(soundAlertButtonLabel("on")).toBe(
+      "Sound alerts always on",
+    );
+  });
+
   it("rejects a resume that resolves without starting audio", async () => {
     const context = {
       state: "suspended" as AudioContextState,
@@ -114,6 +101,24 @@ describe("kitchen sound alerts", () => {
     await expect(ensureAudioContextRunning(context)).rejects.toThrow(
       "did not enter the running state",
     );
+  });
+});
+
+describe("kitchen dashboard zoom", () => {
+  it("moves in ten-percent steps within the supported range", () => {
+    expect(nextKitchenZoom(100, -1)).toBe(90);
+    expect(nextKitchenZoom(100, 1)).toBe(110);
+    expect(nextKitchenZoom(70, -1)).toBe(60);
+    expect(nextKitchenZoom(40, -1)).toBe(40);
+    expect(nextKitchenZoom(130, 1)).toBe(130);
+  });
+
+  it("normalizes saved zoom values before applying them", () => {
+    expect(clampKitchenZoom(84)).toBe(80);
+    expect(clampKitchenZoom(86)).toBe(90);
+    expect(clampKitchenZoom(20)).toBe(40);
+    expect(clampKitchenZoom(200)).toBe(130);
+    expect(clampKitchenZoom(Number.NaN)).toBe(100);
   });
 });
 
@@ -149,6 +154,30 @@ describe("kitchen day response gating", () => {
 describe("kitchen checklist day layout", () => {
   const noop = () => {};
 
+  it("shows the approved two-dish serving setup while preserving full prepared food and refill pans", () => {
+    const checklist = generateKitchenChecklist({ eventId: "redacted-serving", eventName: "Redacted serving fixture", localDate: "2026-10-27",
+      startTime: "5:30 PM", endTime: "8:30 PM", guestCount: 17, status: "DEFINITE", room: "VIP 1", sourceUpdatedAt: "2026-10-06T14:52:00Z",
+      specialNotes: ["Needs Review: Tripleseat booking contract data could not be verified. Review the source event."],
+      selections: [{ name: "The Full Course - Food + $20 Drink Cards", quantity: 17, isFood: true }, { name: "Taco Bar", quantity: 1, isFood: true },
+        { name: "Chicken Tender Platter", quantity: 1, isFood: true }, { name: "Wing Platter", quantity: 1, isFood: true }, { name: "Veggie Tray", quantity: 1, isFood: true }] });
+    const original = structuredClone(checklist);
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, { checklist, bwaSaveState: "idle" }));
+    expect(html).toContain("Serving chafing dishes</span><strong>2</strong>");
+    expect(html).toContain("Wings and chicken tenders share one serving chafing dish: one 1/2 pan of each.");
+    expect(html).toContain("Taco Bar uses one serving chafing dish");
+    expect(html).toContain("remaining prepared pans for refills");
+    expect(html).toContain("Tripleseat booking contract data could not be verified");
+    expect(checklist).toEqual(original);
+    const rows = checklist.sections.flatMap((section) => section.rows);
+    for (const key of ["platter-wings", "platter-chicken-tenders"]) expect(rows.find((row) => row.key === key)).toMatchObject({ quantity: 64, numberOfPans: 2, panSize: "1/2" });
+  });
+
+  it("keeps VIP food visible on printable kitchen sheets", () => {
+    const event = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const vip = { ...event, event: { ...event.event, eventId: "vip-reservation-1" } };
+    expect(printableEventChecklists([event, vip])).toEqual([event, vip]);
+  });
+
   function renderSheet(checklistIndex: number) {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[checklistIndex]);
     return renderToStaticMarkup(
@@ -164,6 +193,98 @@ describe("kitchen checklist day layout", () => {
     );
   }
 
+  it("stacks each event behind a name-and-time accordion summary", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const html = renderToStaticMarkup(
+      createElement(
+        KitchenEventAccordion,
+        { checklist },
+        createElement("div", null, "Expanded prep list"),
+      ),
+    );
+    const summaryEnd = html.indexOf("</summary>");
+
+    expect(html).toContain(
+      'data-kitchen-event-accordion="mock-taco-001"',
+    );
+    expect(html).not.toContain('open=""');
+    expect(html.slice(0, summaryEnd)).toContain("Redacted Taco Package");
+    expect(html.slice(0, summaryEnd)).toContain("Area reserved: Mock Room A");
+    expect(html.slice(0, summaryEnd)).toContain("11:30 AM–1:30 PM");
+    expect(html.indexOf("Expanded prep list")).toBeGreaterThan(summaryEnd);
+  });
+
+  it("opens the fitted event view without expanding a long inline sheet", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const onOpen = vi.fn();
+    const element = KitchenEventAccordion({ checklist, onOpen });
+    const summary = element.props.children[0];
+    const trigger = {};
+    const preventDefault = vi.fn();
+    expect(summary.props["aria-haspopup"]).toBe("dialog");
+    summary.props.onClick({ preventDefault, currentTarget: trigger });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith(trigger);
+    expect(element.props.open).toBeUndefined();
+  });
+
+  it("keeps the party picker collapsed when events open in a fitted dialog", () => {
+    const html = renderToStaticMarkup(createElement("section", null,
+      ...MOCK_KITCHEN_EVENTS.slice(0, 2).map((source) => createElement(KitchenEventAccordion, {
+        key: source.eventId, checklist: generateKitchenChecklist(source), onOpen: noop,
+      })),
+    ));
+    expect(html.match(/data-kitchen-event-accordion=/g)).toHaveLength(2);
+    expect(html).not.toContain('open=""');
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(2);
+  });
+
+  it("uses the open event heading as the collapse control, separate from Fit and Print", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const html = renderToStaticMarkup(createElement(ChecklistPanel, {
+      checklist, staffDraft: { setup: [], foodRunners: [], pocs: [], preppedBy: "", verifiedBy: "" },
+      bwaOptions: [], bwaSaveState: "idle", onStaffChange: noop, onClose: noop,
+      onOpenDescription: noop, onPrint: noop, onReadyChange: noop, onSaveStaff: noop, readinessPending: new Set<string>(),
+    }));
+    const heading = html.slice(html.indexOf('class="kitchen-event-collapse-toggle"'), html.indexOf("</button>"));
+    expect(html).toContain('aria-label="Collapse Redacted Taco Package kitchen sheet"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(heading).toContain('id="kitchen-focus-view-title">Redacted Taco Package');
+    expect(heading).toContain("11:30 AM–1:30 PM · Mock Room A");
+    expect(heading).toContain('aria-hidden="true">⌃');
+    expect(heading).not.toContain("Print this event");
+    expect(heading).not.toContain("Fit entire sheet");
+    expect(html).toContain("Fit entire sheet ✓");
+    expect(html).toContain("Print this event");
+    expect(html).not.toContain("Close checklist");
+  });
+
+  it("does not repeat event identity inside expanded accordion content", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const html = renderToStaticMarkup(
+      createElement(KitchenChecklistSheet, {
+        bwaDraft: "",
+        bwaSaveState: "idle",
+        checklist,
+        hideEventIdentity: true,
+        inline: true,
+        onBwaChange: noop,
+        onPrint: noop,
+        onSaveBwa: noop,
+      }),
+    );
+    const header = html.slice(
+      html.indexOf("data-kitchen-checklist-header"),
+      html.indexOf("</header>"),
+    );
+
+    expect(header).not.toContain('class="kitchen-checklist-event-name"');
+    expect(header).toContain("Number of guests");
+    expect(header).toContain("Chafing dishes");
+    expect(header).toContain("Area reserved");
+    expect(header).toContain("Mock Room A");
+  });
+
   it("puts event identity and kitchen counts above the food table", () => {
     const html = renderSheet(0);
     const headerIndex = html.indexOf("data-kitchen-checklist-header");
@@ -174,10 +295,31 @@ describe("kitchen checklist day layout", () => {
     expect(html).toContain("Redacted Taco Package");
     expect(html).toContain("Number of guests");
     expect(html).toContain("Chafing dishes");
+    expect(html).not.toContain("DEFINITE");
+    expect(html).not.toContain("Bar package");
+    expect(html).not.toContain("Source Jul");
+    expect(html).not.toContain("Contract review alerts");
     expect(html).not.toContain("Event Kitchen Checklist");
     expect(headerIndex).toBeGreaterThanOrEqual(0);
     expect(headerIndex).toBeLessThan(tableIndex);
     expect(reviewIndex).toBeGreaterThan(tableIndex);
+  });
+
+  it("offers a full-sheet view without removing the prep, timing or review details", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[2]);
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, {
+      checklist, bwaSaveState: "idle", inline: true, fitToScreen: true, onOpenSheet: noop,
+    }));
+    expect(html).toContain("Open full sheet");
+    expect(html).toContain("Appetizer drop reminder");
+    expect(html).toContain("Food contract notes");
+    expect(html).toContain("Needs review:");
+    expect(html).toContain("Employee responsible for prep");
+    expect(html).toContain("Employee responsible for verification");
+    expect(html.indexOf(">Prepped<")).toBeLessThan(html.indexOf(">Verified<"));
+    expect(html.indexOf(">Verified<")).toBeLessThan(html.indexOf(">Ready<"));
+    const review = html.slice(html.indexOf('class="kitchen-review-panel kitchen-safety-details'));
+    expect(review.slice(0, review.indexOf(">"))).not.toContain("open=");
   });
 
   it("renders multiple events as independent checklist sheets", () => {
@@ -187,14 +329,36 @@ describe("kitchen checklist day layout", () => {
 
     expect(html.match(/data-kitchen-event-id=/g)).toHaveLength(2);
     expect(html.match(/<table/g)).toHaveLength(2);
-    expect(html).toContain('id="kitchen-bwa-mock-taco-001"');
-    expect(html).toContain('id="kitchen-bwa-mock-wing-002"');
+    expect(html.match(/class="kitchen-staff-select"/g)).toHaveLength(4);
     expect(html.indexOf("Redacted Taco Package")).toBeLessThan(
       html.indexOf("Redacted Wing Package"),
     );
   });
 
-  it("renders independent Ready and Completed controls after Quantity", () => {
+  it("renders approved multi-select Food Runner and POC roster options", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    checklist.foodRunnerOrBwa = "Ryan (POC)";
+    const html = renderToStaticMarkup(
+      createElement(KitchenChecklistSheet, {
+        bwaDraft: "Ryan (POC)",
+        bwaOptions: ["Diana", "Ryan"],
+        bwaSaveState: "idle",
+        checklist,
+        inline: true,
+        onBwaChange: noop,
+        onSaveBwa: noop,
+      }),
+    );
+
+    expect(html).toContain("Food Runner");
+    expect(html).toContain("POC");
+    expect(html).toContain("Diana");
+    expect(html).toContain("Ryan");
+    expect(html).not.toContain("Ryan (POC)</span>");
+    expect(html).not.toContain('placeholder="Enter employee name"');
+  });
+
+  it("renders independent Prepped, Verified and Ready controls in workflow order", () => {
     const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
     const beef = checklist.sections
       .flatMap((section) => section.rows)
@@ -246,33 +410,143 @@ describe("kitchen checklist day layout", () => {
       '<th scope="col">Quantity</th>',
     );
     const completedHeader = html.indexOf(
-      '<th scope="col">Completed</th>',
+      '<span class="kitchen-verified-heading">Verified</span>',
     );
+    const preppedHeader = html.indexOf(
+      '<span class="kitchen-verified-heading">Prepped</span>',
+    );
+    const readyHeader = html.indexOf('<th scope="col">Ready</th>');
     const beefReadyInput = html.match(
       /<input aria-label="Mark Beef ready"[^>]*>/,
     )?.[0];
     const beefCompletedInput = html.match(
-      /<input aria-label="Mark Beef completed"[^>]*>/,
+      /<input aria-label="Mark Beef verified by a different person"[^>]*>/,
+    )?.[0];
+    const beefPreppedInput = html.match(
+      /<input aria-label="Mark Beef prepped"[^>]*>/,
     )?.[0];
     const wingsCompletedInput = html.match(
-      /<input aria-label="Mark add-on Wings completed"[^>]*>/,
+      /<input aria-label="Mark add-on Wings verified by a different person"[^>]*>/,
     )?.[0];
 
     expect(html).toContain("<th scope=\"col\">Ready</th>");
     expect(quantityHeader).toBeGreaterThanOrEqual(0);
-    expect(completedHeader).toBeGreaterThan(quantityHeader);
-    expect(html).toContain('<th colSpan="6"');
+    expect(completedHeader).toBeGreaterThan(preppedHeader);
+    expect(readyHeader).toBeGreaterThan(completedHeader);
+    expect(quantityHeader).toBeGreaterThan(readyHeader);
+    expect(html.indexOf('data-label="Prepped"')).toBeLessThan(html.indexOf('data-label="Verified (different person)"'));
+    expect(html.indexOf('data-label="Verified (different person)"')).toBeLessThan(html.indexOf('data-label="Ready"'));
+    expect(preppedHeader).toBeGreaterThanOrEqual(0);
+    expect(html).toContain('aria-label="Employee responsible for prep"');
+    expect(html).toContain('aria-label="Employee responsible for verification"');
+    expect(html).toContain('<th colSpan="7"');
     expect(beefReadyInput).toContain('checked=""');
     expect(beefCompletedInput).toContain('checked=""');
+    expect(beefPreppedInput).not.toContain('checked=""');
     expect(wingsCompletedInput).not.toContain('checked=""');
     expect(html).toContain('aria-haspopup="dialog"');
     expect(html).toContain("Live food add-ons");
     expect(html).toContain('aria-label="Mark add-on Wings ready"');
     expect(html).toContain(
-      'aria-label="Mark add-on Wings completed"',
+      'aria-label="Mark add-on Wings verified by a different person"',
     );
     expect(html.match(/kitchen-item-complete/g)).toHaveLength(2);
     expect(html).toContain("Needs review:");
+  });
+
+  it("shows the appetizer drop time above the food table without altering ready time", () => {
+    const html = renderSheet(2);
+    expect(html).toContain("Drop appetizers at 2:00 PM");
+    expect(html).toContain("30 minutes before the event.");
+    expect(html).toContain("2:15 PM");
+    expect(html.indexOf('aria-label="Appetizer drop reminder"')).toBeLessThan(html.indexOf("<table"));
+    expect(renderSheet(0)).not.toContain('aria-label="Appetizer drop reminder"');
+  });
+
+  it("labels ambiguous contract food timing for review without a guessed reminder", () => {
+    const checklist = generateKitchenChecklist({
+      ...MOCK_KITCHEN_EVENTS[2],
+      specialNotes: ["Serve appetizers at 3:00 PM"],
+    });
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, {
+      checklist,
+      bwaSaveState: "idle",
+    }));
+    expect(html).toContain("Appetizer drop time needs review");
+    expect(html).toContain("Serve appetizers at 3:00 PM");
+    expect(html).not.toContain("Drop appetizers at 2:00 PM");
+  });
+
+  it("renders the exact employee and Eastern timestamp for each checked Prepped item", () => {
+    const checklist = generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]);
+    const rows = checklist.sections.flatMap((section) => section.rows);
+    const beef = rows.find((row) => row.key === "taco-beef")!;
+    const chicken = rows.find((row) => row.key === "taco-chicken")!;
+    const beefKey = quantityAwareReadinessKey({
+      itemKey: beef.key,
+      quantity: beef.quantity,
+      numberOfPans: beef.numberOfPans,
+      panSize: beef.panSize,
+      unit: beef.unit,
+      ruleVersion: checklist.ruleVersion,
+    });
+    const chickenKey = quantityAwareReadinessKey({
+      itemKey: chicken.key,
+      quantity: chicken.quantity,
+      numberOfPans: chicken.numberOfPans,
+      panSize: chicken.panSize,
+      unit: chicken.unit,
+      ruleVersion: checklist.ruleVersion,
+    });
+    const wings = {
+      itemKey: "addon:wings",
+      foodName: "Wings",
+      description: "Traditional wings served with ranch.",
+      quantity: 64,
+      unit: "each",
+      numberOfPans: 3,
+      panSize: "1/3" as const,
+      sourceUpdatedAt: "2026-08-14T15:55:00.000Z",
+    };
+    const wingsKey = quantityAwareReadinessKey({
+      ...wings,
+      ruleVersion: checklist.ruleVersion,
+    });
+    checklist.preppedItemKeys = [beefKey, chickenKey, wingsKey];
+    checklist.preppedItemDetails = {
+      [beefKey]: {
+        employeeName: "Diana",
+        preppedAt: "2026-08-14T16:05:00.000Z",
+      },
+      [chickenKey]: {
+        employeeName: null,
+        preppedAt: "2026-08-14T15:45:00.000Z",
+      },
+      [wingsKey]: {
+        employeeName: "Ryan",
+        preppedAt: "2026-08-14T16:10:00.000Z",
+      },
+    };
+    checklist.liveFoodAddOns = [wings];
+
+    const html = renderToStaticMarkup(
+      createElement(KitchenChecklistSheet, {
+        bwaSaveState: "idle",
+        checklist,
+        inline: true,
+        onPreppedChange: noop,
+      }),
+    );
+
+    expect(html).toContain("Diana");
+    expect(html).toContain("Ryan");
+    expect(html).toContain("Aug 14, 12:05 PM");
+    expect(html).toContain("Aug 14, 12:10 PM");
+    expect(html).toContain("Aug 14, 11:45 AM");
+    expect(html).toContain(
+      '<time dateTime="2026-08-14T16:05:00.000Z">',
+    );
+    expect(html).toContain("Employee not recorded");
   });
 
   it("does not apply Ready row styling to a final-completed-only item", () => {
@@ -306,7 +580,7 @@ describe("kitchen checklist day layout", () => {
       /<input aria-label="Mark Beef ready"[^>]*>/,
     )?.[0];
     const completedInput = html.match(
-      /<input aria-label="Mark Beef completed"[^>]*>/,
+      /<input aria-label="Mark Beef verified by a different person"[^>]*>/,
     )?.[0];
 
     expect(readyInput).not.toContain('checked=""');

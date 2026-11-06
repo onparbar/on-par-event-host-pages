@@ -4,6 +4,7 @@ import {
   listChecklistRecords,
 } from "@/lib/checklist-storage";
 import { emptyAdminState, type AdminState } from "@/lib/admin-types";
+import { normalizeItineraryEdits } from "@/lib/itineraries/edits";
 
 export const ADMIN_STATE_EVENT_ID = 99990001;
 const ADMIN_EVENT_NAME = "__admin_state__";
@@ -19,6 +20,7 @@ function parseAdminState(value: unknown): AdminState {
   return {
     archivedAssetKeys: Array.isArray(candidate.archivedAssetKeys) ? candidate.archivedAssetKeys.filter((item): item is string => typeof item === "string") : [],
     archivedEventIds: Array.isArray(candidate.archivedEventIds) ? candidate.archivedEventIds.map((item) => Number(item)).filter((item) => Number.isFinite(item)) : [],
+    itineraryEditsByEvent: normalizeItineraryEdits(candidate.itineraryEditsByEvent),
     overlaysByAsset:
       candidate.overlaysByAsset && typeof candidate.overlaysByAsset === "object"
         ? Object.fromEntries(

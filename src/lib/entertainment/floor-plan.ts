@@ -15,6 +15,9 @@ export function getLocalEntertainmentEvents(): LocalEntertainmentEvent[] {
       name: item.name,
       quantity: item.quantity,
       time: item.time,
+      duration: item.duration,
+      startTimeSource: item.startTimeSource,
+      contractedDurationMinutes: item.contractedDurationMinutes,
     })),
   }));
 }

@@ -1,0 +1,457 @@
+/* Screen-only presentation: the kitchen's calculations, sheet fit and print rules stay unchanged. */
+@media screen {
+  .kitchen-dashboard-shell {
+    --kitchen-cream: #f4f6f6;
+    --kitchen-line: #dde4e1;
+    --kitchen-muted: #596a63;
+    background: var(--kitchen-cream);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .kitchen-dashboard-shell :is(h1, h2, h3, .kitchen-header-title strong) {
+    font-family: inherit;
+    letter-spacing: -0.025em;
+  }
+
+  .kitchen-dashboard-shell .kitchen-dashboard-intro {
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-dashboard-intro h1 {
+    margin-block: 4px;
+    font-size: clamp(1.6rem, 2.2vw, 2.35rem);
+    font-weight: 750;
+    line-height: 1.15;
+  }
+
+  .kitchen-dashboard-shell .kitchen-eyebrow {
+    color: #526D52;
+    font-size: 0.68rem;
+    font-weight: 750;
+    letter-spacing: 0.09em;
+  }
+
+  .kitchen-dashboard-shell .kitchen-dashboard-intro p {
+    font-size: 0.86rem;
+  }
+
+  .kitchen-dashboard-shell .kitchen-summary-chip {
+    padding: 6px 11px;
+    border-color: var(--kitchen-line);
+    background: #FFFFFF;
+    font-size: 0.77rem;
+    font-weight: 650;
+  }
+
+  .kitchen-dashboard-shell .kitchen-summary-chip-review {
+    border-color: #e8cb8b;
+    background: #fff8e8;
+    color: #754c09;
+  }
+
+  .kitchen-dashboard-shell .kitchen-day-toolbar {
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    box-shadow: 0 2px 5px rgb(24 51 47 / 3%);
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-date-controls, .kitchen-sync-controls) {
+    gap: 8px;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-primary-button, .kitchen-secondary-button, .kitchen-icon-button, .kitchen-card-button, .kitchen-view-switch button, .kitchen-date-input, .kitchen-column-staff-select, .kitchen-staff-select summary, .kitchen-zoom-button, .kitchen-zoom-value, .kitchen-sound-button) {
+    border-radius: 9px;
+    font-family: inherit;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-primary-button, .kitchen-secondary-button, .kitchen-icon-button, .kitchen-card-button, .kitchen-view-switch button, .kitchen-date-input, .kitchen-column-staff-select, .kitchen-staff-select summary, .kitchen-zoom-button, .kitchen-zoom-value, .kitchen-sound-button):not(.kitchen-sheet-viewport[data-fit="true"] *) {
+    min-height: 44px;
+    font-weight: 650;
+    line-height: 1.25;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-primary-button, .kitchen-secondary-button, .kitchen-card-button):not(.kitchen-sheet-viewport[data-fit="true"] *) {
+    padding: 10px 14px;
+    font-size: 0.84rem;
+  }
+
+  .kitchen-dashboard-shell .kitchen-primary-button {
+    background: #297025;
+    color: #FFFFFF;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-secondary-button, .kitchen-icon-button, .kitchen-card-button-secondary) {
+    border: 1px solid var(--kitchen-line);
+    background: #FFFFFF;
+    color: #18332F;
+    box-shadow: none;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-primary-button, .kitchen-secondary-button, .kitchen-card-button):hover:not(:disabled) {
+    transform: none;
+    box-shadow: 0 2px 5px rgb(24 51 47 / 10%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-primary-button:hover:not(:disabled) {
+    background: #18332F;
+  }
+
+  .kitchen-dashboard-shell .kitchen-icon-button {
+    min-width: 44px;
+    padding-inline: 10px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-date-input {
+    padding: 8px 10px;
+    border-color: var(--kitchen-line);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kitchen-dashboard-shell .kitchen-sync-copy {
+    font-size: 0.74rem;
+    line-height: 1.45;
+  }
+
+  .kitchen-dashboard-shell :is(button:disabled, input:disabled, select:disabled) {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-dashboard-main, .kitchen-checklist-wrap, .kitchen-modal-card) :is(a, button, input, select, summary):focus-visible {
+    outline: 3px solid #297025;
+    outline-offset: 3px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-view-switch {
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--kitchen-line);
+    border-radius: 12px;
+    background: #eaf0ed;
+  }
+
+  .kitchen-dashboard-shell .kitchen-view-switch button {
+    padding: 8px 14px;
+    border-color: transparent;
+    background: transparent;
+    color: #526D52;
+  }
+
+  .kitchen-dashboard-shell .kitchen-view-switch .is-active {
+    border-color: var(--kitchen-line);
+    background: #FFFFFF;
+    color: #18332F;
+    box-shadow: 0 1px 3px rgb(24 51 47 / 7%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-party-controls {
+    gap: 8px 12px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-party-controls p {
+    font-size: 0.78rem;
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-accordion {
+    border-color: var(--kitchen-line);
+    border-radius: 14px;
+    box-shadow: 0 2px 5px rgb(24 51 47 / 4%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-accordion[open] {
+    border-color: #969E74;
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-accordion-summary {
+    min-height: 80px;
+    gap: 12px;
+    padding: 12px 18px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-accordion[open] > .kitchen-event-accordion-summary {
+    border-bottom-color: var(--kitchen-line);
+    background: #f8faf8;
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-accordion-summary strong {
+    font-size: clamp(1.05rem, 1.35vw, 1.3rem);
+    font-weight: 750;
+    letter-spacing: -0.015em;
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-area {
+    color: #526D52;
+    font-size: 0.79rem;
+    font-weight: 600;
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-readiness {
+    color: var(--kitchen-muted);
+    font-size: 0.74rem;
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-accordion-time {
+    padding: 7px 10px;
+    border: 1px solid var(--kitchen-line);
+    border-radius: 8px;
+    background: #FFFFFF;
+    color: #18332F;
+    font-size: 0.86rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kitchen-dashboard-shell .kitchen-checklist {
+    border-color: var(--kitchen-line);
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgb(24 51 47 / 4%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-event-accordion-content > .kitchen-checklist {
+    border: 0;
+    border-radius: 0 0 14px 14px;
+    box-shadow: none;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-heading, .kitchen-checklist-schedule) {
+    background: var(--kitchen-line);
+  }
+
+  .kitchen-dashboard-shell .kitchen-checklist-heading {
+    border-bottom: 1px solid var(--kitchen-line);
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-checklist-header-fact {
+    padding: 10px 12px;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-header-fact strong, .kitchen-checklist-fact strong) {
+    color: #18332F;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) :is(.kitchen-checklist-header-fact strong, .kitchen-checklist-fact strong) {
+    font-size: 1.08rem;
+    font-weight: 750;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-bwa, .kitchen-checklist-fact-start) {
+    background: #fafbfa;
+  }
+
+  .kitchen-dashboard-shell .kitchen-checklist-fact-prep {
+    background: #edf3ed;
+  }
+
+  .kitchen-dashboard-shell .kitchen-staff-select summary {
+    border-color: #cbd5cf;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-staff-select summary {
+    padding: 7px 26px 7px 10px;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-staff-select summary strong {
+    font-size: 0.83rem;
+    font-weight: 650;
+  }
+
+  .kitchen-dashboard-shell .kitchen-staff-select fieldset {
+    padding: 8px;
+    border-color: #cbd5cf;
+    border-radius: 12px;
+    background: #FFFFFF;
+    box-shadow: 0 12px 32px rgb(24 51 47 / 16%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-staff-select fieldset label {
+    min-height: 44px;
+    padding: 8px;
+    border-radius: 7px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  .kitchen-dashboard-shell .kitchen-staff-select fieldset label:hover {
+    background: #edf3ed;
+  }
+
+  .kitchen-dashboard-shell .kitchen-staff-select fieldset input {
+    accent-color: #297025;
+  }
+
+  .kitchen-dashboard-shell .kitchen-drop-reminder {
+    border-bottom: 1px solid #cbd8ca;
+    background: #edf3ed;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-drop-reminder {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  .kitchen-dashboard-shell .kitchen-drop-reminder-review {
+    border-color: #e8cb8b;
+    background: #fff8e8;
+  }
+
+  .kitchen-dashboard-shell .kitchen-checklist-table :is(th, td) {
+    border-right-color: rgb(24 51 47 / 9%);
+    border-bottom-color: rgb(24 51 47 / 15%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-checklist-table thead th {
+    background: #f5f7f6;
+    color: #526D52;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-checklist-table thead th {
+    padding: 8px;
+    font-size: 0.68rem;
+    font-weight: 750;
+    letter-spacing: 0.045em;
+  }
+
+  .kitchen-dashboard-shell .kitchen-category-heading th {
+    border-top: 1px solid rgb(24 51 47 / 25%);
+    border-bottom: 1px solid rgb(24 51 47 / 20%);
+    color: #18332F;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-category-heading th {
+    padding: 7px 10px;
+    font-size: 0.73rem;
+    font-weight: 750;
+    letter-spacing: 0.07em;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-checklist-table td {
+    padding: 5px 8px;
+    font-size: 0.94rem;
+    font-weight: 650;
+    line-height: 1.3;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-checklist-table :is(.kitchen-ready-control, .kitchen-completed-control) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-checklist-table :is(.kitchen-ready-control input, .kitchen-completed-control input) {
+    accent-color: #297025;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-checklist-table :is(.kitchen-ready-control input, .kitchen-completed-control input) {
+    width: 22px;
+    height: 22px;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-checklist-table .kitchen-food-button {
+    min-height: 44px;
+    padding-block: 5px;
+    font-size: 1.08rem;
+    font-weight: 750;
+    line-height: 1.25;
+  }
+
+  .kitchen-dashboard-shell .kitchen-food-button {
+    border-bottom: 0;
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: rgb(24 51 47 / 45%);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-food-button:hover {
+    text-decoration-style: solid;
+    text-decoration-color: currentColor;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-prepped-audit {
+    font-size: 0.64rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .kitchen-dashboard-shell .kitchen-review-area {
+    background: #f7f9f8;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-review-area {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-review-panel {
+    border-color: var(--kitchen-line);
+    border-radius: 10px;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-review-panel {
+    padding: 10px 12px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-review-panel-warning {
+    border-color: #e8cb8b;
+    background: #fff8e8;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) .kitchen-review-panel h3 {
+    font-size: 0.75rem;
+    font-weight: 750;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-checklist-inline, .kitchen-sheet-viewport[data-fit="false"]) :is(.kitchen-review-panel p, .kitchen-review-panel ul) {
+    font-size: 0.81rem;
+    line-height: 1.45;
+  }
+
+  .kitchen-dashboard-shell :is(.kitchen-event-focus-banner, .kitchen-operations-panel, .kitchen-state-card) {
+    border: 1px solid var(--kitchen-line);
+    border-radius: 14px;
+    box-shadow: 0 2px 5px rgb(24 51 47 / 3%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-state-card h2 {
+    font-weight: 750;
+  }
+
+  .kitchen-dashboard-shell .kitchen-alert {
+    border-radius: 12px;
+    box-shadow: none;
+  }
+
+  .kitchen-dashboard-shell .kitchen-modal-card {
+    border: 1px solid var(--kitchen-line);
+    border-radius: 18px;
+    box-shadow: 0 24px 72px rgb(0 0 0 / 20%);
+  }
+
+  .kitchen-dashboard-shell .kitchen-modal-card h2 {
+    font-weight: 750;
+    line-height: 1.2;
+  }
+}
+
+@media screen and (max-width: 720px) {
+  .kitchen-dashboard-shell .kitchen-event-accordion-summary {
+    padding: 12px;
+  }
+
+  .kitchen-dashboard-shell .kitchen-day-summary {
+    justify-content: flex-start;
+  }
+
+  .kitchen-dashboard-shell .kitchen-view-switch button {
+    flex: 1 1 auto;
+    padding-inline: 10px;
+  }
+}

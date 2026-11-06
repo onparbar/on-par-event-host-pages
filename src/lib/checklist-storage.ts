@@ -1,14 +1,19 @@
-import type { ChecklistRecord } from "@/lib/checklist-model";
+import { CHECKLIST_CLOSEOUT_CONFIRMATION_KEY, checklistSections, normalizeStaffPoc, type ChecklistRecord } from "@/lib/checklist-model";
+import { StaleSaveError } from "@/lib/stale-save";
+import { AUTO_SUBMISSION_KEY, isAutomaticSubmission, readAutomaticSubmission, type AutomaticChecklistSubmission } from "@/lib/operations/checklist-auto-submission";
+import { operationalKitchenEventId } from "@/lib/vip-prep/identity";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
 const CHECKLIST_COLUMNS =
-  "event_id,bwa,extras_added,remaining_drink_card_balance,tasks,entertainment,food,status,updated_at,submitted_at";
+  "event_id,event_name,event_date,poc,bwa,extras_added,remaining_drink_card_balance,tasks,task_evidence,entertainment,food,status,updated_at,submitted_at";
 
 type ChecklistPayload = {
   bwa?: string;
+  poc?: string;
   extrasAdded?: string;
   remainingDrinkCardBalance?: string;
   tasks?: Record<string, unknown>;
+  taskEvidence?: ChecklistRecord["taskEvidence"];
   entertainment?: Record<string, unknown>;
   food?: Record<string, unknown>;
 };
@@ -20,15 +25,22 @@ export type SaveChecklistInput = {
   eventDate: string;
   poc?: string;
   checklist: ChecklistPayload;
+  expectedUpdatedAt: string | null;
+  allowReopen?: boolean;
+  /** Trusted server job only; incoming checklist fields cannot forge this receipt. */
+  autoSubmission?: AutomaticChecklistSubmission;
 };
 
 type DatabaseRecord = {
   event_id: number | string;
+  event_name?: string | null;
   event_date?: string | null;
+  poc?: string | null;
   bwa?: string | null;
   extras_added?: string | null;
   remaining_drink_card_balance?: string | null;
   tasks?: Record<string, unknown> | null;
+  task_evidence?: ChecklistRecord["taskEvidence"] | null;
   entertainment?: Record<string, unknown> | null;
   food?: Record<string, unknown> | null;
   status?: string | null;
@@ -104,8 +116,12 @@ async function databaseRequest<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Checklist database request failed.");
+    const error = await response.json().catch(() => null) as { code?: string } | null;
+    if (response.status === 409 || error?.code === "PT409") throw new StaleSaveError();
+    if (response.status === 404 || error?.code === "PGRST202" || error?.code === "42703") {
+      throw new Error("Checklist safety migration is not installed. No changes were saved; ask an administrator to finish the reviewed database update.");
+    }
+    throw new Error(`Checklist database request failed (${response.status}).`);
   }
 
   return response.json() as Promise<T>;
@@ -114,10 +130,14 @@ async function databaseRequest<T>(url: string, init?: RequestInit): Promise<T> {
 function toChecklistRecord(record: DatabaseRecord): ChecklistRecord {
   return {
     eventId: Number(record.event_id),
+    eventName: record.event_name ?? "",
+    eventDate: record.event_date ?? "",
+    poc: normalizeStaffPoc(record.poc),
     bwa: record.bwa ?? "",
     extrasAdded: record.extras_added ?? "",
     remainingDrinkCardBalance: record.remaining_drink_card_balance ?? "",
     tasks: (record.tasks ?? {}) as ChecklistRecord["tasks"],
+    taskEvidence: record.task_evidence ?? {},
     entertainment: (record.entertainment ?? {}) as ChecklistRecord["entertainment"],
     food: (record.food ?? {}) as ChecklistRecord["food"],
     status: record.status === "submitted" ? "submitted" : "draft",
@@ -168,16 +188,35 @@ export async function getChecklistRecordUpdatedAt(eventId: number) {
 }
 
 export async function saveChecklist(input: SaveChecklistInput) {
-  const now = new Date().toISOString();
+  if (input.autoSubmission && (input.action !== "submit" || !isAutomaticSubmission(input.autoSubmission) || operationalKitchenEventId(input.autoSubmission.sourceEventId) !== String(input.eventId))) {
+    throw new Error("Invalid automatic checklist submission evidence.");
+  }
+  if (input.expectedUpdatedAt !== null && (typeof input.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(input.expectedUpdatedAt)))) {
+    throw new Error("Load the saved checklist revision before saving.");
+  }
+  const previous = useLocalMemoryStorage()
+    ? memoryRecords.get(input.eventId)
+    : input.expectedUpdatedAt === null ? undefined : await getChecklistRecord(input.eventId).then((record) => record ? {
+      updated_at: record.updatedAt, poc: record.poc, tasks: record.tasks, task_evidence: record.taskEvidence, status: record.status,
+    } : undefined);
+  const taskKeys = new Set(checklistSections.flatMap((section) => section.items.map((item) => item.key)));
+  const preservePrevious = (key: string) => !taskKeys.has(key) && (input.action !== "submit" || key !== CHECKLIST_CLOSEOUT_CONFIRMATION_KEY);
+  const acceptIncoming = (key: string) => key !== AUTO_SUBMISSION_KEY && (input.action === "submit" || key !== CHECKLIST_CLOSEOUT_CONFIRMATION_KEY);
+  const previousUnknownTasks = Object.fromEntries(Object.entries(previous?.tasks ?? {}).filter(([key]) => preservePrevious(key)));
+  const previousUnknownEvidence = Object.fromEntries(Object.entries(previous?.task_evidence ?? {}).filter(([key]) => preservePrevious(key)));
+  const suppliedPoc = input.checklist.poc ?? input.poc;
+  const incomingPoc = typeof suppliedPoc === "string" ? suppliedPoc.trim() && !normalizeStaffPoc(suppliedPoc) ? undefined : suppliedPoc : undefined;
+  const now = new Date(Math.max(Date.now(), Date.parse(previous?.updated_at ?? "") + 1 || 0)).toISOString();
   const row = {
     event_id: input.eventId,
     event_name: input.eventName,
     event_date: input.eventDate,
-    poc: input.poc ?? "",
+    poc: normalizeStaffPoc(incomingPoc === undefined ? previous?.poc : incomingPoc),
     bwa: input.checklist.bwa ?? "",
     extras_added: input.checklist.extrasAdded ?? "",
     remaining_drink_card_balance: input.checklist.remainingDrinkCardBalance ?? "",
-    tasks: input.checklist.tasks ?? {},
+    tasks: { ...previousUnknownTasks, ...Object.fromEntries(Object.entries(input.checklist.tasks ?? {}).filter(([key]) => acceptIncoming(key))) },
+    task_evidence: { ...previousUnknownEvidence, ...Object.fromEntries(Object.entries(input.checklist.taskEvidence ?? {}).filter(([key]) => acceptIncoming(key))) },
     entertainment: input.checklist.entertainment ?? {},
     food: input.checklist.food ?? {},
     status: input.action === "submit" ? "submitted" : "draft",
@@ -185,25 +224,38 @@ export async function saveChecklist(input: SaveChecklistInput) {
     updated_at: now,
   };
 
+  const previousAuto = readAutomaticSubmission({ taskEvidence: previous?.task_evidence ?? undefined });
+  if (input.autoSubmission) {
+    if (previousAuto || Object.hasOwn(previous?.tasks ?? {}, AUTO_SUBMISSION_KEY)) throw new StaleSaveError("This event was already automatically submitted or reopened by Admin. Admin reopening must be preserved.");
+    row.tasks[AUTO_SUBMISSION_KEY] = true;
+    row.task_evidence[AUTO_SUBMISSION_KEY] = {
+      employeeName: "Event Host automation (system)", completedAt: input.autoSubmission.submittedAt,
+      automaticSubmission: structuredClone(input.autoSubmission),
+    };
+  } else if (input.allowReopen || previousAuto && input.action === "submit") {
+    row.tasks[AUTO_SUBMISSION_KEY] = false;
+  }
+
   if (useLocalMemoryStorage()) {
+    if ((previous?.updated_at ?? null) !== input.expectedUpdatedAt) throw new StaleSaveError();
+    if (previous?.status === "submitted" && !input.allowReopen) throw new StaleSaveError("This checklist was submitted. Only Admin can reopen it; your draft has been kept.");
     memoryRecords.set(input.eventId, cloneRecord(row));
     return toChecklistRecord(cloneRecord(row));
   }
 
-  const records = await databaseRequest<DatabaseRecord[]>(
-    getDatabaseUrl(`?on_conflict=event_id&select=${CHECKLIST_COLUMNS}`),
+  const record = await databaseRequest<DatabaseRecord>(
+    getDatabaseUrl().replace(/\/event_host_checklists$/, "/rpc/save_event_host_checklist_checked"),
     {
       method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify(row),
+      body: JSON.stringify({ p_record: row, p_expected_updated_at: input.expectedUpdatedAt, p_allow_reopen: input.allowReopen === true }),
     },
   );
 
-  if (!records[0]) {
+  if (!record) {
     throw new Error("Checklist database did not return the saved record.");
   }
 
-  return toChecklistRecord(records[0]);
+  return toChecklistRecord(record);
 }
 
 export function resetLocalChecklistStorageForTests() {

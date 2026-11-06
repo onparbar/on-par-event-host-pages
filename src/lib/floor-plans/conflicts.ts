@@ -1,4 +1,6 @@
-import { getFloorPlanArea } from "./configuration/areas";
+import { areaUsesSeatingBuffer, getFloorPlanArea, getPhysicalFloorPlanAreaId } from "./configuration/areas";
+import { reservationOccupancyOverlap } from "@/lib/operations/reservation-buffer";
+import { validEntertainmentInterval } from "@/lib/entertainment/domain";
 import type {
   FloorPlanConflict,
   FloorPlanDocument,
@@ -17,6 +19,25 @@ export function timeRangesOverlap(
   return startsBeforeEnd && endsAfterStart;
 }
 
+export function floorPlanAreaTimeOverlap(
+  areaId: string,
+  leftStart: string | null,
+  leftEnd: string | null,
+  rightStart: string | null,
+  rightEnd: string | null,
+) {
+  if (areaUsesSeatingBuffer(areaId)) {
+    return reservationOccupancyOverlap(leftStart, leftEnd, rightStart, rightEnd);
+  }
+  if (!leftStart || !leftEnd || !rightStart || !rightEnd ||
+      !validEntertainmentInterval(leftStart, leftEnd) || !validEntertainmentInterval(rightStart, rightEnd) ||
+      !timeRangesOverlap(leftStart, leftEnd, rightStart, rightEnd)) return null;
+  return {
+    startAt: new Date(Math.max(Date.parse(leftStart), Date.parse(rightStart))).toISOString(),
+    endAt: new Date(Math.min(Date.parse(leftEnd), Date.parse(rightEnd))).toISOString(),
+  };
+}
+
 function conflict(
   left: FloorPlanReservation,
   right: FloorPlanReservation,
@@ -25,14 +46,10 @@ function conflict(
 ): FloorPlanConflict {
   const leftEvent = plan.events.find((event) => event.id === left.floorPlanEventId)!;
   const rightEvent = plan.events.find((event) => event.id === right.floorPlanEventId)!;
-  const startAt =
-    Date.parse(left.startAt!) >= Date.parse(right.startAt!)
-      ? left.startAt!
-      : right.startAt!;
-  const endAt =
-    Date.parse(left.endAt!) <= Date.parse(right.endAt!)
-      ? left.endAt!
-      : right.endAt!;
+  const { startAt, endAt } = floorPlanAreaTimeOverlap(
+    areaId === "facility" ? right.areaId : areaId,
+    left.startAt, left.endAt, right.startAt, right.endAt,
+  )!;
   return {
     id: [areaId, left.id, right.id].sort().join(":"),
     areaId,
@@ -53,14 +70,21 @@ export function detectFloorPlanConflicts(plan: FloorPlanDocument) {
     const left = reservations[leftIndex];
     for (let rightIndex = leftIndex + 1; rightIndex < reservations.length; rightIndex += 1) {
       const right = reservations[rightIndex];
+      const physicalId = getPhysicalFloorPlanAreaId(left.areaId);
+      const sameEvent = left.floorPlanEventId === right.floorPlanEventId;
+      const guestSeating = (reservation: FloorPlanReservation) => reservation.reservationType === "seating" ||
+        (reservation.reservationType === "room" && (getFloorPlanArea(reservation.areaId)?.capacity ?? 0) > 0);
+      const foodAndSeating =
+        (left.reservationType === "food-table" && guestSeating(right)) ||
+        (right.reservationType === "food-table" && guestSeating(left));
       if (
-        left.floorPlanEventId === right.floorPlanEventId ||
-        left.areaId !== right.areaId ||
-        !timeRangesOverlap(left.startAt, left.endAt, right.startAt, right.endAt)
+        (sameEvent && !foodAndSeating) ||
+        physicalId !== getPhysicalFloorPlanAreaId(right.areaId) ||
+        !floorPlanAreaTimeOverlap(physicalId, left.startAt, left.endAt, right.startAt, right.endAt)
       ) {
         continue;
       }
-      result.push(conflict(left, right, plan, left.areaId));
+      result.push(conflict(left, right, plan, physicalId));
     }
   }
 
@@ -73,17 +97,24 @@ export function detectFloorPlanConflicts(plan: FloorPlanDocument) {
     );
     if (!buyoutReservation) continue;
     for (const other of plan.events) {
+      const otherReservations = plan.reservations.filter(
+        (reservation) => reservation.floorPlanEventId === other.id,
+      );
+      const otherReservation = otherReservations.find((reservation) => areaUsesSeatingBuffer(reservation.areaId)) ?? otherReservations[0];
       if (
         other.id === buyout.id ||
-        !timeRangesOverlap(buyout.startAt, buyout.endAt, other.startAt, other.endAt)
+        !otherReservation ||
+        !floorPlanAreaTimeOverlap(otherReservation.areaId, buyout.startAt, buyout.endAt, other.startAt, other.endAt)
       ) {
         continue;
       }
-      const otherReservation = plan.reservations.find(
-        (reservation) => reservation.floorPlanEventId === other.id,
-      );
       if (otherReservation) {
-        result.push(conflict(buyoutReservation, otherReservation, plan, "facility"));
+        result.push(conflict(
+          { ...buyoutReservation, startAt: buyout.startAt, endAt: buyout.endAt },
+          { ...otherReservation, startAt: other.startAt, endAt: other.endAt },
+          plan,
+          "facility",
+        ));
       }
     }
   }

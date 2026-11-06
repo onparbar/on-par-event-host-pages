@@ -1,11 +1,16 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { hasAdminSession } from "@/lib/admin-auth";
 import {
+  getKitchenEventChecklist,
   getKitchenEventFoodAddOns,
   updateKitchenEventFoodAddOns,
 } from "@/lib/kitchen/sync";
 import { KitchenFoodAddOnConflictError } from "@/lib/kitchen/storage";
+import { GoTabIntegrationStorage } from "@/lib/gotab/storage";
+import { summarizeEventFoodDelivery } from "@/lib/gotab/delivery";
+import {
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,13 +19,6 @@ type FoodAddOnRequest = {
   food?: unknown;
   expectedRevision?: unknown;
 };
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Admin session required." },
-    { status: 401 },
-  );
-}
 
 function errorResponse(error: unknown) {
   const message =
@@ -34,11 +32,6 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ eventId: string }> },
 ) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
-  }
-
   try {
     const { eventId } = await context.params;
     return NextResponse.json(await getKitchenEventFoodAddOns(eventId));
@@ -51,9 +44,8 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ eventId: string }> },
 ) {
-  const cookieStore = await cookies();
-  if (!hasAdminSession(cookieStore)) {
-    return unauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
 
   let body: FoodAddOnRequest;
@@ -78,11 +70,62 @@ export async function PUT(
 
   const { eventId } = await context.params;
   try {
-    return NextResponse.json(
-      await updateKitchenEventFoodAddOns(eventId, body.food, {
-        expectedRevision: body.expectedRevision,
-      }),
+    const previous = await getKitchenEventFoodAddOns(eventId);
+    const saved = await updateKitchenEventFoodAddOns(eventId, body.food, {
+      expectedRevision: body.expectedRevision,
+    });
+    const previousFood = previous.food as Record<string, unknown>;
+    const savedFood = saved.food as Record<string, unknown>;
+    const changedSourceKeys = [...new Set([
+      ...Object.keys(previousFood),
+      ...Object.keys(savedFood),
+    ])].filter(
+      (key) =>
+        JSON.stringify(previousFood[key] ?? null) !==
+        JSON.stringify(savedFood[key] ?? null),
     );
+    let kds: Record<string, unknown> = {
+      queued: 0,
+      changedSourceKeys,
+    };
+    if (changedSourceKeys.length > 0) {
+      try {
+        const [{ synchronizeKitchenLiveAddOnsToEventFood }, { processGoTabDispatches }] =
+          await Promise.all([
+            import("@/lib/gotab/sync-event-food"),
+            import("@/lib/gotab/worker"),
+          ]);
+        const checklist = await getKitchenEventChecklist(eventId);
+        const synchronization = await synchronizeKitchenLiveAddOnsToEventFood(
+          checklist,
+          {
+            sourceVersion: saved.revision,
+            changedSourceKeys,
+          },
+        );
+        const requestIds = synchronization.requestIds ?? [];
+        await processGoTabDispatches({ requestIds });
+        const deliveries = await new GoTabIntegrationStorage().listEventFoodDelivery([eventId], requestIds);
+        const delivery = summarizeEventFoodDelivery(deliveries, requestIds);
+        kds = {
+          queued: synchronization.requestCount,
+          exceptions: synchronization.exceptionCount,
+          duplicates: synchronization.duplicateCount,
+          dispatch: { sent: delivery.sent },
+          deliveries: delivery.deliveries,
+          warning: delivery.error,
+          changedSourceKeys,
+        };
+      } catch {
+        kds = {
+          queued: 0,
+          changedSourceKeys,
+          warning:
+            "The add-on was saved, but its GoTab KDS dispatch could not be completed.",
+        };
+      }
+    }
+    return NextResponse.json({ ...saved, kds });
   } catch (error) {
     if (error instanceof KitchenFoodAddOnConflictError) {
       const current = await getKitchenEventFoodAddOns(eventId);
