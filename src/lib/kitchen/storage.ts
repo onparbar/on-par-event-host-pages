@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { translateEventHostFoodAddOns } from "./addons";
 import type { KitchenEventAddOnFood } from "./addons";
 import { KITCHEN_RULE_CONFIG } from "./config";
+import { legacyTaterKegSelection } from "./legacy-tater-keg-selection";
 import { quantityAwareReadinessKey } from "./readiness";
 import { generateKitchenChecklist } from "./rules";
 import { KITCHEN_STAFF_ROSTER } from "./staff";
@@ -250,13 +251,18 @@ function checklistForCurrentRules(
   staffPrep: boolean,
 ): KitchenChecklist {
   const confirmedTacoGuests = staffPrep && sourceEvent ? confirmedTacoPrepGuests(sourceEvent) : null;
+  const taterKegs = staffPrep && sourceEvent ? legacyTaterKegSelection(sourceEvent) : undefined;
   if (
     sourceEvent &&
     (storedChecklist.ruleVersion !== KITCHEN_RULE_CONFIG.ruleVersion ||
-      liveFoodAddOns.length > 0 || confirmedTacoGuests != null)
+      liveFoodAddOns.length > 0 || confirmedTacoGuests != null || taterKegs)
   ) {
     return generateKitchenChecklist(
-      sourceEvent,
+      taterKegs ? {
+        ...sourceEvent,
+        selections: sourceEvent.selections.map((selection) =>
+          selection === taterKegs ? { ...selection, isFood: true } : selection),
+      } : sourceEvent,
       KITCHEN_RULE_CONFIG,
       liveFoodAddOns,
       confirmedTacoGuests,

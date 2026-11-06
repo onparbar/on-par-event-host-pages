@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildEventPlan } from "@/lib/event-plans/domain";
+import { buildEventServingPlan } from "@/lib/operations/serving-plan";
 import { generateKitchenChecklist } from "../rules";
 import { createMemoryKitchenStorage } from "../storage";
 import { getKitchenDay } from "../sync";
@@ -715,6 +717,61 @@ describe("Tripleseat adapter security and normalization", () => {
     expect(event.specialNotes).toEqual([
       "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.",
     ]);
+  });
+
+  it.each([1, 2])("shows a purchased categoryless Tater Kegs line once across staff views (document quantity %i)", async (documentQuantity) => {
+    const date = "2026-11-06";
+    const adapter = new LiveTripleseatAdapter({
+      env: {
+        NODE_ENV: "test",
+        TRIPLESEAT_CLIENT_ID: "test-client",
+        TRIPLESEAT_CLIENT_SECRET: "test-client-secret",
+        TRIPLESEAT_ACCESS_TOKEN: "test-access-token",
+        TRIPLESEAT_REFRESH_TOKEN: "test-refresh-token",
+        TRIPLESEAT_LOCATION_ID: "26059",
+      },
+      storage: createMemoryKitchenStorage(),
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/events/search?")) {
+          return json({ results: [{ id: 42 }], total_pages: 1 });
+        }
+        if (url.includes("/events/42?")) {
+          return json({ event: {
+            id: 42, name: "Redacted event", status: "DEFINITE", location_id: 26059,
+            event_date_iso8601: date, event_start_iso8601: `${date}T17:00:00-05:00`,
+            event_end_iso8601: `${date}T20:00:00-05:00`, guest_count: 30,
+            documents: [{ line_items: [{ id: 9, name: "Tater Keg Platter", quantity: documentQuantity, category: "Food Platters" }] }],
+          } });
+        }
+        if (url.includes("/menu_item_selections")) {
+          return json({ menu_item_selections: [
+            { id: 1, display_name: "Tater Kegs", quantity: 1 },
+            { id: 2, display_name: "Chicken tenders", quantity: 1, menu_modifier_selections: [
+              { id: 3, display_name: "Tater Kegs", quantity: 1 },
+            ] },
+          ] });
+        }
+        if (url.includes("/notes?")) return json({ notes: [] });
+        throw new Error(`Unexpected test request: ${url}`);
+      },
+    });
+
+    const [event] = await adapter.fetchEventsForDate(date);
+    expect(event.selections.find((selection) => selection.sourceId === "3")?.isFood).toBeUndefined();
+    const checklist = generateKitchenChecklist(event);
+    expect(checklist.sections.flatMap((section) => section.rows).find((row) => row.key === "platter-tater-kegs"))
+      .toMatchObject({ foodName: "Tater Kegs", quantity: 64, unit: "each" });
+    expect(event.specialNotes?.some((note) => note.includes("Conflicting structured and document quantities for Tater Keg Platter")) ?? false)
+      .toBe(documentQuantity !== 1);
+
+    const [source] = await adapter.fetchEventPlansForRange(date, date);
+    const plan = buildEventPlan(source);
+    expect(plan.food.filter((line) => /tater keg/i.test(line))).toEqual(["1 × Tater Keg Platter"]);
+    expect(plan.review_reasons?.some((reason) => reason.includes("Conflicting Tripleseat quantities for Tater Keg Platter")) ?? false)
+      .toBe(documentQuantity !== 1);
+    const pans = buildEventServingPlan(plan).objects.flatMap((item) => item.children ?? []);
+    expect(pans.filter((item) => item.kind === "pan" && item.contents.includes("Tater Kegs"))).toHaveLength(1);
   });
 
   it("uses booking contract selections and Special Instructions while excluding booking notes", async () => {

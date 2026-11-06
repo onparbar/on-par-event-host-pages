@@ -92,6 +92,7 @@ const EXACT_SELECTION_ALIASES: Readonly<
 const PLAIN_PLATTER_SELECTION_KINDS: Readonly<
   Record<string, NormalizedSelectionKind>
 > = {
+  "tater kegs": "platter:tater-kegs",
   "mozzarella sticks": "platter:mozzarella-sticks",
   "mozzarella sticksgolden fried mozzarella sticks with a crispy seasoned coating and warm melted cheese inside, served with marinara for dipping":
     "platter:mozzarella-sticks",

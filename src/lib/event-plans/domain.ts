@@ -291,9 +291,19 @@ function classifyFoodAndDrinks(source: TripleseatEventPlanSource) {
   source.selections.forEach((selection) =>
     classifySelection(selection, result),
   );
-  source.documentItems.forEach((item) =>
-    classifyDocumentItem(item, result),
+  const taterKegSelections = source.selections.filter((selection) =>
+    selection.isFood !== false && normalizeKitchenSelection(selection).kinds.includes("platter:tater-kegs"),
   );
+  source.documentItems.forEach((item) => {
+    if (taterKegSelections.length && isFoodCategory(item.categoryName) &&
+      normalizeKitchenSelection({ name: cleanText(item.name), sourceCategory: item.categoryName }).kinds.includes("platter:tater-kegs")) {
+      if (item.quantity != null && !taterKegSelections.some((selection) => selection.quantity === item.quantity)) {
+        result.reviewReasons.push("Conflicting Tripleseat quantities for Tater Keg Platter; verify the contract.");
+      }
+      return;
+    }
+    classifyDocumentItem(item, result);
+  });
 
   return {
     food: uniqueText(result.food),

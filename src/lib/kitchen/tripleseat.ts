@@ -4,6 +4,7 @@ import {
   randomBytes,
 } from "node:crypto";
 import { getMockKitchenEventsForDate } from "./fixtures";
+import { normalizeKitchenSelection } from "./normalize";
 import {
   extractKitchenFoodNotes,
   mergeKitchenFoodNotes,
@@ -37,6 +38,7 @@ const UNASSIGNABLE_BOOKING_DOCUMENTS_NOTE =
 const UNVERIFIED_BOOKING_CONTRACT_NOTE =
   "Needs Review: Tripleseat booking contract data could not be verified. Review the source event.";
 const CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS = new Set([
+  "tater kegs",
   "mozzarella sticks",
   "wings",
   "chicken tenders",
@@ -734,17 +736,21 @@ function mergeSelections(
   menuSelections: KitchenSourceSelection[],
   documentSelections: KitchenSourceSelection[],
 ) {
+  const selectionKey = (selection: KitchenSourceSelection) =>
+    normalizeKitchenSelection(selection).kinds.includes("platter:tater-kegs")
+      ? "tater keg platter"
+      : normalizedSelectionName(selection.name);
   const merged = menuSelections.map((selection) => ({ ...selection }));
   const notes: string[] = [];
   const primaryByName = new Map(
     merged.map((selection) => [
-      normalizedSelectionName(selection.name),
+      selectionKey(selection),
       selection,
     ]),
   );
 
   for (const selection of documentSelections) {
-    const normalizedName = normalizedSelectionName(selection.name);
+    const normalizedName = selectionKey(selection);
     const primary = primaryByName.get(normalizedName);
     if (primary) {
       if (!primary.sourceCategory && selection.sourceCategory) {

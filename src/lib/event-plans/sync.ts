@@ -8,6 +8,7 @@ import {
   mergeConfirmedContractEventPlans,
   sourceIsAtLeastAsNew,
 } from "@/lib/confirmed-contract-events";
+import { legacyTaterKegSelection } from "@/lib/kitchen/legacy-tater-keg-selection";
 import { getTripleseatAdapter, type TripleseatAdapter } from "@/lib/kitchen/tripleseat";
 
 import { buildEventPlan } from "./domain";
@@ -17,6 +18,7 @@ import {
   type EventPlanDocument,
   type EventPlanStorage,
   type EventPlanWindow,
+  type StoredEventPlan,
 } from "./storage";
 import type {
   EventPlan,
@@ -67,8 +69,21 @@ function serializeDocument(value: EventPlan | TripleseatEventPlanSource) {
   return structuredClone(value) as unknown as EventPlanDocument;
 }
 
-function storedPlan(value: EventPlanDocument): EventPlan {
-  return structuredClone(value) as unknown as EventPlan;
+function storedPlan(row: StoredEventPlan): EventPlan {
+  const plan = structuredClone(row.plan) as unknown as EventPlan;
+  const taterKegs = legacyTaterKegSelection(row.sourceSnapshot as unknown as TripleseatEventPlanSource);
+  if (!taterKegs || plan.food.some((line) => /^(?:\d+\s*[×x]\s*)?tater kegs?(?: platter)?$/i.test(line.trim()))) return plan;
+
+  plan.food.push("1 × Tater Keg Platter");
+  const warning = 'Structured selection "Tater Kegs" is not mapped to food, drink, or entertainment.';
+  if (plan.review_reasons?.includes(warning)) {
+    plan.review_reasons = plan.review_reasons.filter((reason) => reason !== warning);
+    plan.needs_review = plan.review_reasons.length > 0;
+    plan.verification_status = plan.needs_review
+      ? `Needs Review: ${plan.review_reasons.join(" ")}`
+      : "Verified from current structured Tripleseat event data.";
+  }
+  return plan;
 }
 
 const EXCLUDED_OPERATIONAL_STATUSES = new Set(["LOST", "PROSPECT"]);
@@ -277,7 +292,7 @@ export async function loadEventPlanWindow(
         plans: plansWithConfirmedContractEvidence(
           rows
             .filter(storedPlanIsOperational)
-            .map((row) => storedPlan(row.plan)),
+            .map(storedPlan),
           window,
           includeConfirmedContractEvidence,
           syncState?.lastSuccessfulSyncAt,
@@ -324,7 +339,7 @@ export async function loadHistoricalEventPlans(
     });
     storedPlans = rows
       .filter(storedPlanIsOperational)
-      .map((row) => storedPlan(row.plan));
+      .map(storedPlan);
   } catch {
     // Keep the static itinerary archive available if historical storage is
     // unavailable during a local preview or a temporary database outage.
@@ -354,7 +369,7 @@ export async function findEventPlanById(
   try {
     const row = await storage.findById(String(eventId));
     if (row?.active && storedPlanIsOperational(row)) {
-      return storedPlan(row.plan);
+      return storedPlan(row);
     }
   } catch {
     // Fall through to an exact-ID redacted legacy plan.
@@ -376,7 +391,7 @@ export async function findEventPlanById(
     const visible = plansWithConfirmedContractEvidence(
       matchingRows
         .filter(storedPlanIsOperational)
-        .map((row) => storedPlan(row.plan)),
+        .map(storedPlan),
       { startDate: legacy.date, endDate: legacy.date },
       true,
       syncState?.lastSuccessfulSyncAt,
