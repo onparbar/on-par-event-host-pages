@@ -287,9 +287,9 @@ export function validateFloorPlan(
           timeRangesOverlap(group[0].startAt, group[0].endAt, reservation.startAt, reservation.endAt)
           ? [reservation.resourceId] : [],
       ));
-      const closest = selectEntertainmentResources(event.contractedAreaIds, "bowling", group.length, unavailable);
-      if (closest.length !== group.length || group.some((reservation) => !closest.includes(reservation.resourceId))) {
-        placementWarnings.push("Bowling is not the closest available lane group to the contracted seating. Review any deliberate manual placement.");
+      const preferred = selectEntertainmentResources(event.contractedAreaIds, "bowling", group.length, unavailable);
+      if (preferred.length !== group.length || group.some((reservation) => !preferred.includes(reservation.resourceId))) {
+        placementWarnings.push("Bowling is not in the preferred available lanes for the contracted seating. Review any deliberate manual placement.");
       }
     }
     result.push(
@@ -298,7 +298,7 @@ export function validateFloorPlan(
         event.id,
         "Entertainment placement",
         placementWarnings.length ? "Warning" : "Passed",
-        placementWarnings.join(" ") || "Bowling uses the closest available consecutive lane group when possible; shared entertainment placement is preserved.",
+        placementWarnings.join(" ") || "Bowling matches the lane preference for the contracted seating; shared entertainment placement is preserved.",
         false,
       ),
     );

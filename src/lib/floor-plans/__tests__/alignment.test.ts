@@ -6,7 +6,7 @@ import {
 import { getEntertainmentResource } from "@/lib/entertainment/resources";
 import type { EntertainmentReservation } from "@/lib/entertainment/types";
 import { updateEntertainmentReservation } from "@/lib/entertainment/sync";
-import { buildEntertainmentSchedule, mergeReservationsForSync } from "@/lib/entertainment/domain";
+import { buildEntertainmentSchedule, detectEntertainmentConflicts, mergeReservationsForSync } from "@/lib/entertainment/domain";
 import type { EntertainmentSourceEvent } from "@/lib/entertainment/types";
 import { alignGeneratedEntertainment } from "../service";
 import { selectEntertainmentResources } from "../configuration/adjacency";
@@ -33,6 +33,25 @@ function plan(events: FloorPlanEvent[]): FloorPlanDocument {
     ruleVersion: FLOOR_PLAN_RULE_VERSION, lastTripleseatSyncAt: START,
     createdAt: START, updatedAt: START, approvedAt: null, approvedBy: null,
     events, reservations: [],
+  };
+}
+
+function bowlingSource(
+  id: string,
+  room: string,
+  description: string,
+  quantity: number,
+  startAt = START,
+  endAt = END,
+): EntertainmentSourceEvent {
+  return {
+    tripleseatEventId: id, tripleseatBookingId: null,
+    eventName: `Redacted ${id}`, localDate: DATE,
+    eventStartAt: startAt, eventEndAt: endAt, status: "DEFINITE",
+    rooms: [{ id: room, name: room }], categoryNames: [],
+    sourceUpdatedAt: START, noteCount: 0,
+    items: [{ sourceId: "bowling-line", name: "Duckpin Bowling", quantity,
+      startAt, endAt, description, categoryName: "Bowling" }],
   };
 }
 
@@ -71,15 +90,7 @@ afterEach(() => setEntertainmentStorageForTests(null));
 
 describe("floor-plan shared bowling alignment", () => {
   it("uses the same nearest-area assignment during ordinary schedule sync", () => {
-    const source: EntertainmentSourceEvent = {
-      tripleseatEventId: "source-a", tripleseatBookingId: null,
-      eventName: "Redacted schedule event", localDate: DATE,
-      eventStartAt: START, eventEndAt: END, status: "DEFINITE",
-      rooms: [{ id: "main-room", name: "Main Dining Room" }], categoryNames: [],
-      sourceUpdatedAt: START, noteCount: 0,
-      items: [{ sourceId: "bowling-line", name: "Duckpin Bowling", quantity: 2,
-        startAt: START, endAt: END, description: "2 bowling lanes", categoryName: "Bowling" }],
-    };
+    const source = bowlingSource("source-a", "Main Dining Room", "2 bowling lanes", 2);
     const first = buildEntertainmentSchedule({ sourceEvents: [source], localEvents: [] });
     const expected = selectEntertainmentResources("main-dining", "bowling", 2).sort();
     expect(first.reservations.map((item) => item.resourceId).sort()).toEqual(expected);
@@ -89,6 +100,103 @@ describe("floor-plan shared bowling alignment", () => {
     const merged = mergeReservationsForSync(first.reservations, next.reservations);
     expect(merged.map((item) => item.resourceId).sort()).toEqual(expected);
     expect(merged.every((item) => !item.manualOverride)).toBe(true);
+  });
+
+  it.each([
+    ["2026-10-20T19:45:00-04:00", "2026-10-20T22:00:00-04:00", false],
+    [END, "2026-10-20T22:00:00-04:00", true],
+    ["2026-10-20T17:00:00-04:00", START, true],
+  ])("honors a saved Lane 1 booking from %s to %s during VIP assignment (reusable=%s)", (startAt, endAt, reusable) => {
+    const source = bowlingSource("source-vip", "VIP 1", "5 bowling lanes", 5);
+    const occupied = lane("saved-lane-1", event("other-event"), 1, { startAt, endAt });
+    const built = buildEntertainmentSchedule({ sourceEvents: [source], localEvents: [], existingReservations: [occupied] });
+    const bowling = built.reservations.filter((item) => item.resourceCategory === "bowling");
+    expect(bowling).toHaveLength(5);
+    expect(bowling.some((item) => item.resourceId === "bowling-1")).toBe(reusable);
+    expect(detectEntertainmentConflicts([occupied, ...bowling])).toEqual([]);
+  });
+
+  it("leaves Lane 1 for a later-sorted event with an overlapping explicit contract assignment", () => {
+    const vip = bowlingSource("source-vip", "VIP 2", "5 bowling lanes", 5);
+    const explicit = bowlingSource("source-explicit", "Main Dining Room", "Bowling Lane 1", 1,
+      "2026-10-20T19:00:00-04:00", "2026-10-20T21:00:00-04:00");
+    const built = buildEntertainmentSchedule({ sourceEvents: [vip, explicit], localEvents: [] });
+    const bowling = built.reservations.filter((item) => item.resourceCategory === "bowling");
+    const vipLanes = bowling.filter((item) => item.tripleseatEventId === vip.tripleseatEventId);
+    expect(vipLanes).toHaveLength(5);
+    expect(vipLanes.map((item) => item.resourceId)).not.toContain("bowling-1");
+    expect(bowling.filter((item) => item.tripleseatEventId === explicit.tripleseatEventId)).toEqual([
+      expect.objectContaining({ resourceId: "bowling-1", autoAssigned: false }),
+    ]);
+    expect(detectEntertainmentConflicts(bowling)).toEqual([]);
+  });
+
+  it("lets VIP use Lane 1 when staff moved a later exact Lane 1 booking to Lane 3", () => {
+    const vip = bowlingSource("source-vip", "VIP 1", "5 bowling lanes", 5);
+    const explicit = bowlingSource("source-explicit", "Main Dining Room", "Bowling Lane 1", 1,
+      "2026-10-20T19:00:00-04:00", "2026-10-20T21:00:00-04:00");
+    const original = buildEntertainmentSchedule({ sourceEvents: [explicit], localEvents: [] }).reservations[0];
+    expect(original).toMatchObject({ resourceId: "bowling-1", autoAssigned: false });
+    const override = { ...original, resourceId: "bowling-3", resourceName: "Bowling Lane 3", manualOverride: true };
+    const existingReservations = [override];
+    const built = buildEntertainmentSchedule({ sourceEvents: [vip, explicit], localEvents: [], existingReservations });
+    const bowling = mergeReservationsForSync(existingReservations, built.reservations, undefined, built.events)
+      .filter((item) => item.active && item.resourceCategory === "bowling");
+    expect(bowling.filter((item) => item.tripleseatEventId === vip.tripleseatEventId).map((item) => item.resourceId)).toEqual([
+      "bowling-1", "bowling-2", "bowling-4", "bowling-5", "bowling-6",
+    ]);
+    expect(bowling.find((item) => item.id === override.id)).toMatchObject({
+      resourceId: "bowling-3", sourceResourceId: "bowling-1", manualOverride: true,
+    });
+    expect(detectEntertainmentConflicts(bowling)).toEqual([]);
+  });
+
+  it("retains a synced staff override in a nonfirst slot without assigning Lane 1 twice", () => {
+    const source = bowlingSource("source-vip", "VIP 1", "2 bowling lanes", 2);
+    const owner = event(source.tripleseatEventId, "vip-1");
+    const first = lane("auto-first", owner, 4, { syncKey: `${source.tripleseatEventId}:bowling-line:0`, sourceReference: "bowling-line" });
+    const override = lane("staff-second", owner, 1, {
+      syncKey: `${source.tripleseatEventId}:bowling-line:1`, sourceReference: "bowling-line",
+      manualOverride: true, sourceResourceId: "bowling-5",
+    });
+    const existingReservations = [first, override];
+    const built = buildEntertainmentSchedule({ sourceEvents: [source], localEvents: [], existingReservations });
+    const bowling = mergeReservationsForSync(existingReservations, built.reservations, undefined, built.events)
+      .filter((item) => item.active && item.resourceCategory === "bowling");
+    expect(bowling).toHaveLength(2);
+    expect(bowling.find((item) => item.id === override.id)).toMatchObject({ resourceId: "bowling-1", manualOverride: true });
+    expect(bowling.filter((item) => item.resourceId === "bowling-1")).toHaveLength(1);
+    expect(detectEntertainmentConflicts(bowling)).toEqual([]);
+  });
+
+  it("realigns a saved automatic VIP block from lanes 3–7 to 1–5 without changing booking details", async () => {
+    const owner = event("event-vip", "vip-1");
+    const original = [3, 4, 5, 6, 7].map((number) => lane(`lane-${number}`, owner, number));
+    const storage = await seed(original);
+
+    await expect(alignGeneratedEntertainment(plan([owner]), original)).resolves.toBeNull();
+    const updated = await Promise.all(original.map((item) => storage.getReservation(item.id)));
+    expect(updated.map((item) => item?.resourceId).sort()).toEqual([
+      "bowling-1", "bowling-2", "bowling-3", "bowling-4", "bowling-5",
+    ]);
+    expect(updated.slice(0, 3)).toEqual(original.slice(0, 3));
+    for (const item of updated) {
+      expect(item).toMatchObject({ startAt: START, endAt: END, autoAssigned: true, manualOverride: false });
+    }
+  });
+
+  it("keeps numbered VIP contract lanes through schedule build and floor-plan alignment", async () => {
+    const source = bowlingSource("source-vip", "VIP 1", "Bowling Lanes 8 through 9", 2);
+    const { reservations } = buildEntertainmentSchedule({ sourceEvents: [source], localEvents: [] });
+    const bowling = reservations.filter((item) => item.resourceCategory === "bowling");
+    expect(bowling).toEqual([8, 9].map((number) =>
+      expect.objectContaining({ resourceId: `bowling-${number}`, autoAssigned: false }),
+    ));
+    const owner = { ...event(source.tripleseatEventId, "vip-1"), color: bowling[0].eventColor };
+    const storage = await seed(bowling);
+
+    await expect(alignGeneratedEntertainment(plan([owner]), bowling)).resolves.toBeNull();
+    expect(await Promise.all(bowling.map((item) => storage.getReservation(item.id)))).toEqual(bowling);
   });
 
   it("moves automatic lanes to the closest block without converting them to manual assignments", async () => {

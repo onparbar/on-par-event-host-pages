@@ -26,7 +26,7 @@ import type {
   EntertainmentStartTimeSource,
 } from "./types";
 import { resolveAreaAlias } from "../floor-plans/configuration/aliases";
-import { selectEntertainmentResources } from "../floor-plans/configuration/adjacency";
+import { prefersLowVipBowlingLanes, selectEntertainmentResources } from "../floor-plans/configuration/adjacency";
 
 export type LocalEntertainmentItem = {
   name: string;
@@ -305,6 +305,21 @@ function manualReservationMatchesSourceEvent(
   );
 }
 
+function sourceReferenceForItem(
+  item: EntertainmentTimingItem,
+  category: EntertainmentCategory,
+  eventId: string,
+  existingReservations: readonly EntertainmentReservation[],
+) {
+  // Keep an existing detail-line binding when its parent is now folded correctly.
+  const sourceIds = new Set([item.sourceId, ...(item.groupedSourceIds ?? [])]);
+  const priorReferences = new Set(existingReservations.filter((reservation) =>
+    reservation.active && reservation.sourceReference && sourceIds.has(reservation.sourceReference) &&
+    reservation.resourceCategory === category && reservation.tripleseatEventId === eventId,
+  ).map((reservation) => reservation.sourceReference!));
+  return priorReferences.size === 1 ? [...priorReferences][0] : item.sourceId;
+}
+
 export function buildEntertainmentSchedule({
   sourceEvents,
   localEvents,
@@ -316,6 +331,36 @@ export function buildEntertainmentSchedule({
   const manuallyOccupied = existingReservations.filter(
     (reservation) => reservation.active && reservation.manualOverride,
   );
+  const groupedItems = new Map(sourceEvents.map((source) => [source, groupEntertainmentTimingItems(source.items)]));
+  // Protect exact contract lanes even if their event is processed after a VIP auto-assignment.
+  const exactBowlingClaims = sourceEvents.flatMap((source) => groupedItems.get(source)!.flatMap((item) => {
+    const text = itemText(item);
+    if (canonicalCategoryForText(text) !== "bowling") return [];
+    const ids = exactResourceIdsForText(item.resourceText ?? text, "bowling");
+    if (!ids.length) return [];
+    const { startAt, endAt } = resolveEntertainmentItemTiming(item, source);
+    if (!startAt || !endAt) return [];
+    const reference = sourceReferenceForItem(item, "bowling", source.tripleseatEventId, existingReservations);
+    // Standalone manual assignments can consume slots; only project linked overrides
+    // when the exact contract slot mapping is unambiguous.
+    const localEvent = matchLocalEvent(source, localEvents)?.event ?? null;
+    const hasStandaloneAssignments = manuallyOccupied.some((reservation) =>
+      !reservation.syncKey && reservation.resourceCategory === "bowling" &&
+      sameInstant(reservation.startAt, startAt) && sameInstant(reservation.endAt, endAt) &&
+      manualReservationMatchesSourceEvent(reservation, source, localEvent));
+    return [...new Set(ids)].map((resourceId, slot) => {
+      const override = !hasStandaloneAssignments && manuallyOccupied.find((reservation) =>
+        reservation.syncKey === `${source.tripleseatEventId}:${reference}:${slot}` &&
+        reservation.sourceResourceId === resourceId);
+      const keepStaffTime = override && preservesStaffTime(override);
+      return {
+        resourceId: override ? override.resourceId : resourceId,
+        startAt: keepStaffTime ? override.startAt : startAt,
+        endAt: keepStaffTime ? override.endAt : endAt,
+        active: true,
+      };
+    });
+  }));
 
   for (const source of [...sourceEvents].sort((left, right) => {
     const leftTime = Date.parse(left.eventStartAt ?? "");
@@ -365,7 +410,7 @@ export function buildEntertainmentSchedule({
       });
     }
 
-    const relevantSourceItems = groupEntertainmentTimingItems(source.items).filter((item) => {
+    const relevantSourceItems = groupedItems.get(source)!.filter((item) => {
       const text = itemText(item);
       const category = canonicalCategoryForText(text);
       return (
@@ -475,13 +520,7 @@ export function buildEntertainmentSchedule({
         quantity,
         new Set(exactFromSource).size,
       );
-      // Keep an existing detail-line binding when its parent is now folded correctly.
-      const sourceIds = new Set([item.sourceId, ...(item.groupedSourceIds ?? [])]);
-      const priorReferences = new Set(existingReservations.filter((reservation) =>
-        reservation.active && reservation.sourceReference && sourceIds.has(reservation.sourceReference) &&
-        reservation.resourceCategory === category && reservation.tripleseatEventId === source.tripleseatEventId,
-      ).map((reservation) => reservation.sourceReference!));
-      const sourceReference = priorReferences.size === 1 ? [...priorReferences][0] : item.sourceId;
+      const sourceReference = sourceReferenceForItem(item, category, source.tripleseatEventId, existingReservations);
       const matchingManualReservations = manuallyOccupied
         .filter(
           (reservation) =>
@@ -506,22 +545,37 @@ export function buildEntertainmentSchedule({
       const chosenIds = [...new Set(exactFromSource)].filter(
         (resourceId) => !manuallyAssignedResourceIds.has(resourceId),
       );
+      const vipBowling = category === "bowling" && prefersLowVipBowlingLanes(seatingAreaIds);
+      const ownSyncPrefix = `${source.tripleseatEventId}:${sourceReference}:`;
+      const slotCount = desiredCount - matchingManualReservations.length;
+      // Keep a staff override on its original sync slot so a new Lane 1 pick cannot duplicate it.
+      const fixedSlots = new Map<number, EntertainmentReservation>();
+      if (vipBowling && exactFromSource.length === 0) {
+        for (const reservation of manuallyOccupied) {
+          if (!reservation.syncKey?.startsWith(ownSyncPrefix)) continue;
+          const slot = Number(reservation.syncKey.slice(ownSyncPrefix.length));
+          if (Number.isInteger(slot) && slot >= 0 && slot < slotCount) fixedSlots.set(slot, reservation);
+        }
+      }
       const needed = Math.max(
         0,
-        desiredCount - matchingManualReservations.length - chosenIds.length,
+        slotCount - chosenIds.length - fixedSlots.size,
       );
       if (needed > 0) {
-        const ownSyncPrefix = `${source.tripleseatEventId}:${sourceReference}:`;
-        const occupiedForItem = occupied.filter((reservation) =>
-          !(reservation.manualOverride && reservation.syncKey?.startsWith(ownSyncPrefix)),
-        );
+        const occupiedForItem = occupied.filter((reservation) => vipBowling ||
+          !(reservation.manualOverride && reservation.syncKey?.startsWith(ownSyncPrefix)));
+        const protectedBowling = vipBowling ? [
+          ...exactBowlingClaims,
+          ...existingReservations.filter((reservation) => reservation.active && reservation.resourceCategory === "bowling" &&
+            reservation.tripleseatEventId !== source.tripleseatEventId && (!localEvent || reservation.localEventId !== localEvent.id)),
+        ] : [];
         const autoAssigned = findAdjacentAvailableResources(
           category,
           needed,
           startAt,
           endAt,
-          occupiedForItem,
-          chosenIds,
+          [...occupiedForItem, ...protectedBowling],
+          [...chosenIds, ...Array.from(fixedSlots.values(), (reservation) => reservation.resourceId)],
           seatingAreaIds,
         );
         chosenIds.push(...autoAssigned.map((resource) => resource.id));
@@ -538,17 +592,22 @@ export function buildEntertainmentSchedule({
           });
         }
       }
-      if (chosenIds.length === 0) {
+      if (chosenIds.length === 0 && fixedSlots.size === 0) {
         itemIssues.push({
           code: "UNVERIFIED_ASSIGNMENT",
           message: `${item.name} could not be assigned to an exact physical resource.`,
         });
       }
 
-      chosenIds.forEach((resourceId, slot) => {
+      let nextChoice = 0;
+      const slots = fixedSlots.size > 0 ? slotCount : chosenIds.length;
+      for (let slot = 0; slot < slots; slot += 1) {
+        const fixed = fixedSlots.get(slot);
+        const resourceId = fixed?.resourceId ?? chosenIds[nextChoice++];
+        if (!resourceId) continue;
         const resource = getEntertainmentResource(resourceId);
         if (!resource) {
-          return;
+          continue;
         }
         if (
           eventReservations.some(
@@ -562,7 +621,7 @@ export function buildEntertainmentSchedule({
             code: "DUPLICATE_ENTERTAINMENT",
             message: `${resource.canonicalName} is already reserved for this event at the same time; the duplicate entry was not added.`,
           });
-          return;
+          continue;
         }
         const syncKey = `${source.tripleseatEventId}:${sourceReference}:${slot}`;
         const issues = uniqueIssues([
@@ -601,7 +660,7 @@ export function buildEntertainmentSchedule({
           endAt,
           sourceStartAt: timingSource === "staff-override" ? null : startAt,
           sourceEndAt: timingSource === "staff-override" ? null : endAt,
-          sourceResourceId: timingSource === "staff-override" ? null : resource.id,
+          sourceResourceId: timingSource === "staff-override" ? null : fixed ? fixed.sourceResourceId : resource.id,
           startTimeSource: timingSource,
           sourceStartTimeSource: timingSource === "staff-override" ? null : timingSource,
           contractedDurationMinutes: timing.durationMinutes,
@@ -638,7 +697,7 @@ export function buildEntertainmentSchedule({
         eventReservations.push(reservation);
         const manualSource = manuallyOccupied.find((existing) => existing.syncKey === syncKey);
         occupied.push(manualSource ? mergeReservationsForSync([manualSource], [reservation], now)[0] : reservation);
-      });
+      }
       eventIssues.push(...itemIssues);
     });
 
@@ -707,6 +766,10 @@ function unresolvedObservedTiming(
   return !timing.startAt || !timing.endAt ? { timing, observed } : null;
 }
 
+function preservesStaffTime(reservation: EntertainmentReservation) {
+  return reservation.startTimeSource === "staff-override" || !reservation.startTimeSource;
+}
+
 export function mergeReservationsForSync(
   existingReservations: readonly EntertainmentReservation[],
   incomingReservations: readonly EntertainmentReservation[],
@@ -737,7 +800,7 @@ export function mergeReservationsForSync(
         createdAt: existing.createdAt,
       }, now);
     }
-    const preserveTime = existing.startTimeSource === "staff-override" || !existing.startTimeSource;
+    const preserveTime = preservesStaffTime(existing);
     const sourceChanged = (preserveTime && (
       existing.sourceStartAt !== incoming.sourceStartAt || existing.sourceEndAt !== incoming.sourceEndAt
     )) || existing.sourceResourceId !== incoming.sourceResourceId;

@@ -12,8 +12,6 @@ export type AreaPreference = {
 };
 
 export const AREA_PREFERENCES: readonly AreaPreference[] = [
-  { seatingAreaId: "vip-1", entertainmentType: "bowling", preferredInventoryIds: [["bowling-3", "bowling-4", "bowling-5", "bowling-6"], ["bowling-1", "bowling-2"], ["bowling-7", "bowling-8"]] },
-  { seatingAreaId: "vip-2", entertainmentType: "bowling", preferredInventoryIds: [["bowling-4", "bowling-5", "bowling-6", "bowling-7"], ["bowling-1", "bowling-2", "bowling-3"], ["bowling-8", "bowling-9"]] },
   { seatingAreaId: "main-dining", entertainmentType: "bowling", preferredInventoryIds: [["bowling-9", "bowling-10", "bowling-11", "bowling-12"], ["bowling-7", "bowling-8"], ["bowling-5", "bowling-6"]] },
   { seatingAreaId: "wat-tables", entertainmentType: "bowling", preferredInventoryIds: [["bowling-1", "bowling-2", "bowling-3", "bowling-4"], ["bowling-5", "bowling-6"]] },
   { seatingAreaId: "geg-tables", entertainmentType: "bowling", preferredInventoryIds: [["bowling-10", "bowling-11", "bowling-12"], ["bowling-8", "bowling-9"]] },
@@ -34,11 +32,18 @@ const DEFAULT_INVENTORY: Record<AreaPreference["entertainmentType"], string[]> =
   "mini-golf": ["mini-golf-level-up", "mini-golf-wild-axe", "mini-golf-great-escape"],
 };
 
+export function prefersLowVipBowlingLanes(seatingAreaIds: readonly string[]) {
+  return seatingAreaIds.some((id) => id === "vip-1" || id === "vip-2");
+}
+
 export function preferredInventory(
   seatingAreaId: string | readonly string[],
   entertainmentType: AreaPreference["entertainmentType"],
 ) {
   const seatingAreaIds = typeof seatingAreaId === "string" ? [seatingAreaId] : seatingAreaId;
+  if (entertainmentType === "bowling" && prefersLowVipBowlingLanes(seatingAreaIds)) {
+    return [...DEFAULT_INVENTORY.bowling];
+  }
   const preferences = AREA_PREFERENCES.filter(
     (item) =>
       seatingAreaIds.includes(item.seatingAreaId) &&
@@ -88,6 +93,10 @@ export function selectEntertainmentResources(
     return ordered.slice(0, Math.min(quantity, ordered.length));
   }
   if (ordered.length < quantity) return [];
+  // VIP starts at the lowest free lane even if an occupied lane splits the group.
+  if (entertainmentType === "bowling" && prefersLowVipBowlingLanes(seatingAreaIds)) {
+    return ordered.slice(0, quantity);
+  }
 
   const numeric = ordered
     .map((id) => ({ id, number: inventoryNumber(id) }))

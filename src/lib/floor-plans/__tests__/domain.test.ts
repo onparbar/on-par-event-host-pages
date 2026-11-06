@@ -661,7 +661,7 @@ describe("floor-plan capacities and generation", () => {
     expect(generated.every((item) => getFloorPlanArea(item.areaId)?.id === "vip-1" ||
       getFloorPlanArea(item.areaId)?.parentAreaId === "vip-1")).toBe(true);
     expect(selectEntertainmentResources(event.contractedAreaIds, "bowling", 5)).toEqual([
-      "bowling-3", "bowling-4", "bowling-5", "bowling-6", "bowling-7",
+      "bowling-1", "bowling-2", "bowling-3", "bowling-4", "bowling-5",
     ]);
   });
 
@@ -770,27 +770,36 @@ describe("aliases and entertainment allocation", () => {
     ).toEqual(["bowling-11", "bowling-12"]);
   });
 
-  it("selects entertainment using the configured seating proximity", () => {
+  it("preserves proximity for Main Dining and starts VIP bowling at Lane 1", () => {
     expect(selectEntertainmentResources("main-dining", "bowling", 2)).toEqual([
       "bowling-11",
       "bowling-12",
     ]);
     expect(selectEntertainmentResources("vip-1", "bowling", 2)).toEqual([
-      "bowling-4",
-      "bowling-5",
+      "bowling-1",
+      "bowling-2",
     ]);
   });
 
-  it("evaluates consecutive windows that cross the old preference-list boundary", () => {
-    expect(selectEntertainmentResources("vip-1", "bowling", 5)).toEqual([
-      "bowling-3", "bowling-4", "bowling-5", "bowling-6", "bowling-7",
+  it.each(["vip-1", "vip-2"])("assigns five lanes starting at Lane 1 for %s", (area) => {
+    expect(selectEntertainmentResources(area, "bowling", 5)).toEqual([
+      "bowling-1", "bowling-2", "bowling-3", "bowling-4", "bowling-5",
+    ]);
+  });
+
+  it("skips occupied VIP lanes without skipping a free Lane 1", () => {
+    expect(selectEntertainmentResources("vip-1", "bowling", 5, new Set(["bowling-1"]))).toEqual([
+      "bowling-2", "bowling-3", "bowling-4", "bowling-5", "bowling-6",
+    ]);
+    expect(selectEntertainmentResources("vip-2", "bowling", 5, new Set(["bowling-2"]))).toEqual([
+      "bowling-1", "bowling-3", "bowling-4", "bowling-5", "bowling-6",
     ]);
   });
 
   it("selects the closest complete group for each contracted section", () => {
     expect(selectEntertainmentResources("big-show-karaoke", "bowling", 2)).toEqual(["bowling-1", "bowling-2"]);
     expect(selectEntertainmentResources("geg-tables", "bowling", 2)).toEqual(["bowling-11", "bowling-12"]);
-    expect(selectEntertainmentResources(["vip-1", "vip-2"], "bowling", 2)).toEqual(["bowling-4", "bowling-5"]);
+    expect(selectEntertainmentResources(["vip-1", "vip-2"], "bowling", 2)).toEqual(["bowling-1", "bowling-2"]);
   });
 
   it("uses nearest separated lanes only when no consecutive group is available", () => {
