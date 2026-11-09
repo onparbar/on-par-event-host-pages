@@ -23,6 +23,7 @@ export async function loadStaffEventPlans(date: string, options: {
   loadPlans?: typeof loadEventPlanWindow;
   vipClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
   exactDate?: boolean;
+  includeUpcomingVip?: boolean;
   includeUnsubmitted?: boolean;
   loadChecklists?: typeof listChecklistRecords;
   findPlan?: typeof findEventPlanById;
@@ -31,9 +32,23 @@ export async function loadStaffEventPlans(date: string, options: {
   const client = options.vipClient ?? new VipPrepClient();
   const startDate = options.exactDate ? date : addCalendarDays(date, -1);
   const endDate = options.exactDate ? date : addOneCalendarMonthClamped(date);
+  const vipEndDate = options.includeUpcomingVip ? endDate : date;
+  // On Par Bookings accepts at most 31 days between the range endpoints.
+  const vipRangeLimit = addCalendarDays(startDate, 31);
+  const vipRanges = vipEndDate > vipRangeLimit
+    ? [[startDate, vipRangeLimit], [addCalendarDays(vipRangeLimit, 1), vipEndDate]]
+    : [[startDate, vipEndDate]];
   const [window, vip, unfinished] = await Promise.all([
     (options.loadPlans ?? loadEventPlanWindow)({ now: new Date(`${date}T12:00:00Z`), window: { startDate, endDate } }),
-    client.configured ? client.fetchRange(startDate, date).then((payload) => ({ reservations: payload.reservations, syncedAt: payload.generatedAt, warning: "" })).catch(() => ({ reservations: [] as VipPrepReservation[], syncedAt: undefined, warning: "VIP bookings could not be refreshed. Corporate events remain available; do not substitute a different party." })) : Promise.resolve({ reservations: [] as VipPrepReservation[], syncedAt: undefined, warning: "VIP booking source is not configured. Corporate events remain available." }),
+    client.configured
+      ? Promise.all(vipRanges.map(([from, to]) => client.fetchRange(from, to).catch(() => null))).then((payloads) => ({
+        reservations: payloads.flatMap((payload) => payload?.reservations ?? []),
+        syncedAt: payloads.find((payload) => payload !== null)?.generatedAt,
+        warning: payloads.some((payload) => payload === null)
+          ? "Some VIP bookings could not be refreshed. Corporate events remain available; do not substitute a different party."
+          : "",
+      }))
+      : Promise.resolve({ reservations: [] as VipPrepReservation[], syncedAt: undefined, warning: "VIP booking source is not configured. Corporate events remain available." }),
     options.includeUnsubmitted ? (options.loadChecklists ?? listChecklistRecords)().then((records) => ({ records, warning: "" })).catch(() => ({ records: null, warning: "Saved unfinished checklists could not be loaded. Existing source events remain visible; retry before relying on the recovery list." })) : Promise.resolve({ records: null, warning: "" }),
   ]);
   const corporate = [...window.plans];

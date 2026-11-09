@@ -192,9 +192,11 @@ export function ItineraryDashboard({ event, online }: { event: ItineraryAsset; o
 export default function ItinerariesClient({
   items,
   selectedItinerary,
+  sourceWarning = "",
 }: {
   items: ItineraryChoice[];
   selectedItinerary: ItineraryAsset | null;
+  sourceWarning?: string;
 }) {
   const router = useRouter();
   const { preferredEventId, requestedEventId, selectedEvent, ready: eventContextReady, selectEvent } = useEventContext();
@@ -280,6 +282,7 @@ export default function ItinerariesClient({
   if (!activeEvent) return (
     <PortalShell mainClassName="page itinerary-page" sectionSubtitle="Event details" sectionTitle="Itineraries">
       <PortalPageHeader description="Choose an available event to review its current itinerary." eyebrow="Event Host workspace" title="Itineraries" />
+      {sourceWarning ? <p className="itinerary-source-alert" role="status">{sourceWarning}</p> : null}
       <p role="status">{!eventContextReady || navigating || rememberedChoice ? "Loading your selected itinerary…" : preferredEventId ? "The selected event is not available in this itinerary window. Choose another event below; no different party has been selected automatically." : "No itineraries are available for the selected day."}</p>
       {items.map((event) => <button className="event-switcher" key={event.id} onClick={() => openItinerary(event)} type="button">{event.name} · {formatEventDate(event.date)}</button>)}
     </PortalShell>
@@ -335,6 +338,7 @@ export default function ItinerariesClient({
         title="Itineraries"
       />
 
+      {sourceWarning ? <p className="itinerary-source-alert" role="status">{sourceWarning}</p> : null}
       <section className="event-tab-strip" aria-label="Itinerary event tabs">
         {items.map((event) => {
           const isActive = event.id === activeEvent.id;

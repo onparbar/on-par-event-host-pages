@@ -29,6 +29,15 @@ it("keeps the printable itinerary and staff reminders without the operating time
   expect(html).not.toContain('aria-label="Event operating itinerary"');
 });
 
+it("makes an incomplete VIP source visible with or without an open itinerary", () => {
+  const sourceWarning = "VIP bookings could not be refreshed.";
+  for (const selectedItinerary of [event, null]) {
+    const html = renderToStaticMarkup(createElement(ItinerariesClient, { items: [event], selectedItinerary, sourceWarning }));
+    expect(html).toContain(`role="status">${sourceWarning}</p>`);
+    expect(html).toContain(event.name);
+  }
+});
+
 it("shows a loading state for a remembered event until its own details load, with no wrong-event print control", () => {
   context.requestedEventId = null;
   context.preferredEventId = "124";

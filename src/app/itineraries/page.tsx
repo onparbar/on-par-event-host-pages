@@ -3,7 +3,8 @@ import { loadAdminState } from "@/lib/admin-state";
 import { activeEvents } from "@/lib/event-lifecycle";
 import { itineraries } from "@/lib/events";
 import { readSavedEntertainmentDay } from "@/lib/entertainment/saved-day";
-import { isValidEntertainmentDate, todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import { addCalendarDays, isValidEntertainmentDate, todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import { addOneCalendarMonthClamped } from "@/lib/event-plans/horizon";
 import { loadStaffEventPlans } from "@/lib/operations/staff-events";
 import {
   findEventPlanById,
@@ -37,10 +38,13 @@ export default async function ItinerariesPage({
     ? await findEventPlanById(legacyId)
     : null;
   const now = new Date();
-  const date = requestedDate ?? storedRequestedEvent?.date ?? todayInEntertainmentTimeZone(now);
+  const today = todayInEntertainmentTimeZone(now);
+  const date = requestedDate ?? storedRequestedEvent?.date ?? today;
+  // Opening an event already in the browse window should not shift that window.
+  const browseDate = date >= addCalendarDays(today, -1) && date <= addOneCalendarMonthClamped(today) ? today : date;
   const [adminState, eventPlanWindow] = await Promise.all([
     loadAdminState(),
-    loadStaffEventPlans(date),
+    loadStaffEventPlans(browseDate, { includeUpcomingVip: true }),
   ]);
   const matchesRequest = (plan: EventPlan) => Boolean(!invalidSelection && requestedEventId &&
     (plan.source_event_id === requestedEventId || String(plan.id) === requestedEventId) &&
@@ -81,6 +85,7 @@ export default async function ItinerariesPage({
     <ItinerariesClient
       items={items}
       selectedItinerary={selectedItinerary}
+      sourceWarning={eventPlanWindow.sourceWarning}
     />
   );
 }

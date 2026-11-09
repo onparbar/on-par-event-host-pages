@@ -34,6 +34,7 @@ afterEach(() => { vi.useRealTimers(); });
 describe("Itineraries selected-date detail loading", () => {
   it("loads only the default candidate's operational date and retains all event choices", async () => {
     const page = await ItinerariesPage({ searchParams: Promise.resolve({}) });
+    expect(loadStaffEventPlans).toHaveBeenCalledExactlyOnceWith(first.date, { includeUpcomingVip: true });
     expect(floor.get).toHaveBeenCalledExactlyOnceWith(first.date);
     expect(readSavedEntertainmentDay).toHaveBeenCalledExactlyOnceWith(first.date);
     expect(page.props.items.map((item: EventPlan) => item.id)).toEqual([first.id, later.id, vip.id]);
@@ -41,8 +42,14 @@ describe("Itineraries selected-date detail loading", () => {
     expect(page.props.selectedItinerary).toMatchObject({ id: first.id, food: first.food, revision: { ready: false } });
   });
 
-  it("hydrates another selected date without reading any other dates and preserves the saved PDF", async () => {
+  it("keeps earlier upcoming events selectable while hydrating only the selected date", async () => {
+    vi.mocked(loadStaffEventPlans).mockImplementation(async (anchor) => ({
+      plans: anchor === first.date ? [later, first, vip] : [later, vip],
+      sync: null, unfinishedEventIds: [], sourceWarning: "",
+    }));
     const page = await ItinerariesPage({ searchParams: Promise.resolve({ eventId: String(later.id), date: later.date }) });
+    expect(loadStaffEventPlans).toHaveBeenCalledExactlyOnceWith(first.date, { includeUpcomingVip: true });
+    expect(page.props.items.map((item: EventPlan) => item.id)).toEqual([first.id, later.id, vip.id]);
     expect(floor.get).toHaveBeenCalledExactlyOnceWith(later.date);
     expect(readSavedEntertainmentDay).toHaveBeenCalledExactlyOnceWith(later.date);
     expect(page.props.selectedItinerary).toMatchObject({ id: later.id, date: later.date, pdf: "/itinerary-pdfs/training.pdf", revision: { ready: false, savedPdfStatus: "unverified" } });
@@ -62,6 +69,15 @@ describe("Itineraries selected-date detail loading", () => {
     expect(page.props.selectedItinerary).toBeNull();
     expect(floor.get).not.toHaveBeenCalled();
     expect(readSavedEntertainmentDay).not.toHaveBeenCalled();
+  });
+
+  it("passes through a warning when upcoming VIP bookings are unavailable", async () => {
+    const sourceWarning = "Upcoming VIP bookings could not be loaded.";
+    vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [first], sync: null, unfinishedEventIds: [], sourceWarning });
+    const page = await ItinerariesPage({ searchParams: Promise.resolve({}) });
+    expect(page.props.sourceWarning).toBe(sourceWarning);
+    expect(page.props.items.map((item: EventPlan) => item.id)).toEqual([first.id]);
+    expect(page.props.selectedItinerary).toMatchObject({ id: first.id, date: first.date });
   });
 
   it.each(["", "2026-02-30", [first.date, later.date]])("keeps event choices without building details for malformed dates: %j", async (date) => {

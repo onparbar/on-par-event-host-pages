@@ -99,6 +99,41 @@ describe("read-only staff event feed", () => {
     expect(result.plans).toHaveLength(2);
     expect(result.sourceWarning).toBe("");
   });
+  it("includes future VIPs in the itinerary lookahead without widening exact-date reads", async () => {
+    const current = { ...plan, date: "2026-11-09", day: "Monday" };
+    const upcoming = { ...reservation, operatingDate: "2026-11-14", startAt: "2026-11-14T18:00:00Z", endAt: "2026-11-14T20:00:00Z" };
+    const loadPlans = vi.fn().mockResolvedValue({ plans: [current], sync: null });
+    const fetchRange = vi.fn(async (from: string, to: string) => ({
+      ...vipPrepPayload,
+      reservations: upcoming.operatingDate >= from && upcoming.operatingDate <= to ? [upcoming] : [],
+    }));
+    const options = { includeUpcomingVip: true, loadPlans, vipClient: { configured: true, fetchRange } };
+    const upcomingList = await loadStaffEventPlans(current.date, options);
+    expect(fetchRange).toHaveBeenCalledExactlyOnceWith("2026-11-08", "2026-12-09");
+    expect(upcomingList.plans.map(({ id, date }) => ({ id, date }))).toEqual([
+      { id: current.id, date: current.date },
+      { id: numericVipEventId(vipPrepExternalId(upcoming)), date: upcoming.operatingDate },
+    ]);
+    fetchRange.mockClear();
+    const exact = await loadStaffEventPlans(current.date, { ...options, exactDate: true });
+    expect(fetchRange).toHaveBeenCalledExactlyOnceWith(current.date, current.date);
+    expect(exact.plans).toEqual([current]);
+  });
+  it("reads the final day of a 31-day month separately without discarding the successful portion", async () => {
+    const lastDay = { ...reservation, operatingDate: "2026-11-23", startAt: "2026-11-23T18:00:00Z", endAt: "2026-11-23T20:00:00Z" };
+    const fetchRange = vi.fn()
+      .mockRejectedValueOnce(new Error("private upstream response"))
+      .mockResolvedValueOnce({ ...vipPrepPayload, reservations: [lastDay] });
+    const result = await loadStaffEventPlans("2026-10-23", {
+      includeUpcomingVip: true,
+      loadPlans: vi.fn().mockResolvedValue({ plans: [plan], sync: null }),
+      vipClient: { configured: true, fetchRange },
+    });
+    expect(fetchRange.mock.calls).toEqual([["2026-10-22", "2026-11-22"], ["2026-11-23", "2026-11-23"]]);
+    expect(result.plans.map((item) => item.date)).toEqual([plan.date, lastDay.operatingDate]);
+    expect(result.sourceWarning).toContain("Some VIP bookings could not be refreshed");
+    expect(result.sourceWarning).not.toContain("private upstream");
+  });
   it("keeps corporate events visible with a safe warning if VIP data is unavailable", async () => {
     const result = await loadStaffEventPlans("2026-10-23", { loadPlans: vi.fn().mockResolvedValue({ plans: [plan], sync: null }), vipClient: { configured: true, fetchRange: vi.fn().mockRejectedValue(new Error("private upstream response")) } });
     expect(result.plans).toEqual([plan]);
