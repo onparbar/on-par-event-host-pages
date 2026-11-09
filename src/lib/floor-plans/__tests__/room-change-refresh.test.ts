@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryEntertainmentStorage, setEntertainmentStorageForTests } from "@/lib/entertainment/storage";
-import { createMemoryEventPlanStorage, setEventPlanStorageForTests } from "@/lib/event-plans/storage";
+import { createMemoryEventPlanStorage, getEventPlanStorage, setEventPlanStorageForTests } from "@/lib/event-plans/storage";
 import type { TripleseatEventPlanSource } from "@/lib/event-plans/types";
 import { createMemoryKitchenStorage, setKitchenStorageForTests } from "@/lib/kitchen/storage";
 import { setTripleseatAdapterForTests } from "@/lib/kitchen/tripleseat";
 import { reservationOccupancy } from "@/lib/operations/reservation-buffer";
 import { VipPrepClient } from "@/lib/vip-prep/client";
-import { getFloorPlanArea } from "../configuration/areas";
+import { floorPlanSeatingAreaEligible, getFloorPlanArea } from "../configuration/areas";
 import { floorPlanAreaTimeOverlap } from "../conflicts";
-import { generateFloorPlan, refreshFloorPlanSources, saveFloorPlanEdits } from "../service";
+import { generateFloorPlan, getFloorPlanDay, refreshFloorPlanEvent, refreshFloorPlanSources, saveFloorPlanEdits } from "../service";
 import { summarizeEventSeating } from "../seating-summary";
 import * as floorPlanStorage from "../storage";
 import type { FloorPlanDocument } from "../types";
@@ -36,7 +36,12 @@ function setup(initial: TripleseatEventPlanSource[]) {
     sourceMode: "live",
     fetchEventsForDate: async () => [],
     fetchEventPlansForRange: async () => structuredClone(sources),
-    fetchEntertainmentEventsForDate: async () => [],
+    fetchEntertainmentEventsForDate: async () => sources.map((event) => ({
+      tripleseatEventId: event.eventId, tripleseatBookingId: event.bookingId, eventName: event.eventName,
+      localDate: event.localDate, eventStartAt: event.eventStartAt, eventEndAt: event.eventEndAt,
+      status: event.status, rooms: event.rooms.map((name) => ({ id: null, name })),
+      items: [], categoryNames: [], noteCount: 0, sourceUpdatedAt: event.sourceUpdatedAt,
+    })),
     fetchEventDateById: async () => DATE,
     getDiagnostics: () => ({ sourceMode: "live", missingEnvironmentVariables: [], warnings: [], locationId: "26059" }),
   });
@@ -66,6 +71,94 @@ afterEach(() => {
 });
 
 describe("Tripleseat contracted-room changes during Refresh", () => {
+  it("extends seating on a same-room headcount increase and releases only generated surplus when it decreases", async () => {
+    const other = source(OTHER_ID, { rooms: ["VIP 2"], guestCount: 16 });
+    const { storage, update } = setup([source(undefined, { guestCount: 12 }), other]);
+    const initial = await generateFloorPlan(DATE, "fill-missing", storage);
+    const initialSeats = reservationsFor(initial.plan).filter((row) => row.reservationType === "seating");
+    const otherRows = reservationsFor(initial.plan, OTHER_ID);
+    update([source(undefined, { guestCount: 34, sourceUpdatedAt: `${DATE}T13:00:00Z` }), other]);
+    const expanded = await refreshFloorPlanSources(DATE, storage, initial.plan.version);
+    expect(reservationsFor(expanded.plan)).toEqual(expect.arrayContaining(initialSeats));
+    expect(summarizeEventSeating(expanded.plan.events.find((event) => event.tripleseatEventId === EVENT_ID)!, expanded.plan.reservations).fullEventCoverage).toBe(true);
+    expect(expanded.sourceChanges).toContainEqual(expect.objectContaining({ field: "guestCount", previousValue: "12", currentValue: "34", assignmentsReconciled: true }));
+    update([source(undefined, { guestCount: 12, sourceUpdatedAt: `${DATE}T14:00:00Z` }), other]);
+    const reduced = await refreshFloorPlanSources(DATE, storage, expanded.plan.version);
+    expect(reservationsFor(reduced.plan).filter((row) => row.reservationType === "seating")).toHaveLength(initialSeats.length);
+    expect(reservationsFor(reduced.plan, OTHER_ID)).toEqual(otherRows);
+    const reopened = await getFloorPlanDay(DATE, storage, { readOnly: true });
+    expect(reopened.plan.reservations).toEqual(reduced.plan.reservations);
+    const repeated = await refreshFloorPlanSources(DATE, storage, reduced.plan.version);
+    expect(repeated.plan.reservations).toEqual(reduced.plan.reservations);
+  });
+
+  it("releases VIP 1 Level Up overflow after a same-room headcount reduction to forty", async () => {
+    const { storage, update } = setup([source(undefined, { rooms: ["VIP 1"], guestCount: 50 })]);
+    const initial = await generateFloorPlan(DATE, "fill-missing", storage);
+    const overflow = (row: FloorPlanDocument["reservations"][number]) => row.reservationType === "seating" &&
+      !floorPlanSeatingAreaEligible(row.areaId, ["vip-1"], 40);
+    expect(initial.plan.reservations.some(overflow)).toBe(true);
+    update([source(undefined, { rooms: ["VIP 1"], guestCount: 40, sourceUpdatedAt: `${DATE}T13:00:00Z` })]);
+    const reduced = await refreshFloorPlanSources(DATE, storage, initial.plan.version);
+    expect(reduced.plan.reservations.some(overflow)).toBe(false);
+    expect(summarizeEventSeating(reduced.plan.events[0], reduced.plan.reservations).fullEventCoverage).toBe(true);
+  });
+
+  it("reconciles simultaneous room swaps without treating the other obsolete holds as occupied", async () => {
+    const { storage, update } = setup([source(), source(OTHER_ID, { rooms: ["VIP 1"] })]);
+    const initial = await generateFloorPlan(DATE, "fill-missing", storage);
+    update([
+      source(undefined, { rooms: ["VIP 1"], sourceUpdatedAt: `${DATE}T13:00:00Z` }),
+      source(OTHER_ID, { rooms: ["Main Dining"], sourceUpdatedAt: `${DATE}T13:00:00Z` }),
+    ]);
+    const swapped = await refreshFloorPlanSources(DATE, storage, initial.plan.version);
+    expect(swapped.floorPlanConflicts).toEqual([]);
+    expect(reservationsFor(swapped.plan)).toContainEqual(expect.objectContaining({ areaId: "vip1-food-table" }));
+    expect(reservationsFor(swapped.plan, OTHER_ID)).not.toContainEqual(expect.objectContaining({ areaId: "vip1-food-table" }));
+    expect(swapped.sourceChanges?.filter((change) => change.field === "contractedArea").map((change) => change.assignmentsReconciled)).toEqual([true, true]);
+  });
+
+  it("holds the previous seating interval instead of double-booking an unavailable new time", async () => {
+    const other = source(OTHER_ID, { rooms: ["VIP 1"], guestCount: 20 });
+    const original = source(undefined, { rooms: ["VIP 1"], guestCount: 20,
+      eventStartAt: `${DATE}T12:00:00-05:00`, eventEndAt: `${DATE}T14:00:00-05:00` });
+    const { storage, update } = setup([original, other]);
+    const initial = await generateFloorPlan(DATE, "fill-missing", storage);
+    update([{ ...original, eventStartAt: START, eventEndAt: END, sourceUpdatedAt: `${DATE}T13:00:00Z` }, other]);
+    const blocked = await refreshFloorPlanSources(DATE, storage, initial.plan.version);
+    expect(blocked.plan.status).toBe("Needs Review");
+    expect(blocked.floorPlanConflicts).toEqual([]);
+    expect(reservationsFor(blocked.plan)).toEqual(reservationsFor(initial.plan));
+    expect(blocked.sourceChanges).toContainEqual(expect.objectContaining({ field: "eventTime", assignmentsReconciled: false }));
+    const reopened = await getFloorPlanDay(DATE, storage, { readOnly: true });
+    expect(reservationsFor(reopened.plan)).toEqual(reservationsFor(initial.plan));
+    const repeated = await refreshFloorPlanSources(DATE, storage, blocked.plan.version);
+    expect(reservationsFor(repeated.plan)).toEqual(reservationsFor(initial.plan));
+  });
+
+  it("refreshes only the selected event source and floor rows, even when a different booking also changed upstream", async () => {
+    const other = source(OTHER_ID, { rooms: ["VIP 2"], guestCount: 16 });
+    const { storage, update } = setup([source(), other]);
+    const initial = await generateFloorPlan(DATE, "fill-missing", storage);
+    const selectedId = initial.plan.events.find((event) => event.tripleseatEventId === EVENT_ID)!.id;
+    const otherBefore = await getEventPlanStorage().findById(OTHER_ID);
+    const otherFloorRows = reservationsFor(initial.plan, OTHER_ID);
+    update([source(undefined, { rooms: ["VIP 1"], sourceUpdatedAt: `${DATE}T13:00:00Z` }),
+      { ...other, guestCount: 28, sourceUpdatedAt: `${DATE}T13:00:00Z` }]);
+    const refreshed = await refreshFloorPlanEvent(DATE, selectedId, initial.plan.version, storage);
+    expect(refreshed.plan.lastTripleseatSyncAt).toBe(initial.plan.lastTripleseatSyncAt);
+    expect(refreshed.plan.events.find((event) => event.id === selectedId)?.source.lastTripleseatRefreshAt).toBeTruthy();
+    expect(await getEventPlanStorage().findById(OTHER_ID)).toEqual(otherBefore);
+    expect(reservationsFor(refreshed.plan, OTHER_ID)).toEqual(otherFloorRows);
+    expect(reservationsFor(refreshed.plan)).toContainEqual(expect.objectContaining({ areaId: "vip1-food-table" }));
+    const reopened = await getFloorPlanDay(DATE, storage, { readOnly: true });
+    expect(reopened.plan.events.find((event) => event.id === selectedId)?.contractedAreaIds).toEqual(["vip-1"]);
+    expect(reopened.plan.reservations).toEqual(refreshed.plan.reservations);
+    const fullDay = await generateFloorPlan(DATE, "fill-missing", storage, refreshed.plan.version);
+    expect(fullDay.plan.events.find((event) => event.tripleseatEventId === OTHER_ID)?.guestCount).toBe(28);
+    expect(reservationsFor(fullDay.plan)).toEqual(reservationsFor(refreshed.plan));
+  });
+
   it.each([30, 44])("moves generated seating and food to VIP 1 for %i guests without another Generate action", async (guestCount) => {
     const other = source(OTHER_ID, { rooms: ["VIP 2"], guestCount: 16 });
     const { storage, update } = setup([source(undefined, { guestCount }), other]);
@@ -85,7 +178,7 @@ describe("Tripleseat contracted-room changes during Refresh", () => {
     expect(assignments).toContainEqual(expect.objectContaining({ areaId: "vip1-food-table", reservationType: "food-table", label: "F" }));
     expect(assignments.every((row) => {
       const area = getFloorPlanArea(row.areaId);
-      return area?.id === "vip-1" || area?.parentAreaId === "vip-1";
+      return row.reservationType === "seating" ? floorPlanSeatingAreaEligible(row.areaId, ["vip-1"], guestCount) : area?.id === "vip-1" || area?.parentAreaId === "vip-1";
     })).toBe(true);
     expect(oldAssignments.every((old) => !assignments.some((row) => row.id === old.id))).toBe(true);
     expect(summarizeEventSeating(event, assignments, { allReservations: refreshed.plan.reservations })).toMatchObject({
@@ -101,6 +194,29 @@ describe("Tripleseat contracted-room changes during Refresh", () => {
     expect(repeated.plan.reservations).toEqual(refreshed.plan.reservations);
     expect(new Set(repeated.plan.reservations.map((row) => row.id)).size).toBe(repeated.plan.reservations.length);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("reflows seats and food into VIP 1 while an occupied preferred wall remains with the other party", async () => {
+    const other = source(OTHER_ID, { rooms: ["VIP 2"], guestCount: 16 });
+    const { storage, update } = setup([source(), other]);
+    const initial = await generateFloorPlan(DATE, "fill-missing", storage);
+    const wall = {
+      ...reservationsFor(initial.plan, OTHER_ID)[0], id: "existing-wall-hold", areaId: "vip1-extra-convo",
+      reservationType: "room", source: "manual", lockedByUser: true,
+    } as const;
+    const saved = await storage.save({ ...initial.plan, reservations: [...initial.plan.reservations, wall] }, "Existing wall hold");
+    update([source(undefined, { rooms: ["VIP 1"], sourceUpdatedAt: `${DATE}T13:00:00Z` }), other]);
+
+    const refreshed = await refreshFloorPlanSources(DATE, storage, saved.version);
+    const event = refreshed.plan.events.find((item) => item.tripleseatEventId === EVENT_ID)!;
+    const rows = reservationsFor(refreshed.plan);
+    expect(rows.map((row) => row.areaId)).not.toContain("vip1-conversation-wall");
+    expect(rows.map((row) => row.areaId)).not.toContain(wall.areaId);
+    expect(rows).toContainEqual(expect.objectContaining({ areaId: "vip1-food-table" }));
+    expect(reservationsFor(refreshed.plan, OTHER_ID)).toContainEqual(wall);
+    expect(refreshed.sourceRefresh?.tripleseat).toBe("success");
+    expect(refreshed.sourceChanges).toContainEqual(expect.objectContaining({ eventId: event.id, field: "contractedArea", assignmentsReconciled: true }));
+    expect(refreshed.validation).toContainEqual(expect.objectContaining({ eventId: event.id, code: "SEATING_SEARCH", status: "Warning", blocking: false }));
   });
 
   it("retains the other party's occupied VIP room and marks an impossible room move for review", async () => {

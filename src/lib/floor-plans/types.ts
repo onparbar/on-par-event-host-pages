@@ -4,7 +4,7 @@ import type {
   SourceRefreshResult,
 } from "@/lib/entertainment/types";
 
-export const FLOOR_PLAN_RULE_VERSION = "floor-plan-v1.5.0" as const;
+export const FLOOR_PLAN_RULE_VERSION = "floor-plan-v1.6.0" as const;
 export const FLOOR_PLAN_BASE_WIDTH = 1920;
 export const FLOOR_PLAN_BASE_HEIGHT = 1080;
 
@@ -75,15 +75,17 @@ export type FloorPlanEventSource = {
     text: string;
   }>;
   reviewReasons: string[];
+  lastTripleseatRefreshAt?: string;
   floorPlanChanges?: FloorPlanSourceChange[];
   seatingGenerationIssues?: Array<{ code: string; message: string; blocking: boolean }>;
 };
 
 export type FloorPlanSourceChange = {
   eventId: string;
-  field: "guestCount" | "contractedArea" | "eventTime" | "foodTables" | "assignments";
+  field: "guestCount" | "contractedArea" | "eventTime" | "foodTables" | "assignments" | "entertainment";
   previousValue: string;
   currentValue: string;
+  proposedValue?: string;
   message: string;
   assignmentsReconciled?: boolean;
 };

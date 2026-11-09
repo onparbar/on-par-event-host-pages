@@ -66,6 +66,7 @@ export type EntertainmentDependencies = {
   vipPrepClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
   readOnly?: boolean;
   protectConcurrentEdits?: boolean;
+  selectedTripleseatEventId?: string;
   floorPlanStorage?: Pick<FloorPlanStorage, "get">;
   floorPlanEvents?: readonly FloorPlanEvent[];
 };
@@ -647,6 +648,108 @@ function reservationCounts(
   return { created, updated };
 }
 
+function dayRevisions(stored: StoredEntertainmentDay) {
+  return JSON.stringify([
+    stored.events.map((event) => `${event.eventId}:${event.syncedAt}`).sort(),
+    stored.reservations.map((row) => `${row.id}:${row.updatedAt}`).sort(),
+  ]);
+}
+
+function preserveActiveManualAssignments(
+  existingReservations: EntertainmentReservation[],
+  reservations: EntertainmentReservation[],
+  activeEventIds: ReadonlySet<string>,
+  onRetain?: (row: EntertainmentReservation) => void,
+) {
+  const overrides = new Map(existingReservations.filter((row) => row.active && row.manualOverride &&
+    activeEventIds.has(row.tripleseatEventId || row.localEventId || "")).map((row) => [row.id, row]));
+  return reservations.map((row) => {
+    const previous = overrides.get(row.id);
+    if (row.active || !previous) return row;
+    onRetain?.(previous);
+    return previous;
+  });
+}
+
+/** Use a fresh Tripleseat read, but leave the other parties and date-wide refresh status alone. */
+async function syncSelectedEntertainment(
+  date: string,
+  eventId: string,
+  adapter: TripleseatAdapter,
+  storage: EntertainmentStorage,
+  options: EntertainmentDependencies,
+): Promise<EntertainmentDayPayload> {
+  try {
+    if (adapter.sourceMode !== "live" || !adapter.fetchEntertainmentEventsForDate) {
+      throw new EntertainmentSyncError("A live Tripleseat connection is required to refresh this event.");
+    }
+    const [stored, source] = await Promise.all([storage.getDay(date), adapter.fetchEntertainmentEventsForDate(date)]);
+    const current = source.filter((event) => event.localDate === date && !isVipEntertainmentSourceEvent(event) &&
+      isOperationalEntertainmentStatus(event.status, event.fullBuyout) &&
+      !["LOST", "PROSPECT", "CANCELLED", "CANCELED"].includes(event.status?.trim().toUpperCase() ?? ""));
+    if (current.filter((event) => event.tripleseatEventId === eventId).length !== 1) {
+      throw new EntertainmentSyncError("Tripleseat did not return an exact active event for this date. Saved entertainment was retained.");
+    }
+
+    const belongsToEvent = (row: EntertainmentReservation) => (row.tripleseatEventId || row.localEventId) === eventId;
+    const existingEvents = stored.events.filter((event) => event.tripleseatEventId === eventId);
+    const existingReservations = stored.reservations.filter(belongsToEvent);
+    const planning = ownerHoldPlanningProjection(stored);
+    const floorEvent = options.floorPlanEvents?.find((event) => event.tripleseatEventId === eventId);
+    const localEvents = floorPlanContext(options).localEvents;
+    const local = localEvents.find((event) => event.id === eventId);
+    const now = new Date().toISOString();
+    const built = preserveManualEventColors(buildEntertainmentSchedule({
+      sourceEvents: current,
+      localEvents: floorEvent ? [{ ...local, id: eventId, date, name: floorEvent.name, color: floorEvent.color,
+        rooms: floorEvent.source.rooms, entertainment: [] }] : local ? [{ ...local, entertainment: [] }] : [],
+      existingReservations: planning.reservations,
+      selectedTripleseatEventId: eventId,
+      now,
+    }), existingEvents);
+    const event = { ...built.events[0], eventId: existingEvents[0]?.eventId ?? built.events[0].eventId };
+    if (event.reviewIssues.some((issue) => ["INSUFFICIENT_RESOURCES", "TIME_NEEDS_REVIEW", "AMBIGUOUS_RESOURCE", "SOURCE_DETAILS_UNAVAILABLE"].includes(issue.code))) {
+      throw new EntertainmentSyncError("Tripleseat entertainment needs review before its assignments can change. Saved entertainment was retained.");
+    }
+
+    const warnings: string[] = [];
+    const reservations = preserveActiveManualAssignments(existingReservations,
+      mergeReservationsForSync(existingReservations, built.reservations, now, [event]), new Set([eventId]),
+      (row) => warnings.push(`Tripleseat no longer lists ${row.resourceName}. The staff override remains active for review.`));
+    const otherEvents = stored.events.filter((row) => row.tripleseatEventId !== eventId);
+    const otherReservations = stored.reservations.filter((row) => !belongsToEvent(row));
+    const visible = projectDecemberOwnerHoldEntertainmentVisibility({
+      events: [...otherEvents, event], reservations: [...otherReservations, ...reservations].filter((row) => row.active),
+    });
+    const represented = representedEntertainmentReservations(visible.events, visible.reservations);
+    const conflicts = detectEntertainmentConflicts(represented);
+    const conflictKey = ({ id, resourceId, startAt, endAt }: (typeof conflicts)[number]) => `${id}:${resourceId}:${startAt}:${endAt}`;
+    const beforeConflicts = new Set(detectEntertainmentConflicts(representedEntertainmentReservations(planning.events, planning.reservations))
+      .map(conflictKey));
+    const selectedIds = new Set(reservations.map((row) => row.id));
+    if (conflicts.some((conflict) => conflict.reservationIds.some((id) => selectedIds.has(id)) && !beforeConflicts.has(conflictKey(conflict)))) {
+      throw new EntertainmentSyncError("The refreshed contract overlaps a saved entertainment reservation. Saved entertainment was retained.");
+    }
+
+    // Catch new or changed occupancy while the external booking details were being read.
+    // The guarded write additionally compares the selected rows' revisions on the server.
+    if (dayRevisions(await storage.getDay(date)) !== dayRevisions(stored)) throw new EntertainmentSyncRevisionError();
+    const counts = reservationCounts(existingReservations, reservations);
+    await storage.saveSync({
+      date, events: [event], reservations, existingEvents, existingReservations,
+      protectConcurrentEdits: true, recordDaySync: false,
+      stats: { eventsProcessed: 1, reservationsCreated: counts.created, reservationsUpdated: counts.updated,
+        warningsCreated: event.reviewIssues.length, conflictsFound: conflicts.length },
+    });
+    const colors = projectDayEventColors(options.floorPlanEvents ?? [], visible.events, represented, options.floorPlanEvents ?? []);
+    return { date, events: colors.events, reservations: colors.reservations, conflicts,
+      sync: stored.sync, sourceMode: "live", warnings: unique(warnings), missingEnvironmentVariables: [], canEdit: true };
+  } catch (error) {
+    if (error instanceof EntertainmentSyncError) throw error;
+    throw new EntertainmentSyncError(safeSyncError(error));
+  }
+}
+
 export async function syncEntertainmentDay(
   date: string,
   options: EntertainmentDependencies = {},
@@ -654,6 +757,9 @@ export async function syncEntertainmentDay(
   assertEntertainmentDate(date);
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEntertainmentStorage();
+  if (options.selectedTripleseatEventId) {
+    return syncSelectedEntertainment(date, options.selectedTripleseatEventId, adapter, storage, options);
+  }
   const vipPrepClient = options.vipPrepClient ?? new VipPrepClient();
   if (adapter.sourceMode === "mock" && storage.persistence === "database" && !vipPrepClient.configured) {
     throw new EntertainmentSyncError(
@@ -752,17 +858,18 @@ export async function syncEntertainmentDay(
       buildEntertainmentSchedule({
         sourceEvents,
         localEvents: context.localEvents,
+        existingEvents: stored.events,
         existingReservations: projectDecemberOwnerHoldEntertainmentVisibility(ownerHoldPlanningProjection(stored)).reservations,
         now,
       }),
       stored.events,
     );
-    const merged = mergeReservationsForSync(
-      !vipPayload ? stored.reservations.filter((reservation) => !isVipEntertainmentReservation(reservation)) : stored.reservations,
-      built.reservations,
-      now,
-      built.events,
-    );
+    const existingReservations = !vipPayload ? stored.reservations.filter((reservation) => !isVipEntertainmentReservation(reservation)) : stored.reservations;
+    const merged = preserveActiveManualAssignments(existingReservations,
+      mergeReservationsForSync(existingReservations, built.reservations, now, built.events),
+      new Set(built.events.filter((event) => event.active && !isVipEntertainmentEvent(event) &&
+        !["LOST", "PROSPECT", "CANCELLED", "CANCELED"].includes(event.sourceSnapshot.status?.trim().toUpperCase() ?? ""))
+        .map((event) => event.tripleseatEventId)));
     if (!vipPayload) {
       merged.push(...stored.reservations.filter(isVipEntertainmentReservation));
       built.events.push(...stored.events.filter(isVipEntertainmentEvent));

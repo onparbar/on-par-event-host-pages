@@ -41,6 +41,7 @@ export function searchSeatingCombination(
   reservedSeating: readonly FloorPlanArea[] = [],
   foodTables: readonly FloorPlanArea[] = [],
   maxNodes = 50_000,
+  priorAreaIds?: ReadonlySet<string>,
 ): SeatingSearchResult {
   if (!Number.isInteger(guestCount) || guestCount < 0) {
     return { tables: [], status: "missing-source", explored: 0 };
@@ -57,6 +58,9 @@ export function searchSeatingCombination(
   if (candidates.reduce((total, table) => total + table.capacity, 0) < guestCount) {
     return { tables: [], status: "no-valid-combination", explored: 0 };
   }
+  // Recounts should release excess seats without replacing otherwise suitable tables.
+  const prior = candidates.filter((table) => priorAreaIds?.has(getPhysicalFloorPlanAreaId(table.id)));
+  if (prior.reduce((total, table) => total + table.capacity, 0) >= guestCount) candidates = prior;
   const distances = new Map(candidates.map((table) => {
     const point = center(table);
     return [table.id, foodTables.length ? Math.min(...foodTables.map((food) => {

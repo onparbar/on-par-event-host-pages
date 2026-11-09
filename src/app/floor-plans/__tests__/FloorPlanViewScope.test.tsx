@@ -86,9 +86,9 @@ describe("main floor-plan view versus selected checklist workspace", () => {
     expect(html.slice(0, folderStart)).not.toContain("December corporate party");
     expect(folder).toContain("December corporate party");
     expect(folder).toContain("December pending review");
-    expect(folder).toContain("Draft");
-    expect(folder).toContain("Needs Review");
-    expect(folder).toContain("Edit and approve");
+    expect(folder).toContain("Not finalized");
+    expect(folder).not.toContain("Needs Review");
+    expect(folder).toContain("Open in Admin");
     expect(folder).toContain("2 plans");
     expect(html).not.toContain("Static December duplicate");
     expect(html.slice(archiveStart)).not.toContain("December corporate party");

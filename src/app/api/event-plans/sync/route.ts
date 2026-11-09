@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { hasAdminSession } from "@/lib/admin-auth";
 
 import { syncRollingEventPlans } from "@/lib/event-plans/sync";
 import { syncEntertainmentDay } from "@/lib/entertainment/sync";
@@ -8,6 +10,7 @@ import {
   maintainTwoWeekFloorPlanHorizon,
 } from "@/lib/floor-plans/service";
 import { todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
+import { STAFF_FLOOR_PLAN_REFRESH_ERROR } from "@/lib/floor-plans/staff-publication";
 import {
   isSameOriginOperationalRequest,
   operationalAccessDenied,
@@ -40,7 +43,11 @@ function unauthorized() {
   );
 }
 
-async function runSync() {
+const noStore = { "cache-control": "private, no-store" };
+
+async function runSync(admin = false) {
+  const staffWindow = ({ startDate, endDate, results }: Awaited<ReturnType<typeof maintainTwoWeekFloorPlanHorizon>>) =>
+    ({ startDate, endDate, results: results.map(({ date, status, eventCount }) => ({ date, status, eventCount })) });
   let result: Awaited<ReturnType<typeof syncRollingEventPlans>> | null = null;
   let syncError: string | null = null;
   try {
@@ -66,20 +73,20 @@ async function runSync() {
       if (!confirmedResult) {
         return NextResponse.json(
           {
-            error: syncError ?? "Event-plan synchronization failed.",
-            floorPlans,
+            error: admin ? syncError ?? "Event-plan synchronization failed." : STAFF_FLOOR_PLAN_REFRESH_ERROR,
+            floorPlans: admin ? floorPlans : staffWindow(floorPlans),
           },
-          { status: 502 },
+          { status: 502, headers: noStore },
         );
       }
       return NextResponse.json({
         sourceMode: "contract-evidence",
         eventCount: confirmedResult.eventCount,
         sync: null,
-        floorPlans,
-        warning:
-          "Tripleseat could not refresh. Confirmed contract evidence was applied, and the last saved Tripleseat data remains unchanged.",
-      });
+        floorPlans: admin ? floorPlans : staffWindow(floorPlans),
+        incomplete: true,
+        ...(admin ? { warning: "Tripleseat could not refresh. Confirmed contract evidence was applied, and the last saved Tripleseat data remains unchanged." } : {}),
+      }, { headers: noStore });
     }
     const floorPlans = await maintainTwoWeekFloorPlanHorizon();
     const warnings = floorPlans.results.flatMap((entry) => [
@@ -108,17 +115,16 @@ async function runSync() {
     return NextResponse.json({
       sourceMode: result.sourceMode,
       eventCount: result.plans.length,
-      sync: result.sync,
-      floorPlans,
-      entertainment,
-      ...(warnings.length ? { warning: warnings.join(" ") } : {}),
-    });
+      floorPlans: admin ? floorPlans : staffWindow(floorPlans),
+      incomplete: warnings.length > 0 || floorPlans.results.some((entry) => entry.eventCount > 0 && entry.planStatus !== "Approved"),
+      ...(admin ? { sync: result.sync, entertainment, ...(warnings.length ? { warning: warnings.join(" ") } : {}) } : {}),
+    }, { headers: noStore });
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : syncError ?? "Event-plan synchronization failed.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: admin ? message : STAFF_FLOOR_PLAN_REFRESH_ERROR }, { status: 502, headers: noStore });
   }
 }
 
@@ -133,5 +139,5 @@ export async function POST(request: Request) {
   if (!isSameOriginOperationalRequest(request)) {
     return operationalAccessDenied();
   }
-  return runSync();
+  return runSync(hasAdminSession(await cookies()));
 }

@@ -493,7 +493,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }
 
   async function runAction(
-    action: "refresh" | "generate" | "save" | "validate" | "approve",
+    action: "refresh" | "refresh-event" | "generate" | "save" | "validate" | "approve",
     generation?: { mode: FloorPlanGenerationMode; selectedEventId: string },
   ) {
     if (!plan && action !== "refresh") return;
@@ -523,7 +523,9 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     }
     setRequestState("saving");
     setMessage(
-      action === "refresh"
+      action === "refresh-event"
+        ? "Refreshing the selected Tripleseat event…"
+        : action === "refresh"
         ? "Synchronizing live Tripleseat fields…"
         : action === "generate"
           ? "Generating deterministic suggestions…"
@@ -537,6 +539,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           ? floorPlanGenerationRequest(plan, generation?.mode ?? generationMode, generation?.selectedEventId)
           : { action, ...(plan ? { expectedVersion: plan.version } : {}) }),
         ...(action === "save" ? { plan } : {}),
+        ...(action === "refresh-event" && activeEvent ? { selectedEventId: activeEvent.id } : {}),
         ...(action === "approve" ? { acknowledgeWarnings: warningCount > 0 } : {}),
       });
       setPayload(next);
@@ -557,8 +560,12 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           ? "Floor plan approved and published to the main Floor Plans page."
           : action === "save"
             ? `Floor plan saved as version ${next.plan.version} and published to the main Floor Plans page. ${next.validation.some((entry) => entry.status === "Failed" || entry.status === "Warning") ? "Unresolved seating or validation alerts remain; saving is not approval." : "Review validation before approval."}`
+          : action === "refresh-event"
+            ? "Selected booking refreshed. Review its assignments and any warnings before approval."
           : action === "refresh"
-            ? "Live Tripleseat sync complete and saved. Review highlighted changes before approval."
+            ? next.sourceRefresh?.tripleseat === "success"
+              ? "Live Tripleseat sync complete and saved. Review highlighted changes before approval."
+              : "Tripleseat did not fully refresh. Review provider status and the last successful timestamp before setup."
             : action === "generate" && generation
               ? `${generation.mode === "fill-missing" ? "Remaining seating filled" : "Unlocked generated seating reworked"} for ${activeEvent?.name ?? "the selected event"} and saved as version ${next.plan.version}. Review additions and any remaining shortages below.`
               : `Floor plan ${action === "generate" ? "generated for the entire date" : `${action}d`} and saved as version ${next.plan.version}.`,
@@ -969,7 +976,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
             <div className="floor-plan-panel-heading">
               <span className="portal-module-kicker">{formatFullDate(date)}</span>
               <h2>Events</h2>
-              <p>{plan.lastTripleseatSyncAt ? `Last synced ${new Date(plan.lastTripleseatSyncAt).toLocaleString()}` : "Generate after reviewing current Tripleseat fields."}</p>
+              <p>{plan.lastTripleseatSyncAt ? `Last successful date-wide Tripleseat event read: ${new Date(plan.lastTripleseatSyncAt).toLocaleString("en-US", { timeZone: "America/New_York" })} ET` : "No successful date-wide Tripleseat read recorded."} Changes made after the last refresh are not included.</p>
             </div>
             <div className="floor-plan-event-list">
               {plan.events.map((event) => {
@@ -1129,7 +1136,16 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
               </label>
             ) : null}
             {activeEvent ? <FloorPlanSeatingSummary plan={plan} event={activeEvent} dirty={dirty} saveConflict={saveConflict} disabled={requestState === "saving"} onGenerate={(mode) => void runAction("generate", { mode, selectedEventId: activeEvent.id })} /> : null}
-            {activeEvent && payload.sourceChanges?.some((change) => change.eventId === activeEvent.id) ? <section className="floor-plan-source-changes" aria-label="Contract changes needing attention"><h3>Contract changes</h3><ul>{payload.sourceChanges.filter((change) => change.eventId === activeEvent.id).map((change) => <li key={`${change.eventId}:${change.field}`}><strong>{change.field}</strong>: {change.message}</li>)}</ul><p>Review the saved seating after contract changes. Staff-selected tables and explicit timing overrides are not silently replaced.</p></section> : null}
+            {activeEvent ? <section className="floor-plan-source-changes" aria-label="Selected event refresh and review">
+              <h3>Booking refresh</h3>
+              {/^\d+$/.test(activeEvent.tripleseatEventId) ? <button disabled={dirty || saveConflict || requestState === "saving"} onClick={() => void runAction("refresh-event")} type="button">Refresh only this Tripleseat event</button> : null}
+              {activeEvent.source.lastTripleseatRefreshAt ? <p>Selected event last refreshed: {new Date(activeEvent.source.lastTripleseatRefreshAt).toLocaleString("en-US", { timeZone: "America/New_York" })} ET.</p> : null}
+              {payload.sourceChanges?.some((change) => change.eventId === activeEvent.id) ? <>
+                <h4>Contract and assignment changes</h4>
+                <ul>{payload.sourceChanges.filter((change) => change.eventId === activeEvent.id).map((change) => <li key={`${change.eventId}:${change.field}`}><strong>{change.field}</strong>: {change.message}<br />Before: {change.previousValue || "Not listed"}<br />Current: {change.currentValue || "Not listed"}{change.proposedValue ? <><br />Incomplete proposal (not applied): {change.proposedValue}</> : null}</li>)}</ul>
+                <p>Use the seating inspector to adjust the current plan. Manual assignments and explicit seating times are preserved.</p>
+              </> : null}
+            </section> : null}
             {selectedArea && activeEvent ? (
               <div className="floor-plan-inspector-body">
                 <FloorPlanTableDetails plan={plan} event={activeEvent} area={selectedArea} reservation={activePlanReservation} entertainmentReservation={activeEntertainmentReservation} allEntertainmentReservations={payload.entertainmentReservations} />

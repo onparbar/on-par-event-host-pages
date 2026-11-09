@@ -31,7 +31,7 @@ export default function FloorPlanEventLegend({
       ) : null}
       {plan.events.map((event) => readOnly ? (
         <span className="floor-plan-event-filter" key={event.id} style={{ color: event.color }}>
-          <span><b>{event.name} ({event.guestCount})</b><small>{event.startAt && event.endAt ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}` : "Time needs review"}</small></span>
+          <span><b>{event.name} ({event.guestCount})</b><small>{event.startAt && event.endAt ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}` : "Time not confirmed"}</small></span>
         </span>
       ) : (
         <button
@@ -48,7 +48,7 @@ export default function FloorPlanEventLegend({
             <small>
               {event.startAt && event.endAt
                 ? `${formatClock(event.startAt)} – ${formatClock(event.endAt)}`
-                : "Time needs review"}
+                : "Time not confirmed"}
             </small>
           </span>
         </button>

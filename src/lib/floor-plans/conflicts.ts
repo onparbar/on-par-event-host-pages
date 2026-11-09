@@ -1,4 +1,4 @@
-import { areaUsesSeatingBuffer, getFloorPlanArea, getPhysicalFloorPlanAreaId } from "./configuration/areas";
+import { areaUsesSeatingBuffer, bigShowSharedFootprint, getFloorPlanArea, getPhysicalFloorPlanAreaId } from "./configuration/areas";
 import { reservationOccupancyOverlap } from "@/lib/operations/reservation-buffer";
 import { validEntertainmentInterval } from "@/lib/entertainment/domain";
 import type {
@@ -70,8 +70,11 @@ export function detectFloorPlanConflicts(plan: FloorPlanDocument) {
     const left = reservations[leftIndex];
     for (let rightIndex = leftIndex + 1; rightIndex < reservations.length; rightIndex += 1) {
       const right = reservations[rightIndex];
-      const physicalId = getPhysicalFloorPlanAreaId(left.areaId);
+      const leftPhysicalId = getPhysicalFloorPlanAreaId(left.areaId);
+      const rightPhysicalId = getPhysicalFloorPlanAreaId(right.areaId);
       const sameEvent = left.floorPlanEventId === right.floorPlanEventId;
+      const physicalId = !sameEvent && bigShowSharedFootprint(leftPhysicalId, rightPhysicalId) ? "big-show-karaoke"
+        : leftPhysicalId === rightPhysicalId ? leftPhysicalId : null;
       const guestSeating = (reservation: FloorPlanReservation) => reservation.reservationType === "seating" ||
         (reservation.reservationType === "room" && (getFloorPlanArea(reservation.areaId)?.capacity ?? 0) > 0);
       const foodAndSeating =
@@ -79,7 +82,7 @@ export function detectFloorPlanConflicts(plan: FloorPlanDocument) {
         (right.reservationType === "food-table" && guestSeating(left));
       if (
         (sameEvent && !foodAndSeating) ||
-        physicalId !== getPhysicalFloorPlanAreaId(right.areaId) ||
+        !physicalId ||
         !floorPlanAreaTimeOverlap(physicalId, left.startAt, left.endAt, right.startAt, right.endAt)
       ) {
         continue;

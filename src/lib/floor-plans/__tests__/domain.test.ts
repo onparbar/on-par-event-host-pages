@@ -262,10 +262,10 @@ describe("floor-plan capacities and generation", () => {
     },
   );
 
-  it.each([[4, 1], [5, 2], [24, 6], [25, 0]])(
-    "applies four-seat square-table boundaries for %i guests",
+  it.each([[4, 1], [5, 2], [20, 5], [21, 0]])(
+    "applies the five verified four-seat Clubhouse tables for %i guests",
     (guestCount, count) => {
-      expect(selectSmallestTableCombination(seatingTablesForArea("level-up-seating"), guestCount)).toHaveLength(count);
+      expect(selectSmallestTableCombination(seatingTablesForArea("clubhouse-seating"), guestCount)).toHaveLength(count);
     },
   );
 
@@ -425,7 +425,7 @@ describe("floor-plan capacities and generation", () => {
       .map((item) => getFloorPlanArea(item.areaId)!)
       .filter(Boolean);
 
-    expect(rooms).toEqual(["vip-1", "vip-2"]);
+    expect(rooms).toEqual(["vip-1", "vip-2", "vip1-extra-convo"]);
     expect(reservedSeatingCapacity(generated)).toBe(40);
     expect(tables).toHaveLength(0);
     expect(
@@ -633,7 +633,7 @@ describe("floor-plan capacities and generation", () => {
     expect(reservedSeatingCapacity(generated)).toBe(20);
   });
 
-  it.each([[20, 0, 20], [21, 1, 30], [30, 1, 30], [31, 2, 40], [70, 5, 70], [71, 0, 20]])(
+  it.each([[20, 0, 20], [21, 1, 30], [30, 1, 30], [31, 2, 40], [70, 6, 74], [95, 2, 40]])(
     "uses VIP 1 couches and the nearest additional food-side seating for %i guests",
     (guestCount, extraCount, expectedCapacity) => {
       const document = plan([floorPlanEvent({ contractedAreaIds: ["vip-1"], guestCount })]);
@@ -644,7 +644,7 @@ describe("floor-plan capacities and generation", () => {
       if (guestCount === 21 || guestCount === 30) expect(seating.map((item) => item.areaId)).toEqual(["vip1-extra-front-4"]);
       if (guestCount === 31) expect(seating.map((item) => item.areaId)).toEqual(["vip1-extra-front-3", "vip1-extra-front-4"]);
       expect(seating.some((item) => item.areaId === "vip1-extra-convo")).toBe(false);
-      if (guestCount === 71) expect(validateFloorPlan(document, [], [], [])).toContainEqual(expect.objectContaining({ code: "SEATING_CAPACITY", status: "Failed", blocking: true }));
+      if (guestCount === 95) expect(validateFloorPlan(document, [], [], [])).toContainEqual(expect.objectContaining({ code: "SEATING_CAPACITY", status: "Failed", blocking: true }));
     },
   );
 
@@ -655,11 +655,12 @@ describe("floor-plan capacities and generation", () => {
     const generated = generateFloorPlanReservations(plan([event]), "replace-generated");
     const seating = generated.filter((item) => item.reservationType === "seating");
 
-    expect(reservedSeatingCapacity(generated)).toBe(50);
-    expect(seating.filter((item) => item.areaId === "vip1-conversation-wall")).toHaveLength(1);
-    expect(seating.filter((item) => getFloorPlanArea(item.areaId)?.type === "rectangle-table")).toHaveLength(2);
-    expect(generated.every((item) => getFloorPlanArea(item.areaId)?.id === "vip-1" ||
-      getFloorPlanArea(item.areaId)?.parentAreaId === "vip-1")).toBe(true);
+    expect(reservedSeatingCapacity(generated)).toBe(54);
+    expect(seating.filter((item) => getFloorPlanArea(item.areaId)?.parentAreaId === "vip-1")).toHaveLength(2);
+    expect(seating.filter((item) => seatingTablesForArea("level-up-seating").some((area) => area.id === item.areaId)).map((item) => item.areaId)).toEqual([
+      "level-up-square-6", "wat-table-1",
+    ]);
+    expect(seating.some((item) => getFloorPlanArea(item.areaId)?.parentAreaId === "clubhouse-seating")).toBe(false);
     expect(selectEntertainmentResources(event.contractedAreaIds, "bowling", 5)).toEqual([
       "bowling-1", "bowling-2", "bowling-3", "bowling-4", "bowling-5",
     ]);
@@ -759,7 +760,7 @@ describe("aliases and entertainment allocation", () => {
     expect(resolveAreaAlias("Mystery Atrium")).toBeNull();
   });
 
-  it("selects consecutive entertainment resources when possible", () => {
+  it("assigns Main Dining bowling from Lane 12 downward", () => {
     expect(
       selectEntertainmentResources(
         "main-dining",
@@ -767,13 +768,13 @@ describe("aliases and entertainment allocation", () => {
         2,
         new Set(["bowling-10"]),
       ),
-    ).toEqual(["bowling-11", "bowling-12"]);
+    ).toEqual(["bowling-12", "bowling-11"]);
   });
 
-  it("preserves proximity for Main Dining and starts VIP bowling at Lane 1", () => {
+  it("starts Main Dining at Lane 12 and VIP bowling at Lane 1", () => {
     expect(selectEntertainmentResources("main-dining", "bowling", 2)).toEqual([
-      "bowling-11",
       "bowling-12",
+      "bowling-11",
     ]);
     expect(selectEntertainmentResources("vip-1", "bowling", 2)).toEqual([
       "bowling-1",
@@ -781,7 +782,7 @@ describe("aliases and entertainment allocation", () => {
     ]);
   });
 
-  it.each(["vip-1", "vip-2"])("assigns five lanes starting at Lane 1 for %s", (area) => {
+  it.each(["vip-1", "vip-2", "big-show-karaoke"])("assigns five lanes starting at Lane 1 for %s", (area) => {
     expect(selectEntertainmentResources(area, "bowling", 5)).toEqual([
       "bowling-1", "bowling-2", "bowling-3", "bowling-4", "bowling-5",
     ]);
@@ -796,15 +797,16 @@ describe("aliases and entertainment allocation", () => {
     ]);
   });
 
-  it("selects the closest complete group for each contracted section", () => {
+  it("selects the correct end of the lanes for each contracted section", () => {
     expect(selectEntertainmentResources("big-show-karaoke", "bowling", 2)).toEqual(["bowling-1", "bowling-2"]);
-    expect(selectEntertainmentResources("geg-tables", "bowling", 2)).toEqual(["bowling-11", "bowling-12"]);
+    expect(selectEntertainmentResources("geg-tables", "bowling", 2)).toEqual(["bowling-12", "bowling-11"]);
     expect(selectEntertainmentResources(["vip-1", "vip-2"], "bowling", 2)).toEqual(["bowling-1", "bowling-2"]);
   });
 
-  it("uses nearest separated lanes only when no consecutive group is available", () => {
-    const unavailable = new Set([2, 4, 6, 8, 10, 12].map((number) => `bowling-${number}`));
-    expect(selectEntertainmentResources("main-dining", "bowling", 2, unavailable)).toEqual(["bowling-11", "bowling-9"]);
+  it.each(["main-dining", "geg-tables"])("skips occupied high lanes without discarding free high lanes for %s", (area) => {
+    expect(selectEntertainmentResources(area, "bowling", 5, new Set(["bowling-12", "bowling-10"]))).toEqual([
+      "bowling-11", "bowling-9", "bowling-8", "bowling-7", "bowling-6",
+    ]);
   });
 
   it("does not claim a closest lane for unknown seating or return insufficient inventory", () => {

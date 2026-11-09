@@ -53,7 +53,7 @@ describe("Itineraries selected-date detail loading", () => {
     expect(floor.get).toHaveBeenCalledExactlyOnceWith(later.date);
     expect(readSavedEntertainmentDay).toHaveBeenCalledExactlyOnceWith(later.date);
     expect(page.props.selectedItinerary).toMatchObject({ id: later.id, date: later.date, pdf: "/itinerary-pdfs/training.pdf", revision: { ready: false, savedPdfStatus: "unverified" } });
-    expect(page.props.selectedItinerary.revision.reasons).toContain("The shared Entertainment Schedule could not be read; listed activities may be outdated.");
+    expect(page.props.selectedItinerary.revision.reasons).toEqual([]);
   });
 
   it("chooses an event from the date-only view instead of the earliest different day", async () => {

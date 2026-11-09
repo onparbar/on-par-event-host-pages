@@ -1,9 +1,16 @@
 import {
+  bigShowSharedFootprint,
+  floorPlanAreaBelongsToSection,
+  floorPlanSeatingAreaEligible,
   foodTablesNearArea,
   getFloorPlanArea,
   getPhysicalFloorPlanAreaId,
   requiredFoodTableCount,
   seatingInventoryForArea,
+  VIP1_BASE_SEATING_CAPACITY,
+  VIP1_CONVERSATION_WALL_AREA_ID,
+  VIP1_LEVEL_UP_OVERFLOW_ORDER,
+  VIP1_OVERFLOW_SECTIONS,
 } from "./configuration/areas";
 import { reservationOccupancy } from "@/lib/operations/reservation-buffer";
 import { detectFloorPlanConflicts, floorPlanAreaTimeOverlap } from "./conflicts";
@@ -20,7 +27,7 @@ import type {
 
 export type FloorPlanGenerationIssue = {
   eventId: string;
-  code: "missing-source" | "no-valid-combination" | "search-incomplete" | "assignments-preserved" | "joint-reallocation" | "seating-selection" | "placement-unavailable";
+  code: "missing-source" | "no-valid-combination" | "search-incomplete" | "assignments-preserved" | "joint-reallocation" | "seating-selection" | "placement-unavailable" | "preferred-wall-unavailable";
   message: string;
   blocking: boolean;
 };
@@ -74,6 +81,12 @@ function reservation(
   };
 }
 
+function obsoleteAutomaticVip1Wall(event: FloorPlanEvent, row: FloorPlanReservation) {
+  return row.areaId === "vip1-conversation-wall" && event.contractedAreaIds.includes("vip-1") &&
+    !event.contractedAreaIds.includes("vip-2") && row.source === "generated" &&
+    !row.lockedByUser && !row.placementOverride && row.timingSource !== "staff-override";
+}
+
 function unavailableAreaIds(
   plan: FloorPlanDocument,
   event: FloorPlanEvent,
@@ -101,11 +114,18 @@ function eventBaseReservations(
   existing: readonly FloorPlanReservation[],
   issues: FloorPlanGenerationIssue[] = [],
   excludedChoices: ReadonlySet<string> = new Set(),
+  priorAreaIds?: ReadonlySet<string>,
 ) {
   const unavailable = unavailableAreaIds(plan, event, existing);
+  const sharedBigShowAreaUnavailable = (areaId: string) => existing.some((other) =>
+    other.floorPlanEventId !== event.id && bigShowSharedFootprint(areaId, other.areaId) &&
+    (!reservationOccupancy(other.startAt, other.endAt) || floorPlanAreaTimeOverlap(
+      "big-show-karaoke", event.startAt, event.endAt, other.startAt, other.endAt,
+    )),
+  );
   const areaUnavailable = (areaId: string, purpose: FloorPlanReservation["reservationType"]) => {
     const physicalId = getPhysicalFloorPlanAreaId(areaId);
-    return unavailable.has("facility") || unavailable.has(physicalId) || excludedChoices.has(`${purpose}:${physicalId}`);
+    return unavailable.has("facility") || unavailable.has(physicalId) || sharedBigShowAreaUnavailable(physicalId) || excludedChoices.has(`${purpose}:${physicalId}`);
   };
   const contractedAreas = event.contractedAreaIds.filter(
     (areaId) => areaId !== "facility" && getFloorPlanArea(areaId),
@@ -130,6 +150,11 @@ function eventBaseReservations(
   for (const contractedArea of contractedAreas) {
     const contracted = getFloorPlanArea(contractedArea);
     if (contracted?.type === "room") {
+      if (sharedBigShowAreaUnavailable(contracted.id)) {
+        issues.push({ eventId: event.id, code: "placement-unavailable", blocking: true,
+          message: `${event.name}: ${contracted.name} overlaps a reserved space in the Big Show footprint during the required seating occupancy.` });
+        continue;
+      }
       if (contracted.capacity > 0 && areaUnavailable(contracted.id, "room")) {
         issues.push({ eventId: event.id, code: "placement-unavailable", blocking: false,
           message: `${event.name}: ${contracted.name} is held by another party during the required seating occupancy. Its seats were not used; eligible additional tables are considered without moving the other party.` });
@@ -146,6 +171,17 @@ function eventBaseReservations(
   if (vipOnly) {
     return generated;
   }
+  if (seatingContractedAreas.includes("vip-1") && !existing.some((item) =>
+    item.floorPlanEventId === event.id && (item.areaId === VIP1_CONVERSATION_WALL_AREA_ID || obsoleteAutomaticVip1Wall(event, item)),
+  )) {
+    const wall = getFloorPlanArea(VIP1_CONVERSATION_WALL_AREA_ID);
+    if (wall && !areaUnavailable(wall.id, "room")) {
+      generated.push(reservation(event, wall.id, "room", wall.shortLabel));
+    } else {
+      issues.push({ eventId: event.id, code: "preferred-wall-unavailable", blocking: false,
+        message: `${event.name}: the lower VIP 1 conversation wall was unavailable; no karaoke-side wall was substituted.` });
+    }
+  }
   const foodTableCount = requiredFoodTableCount(event.guestCount);
   const existingFoodAreaIds = new Set(
     existing.flatMap((item) =>
@@ -155,6 +191,10 @@ function eventBaseReservations(
         : [],
     ),
   );
+  const levelUpInOrder = (candidates: readonly FloorPlanArea[]) => {
+    const available = new Map(candidates.map((table) => [table.id, table]));
+    return VIP1_LEVEL_UP_OVERFLOW_ORDER.flatMap((areaId) => available.get(areaId) ?? []);
+  };
   const foodPhysicalIds = new Set([...existingFoodAreaIds].map(getPhysicalFloorPlanAreaId));
   let foodAssigned = summarizeEventSeating(event, existing, { allReservations: existing }).foodAssigned;
   const savedSeatingPhysicalIds = new Set(existing.filter((item) =>
@@ -163,6 +203,11 @@ function eventBaseReservations(
   const foodCandidates = primaryContractedArea
     ? foodTablesNearArea(primaryContractedArea)
     : foodTablesNearArea("main-dining");
+  if (priorAreaIds && primaryContractedArea) {
+    const rank = (item: FloorPlanArea) => Number(item.parentAreaId !== primaryContractedArea) * 2 +
+      Number(!priorAreaIds.has(getPhysicalFloorPlanAreaId(item.id)));
+    foodCandidates.sort((left, right) => rank(left) - rank(right));
+  }
   for (const foodCandidate of foodCandidates) {
     if (foodAssigned >= foodTableCount) break;
     const physicalId = getPhysicalFloorPlanAreaId(foodCandidate.id);
@@ -184,7 +229,7 @@ function eventBaseReservations(
   });
   const existingSeatingAreaIds = new Set(
     existing.flatMap((item) =>
-      item.floorPlanEventId === event.id && item.reservationType === "seating"
+      item.floorPlanEventId === event.id && (item.reservationType === "seating" || item.reservationType === "room")
         ? [getPhysicalFloorPlanAreaId(item.areaId)]
         : [],
     ),
@@ -198,9 +243,9 @@ function eventBaseReservations(
     item.reservationType === "room" || item.reservationType === "seating" ? [item.areaId] : [],
   ))].flatMap((id) => {
     const area = getFloorPlanArea(id);
-    return area && area.capacity > 0 ? [area] : [];
+    return area && area.capacity > 0 && floorPlanSeatingAreaEligible(area.id, event.contractedAreaIds, event.guestCount) ? [area] : [];
   });
-  const availableTables = [...new Set(seatingContractedAreas)].flatMap((areaId) =>
+  const availableTablesFor = (sectionIds: readonly string[]) => [...new Set(sectionIds)].flatMap((areaId) =>
     seatingInventoryForArea(areaId).filter(
       (table) =>
         !areaUnavailable(table.id, "seating") &&
@@ -208,25 +253,61 @@ function eventBaseReservations(
         !foodPhysicalIds.has(getPhysicalFloorPlanAreaId(table.id)),
     ),
   );
-  const remainingGuests = Math.max(0, event.guestCount - existingSeatingCapacity);
-  const selection = searchSeatingCombination(
-    availableTables,
-    remainingGuests,
-    reservedSeating,
-    foodTables,
-  );
-  if (selection.status === "search-incomplete") {
-    issues.push({ eventId: event.id, code: "search-incomplete", message: `${event.name}: a sufficient table group was found, but the bounded search could not finish comparing every grouping. Review the proposed placement.`, blocking: false });
-  } else if (selection.status === "no-valid-combination") {
-    issues.push({ eventId: event.id, code: "no-valid-combination", message: `${event.name}: no sufficient combination is available in the contracted area for the full seating interval, including setup and cleanup occupancy.`, blocking: true });
+  function addTables(candidates: readonly FloorPlanArea[], guests: number, shortage: string, ordered = false) {
+    let orderedSeats = 0;
+    const orderedTables = ordered ? candidates.filter((table) => {
+      if (orderedSeats >= guests) return false;
+      orderedSeats += table.capacity;
+      return true;
+    }) : [];
+    const selection = ordered
+      ? { tables: orderedSeats < guests ? [] : orderedTables, status: orderedSeats < guests ? "no-valid-combination" : "complete" }
+      : searchSeatingCombination(candidates, guests, reservedSeating, foodTables, undefined, priorAreaIds);
+    if (selection.status === "search-incomplete") {
+      issues.push({ eventId: event.id, code: "search-incomplete", message: `${event.name}: a sufficient table group was found, but the bounded search could not finish comparing every grouping. Review the proposed placement.`, blocking: false });
+    } else if (selection.status === "no-valid-combination") {
+      issues.push({ eventId: event.id, code: "no-valid-combination", message: `${event.name}: ${shortage}`, blocking: true });
+    }
+    for (const table of selection.tables) {
+      generated.push(reservation(event, table.id, "seating", table.shortLabel));
+      existingSeatingAreaIds.add(getPhysicalFloorPlanAreaId(table.id));
+      reservedSeating.push(table);
+    }
+    if (selection.tables.length) {
+      issues.push({ eventId: event.id, code: "seating-selection", blocking: false,
+        message: `${event.name}: add ${selection.tables.map((table) => table.name).join(", ")} (${seatingCapacity(selection.tables)} seats) for ${guests} remaining guests. ${ordered ? "Level Up starts at the Clubhouse end." : "Eligible tables account for food access and setup and cleanup availability."}` });
+    }
+    return seatingCapacity(selection.tables);
   }
-  for (const table of selection.tables) {
-    generated.push(reservation(event, table.id, "seating", table.shortLabel));
+  const contractedShortage = "no sufficient combination is available in the contracted area for the full seating interval, including setup and cleanup occupancy.";
+  const vip1Only = seatingContractedAreas.length === 1 && seatingContractedAreas[0] === "vip-1";
+  if (!vip1Only || event.guestCount <= VIP1_BASE_SEATING_CAPACITY) {
+    const tables = availableTablesFor(seatingContractedAreas);
+    const levelUpOnly = seatingContractedAreas.length === 1 && seatingContractedAreas[0] === "level-up-seating";
+    addTables(levelUpOnly ? levelUpInOrder(tables) : tables, Math.max(0, event.guestCount - existingSeatingCapacity), contractedShortage, levelUpOnly);
+    return generated;
   }
-  if (selection.tables.length) {
-    issues.push({ eventId: event.id, code: "seating-selection", blocking: false,
-      message: `${event.name}: add ${selection.tables.map((table) => table.name).join(", ")} (${seatingCapacity(selection.tables)} seats) for ${remainingGuests} remaining guests. Eligible tables are prioritized by food access, then spare capacity, grouping and table count; setup and cleanup availability is included.` });
+
+  const baseCapacity = summarizeEventSeating(event, existingEventReservations.filter((item) =>
+    item.reservationType === "food-table" || floorPlanAreaBelongsToSection(item.areaId, "vip-1")),
+  ).coveredCapacity;
+  const baseNeeded = Math.max(0, VIP1_BASE_SEATING_CAPACITY - baseCapacity);
+  if (addTables(availableTablesFor(seatingContractedAreas), baseNeeded, contractedShortage) < baseNeeded) return generated;
+
+  const savedOverflow = existingSeatingCapacity - baseCapacity;
+  const overflowNeeded = Math.max(0, event.guestCount - VIP1_BASE_SEATING_CAPACITY - savedOverflow);
+  const [levelUp, clubhouse] = VIP1_OVERFLOW_SECTIONS;
+  const levelUpTables = levelUpInOrder(availableTablesFor([levelUp]));
+  const clubhouseTables = availableTablesFor([clubhouse]);
+  const overflowShortage = "not enough verified VIP 1 overflow seats are available in Level Up and Clubhouse for the full seating interval.";
+  if (seatingCapacity([...levelUpTables, ...clubhouseTables]) < overflowNeeded) {
+    issues.push({ eventId: event.id, code: "no-valid-combination", message: `${event.name}: ${overflowShortage}`, blocking: true });
+    return generated;
   }
+  const levelUpSeats = overflowNeeded > 0 && levelUpTables.length > 0
+    ? addTables(levelUpTables, Math.min(overflowNeeded, seatingCapacity(levelUpTables)), overflowShortage, true)
+    : 0;
+  addTables(clubhouseTables, Math.max(0, overflowNeeded - levelUpSeats), overflowShortage);
   return generated;
 }
 
@@ -236,6 +317,7 @@ function generateInOrder(
   selectedEventId: string | undefined,
   eventOrder: readonly FloorPlanEvent[],
   fixedReservations?: readonly FloorPlanReservation[],
+  priorAreaIds?: ReadonlySet<string>,
 ) {
   const approved = ["Approved", "Updated After Approval", "Completed", "Archived"].includes(plan.status);
   const preserved = fixedReservations ? [...fixedReservations] : plan.reservations.flatMap((item) => {
@@ -246,6 +328,7 @@ function generateInOrder(
     if (event) {
       const current = reservationForCurrentFloorPlanEvent(event, item);
       if (!current) return [];
+      if (!approved && obsoleteAutomaticVip1Wall(event, item)) return [];
       if (mode === "fill-missing" || approved) return [current];
       if (mode === "replace-generated") {
         return item.source === "manual" || item.lockedByUser || item.placementOverride || item.timingSource === "staff-override" ? [current] : [];
@@ -262,7 +345,7 @@ function generateInOrder(
   const issues: FloorPlanGenerationIssue[] = [];
   for (const event of eventOrder) {
     if (selectedEventId && event.id !== selectedEventId) continue;
-    const generated = eventBaseReservations(plan, event, next, issues);
+    const generated = eventBaseReservations(plan, event, next, issues, undefined, priorAreaIds);
     for (const item of generated) {
       if (
         next.some(
@@ -291,16 +374,19 @@ export function generateFloorPlanReservationProposal(
   plan: FloorPlanDocument,
   mode: FloorPlanGenerationMode,
   selectedEventId?: string,
+  priorAreaIds?: ReadonlySet<string>,
 ): FloorPlanGenerationProposal {
   const selectedEvents = plan.events.filter((event) => !selectedEventId || event.id === selectedEventId);
   if (selectedEventId && selectedEvents.length === 0) throw new Error("Choose an event on this floor plan before repairing seating.");
-  let result = generateInOrder(plan, mode, selectedEventId, selectedEvents);
-  const satisfied = (reservations: readonly FloorPlanReservation[]) =>
+  const priorPhysicalIds = priorAreaIds ? new Set([...priorAreaIds].map(getPhysicalFloorPlanAreaId)) : undefined;
+  let result = generateInOrder(plan, mode, selectedEventId, selectedEvents, undefined, priorPhysicalIds);
+  const satisfied = (reservations: readonly FloorPlanReservation[], issues: readonly FloorPlanGenerationIssue[]) =>
+    !issues.some((issue) => issue.blocking) &&
     selectedEvents.every((event) => eventSatisfied(event, reservations)) &&
     !detectFloorPlanConflicts({ ...plan, reservations: [...reservations] }).some((conflict) =>
       !selectedEventId || conflict.eventIds.includes(selectedEventId));
   const mayReallocate = !selectedEventId && !["Approved", "Updated After Approval", "Completed", "Archived"].includes(plan.status);
-  if (!satisfied(result.reservations) && mayReallocate && selectedEvents.length > 1 &&
+  if (!satisfied(result.reservations, result.issues) && mayReallocate && selectedEvents.length > 1 &&
     !result.issues.some((issue) => issue.code === "missing-source")) {
     // Reconsider only unlocked generated choices. Staff/approved choices are constraints.
     const fixed = plan.reservations.filter((item) => item.source === "manual" || item.lockedByUser || item.placementOverride || item.timingSource === "staff-override");
@@ -311,7 +397,7 @@ export function generateFloorPlanReservationProposal(
     let explored = 0;
     let searchIncomplete = false;
     function allocate(index: number, reservations: FloorPlanReservation[], issues: FloorPlanGenerationIssue[]): typeof result | null {
-      if (index === order.length) return satisfied(reservations) ? { reservations, issues } : null;
+      if (index === order.length) return satisfied(reservations, issues) ? { reservations, issues } : null;
       if (explored >= 256) { searchIncomplete = true; return null; }
       const event = order[index];
       const exclusions: Set<string>[] = [new Set()];
@@ -320,14 +406,14 @@ export function generateFloorPlanReservationProposal(
         if (explored >= 256) { searchIncomplete = true; break; }
         explored += 1;
         const variantIssues: FloorPlanGenerationIssue[] = [];
-        const additions = eventBaseReservations(plan, event, reservations, variantIssues, exclusions[variant]);
+        const additions = eventBaseReservations(plan, event, reservations, variantIssues, exclusions[variant], priorPhysicalIds);
         const next = [...reservations];
         for (const addition of additions) {
           if (!next.some((existing) => existing.floorPlanEventId === event.id &&
             existing.reservationType === addition.reservationType &&
             getPhysicalFloorPlanAreaId(existing.areaId) === getPhysicalFloorPlanAreaId(addition.areaId))) next.push(addition);
         }
-        if (eventSatisfied(event, next)) {
+        if (!variantIssues.some((issue) => issue.blocking) && eventSatisfied(event, next)) {
           const complete = allocate(index + 1, next, [...issues, ...variantIssues]);
           if (complete) return complete;
         }
@@ -353,12 +439,16 @@ export function generateFloorPlanReservationProposal(
     }
   }
   // Never discard an existing event assignment in favor of an unsuccessful rework.
-  if (mode !== "fill-missing") {
-    for (const event of selectedEvents) {
+  for (const event of selectedEvents) {
+    const savedRows = plan.reservations.filter((item) => item.floorPlanEventId === event.id);
+    const replacingObsoleteWall = savedRows.some((item) => obsoleteAutomaticVip1Wall(event, item) &&
+      !result.reservations.some((candidate) => candidate.id === item.id));
+    if (mode !== "fill-missing" || replacingObsoleteWall) {
       const eventConflicts = detectFloorPlanConflicts({ ...plan, reservations: result.reservations }).some((conflict) => conflict.eventIds.includes(event.id));
-      if ((!eventSatisfied(event, result.reservations) || eventConflicts) && plan.reservations.some((item) => item.floorPlanEventId === event.id)) {
+      if ((!eventSatisfied(event, result.reservations) || eventConflicts || result.issues.some((issue) => issue.blocking && issue.eventId === event.id)) &&
+        savedRows.length > 0) {
         result.reservations = [...result.reservations.filter((item) => item.floorPlanEventId !== event.id),
-          ...plan.reservations.filter((item) => item.floorPlanEventId === event.id)];
+          ...savedRows];
         result.issues.push({ eventId: event.id, code: "assignments-preserved", blocking: true,
           message: `${event.name}: the replacement does not meet the full seating and food-table requirements, so existing assignments were retained.` });
       }
@@ -370,7 +460,7 @@ export function generateFloorPlanReservationProposal(
     ...result,
     addedReservationIds: result.reservations.filter((item) => !oldIds.has(item.id)).map((item) => item.id),
     movedReservationIds: plan.reservations.filter((item) => !newIds.has(item.id)).map((item) => item.id),
-    complete: satisfied(result.reservations),
+    complete: satisfied(result.reservations, result.issues),
   };
 }
 

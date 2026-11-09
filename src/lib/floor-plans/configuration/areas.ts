@@ -129,8 +129,9 @@ const baseAreas: FloorPlanArea[] = [
   area({ id: "main-dining", name: "Main Dining", shortLabel: "MAIN DINING", type: "seating-section", x: 1070, y: 720, width: 300, height: 210 }),
   area({ id: "wat-tables", name: "WAT Tables", shortLabel: "WAT", type: "seating-section", x: 910, y: 410, width: 70, height: 140 }),
   area({ id: "geg-tables", name: "GEG Tables", shortLabel: "GEG", type: "seating-section", x: 910, y: 840, width: 150, height: 125 }),
-  area({ id: "level-up-seating", name: "Level Up Tables", shortLabel: "LEVEL UP", type: "seating-section", x: 675, y: 345, width: 285, height: 65 }),
-  entertainmentArea("big-show-karaoke", "The Big Show", "room", "private-room-big-show", 933, 78, 291, 142, "BIG SHOW"),
+  area({ id: "level-up-seating", name: "Level Up Tables", shortLabel: "LEVEL UP", type: "seating-section", x: 915, y: 371, width: 63, height: 180 }),
+  area({ id: "clubhouse-seating", name: "Clubhouse Seating", shortLabel: "CLUBHOUSE SEATING", type: "seating-section", x: 601, y: 344, width: 313, height: 38 }),
+  entertainmentArea("big-show-karaoke", "The Big Show", "room", "private-room-big-show", 932, 0, 404, 222, "BIG SHOW"),
   entertainmentArea("disco-room", "The Disco Inferno", "room", "private-room-disco-inferno", 933, 0, 107, 67, "DISCO"),
   entertainmentArea("prime-room", "The Prime Room", "room", "private-room-prime", 1131, 0, 96, 57, "PRIME"),
   entertainmentArea("royal-room", "The Royal Room", "room", "private-room-royal", 1245, 0, 96, 34, "ROYAL"),
@@ -150,8 +151,8 @@ const baseAreas: FloorPlanArea[] = [
   rectangleTable("vip1-extra-front-2", "VIP 1 Extra Table 2", "vip-1", 1094, 392, 18, 48),
   rectangleTable("vip1-extra-front-3", "VIP 1 Extra Table 3", "vip-1", 1050, 454, 19, 48),
   rectangleTable("vip1-extra-front-4", "VIP 1 Extra Table 4", "vip-1", 1096, 454, 18, 48),
-  area({ id: "vip1-conversation-wall", name: "VIP 1 Conversation Wall", shortLabel: "CONVO", type: "seating-section", capacity: 10, parentAreaId: "vip-1", x: 1163, y: 397, width: 88, height: 44 }),
-  area({ id: "vip1-extra-convo", name: "VIP 1 Conversation Seating", shortLabel: "VIP 1", type: "seating-section", parentAreaId: "vip-1", x: 1164, y: 448, width: 87, height: 52 }),
+  area({ id: "vip1-conversation-wall", name: "VIP Shared Conversation Wall", shortLabel: "CONVO", type: "seating-section", capacity: 10, parentAreaId: "vip-1", x: 1163, y: 397, width: 88, height: 44 }),
+  area({ id: "vip1-extra-convo", name: "VIP 1 Lower Conversation Wall", shortLabel: "CONVO", type: "seating-section", parentAreaId: "vip-1", x: 1164, y: 448, width: 87, height: 52 }),
   foodTable("vip1-food-table", "VIP 1 ADA Food Table", "vip-1", 1118, 506, 73, 28),
   foodTable("vip2-food-table", "VIP 2 ADA Food Table", "vip-2", 1214, 505, 73, 28),
   rectangleTable("vip2-extra-bowling-table", "VIP 2 Extra Table", "vip-2", 1320, 488, 56, 21),
@@ -173,13 +174,13 @@ const baseAreas: FloorPlanArea[] = [
   area({ ...rectangleTable("ge-table-2", "GEG Table 2", "geg-tables", 919, 883, 49, 20, "GEG"), canBeFoodTable: true }),
   area({ ...rectangleTable("ge-table-3", "GEG Table 3", "geg-tables", 919, 919, 49, 20, "GEG"), canBeFoodTable: true }),
   area({ ...foodTable("ge-food-table", "GEG Food Table (Table 3)", "geg-tables", 919, 919, 49, 20, "ge-table-3"), isAda: false }),
-  squareTable("level-up-square-1", "Level Up Square Table 1", "level-up-seating", 685, 355, 18, 18),
-  squareTable("level-up-square-2", "Level Up Square Table 2", "level-up-seating", 730, 355, 19, 18),
-  squareTable("level-up-square-3", "Level Up Square Table 3", "level-up-seating", 782, 355, 20, 20),
-  squareTable("level-up-square-4", "Level Up Square Table 4", "level-up-seating", 836, 355, 20, 20),
-  squareTable("level-up-square-5", "Level Up Square Table 5", "level-up-seating", 886, 355, 19, 18),
+  squareTable("level-up-square-1", "Clubhouse Square Table 1", "clubhouse-seating", 685, 355, 18, 18),
+  squareTable("level-up-square-2", "Clubhouse Square Table 2", "clubhouse-seating", 730, 355, 19, 18),
+  squareTable("level-up-square-3", "Clubhouse Square Table 3", "clubhouse-seating", 782, 355, 20, 20),
+  squareTable("level-up-square-4", "Clubhouse Square Table 4", "clubhouse-seating", 836, 355, 20, 20),
+  squareTable("level-up-square-5", "Clubhouse Square Table 5", "clubhouse-seating", 886, 355, 19, 18),
   squareTable("level-up-square-6", "Level Up Square Table 6", "level-up-seating", 937, 377, 20, 18),
-  area({ id: "darts-convo", name: "Darts Conversation Wall", shortLabel: "DARTS", type: "seating-section", x: 1382, y: 904, width: 54, height: 36 }),
+  area({ id: "darts-convo", name: "Main Dining Conversation Seating by Darts", shortLabel: "DARTS", type: "seating-section", parentAreaId: "main-dining", x: 1382, y: 904, width: 54, height: 36 }),
   foodTable("karaoke-food", "Big Show ADA Food Table 1", "big-show-karaoke", 1138, 184, 48, 30),
   foodTable("karaoke-food-2", "Big Show ADA Food Table 2", "big-show-karaoke", 1188, 184, 48, 30),
   area({ id: "patio-reserved", name: "Patio", shortLabel: "PATIO", type: "room", x: 1010, y: 965, width: 460, height: 110 }),
@@ -250,18 +251,45 @@ export function getAreaForEntertainmentResource(resourceId: string) {
   return AREA_BY_ENTERTAINMENT_RESOURCE.get(resourceId) ?? null;
 }
 
+export const VIP1_BASE_SEATING_CAPACITY = 40;
+export const VIP1_OVERFLOW_SECTIONS = ["level-up-seating", "clubhouse-seating"] as const;
+export const VIP1_CONVERSATION_WALL_AREA_ID = "vip1-extra-convo";
+export const VIP1_LEVEL_UP_OVERFLOW_ORDER = ["level-up-square-6", "wat-table-1", "wat-table-2", "wat-table-3"] as const;
+const BIG_SHOW_PRIVATE_ROOMS = new Set(["disco-room", "prime-room", "royal-room", "gem-room", "ocean-room"]);
+
+/** The revised purple boundary includes each private room, not just karaoke. */
+export function bigShowSharedFootprint(leftAreaId: string, rightAreaId: string) {
+  const inside = (areaId: string) => BIG_SHOW_PRIVATE_ROOMS.has(areaId) || getFloorPlanArea(areaId)?.parentAreaId === "big-show-karaoke";
+  return (leftAreaId === "big-show-karaoke" && inside(rightAreaId)) ||
+    (rightAreaId === "big-show-karaoke" && inside(leftAreaId));
+}
+
+export function floorPlanAreaBelongsToSection(areaId: string, sectionId: string) {
+  const item = getFloorPlanArea(areaId);
+  if (!item) return false;
+  return item.id === sectionId || item.parentAreaId === sectionId ||
+    (sectionId === "vip-2" && item.id === "vip1-conversation-wall") ||
+    (sectionId === "big-show-karaoke" && BIG_SHOW_PRIVATE_ROOMS.has(item.id)) ||
+    // The Level Up edge tables keep their legacy IDs and WAT contract mapping.
+    (sectionId === "level-up-seating" && item.parentAreaId === "wat-tables") ||
+    (sectionId === "clubhouse" && item.parentAreaId === "clubhouse-seating");
+}
+
+export function floorPlanSeatingAreaEligible(areaId: string, contractedAreaIds: readonly string[], guestCount: number) {
+  return contractedAreaIds.includes("facility") || contractedAreaIds.some((sectionId) => floorPlanAreaBelongsToSection(areaId, sectionId)) ||
+    (guestCount > VIP1_BASE_SEATING_CAPACITY && contractedAreaIds.includes("vip-1") &&
+      VIP1_OVERFLOW_SECTIONS.some((sectionId) => floorPlanAreaBelongsToSection(areaId, sectionId)));
+}
+
 export function seatingTablesForArea(areaId: string) {
-  return AREAS.filter(
-    (item) =>
-      item.parentAreaId === areaId &&
-      (item.type === "rectangle-table" || item.type === "square-table") &&
-      item.capacity > 0,
-  );
+  return seatingInventoryForArea(areaId).filter((item) => item.type === "rectangle-table" || item.type === "square-table");
 }
 
 export function seatingInventoryForArea(areaId: string) {
   return AREAS.filter(
-    (item) => item.parentAreaId === areaId && item.capacity > 0 &&
+    (item) => item.id !== areaId && floorPlanAreaBelongsToSection(item.id, areaId) && item.capacity > 0 &&
+      // VIP 1 no longer automatically claims the upper, karaoke-side wall.
+      !(areaId === "vip-1" && item.id === "vip1-conversation-wall") &&
       item.isReservable &&
       (item.type === "rectangle-table" || item.type === "square-table" ||
         item.type === "seating-section"),

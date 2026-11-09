@@ -14,7 +14,6 @@ import {
 import type { AdminAssetOverlay, AdminState } from "@/lib/admin-types";
 import type { DateAsset } from "@/lib/events";
 import type {
-  FloorPlanDayPayload,
   FloorPlanDocument,
   FloorPlanEvent,
 } from "@/lib/floor-plans/types";
@@ -22,7 +21,7 @@ import PublishedFloorPlanMap from "./PublishedFloorPlanMap";
 import { findOperationalFloorPlanEvent } from "@/lib/operations/floor-plan-context";
 import { floorPlanEventView } from "@/lib/floor-plans/event-view";
 import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
-import { floorPlanSyncFeedback, floorPlanSyncWarnings } from "@/lib/floor-plans/sync-feedback";
+import { STAFF_FLOOR_PLAN_INCOMPLETE, STAFF_FLOOR_PLAN_REFRESH_ERROR, type StaffFloorPlanPayload } from "@/lib/floor-plans/staff-publication";
 
 const FLOOR_PLAN_ZOOM_MIN = 50;
 const FLOOR_PLAN_ZOOM_MAX = 200;
@@ -34,7 +33,7 @@ export type FloorPlanDisplayAsset = DateAsset & {
 };
 
 type FloorPlanLiveState = {
-  payload: FloorPlanDayPayload | null;
+  payload: StaffFloorPlanPayload | null;
   status: "idle" | "syncing" | "success" | "partial" | "error";
   message: string;
 };
@@ -49,7 +48,7 @@ type FloorPlanWindowSyncResult = {
       eventCount: number;
     }>;
   };
-  warning?: string;
+  incomplete?: boolean;
   error?: string;
 };
 
@@ -62,7 +61,7 @@ type FloorPlanMonthDraftResult = {
 
 export type FloorPlanPublication = {
   plan: FloorPlanDocument;
-  payload: FloorPlanDayPayload | null;
+  payload: StaffFloorPlanPayload | null;
 };
 
 export type FloorPlanUpcomingEntry =
@@ -81,7 +80,7 @@ export type FloorPlanUpcomingEntry =
 
 /** A staff workspace never substitutes an all-party image or another date. */
 export function SelectedEventFloorPlan({ payload, eventId, date, zoom = 100 }: {
-  payload: FloorPlanDayPayload | null;
+  payload: StaffFloorPlanPayload | null;
   eventId: string;
   date: string | null;
   zoom?: number;
@@ -129,10 +128,10 @@ export async function syncFloorPlanFromTripleseat(
     body: JSON.stringify({ date, action: "refresh" }),
   });
   const result = (await response.json().catch(() => null)) as
-    | (FloorPlanDayPayload & { error?: string })
+    | StaffFloorPlanPayload
     | null;
   if (!response.ok || !result?.plan) {
-    throw new Error(result?.error || "Unable to sync this floor plan from Tripleseat.");
+    throw new Error(STAFF_FLOOR_PLAN_REFRESH_ERROR);
   }
   return result;
 }
@@ -147,9 +146,7 @@ export async function syncFloorPlanWindowFromTripleseat(
     | FloorPlanWindowSyncResult
     | null;
   if (!response.ok || !result) {
-    throw new Error(
-      result?.error || "Unable to sync upcoming floor plans from Tripleseat.",
-    );
+    throw new Error(STAFF_FLOOR_PLAN_REFRESH_ERROR);
   }
   return result;
 }
@@ -162,7 +159,7 @@ export async function prepareFloorPlanMonthDrafts(month: string, fetchImpl: type
   });
   const result = await response.json().catch(() => null) as (FloorPlanMonthDraftResult & { error?: string }) | null;
   if (!response.ok || result?.month !== month || result.startDate !== `${month}-01` || result.endDate !== `${month}-31` || !Array.isArray(result.results) || result.results.length !== 31 || result.results.some((entry) => !entry || !["created", "skipped", "error"].includes(entry.status) || typeof entry.date !== "string" || !entry.date.startsWith(`${month}-`))) {
-    throw new Error(result?.error || "Unable to prepare this month’s floor-plan drafts. Existing plans are unchanged.");
+    throw new Error("Unable to prepare this month’s floor plans. Existing plans are unchanged.");
   }
   return result;
 }
@@ -227,7 +224,7 @@ function dateBlock(date: string) {
 }
 
 function eventTime(event: FloorPlanEvent) {
-  if (!event.startAt || !event.endAt) return "Time needs review";
+  if (!event.startAt || !event.endAt) return "Time not confirmed";
   const formatter = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -337,7 +334,7 @@ export function FloorPlanCard({
                       >
                         <strong>{event.name}</strong>
                         <span>{event.guestCount} guests · {eventTime(event)}</span>
-                        <span>{event.source.rooms.join(", ") || "Reserved section needs review"}</span>
+                        <span>{event.source.rooms.join(", ") || "Reserved section not confirmed"}</span>
                       </article>
                     ))}
                   </div>
@@ -388,11 +385,9 @@ export function PublishedFloorPlanCard({
   const payload = liveState?.payload ?? publication.payload;
   const plan = payload?.plan ?? publication.plan;
   if (!payload) return null;
-  const approved = plan.status === "Approved";
+  const approved = plan.status === "Approved" && !payload.incomplete;
   const bookingOnlyProjection = plan.version === 0 && plan.events.every((event) => event.tripleseatEventId.startsWith("vip-"));
-  const bookingRefresh = plan.events.flatMap((event) => event.source.onParBooking?.refreshedAt ? [event.source.onParBooking.refreshedAt] : []).sort().at(-1) ?? null;
-  const sourceFeedback = payload.sourceRefresh ? floorPlanSyncFeedback(payload) : null;
-  const warnings = floorPlanSyncWarnings(payload);
+  const bookingRefresh = payload.bookingRefreshedAt ?? null;
   const date = dateBlock(plan.eventDate);
   const label = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -418,7 +413,7 @@ export function PublishedFloorPlanCard({
             <span>{plan.events.map((event) => event.name).join(" · ")}</span>
           </span>
           <PortalStatusBadge tone={approved ? "success" : "warning"}>
-            {showPlanningStatus ? plan.status : bookingOnlyProjection ? "On Par Bookings" : approved ? "Approved" : "Saved edits"}
+            {approved ? "Approved" : bookingOnlyProjection && !payload.incomplete ? "On Par Bookings" : payload.incomplete || showPlanningStatus ? "Not finalized" : "Saved edits"}
           </PortalStatusBadge>
           <span className="floor-plan-expand-label">
             <span className="when-closed">View plan</span>
@@ -435,7 +430,7 @@ export function PublishedFloorPlanCard({
                 <span aria-live="polite">
                   {liveState?.status === "syncing"
                     ? "Refreshing On Par Bookings and Tripleseat…"
-                    : liveState?.message || sourceFeedback?.message || `Tripleseat · ${syncTime(plan.lastTripleseatSyncAt)}`}
+                    : liveState?.message || `Tripleseat · ${syncTime(plan.lastTripleseatSyncAt)}`}
                 </span>
               </div>
               <div className="floor-plan-live-sync-actions">
@@ -457,7 +452,6 @@ export function PublishedFloorPlanCard({
                 </button>
               </div>
             </div>
-            {warnings.length ? <div className="floor-plan-live-sync-message is-error" role="status">{warnings.join(" ")}</div> : null}
             <PublishedFloorPlanMap payload={payload} zoom={zoom} />
           </div>
         ) : null}
@@ -491,12 +485,12 @@ export function PendingFloorPlanCard({
           <strong>{label}</strong>
           <span>{plan.events.map((event) => event.name).join(" · ")}</span>
         </span>
-        <PortalStatusBadge tone="warning">{plan.status}</PortalStatusBadge>
+        <PortalStatusBadge tone="neutral">Not finalized</PortalStatusBadge>
         <a
           className="button-link floor-plan-review-link"
           href={`/admin/floor-plans?date=${encodeURIComponent(plan.eventDate)}`}
         >
-          Edit and approve
+          Open in Admin
         </a>
       </div>
     </PortalCard>
@@ -518,8 +512,7 @@ export function AwaitingApprovalSection({
     <details className="floor-plan-archive floor-plan-awaiting-approval">
       <summary>
         <span>
-          <span className="portal-eyebrow">Admin review</span>
-          <strong>Awaiting approval</strong>
+          <strong>Floor plans not finalized</strong>
         </span>
         <span className="floor-plan-awaiting-summary-meta">
           <span className="floor-plan-archive-count">
@@ -529,7 +522,7 @@ export function AwaitingApprovalSection({
         </span>
       </summary>
       <div className="floor-plan-awaiting-body">
-        <p>Saved edits already replace the original plan. Approve after completing validation.</p>
+        <p>{STAFF_FLOOR_PLAN_INCOMPLETE}</p>
         <div className="floor-plan-display-list">
           {sortedPlans.map((plan) => (
             <PendingFloorPlanCard key={plan.id} plan={plan} />
@@ -548,7 +541,7 @@ export default function FloorPlansClient({
   today,
   planningMonth = "2026-12",
 }: {
-  initialState: AdminState;
+  initialState: Pick<AdminState, "archivedAssetKeys" | "overlaysByAsset">;
   plans: DateAsset[];
   publications: FloorPlanPublication[];
   specialPages: DateAsset[];
@@ -634,7 +627,8 @@ export default function FloorPlansClient({
         ...current,
         [date]: {
           payload,
-          ...floorPlanSyncFeedback(payload),
+          status: "success",
+          message: payload.incomplete ? "" : "Floor plan refreshed.",
         },
       }));
     } catch (error) {
@@ -643,7 +637,7 @@ export default function FloorPlansClient({
         [date]: {
           payload: current[date]?.payload ?? null,
           status: "error",
-          message: error instanceof Error ? error.message : "Unable to sync this floor plan from Tripleseat.",
+          message: STAFF_FLOOR_PLAN_REFRESH_ERROR,
         },
       }));
     }
@@ -659,15 +653,13 @@ export default function FloorPlansClient({
       setWindowSyncState({
         status: "success",
         message:
-          result.warning ??
-          `${result.eventCount} event${result.eventCount === 1 ? "" : "s"} synced · ${generatedPlanCount} floor plan${generatedPlanCount === 1 ? "" : "s"} ready`,
+          result.incomplete ? STAFF_FLOOR_PLAN_INCOMPLETE :
+          `${result.eventCount} event${result.eventCount === 1 ? "" : "s"} synced · ${generatedPlanCount} floor plan${generatedPlanCount === 1 ? "" : "s"} refreshed`,
       });
     } catch (error) {
       setWindowSyncState({
         status: "error",
-        message: error instanceof Error
-          ? error.message
-          : "Unable to sync upcoming floor plans from Tripleseat.",
+        message: STAFF_FLOOR_PLAN_REFRESH_ERROR,
       });
     } finally {
       // The page reads On Par Bookings independently even when Tripleseat fails.
@@ -683,10 +675,10 @@ export default function FloorPlansClient({
       const created = result.results.filter((entry) => entry.status === "created").length;
       const skipped = result.results.filter((entry) => entry.status === "skipped").length;
       const errors = result.results.filter((entry) => entry.status === "error").length;
-      setMonthDraftState({ status: errors ? "error" : "success", message: `${created} draft${created === 1 ? "" : "s"} created · ${skipped} date${skipped === 1 ? "" : "s"} skipped · ${errors} date${errors === 1 ? " needs" : "s need"} attention.${!created && !errors ? " No missing drafts were available to create." : ""} Skipped dates already have a saved plan or no active booking. Existing saved plans were preserved.` });
+      setMonthDraftState({ status: errors ? "error" : "success", message: errors ? STAFF_FLOOR_PLAN_INCOMPLETE : `${created} draft${created === 1 ? "" : "s"} created · ${skipped} date${skipped === 1 ? "" : "s"} skipped. Existing saved plans were preserved.` });
       router.refresh();
     } catch (error) {
-      setMonthDraftState({ status: "error", message: error instanceof Error ? error.message : "Unable to prepare this month’s drafts. Existing saved plans were preserved." });
+      setMonthDraftState({ status: "error", message: "Unable to prepare this month’s floor plans. Existing plans are unchanged." });
     }
   }
 
@@ -776,7 +768,7 @@ export default function FloorPlansClient({
             </PortalStatusBadge>
             {pendingPublications.length ? (
               <PortalStatusBadge tone="warning">
-                {pendingPublications.length} awaiting approval
+                {pendingPublications.length} not finalized
               </PortalStatusBadge>
             ) : null}
             <PortalStatusBadge>
@@ -822,7 +814,7 @@ export default function FloorPlansClient({
           <span className="floor-plan-archive-count">{december.length + decemberPending.length} plan{december.length + decemberPending.length === 1 ? "" : "s"}</span>
         </summary>
         <div className="floor-plan-display-list">
-          <p>{monthLabel} plans stay separate from upcoming events. Drafts and review warnings remain visible until the plans are approved.</p>
+          <p>{monthLabel} plans stay separate from upcoming events. Confirm any unfinished plan with a manager before use.</p>
           <div className="floor-plan-live-sync-bar">
             <div><strong>Prepare missing drafts</strong><span>Reads booked contracts and creates only missing drafts. Existing saved plans, entertainment reservations, and approvals are never changed.</span></div>
             <button className="floor-plan-live-sync-button" disabled={monthDraftState.status === "preparing"} onClick={() => void handlePrepareMonthDrafts()} type="button">{monthDraftState.status === "preparing" ? `Preparing ${monthName} drafts…` : `Prepare ${monthName} drafts`}</button>

@@ -37,7 +37,7 @@ export type SaveSyncInput = {
   };
 } & (
   | { protectConcurrentEdits?: false }
-  | { protectConcurrentEdits: true; existingEvents: EntertainmentEventSnapshot[] }
+  | { protectConcurrentEdits: true; existingEvents: EntertainmentEventSnapshot[]; recordDaySync?: false }
 );
 
 export class EntertainmentSyncRevisionError extends Error {
@@ -682,6 +682,7 @@ export class SupabaseEntertainmentStorage implements EntertainmentStorage {
       });
     }
 
+    if (input.protectConcurrentEdits && input.recordDaySync === false) return;
     const now = new Date().toISOString();
     await this.emptyRequest(
       "entertainment_sync_runs",
@@ -895,6 +896,7 @@ export class MemoryEntertainmentStorage implements EntertainmentStorage {
     }
     this.events.set(input.date, structuredClone(events));
     this.reservations.set(input.date, structuredClone(reservations));
+    if (input.protectConcurrentEdits && input.recordDaySync === false) return;
     const previous = this.sync.get(input.date);
     this.sync.set(input.date, {
       operatingDate: input.date,

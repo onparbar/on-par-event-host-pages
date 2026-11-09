@@ -18,6 +18,7 @@ import {
 import PublishedFloorPlanMap, { PublishedFloorPlanMapView } from "../PublishedFloorPlanMap";
 import FloorPlanEventLegend from "../FloorPlanEventLegend";
 import { floorPlanEventView, floorPlanLocalReservationOutlines } from "@/lib/floor-plans/event-view";
+import { staffFloorPlanPayload, STAFF_FLOOR_PLAN_INCOMPLETE, STAFF_FLOOR_PLAN_REFRESH_ERROR } from "@/lib/floor-plans/staff-publication";
 import type {
   FloorPlanDayPayload,
   FloorPlanDocument,
@@ -361,7 +362,7 @@ describe("floor-plan dashboard organization", () => {
     );
   });
 
-  it("surfaces a rolling Tripleseat sync error", async () => {
+  it("shows only a generic rolling refresh error", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(
         JSON.stringify({ error: "Tripleseat connection needs attention." }),
@@ -371,7 +372,7 @@ describe("floor-plan dashboard organization", () => {
 
     await expect(
       syncFloorPlanWindowFromTripleseat(fetchImpl as typeof fetch),
-    ).rejects.toThrow("Tripleseat connection needs attention.");
+    ).rejects.toThrow(STAFF_FLOOR_PLAN_REFRESH_ERROR);
   });
 
   it("shows live Tripleseat sync on saved and approved floor plans", () => {
@@ -392,7 +393,7 @@ describe("floor-plan dashboard organization", () => {
     expect(html).toContain("Approved Event Host floor plan");
   });
 
-  it("shows an On Par-only refresh as partial and retains the seating warning without duplicate sync errors", () => {
+  it("does not render provider or seating diagnostics after a partial refresh", () => {
     const payload: FloorPlanDayPayload = { ...interactivePayload,
       plan: { ...interactivePlan, lastTripleseatSyncAt: null },
       sourceRefresh: { tripleseat: "error", onParBookings: "success", reconnectTripleseat: true },
@@ -405,33 +406,31 @@ describe("floor-plan dashboard organization", () => {
       ],
     };
     const html = renderToStaticMarkup(createElement(PublishedFloorPlanCard, {
-      publication: { plan: payload.plan, payload }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
+      publication: { plan: payload.plan, payload: staffFloorPlanPayload(payload) }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
     }));
-    expect(html).toContain("On Par Bookings refreshed.");
-    expect(html).toContain("Tripleseat could not be refreshed.");
-    expect(html).toContain("Saved Tripleseat assignments were retained.");
-    expect(html.match(/Ask an Admin to reconnect Tripleseat\./g)).toHaveLength(1);
-    expect(html).toContain("Seating is eight seats short.");
-    expect(html).not.toContain("Not synced yet");
+    expect(html).toContain(STAFF_FLOOR_PLAN_INCOMPLETE);
+    expect(html).not.toContain("Tripleseat could not be refreshed.");
+    expect(html).not.toContain("reconnect Tripleseat");
+    expect(html).not.toContain("Seating is eight seats short.");
     expect(html).not.toContain("events updated");
     expect(html).not.toContain("The latest Tripleseat sync failed");
     expect(html).not.toContain("refreshed independently");
   });
 
-  it("reports complete source success without claiming every displayed event changed", () => {
+  it("keeps a successfully refreshed map available without claiming its displayed events changed", () => {
     const payload: FloorPlanDayPayload = { ...interactivePayload,
       sourceRefresh: { tripleseat: "success", onParBookings: "success", reconnectTripleseat: false },
     };
     const html = renderToStaticMarkup(createElement(PublishedFloorPlanCard, {
-      publication: { plan: payload.plan, payload }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
+      publication: { plan: payload.plan, payload: staffFloorPlanPayload(payload) }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
     }));
-    expect(html).toContain("Tripleseat and On Par Bookings refreshed successfully.");
+    expect(html).toContain("Approved Event Host floor plan");
     expect(html).not.toContain("event updated");
     expect(html).not.toContain("events updated");
     expect(html).not.toContain("reconnect Tripleseat");
   });
 
-  it("collapses historical sync warnings while keeping the stored timestamp clearly labeled", () => {
+  it("hides historical sync warnings while keeping the stored timestamp clearly labeled", () => {
     const payload: FloorPlanDayPayload = { ...interactivePayload, warnings: [
       "The latest Tripleseat sync failed. The last saved schedule remains visible.",
       TRIPLESEAT_RECONNECT_WARNING,
@@ -439,16 +438,17 @@ describe("floor-plan dashboard organization", () => {
       "Contracted area needs review.",
     ] };
     const html = renderToStaticMarkup(createElement(PublishedFloorPlanCard, {
-      publication: { plan: payload.plan, payload }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
+      publication: { plan: payload.plan, payload: staffFloorPlanPayload(payload) }, isOpen: true, onOpenChange: () => {}, onSync: () => {},
     }));
     expect(html).toContain("Tripleseat · Last synced");
-    expect(html.match(/An Admin must reconnect Tripleseat\./g)).toHaveLength(1);
-    expect(html).toContain("Contracted area needs review.");
+    expect(html).toContain(STAFF_FLOOR_PLAN_INCOMPLETE);
+    expect(html).not.toContain("reconnect Tripleseat");
+    expect(html).not.toContain("Contracted area needs review.");
     expect(html).not.toContain("refreshed independently");
     expect(html).not.toContain("The latest Tripleseat sync failed");
   });
 
-  it("shows saved unapproved plans as awaiting Admin approval", () => {
+  it("shows a generic status for saved unapproved plans", () => {
     const html = renderToStaticMarkup(
       createElement(PendingFloorPlanCard, {
         plan: { ...interactivePlan, status: "Needs Review" },
@@ -456,11 +456,12 @@ describe("floor-plan dashboard organization", () => {
     );
 
     expect(html).toContain("Redacted August 5 Event");
-    expect(html).toContain("Needs Review");
+    expect(html).toContain("Not finalized");
+    expect(html).not.toContain("Needs Review");
     expect(html).toContain(
       "/admin/floor-plans?date=2026-08-05",
     );
-    expect(html).toContain("Edit and approve");
+    expect(html).toContain("Open in Admin");
   });
 
   it("keeps the approval queue collapsed until staff open it", () => {
@@ -481,9 +482,9 @@ describe("floor-plan dashboard organization", () => {
     expect(html).toContain(
       '<details class="floor-plan-archive floor-plan-awaiting-approval">',
     );
-    expect(html).toContain("Awaiting approval");
+    expect(html).toContain("Floor plans not finalized");
     expect(html).toContain("2 plans");
-    expect(html).toContain("Edit and approve");
+    expect(html).toContain("Open in Admin");
   });
 
   it("replaces the original floor-plan image as soon as edits are saved", () => {
@@ -820,7 +821,7 @@ describe("individual event floor-plan view", () => {
 
   it("isolates the later event's own color, times, source aliases, and custom highlights", () => {
     const html = renderToStaticMarkup(createElement(PublishedFloorPlanMapView, {
-      payload,
+      payload: staffFloorPlanPayload(payload),
       selectedEventId: second.id,
       onSelectEvent: () => {},
     }));
@@ -834,8 +835,8 @@ describe("individual event floor-plan view", () => {
     expect(html).not.toContain('class="floor-plan-full-buyout-overlay"');
     expect(html).not.toContain("also reserved by Earlier Party");
     expect(html).not.toContain("background-color:#B4530980");
-    expect(html).toContain("Full-day conflicts: 1");
-    expect(html).toContain("Showing one event does not remove conflicts with other parties.");
+    expect(html).toContain(STAFF_FLOOR_PLAN_INCOMPLETE);
+    expect(html).not.toContain("Full-day conflicts");
     expect(html).toContain('aria-label="Show only Earlier Party on the floor plan"');
   });
 

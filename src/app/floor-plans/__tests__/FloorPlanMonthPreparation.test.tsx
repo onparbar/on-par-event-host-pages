@@ -42,7 +42,7 @@ describe("December missing-draft preparation", () => {
     expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/floor-plans/planning-month", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ month: "2026-12" }) });
   });
 
-  it("disables preparation while busy, reports partial counts, and refreshes created drafts", async () => {
+  it("disables preparation while busy, reports incomplete work generically, and refreshes created drafts", async () => {
     let resolve!: (response: Response) => void;
     const fetch = vi.fn().mockReturnValue(new Promise<Response>((done) => { resolve = done; }));
     vi.stubGlobal("fetch", fetch);
@@ -55,8 +55,8 @@ describe("December missing-draft preparation", () => {
     resolve(Response.json(result(["created", "created", "error"])));
     await settle();
     expect(state()).toMatchObject({ status: "error" });
-    expect(state().message).toContain("2 drafts created · 28 dates skipped · 1 date needs attention");
-    expect(state().message).toContain("Existing saved plans were preserved");
+    expect(state().message).toContain("not finalized");
+    expect(state().message).not.toContain("1 date needs attention");
     expect(hooks.refresh).toHaveBeenCalledOnce();
     expect(hooks.states[1]).toEqual({}); // No existing live map data was replaced locally.
   });
@@ -65,15 +65,15 @@ describe("December missing-draft preparation", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(result())));
     button().props.onClick(); await settle();
     expect(state()).toMatchObject({ status: "success" });
-    expect(state().message).toContain("0 drafts created · 31 dates skipped · 0 dates need attention");
-    expect(state().message).toContain("No missing drafts were available to create");
+    expect(state().message).toContain("0 drafts created · 31 dates skipped");
+    expect(state().message).toContain("Existing saved plans were preserved");
     expect(hooks.refresh).toHaveBeenCalledOnce();
   });
 
   it.each([403, 502])("retains existing map data after HTTP%s rather than claiming preparation succeeded", async (status) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Source unavailable; existing drafts remain saved." }, { status })));
     button().props.onClick(); await settle();
-    expect(state()).toEqual({ status: "error", message: "Source unavailable; existing drafts remain saved." });
+    expect(state()).toEqual({ status: "error", message: "Unable to prepare this month’s floor plans. Existing plans are unchanged." });
     expect(hooks.states[1]).toEqual({});
     expect(hooks.refresh).not.toHaveBeenCalled();
     expect(button().props.disabled).toBe(false);

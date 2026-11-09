@@ -1,6 +1,6 @@
 import { formatClock, localDateForIso } from "@/lib/entertainment/time";
 import { reservationOccupancy } from "@/lib/operations/reservation-buffer";
-import { getFloorPlanArea, getPhysicalFloorPlanAreaId, requiredFoodTableCount } from "./configuration/areas";
+import { floorPlanAreaBelongsToSection, floorPlanSeatingAreaEligible, getFloorPlanArea, getPhysicalFloorPlanAreaId, requiredFoodTableCount, VIP1_BASE_SEATING_CAPACITY } from "./configuration/areas";
 import { floorPlanAreaTimeOverlap, timeRangesOverlap } from "./conflicts";
 import type { FloorPlanEvent, FloorPlanReservation } from "./types";
 
@@ -18,14 +18,6 @@ function seatingArea(reservation: FloorPlanReservation) {
     ? ["rectangle-table", "square-table", "seating-section", "room"].includes(area.type)
     : reservation.reservationType === "room" && ["room", "seating-section"].includes(area.type);
   return correctPurpose ? getFloorPlanArea(getPhysicalFloorPlanAreaId(area.id)) : null;
-}
-
-function insideContract(event: FloorPlanEvent, areaId: string) {
-  const area = getFloorPlanArea(areaId);
-  return event.contractedAreaIds.includes("facility") || Boolean(area && (
-    event.contractedAreaIds.includes(area.id) ||
-    (area.parentAreaId && event.contractedAreaIds.includes(area.parentAreaId))
-  ));
 }
 
 function isFoodOverlap(seating: FloorPlanReservation, food: FloorPlanReservation) {
@@ -75,7 +67,7 @@ export function summarizeEventSeating(
       if (row.reservationType === "seating") issues.push(`${getFloorPlanArea(row.areaId)?.name ?? row.areaId} has no verified capacity for this seating purpose.`);
       continue;
     }
-    if (!insideContract(event, area.id)) {
+    if (!floorPlanSeatingAreaEligible(area.id, event.contractedAreaIds, event.guestCount)) {
       issues.push(`${area.name} is outside the contracted area and its seats are not counted.`);
       continue;
     }
@@ -105,25 +97,37 @@ export function summarizeEventSeating(
   const assignedCapacity = [...physical.values()].reduce((sum, group) => sum + (group.foodUse ? 0 : group.capacity), 0);
   const start = requiredInterval ? Date.parse(requiredInterval.startAt) : 0;
   const end = requiredInterval ? Date.parse(requiredInterval.endAt) : 0;
-  const groups = [...physical.values()];
-  const coveredCapacity = requiredInterval ? groups.reduce((sum, group) =>
-    sum + (group.available && covers(group.intervals, start, end) ? group.capacity : 0), 0) : 0;
+  const groups = [...physical.entries()];
+  const vip1Overflow = event.guestCount > VIP1_BASE_SEATING_CAPACITY && event.contractedAreaIds.length === 1 && event.contractedAreaIds[0] === "vip-1";
+  const coveredSeats = (from: number, to: number) => {
+    let base = 0;
+    let overflow = 0;
+    for (const [areaId, group] of groups) {
+      if (!group.available || !covers(group.intervals, from, to)) continue;
+      if (vip1Overflow && !floorPlanAreaBelongsToSection(areaId, "vip-1")) overflow += group.capacity;
+      else base += group.capacity;
+    }
+    return { base, total: vip1Overflow ? Math.min(base, VIP1_BASE_SEATING_CAPACITY) + overflow : base };
+  };
+  const covered = requiredInterval ? coveredSeats(start, end) : { base: 0, total: 0 };
+  const coveredCapacity = covered.total;
   const boundaries = requiredInterval ? [...new Set([
-    start, end, ...groups.flatMap((group) => group.intervals.flatMap((range) =>
+    start, end, ...groups.flatMap(([, group]) => group.intervals.flatMap((range) =>
       [Date.parse(range.startAt), Date.parse(range.endAt)].filter((time) => time > start && time < end))),
   ])].sort((a, b) => a - b) : [];
   const gaps: Array<Interval & { availableSeats: number; missingSeats: number }> = [];
   for (let index = 0; index < boundaries.length - 1; index += 1) {
     const from = boundaries[index];
     const to = boundaries[index + 1];
-    const availableSeats = groups.reduce((sum, group) =>
-      sum + (group.available && covers(group.intervals, from, to) ? group.capacity : 0), 0);
+    const availableSeats = coveredSeats(from, to).total;
     if (!validGuestCount || availableSeats >= event.guestCount) continue;
     const previous = gaps[gaps.length - 1];
     if (previous?.availableSeats === availableSeats && Date.parse(previous.endAt) === from) previous.endAt = new Date(to).toISOString();
     else gaps.push({ startAt: new Date(from).toISOString(), endAt: new Date(to).toISOString(), availableSeats, missingSeats: event.guestCount - availableSeats });
   }
+  const vip1BaseComplete = !vip1Overflow || covered.base >= VIP1_BASE_SEATING_CAPACITY;
   if (!requiredInterval) issues.push("The required event seating interval is missing or invalid.");
+  else if (!vip1BaseComplete) issues.push("VIP 1 needs verified seating for its first 40 guests; overflow is reserved for additional guests.");
   else if (coveredCapacity < event.guestCount && gaps.length === 0) {
     issues.push("The same physical tables do not cover the whole event. Automatic guest reseating or table sharing is not permitted.");
   }
@@ -155,7 +159,7 @@ export function summarizeEventSeating(
     coveredCapacity,
     seatsNeeded: validGuestCount ? Math.max(0, event.guestCount - coveredCapacity) : 0,
     spareSeats: validGuestCount ? Math.max(0, coveredCapacity - event.guestCount) : 0,
-    fullEventCoverage: validGuestCount && Boolean(requiredInterval) && coveredCapacity >= event.guestCount,
+    fullEventCoverage: validGuestCount && Boolean(requiredInterval) && coveredCapacity >= event.guestCount && vip1BaseComplete,
     requiredInterval,
     gaps,
     issues: [...new Set(issues)],

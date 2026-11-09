@@ -4,6 +4,9 @@ const syncRollingEventPlans = vi.fn();
 const maintainTwoWeekFloorPlanHorizon = vi.fn();
 const ensureConfirmedContractFloorPlanWindow = vi.fn();
 const syncEntertainmentDay = vi.fn();
+const hasAdminSession = vi.fn();
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: vi.fn() }) }));
+vi.mock("@/lib/admin-auth", () => ({ hasAdminSession }));
 
 vi.mock("@/lib/event-plans/sync", () => ({
   syncRollingEventPlans,
@@ -18,6 +21,7 @@ describe("event-plan sync route", () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.stubEnv("CRON_SECRET", "test-cron-secret");
+    hasAdminSession.mockReturnValue(false);
     syncRollingEventPlans.mockResolvedValue({
       sourceMode: "live",
       plans: [{ id: 1, date: "2026-08-05" }, { id: 2, date: "2026-08-18" }],
@@ -70,6 +74,7 @@ describe("event-plan sync route", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
     await expect(response.json()).resolves.toMatchObject({
       sourceMode: "live",
       eventCount: 2,
@@ -105,12 +110,18 @@ describe("event-plan sync route", () => {
     );
 
     expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.incomplete).toBe(true);
+    expect(body.floorPlans.results[0]).not.toHaveProperty("planStatus");
+    expect(body).not.toHaveProperty("warning");
+    expect(body).not.toHaveProperty("entertainment");
     expect(syncRollingEventPlans).toHaveBeenCalledOnce();
     expect(maintainTwoWeekFloorPlanHorizon).toHaveBeenCalledOnce();
     expect(syncEntertainmentDay).not.toHaveBeenCalled();
   });
 
   it("refreshes unique active-plan dates beyond the floor-plan horizon without duplicating covered dates", async () => {
+    hasAdminSession.mockReturnValue(true);
     syncRollingEventPlans.mockResolvedValueOnce({
       sourceMode: "live",
       plans: [
@@ -142,6 +153,7 @@ describe("event-plan sync route", () => {
   });
 
   it("keeps per-date entertainment failures and floor-plan warnings visible while continuing other dates", async () => {
+    hasAdminSession.mockReturnValue(true);
     syncRollingEventPlans.mockResolvedValueOnce({
       sourceMode: "live",
       plans: [{ id: 1, date: "2026-08-19" }, { id: 2, date: "2026-08-20" }],
@@ -173,6 +185,7 @@ describe("event-plan sync route", () => {
   });
 
   it("surfaces warning-only entertainment failures inside the existing floor-plan horizon", async () => {
+    hasAdminSession.mockReturnValue(true);
     const warning = "The latest Tripleseat sync failed. The last saved schedule remains visible.";
     maintainTwoWeekFloorPlanHorizon.mockResolvedValueOnce({
       startDate: "2026-08-04", endDate: "2026-08-18",
@@ -207,11 +220,25 @@ describe("event-plan sync route", () => {
     await expect(response.json()).resolves.toMatchObject({
       sourceMode: "contract-evidence",
       eventCount: 1,
-      warning: expect.stringContaining("Tripleseat could not refresh"),
+      incomplete: true,
     });
     expect(ensureConfirmedContractFloorPlanWindow).toHaveBeenCalledOnce();
     expect(maintainTwoWeekFloorPlanHorizon).not.toHaveBeenCalled();
     expect(syncEntertainmentDay).not.toHaveBeenCalled();
+  });
+
+  it("does not expose planning warning text, errors, or conflict counts to staff", async () => {
+    maintainTwoWeekFloorPlanHorizon.mockResolvedValueOnce({
+      startDate: "2026-08-04", endDate: "2026-08-18",
+      results: [{ date: "2026-08-05", status: "error", eventCount: 1, warnings: ["ADMIN_ONLY seat capacity"], message: "ADMIN_ONLY sync failure" }],
+    });
+    const { POST } = await import("../route");
+    const response = await POST(new Request("https://example.test/api/event-plans/sync", { method: "POST", headers: { origin: "https://example.test" } }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.incomplete).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("ADMIN_ONLY");
+    expect(body).not.toHaveProperty("sync");
   });
 
   it("does not report success when only an unrelated fallback floor plan exists", async () => {

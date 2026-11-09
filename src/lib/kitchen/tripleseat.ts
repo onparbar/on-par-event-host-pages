@@ -78,6 +78,7 @@ export interface TripleseatAdapter {
   fetchEventPlansForRange?(
     startDate: string,
     endDate: string,
+    exactEventId?: string,
   ): Promise<TripleseatEventPlanSource[]>;
   fetchEntertainmentEventsForDate?(
     date: string,
@@ -1632,7 +1633,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     );
   }
 
-  async fetchEventPlansForRange(startDate: string, endDate: string) {
+  async fetchEventPlansForRange(startDate: string, endDate: string, exactEventId?: string) {
     if (
       !isValidKitchenDate(startDate) ||
       !isValidKitchenDate(endDate) ||
@@ -1665,6 +1666,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     const summaries = await this.eventSummaries(startDate, endDate, null);
     const plans: TripleseatEventPlanSource[] = [];
     for (const summary of summaries) {
+      if (exactEventId && sourceEventId(summary) !== exactEventId) continue;
       const plan = await this.normalizeEventPlan(summary, startDate);
       if (
         plan &&

@@ -7,6 +7,7 @@ import {
   loadLiveFloorPlanPublicationWindow,
 } from "@/lib/floor-plans/service";
 import { getFloorPlanStorage } from "@/lib/floor-plans/storage";
+import { staffFloorPlanDocument, staffFloorPlanPayload } from "@/lib/floor-plans/staff-publication";
 import FloorPlansClient from "./FloorPlansClient";
 
 export const metadata = {
@@ -32,10 +33,19 @@ export default async function FloorPlansPage({ searchParams }: { searchParams: P
   ]);
   return (
     <FloorPlansClient
-      initialState={adminState}
+      initialState={{
+        archivedAssetKeys: adminState.archivedAssetKeys,
+        overlaysByAsset: Object.fromEntries([...floorPlans, ...floorPlanSpecialPages].flatMap(({ image }) => {
+          const overlays = adminState.overlaysByAsset[image];
+          return overlays ? [[image, overlays]] : [];
+        })),
+      }}
       plans={floorPlans}
       planningMonth={planningMonth}
-      publications={publications}
+      publications={publications.map(({ plan, payload }) => {
+        const published = payload ? staffFloorPlanPayload(payload) : null;
+        return { plan: published?.plan ?? staffFloorPlanDocument(plan), payload: published };
+      })}
       specialPages={floorPlanSpecialPages}
       today={today}
     />

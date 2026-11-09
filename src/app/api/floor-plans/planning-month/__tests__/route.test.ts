@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const { prepare, reconcile } = vi.hoisted(() => ({ prepare: vi.fn(), reconcile: vi.fn() }));
+const { prepare, reconcile, hasAdminSession } = vi.hoisted(() => ({ prepare: vi.fn(), reconcile: vi.fn(), hasAdminSession: vi.fn() }));
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: vi.fn() }) }));
+vi.mock("@/lib/admin-auth", () => ({ hasAdminSession }));
 vi.mock("@/lib/floor-plans/planning-month", () => ({ DECEMBER_PLANNING_MONTH: "2026-12", prepareDecemberFloorPlanDrafts: prepare }));
 vi.mock("@/lib/floor-plans/december-owner-holds", () => ({ reconcileDecemberOwnerHoldDrafts: reconcile }));
 import { POST } from "../route";
@@ -8,7 +10,7 @@ import { previewReviewBlocksRequest } from "@/lib/operations/preview-review";
 function request(body: unknown = { month: "2026-12" }, origin: string | null = "https://example.test") {
   return new Request("https://example.test/api/floor-plans/planning-month", { method: "POST", headers: { "content-type": "application/json", ...(origin ? { origin } : {}) }, body: JSON.stringify(body) });
 }
-beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("NODE_ENV", "production"); prepare.mockResolvedValue({ month: "2026-12", startDate: "2026-12-01", endDate: "2026-12-31", results: [] }); reconcile.mockResolvedValue({ month: "2026-12", results: [] }); });
+beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("NODE_ENV", "production"); hasAdminSession.mockReturnValue(false); prepare.mockResolvedValue({ month: "2026-12", startDate: "2026-12-01", endDate: "2026-12-31", results: [] }); reconcile.mockResolvedValue({ month: "2026-12", results: [] }); });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("December planning route", () => {
@@ -49,6 +51,17 @@ describe("December planning route", () => {
     prepare.mockResolvedValue({ month: "2026-12", startDate: "2026-12-01", endDate: "2026-12-31", results: [{ date: "2026-12-05", status: "created", eventCount: 2 }, { date: "2026-12-06", status: "error", eventCount: 0 }] });
     const response = await POST(request());
     expect(response.status).toBe(200); expect((await response.json()).results).toHaveLength(2);
+  });
+  it.each([false, true])("returns review messages only to an authenticated Admin (%s)", async (isAdmin) => {
+    hasAdminSession.mockReturnValue(isAdmin);
+    prepare.mockResolvedValue({ month: "2026-12", startDate: "2026-12-01", endDate: "2026-12-31", results: [
+      { date: "2026-12-05", status: "created", eventCount: 2, planStatus: "Needs Review", message: "ADMIN_ONLY preparation detail" },
+    ] });
+    const response = await POST(request());
+    const body = await response.text();
+    expect(body.includes("ADMIN_ONLY")).toBe(isAdmin);
+    expect(body.includes("Needs Review")).toBe(isAdmin);
+    expect(response.headers.get("cache-control")).toContain("no-store");
   });
   it("has no exception to the existing read-only Preview middleware", () => {
     expect(previewReviewBlocksRequest("POST", "/api/floor-plans/planning-month", { VERCEL_ENV: "preview", EVENT_HOST_REVIEW_ONLY: "true" })).toBe(true);

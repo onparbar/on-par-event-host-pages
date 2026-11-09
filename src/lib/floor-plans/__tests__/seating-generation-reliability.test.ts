@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectFloorPlanConflicts } from "../conflicts";
+import { floorPlanAreaBelongsToSection, getFloorPlanArea, seatingTablesForArea } from "../configuration/areas";
 import { generateFloorPlanReservationProposal, generateFloorPlanReservations, reservedSeatingCapacity, reservationForCurrentFloorPlanEvent } from "../generator";
 import { searchSeatingCombination } from "../seating-search";
 import { summarizeEventSeating } from "../seating-summary";
@@ -50,6 +51,139 @@ describe("bounded deterministic table selection", () => {
 });
 
 describe("event-scoped seating repair", () => {
+  it("holds the lower VIP 1 conversation wall even for a small event without counting seats there", () => {
+    const vip = event("vip", { contractedAreaIds: ["vip-1"], guestCount: 12 });
+    const result = generateFloorPlanReservationProposal(plan([vip]), "fill-missing", vip.id);
+    expect(result.reservations.filter((item) => item.reservationType === "room").map((item) => item.areaId)).toEqual(["vip-1", "vip1-extra-convo"]);
+    expect(result.reservations.some((item) => item.reservationType === "seating" || item.areaId === "vip1-conversation-wall")).toBe(false);
+    expect(summarizeEventSeating(vip, result.reservations).coveredCapacity).toBe(20);
+    expect(result.complete).toBe(true);
+  });
+
+  it("keeps On Par VIP couch-only bookings in the booked room", () => {
+    const vip = event("vip", { tripleseatEventId: "vip-onpar-booking", contractedAreaIds: ["vip-1"], guestCount: 12 });
+    const result = generateFloorPlanReservationProposal(plan([vip]), "fill-missing", vip.id);
+    expect(result.reservations.map((item) => item.areaId)).toEqual(["vip-1"]);
+  });
+
+  it("does not substitute the upper wall when the lower VIP 1 wall is occupied", () => {
+    const vip = event("vip", { contractedAreaIds: ["vip-1"], guestCount: 35 });
+    const other = event("other");
+    const hold = row(other, "vip1-extra-convo", { reservationType: "room" });
+    const result = generateFloorPlanReservationProposal(plan([vip, other], [hold]), "replace-generated", vip.id);
+    expect(result.reservations.filter((item) => item.areaId.endsWith("convo") || item.areaId === "vip1-conversation-wall")).toEqual([hold]);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "preferred-wall-unavailable", blocking: false, message: expect.stringContaining("lower VIP 1 conversation wall") }));
+    expect(result.complete).toBe(true);
+  });
+
+  it("replaces an unlocked upper VIP 1 wall in a draft without deleting intentional or published assignments", () => {
+    const vip = event("vip", { contractedAreaIds: ["vip-1"], guestCount: 12 });
+    const upper = row(vip, "vip1-conversation-wall", { source: "generated", lockedByUser: false, placementOverride: false });
+    const draft = generateFloorPlanReservationProposal(plan([vip], [upper]), "fill-missing", vip.id);
+    expect(draft.reservations.some((item) => item.areaId === upper.areaId)).toBe(false);
+    expect(draft.reservations.some((item) => item.areaId === "vip1-extra-convo")).toBe(true);
+    const approved = generateFloorPlanReservationProposal({ ...plan([vip], [upper]), status: "Approved" }, "fill-missing", vip.id);
+    expect(approved.reservations).toContainEqual(upper);
+    expect(approved.reservations.some((item) => item.areaId === "vip1-extra-convo")).toBe(false);
+    const manualUpper = { ...upper, source: "manual" as const, lockedByUser: true };
+    const edited = generateFloorPlanReservationProposal(plan([vip], [manualUpper]), "replace-generated", vip.id);
+    expect(edited.reservations).toContainEqual(manualUpper);
+  });
+
+  it("fills the 76-guest VIP 1 example from the Clubhouse end of Level Up before using one Clubhouse table", () => {
+    const vip = event("vip", { contractedAreaIds: ["vip-1"], guestCount: 76 });
+    const result = generateFloorPlanReservationProposal(plan([vip]), "replace-generated", vip.id);
+    const overflow = (section: string) => result.reservations.filter((item) => floorPlanAreaBelongsToSection(item.areaId, section)).map((item) => item.areaId);
+    expect(overflow("level-up-seating")).toEqual(["level-up-square-6", "wat-table-1", "wat-table-2", "wat-table-3"]);
+    expect(overflow("clubhouse-seating")).toEqual(["level-up-square-5"]);
+    expect(summarizeEventSeating(vip, result.reservations).coveredCapacity).toBe(78);
+    expect(result.complete).toBe(true);
+  });
+
+  it.each([["vip-1", 41], ["level-up-seating", 1]] as const)("skips occupied Level Up tables in order and stops once it has enough seats (%s)", (area, guestCount) => {
+    const vip = event("vip", { contractedAreaIds: [area], guestCount });
+    const other = event("other");
+    const holds = ["level-up-square-6", "wat-table-1"].map((areaId) => row(other, areaId));
+    const result = generateFloorPlanReservationProposal(plan([vip, other], holds), "replace-generated", vip.id);
+    expect(result.reservations.filter((item) => item.floorPlanEventId === other.id)).toEqual(holds);
+    expect(result.reservations.filter((item) => item.floorPlanEventId === vip.id && floorPlanAreaBelongsToSection(item.areaId, "level-up-seating")).map((item) => item.areaId)).toEqual(["wat-table-2"]);
+    expect(result.complete).toBe(true);
+  });
+
+  it.each([[40, false], [41, true], [50, true]])("uses VIP 1 overflow only above 40 guests (%i guests)", (guestCount, overflow) => {
+    const vip = event("vip", { contractedAreaIds: ["vip-1"], guestCount });
+    const result = generateFloorPlanReservationProposal(plan([vip]), "replace-generated", vip.id);
+    const baseRows = result.reservations.filter((item) => floorPlanAreaBelongsToSection(item.areaId, "vip-1"));
+    expect(reservedSeatingCapacity(baseRows)).toBe(40);
+    expect(result.reservations.some((item) => floorPlanAreaBelongsToSection(item.areaId, "level-up-seating"))).toBe(overflow);
+    expect(result.reservations.some((item) => floorPlanAreaBelongsToSection(item.areaId, "clubhouse-seating"))).toBe(false);
+    expect(result.complete).toBe(true);
+  });
+
+  it("uses the remaining 4-seat Level Up table first, then verified Clubhouse seats for the shortfall", () => {
+    const vip = event("vip", { contractedAreaIds: ["vip-1"], guestCount: 50 });
+    const other = event("other", { contractedAreaIds: ["level-up-seating"] });
+    const holds = seatingTablesForArea("level-up-seating").filter((area) => area.capacity === 10).map((area) => row(other, area.id));
+    const source = plan([vip, other], holds);
+    const result = generateFloorPlanReservationProposal(source, "replace-generated", vip.id);
+    const ours = result.reservations.filter((item) => item.floorPlanEventId === vip.id);
+    const overflow = (section: string) => ours.filter((item) => floorPlanAreaBelongsToSection(item.areaId, section));
+    expect(overflow("level-up-seating").map((item) => item.areaId)).toEqual(["level-up-square-6"]);
+    expect(reservedSeatingCapacity(overflow("clubhouse-seating"))).toBe(8);
+    expect(result.reservations.filter((item) => item.floorPlanEventId === other.id)).toEqual(holds);
+    expect(detectFloorPlanConflicts({ ...source, reservations: result.reservations })).toEqual([]);
+    expect(result.complete).toBe(true);
+  });
+
+  it("lets VIP 2 use the same conversation wall, without counting it again for overlapping VIP 1", () => {
+    const first = event("first", { contractedAreaIds: ["vip-1"], guestCount: 40 });
+    const second = event("second", { contractedAreaIds: ["vip-2"], guestCount: 35 });
+    const other = event("other");
+    const holds = [1, 2, 3].map((index) => row(other, `vip1-extra-front-${index}`));
+    const secondPlan = generateFloorPlanReservationProposal(plan([first, second, other], holds), "replace-generated", second.id);
+    expect(secondPlan.complete).toBe(true);
+    expect(secondPlan.reservations).toContainEqual(expect.objectContaining({ floorPlanEventId: second.id, areaId: "vip1-conversation-wall" }));
+    const firstPlan = generateFloorPlanReservationProposal(plan([first, second, other], secondPlan.reservations), "replace-generated", first.id);
+    expect(firstPlan.reservations.filter((item) => item.areaId === "vip1-conversation-wall")).toHaveLength(1);
+    expect(firstPlan.complete).toBe(false);
+    expect(firstPlan.issues).toContainEqual(expect.objectContaining({ code: "no-valid-combination", blocking: true }));
+  });
+
+  it("keeps only the needed previously selected seats after a count drops below the VIP 1 overflow threshold", () => {
+    const before = event("vip", { contractedAreaIds: ["vip-1"], guestCount: 50 });
+    const original = generateFloorPlanReservations(plan([before]), "replace-generated", before.id);
+    const after = { ...before, guestCount: 35 };
+    const result = generateFloorPlanReservationProposal(plan([after], original), "replace-generated", after.id,
+      new Set(original.map((item) => item.areaId)));
+    expect(result.complete).toBe(true);
+    expect(result.reservations.every((item) => floorPlanAreaBelongsToSection(item.areaId, "vip-1"))).toBe(true);
+    expect(result.addedReservationIds).toEqual([]);
+    expect(result.movedReservationIds).toEqual(original.filter((item) => !floorPlanAreaBelongsToSection(item.areaId, "vip-1")).map((item) => item.id));
+  });
+
+  it("keeps the unverified Main Dining annex and Big Show capacity out of automatic seat counts", () => {
+    expect(getFloorPlanArea("darts-convo")).toMatchObject({ parentAreaId: "main-dining", capacity: 0 });
+    expect(getFloorPlanArea("big-show-karaoke")).toMatchObject({ y: 0, capacity: 0 });
+    expect(seatingTablesForArea("main-dining").some((item) => item.id === "darts-convo")).toBe(false);
+    expect(seatingTablesForArea("geg-tables").map((item) => item.id)).toEqual(["ge-table-1", "ge-table-2", "ge-table-3"]);
+  });
+
+  it("detects and avoids booking Big Show over a private room in the revised footprint", () => {
+    const bigShow = event("big-show", { contractedAreaIds: ["big-show-karaoke"] });
+    const privateRoom = event("private-room", { contractedAreaIds: ["gem-room"] });
+    const room = row(privateRoom, "gem-room", { reservationType: "room" });
+    const conflicting = row(bigShow, "big-show-karaoke", { reservationType: "room" });
+    const existing = plan([bigShow, privateRoom], [room, conflicting]);
+    expect(detectFloorPlanConflicts(existing)).toContainEqual(expect.objectContaining({
+      areaId: "big-show-karaoke", eventIds: [privateRoom.id, bigShow.id], blocking: true,
+    }));
+    const proposal = generateFloorPlanReservationProposal({ ...existing, reservations: [room] }, "replace-generated", bigShow.id);
+    expect(proposal.reservations).toContainEqual(room);
+    expect(proposal.reservations.some((item) => item.floorPlanEventId === bigShow.id && item.areaId === "big-show-karaoke")).toBe(false);
+    expect(proposal.issues).toContainEqual(expect.objectContaining({ code: "placement-unavailable", blocking: true }));
+    expect(proposal.complete).toBe(false);
+  });
+
   it("fills 30 to 38 guests without replacing selected tables or another party", () => {
     const first = event("first", { guestCount: 38 });
     const second = event("second", { contractedAreaIds: ["vip-2"], guestCount: 16 });

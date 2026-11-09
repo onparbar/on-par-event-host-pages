@@ -6,6 +6,7 @@ const {
   approveFloorPlan,
   getFloorPlanDay,
   hasAdminSession,
+  refreshFloorPlanEvent,
   refreshFloorPlanSources,
 } = vi.hoisted(() => ({
   cookies: vi.fn(),
@@ -13,6 +14,7 @@ const {
   approveFloorPlan: vi.fn(),
   getFloorPlanDay: vi.fn(),
   hasAdminSession: vi.fn(),
+  refreshFloorPlanEvent: vi.fn(),
   refreshFloorPlanSources: vi.fn(),
 }));
 
@@ -22,6 +24,7 @@ vi.mock("@/lib/floor-plans/service", () => ({
   approveFloorPlan,
   generateFloorPlan,
   getFloorPlanDay,
+  refreshFloorPlanEvent,
   refreshFloorPlanSources,
   saveFloorPlanEdits: vi.fn(),
   validateAndSaveFloorPlan: vi.fn(),
@@ -36,7 +39,12 @@ describe("floor-plan live-sync route", () => {
     cookies.mockResolvedValue({ get: vi.fn() });
     refreshFloorPlanSources.mockResolvedValue({
       date: "2026-08-06",
-      plan: { events: [] },
+      plan: { eventDate: "2026-08-06", events: [], reservations: [], status: "Conflict" },
+      warnings: ["ADMIN_ONLY source failure"],
+      floorPlanConflicts: [{ id: "ADMIN_ONLY table clash" }],
+      entertainmentConflicts: [], entertainmentReservations: [],
+      validation: [{ status: "Failed", message: "ADMIN_ONLY capacity" }],
+      revisions: [{ description: "ADMIN_ONLY old assignment" }],
     });
   });
 
@@ -62,7 +70,51 @@ describe("floor-plan live-sync route", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    const body = await response.json();
+    expect(body).toMatchObject({ incomplete: true, plan: { eventDate: "2026-08-06", status: "Draft" } });
+    expect(JSON.stringify(body)).not.toContain("ADMIN_ONLY");
     expect(refreshFloorPlanSources).toHaveBeenCalledWith("2026-08-06", undefined, undefined);
+  });
+
+  it("returns raw review details only with the existing Admin session", async () => {
+    hasAdminSession.mockReturnValue(true);
+    const response = await POST(new Request("https://example.test/api/floor-plans", {
+      method: "POST", headers: { origin: "https://example.test", "content-type": "application/json" },
+      body: JSON.stringify({ action: "refresh", date: "2026-08-06" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(await response.text()).toContain("ADMIN_ONLY table clash");
+  });
+
+  it("does not return private exception messages to staff refresh requests", async () => {
+    hasAdminSession.mockReturnValue(false);
+    refreshFloorPlanSources.mockRejectedValueOnce(new Error("ADMIN_ONLY private error"));
+    const response = await POST(new Request("https://example.test/api/floor-plans", {
+      method: "POST", headers: { origin: "https://example.test", "content-type": "application/json" },
+      body: JSON.stringify({ action: "refresh", date: "2026-08-06" }),
+    }));
+    expect(response.ok).toBe(false);
+    expect(await response.text()).not.toContain("ADMIN_ONLY");
+  });
+
+  it("refreshes one event only for an Admin with a reviewed version", async () => {
+    const refreshEvent = (expectedVersion?: number) => new Request("https://example.test/api/floor-plans", {
+      method: "POST", headers: { origin: "https://example.test", "content-type": "application/json" },
+      body: JSON.stringify({ action: "refresh-event", date: "2026-08-06", selectedEventId: "event-1", expectedVersion }),
+    });
+    hasAdminSession.mockReturnValue(false);
+    expect((await POST(refreshEvent(7))).status).toBe(401);
+    expect(refreshFloorPlanEvent).not.toHaveBeenCalled();
+    hasAdminSession.mockReturnValue(true);
+    expect((await POST(refreshEvent())).status).toBe(400);
+    expect(refreshFloorPlanEvent).not.toHaveBeenCalled();
+    refreshFloorPlanEvent.mockResolvedValue({ plan: { version: 8 }, warnings: ["ADMIN_ONLY proposed change"] });
+    const response = await POST(refreshEvent(7));
+    expect(response.status).toBe(200);
+    expect(refreshFloorPlanEvent).toHaveBeenCalledOnce();
+    expect(await response.text()).toContain("ADMIN_ONLY proposed change");
   });
 
   it("keeps non-refresh floor-plan mutations behind Admin access", async () => {

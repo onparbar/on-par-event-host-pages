@@ -5,8 +5,9 @@ import type {
   EntertainmentConflict,
   EntertainmentReservation,
 } from "@/lib/entertainment/types";
-import { selectEntertainmentResources } from "./configuration/adjacency";
+import { AREA_PREFERENCES, selectEntertainmentResources } from "./configuration/adjacency";
 import {
+  floorPlanSeatingAreaEligible,
   getAreaForEntertainmentResource,
   getFloorPlanArea,
   requiredFoodTableCount,
@@ -128,11 +129,14 @@ export function validateFloorPlan(
     const seatingPasses = seatingSummary.fullEventCoverage;
     const searchIssues = event.source.seatingGenerationIssues ?? [];
     const searchNeedsReview = searchIssues.some((issue) => issue.blocking);
+    const preferredWallUnavailable = searchIssues.some((issue) => issue.code === "preferred-wall-unavailable");
+    const refreshIncomplete = searchIssues.some((issue) => issue.code === "selected-entertainment-refresh");
+    const searchBlocks = refreshIncomplete || searchNeedsReview && !(seatingPasses && seatingSummary.foodAssigned >= seatingSummary.foodRequired);
     result.push(item(
       "SEATING_SEARCH", event.id, "Seating search",
-      searchNeedsReview ? seatingPasses && seatingSummary.foodAssigned >= seatingSummary.foodRequired ? "Warning" : "Failed" : "Passed",
+      searchBlocks ? "Failed" : searchNeedsReview || preferredWallUnavailable ? "Warning" : "Passed",
       searchIssues.length ? `Latest generation: ${searchIssues.map((issue) => issue.message).join(" ")}` : "No unresolved seating search limitation is recorded.",
-      searchNeedsReview && !(seatingPasses && seatingSummary.foodAssigned >= seatingSummary.foodRequired),
+      searchBlocks,
     ));
     result.push(
       item(
@@ -143,17 +147,8 @@ export function validateFloorPlan(
         seatingCoverageMessage(event, seatingSummary),
       ),
     );
-    const seatingInsideContract = seating.every((reservation) => {
-      const area = getFloorPlanArea(reservation.areaId);
-      return (
-        event.contractedAreaIds.includes("facility") ||
-        Boolean(
-          area &&
-            (event.contractedAreaIds.includes(area.id) ||
-              (area.parentAreaId && event.contractedAreaIds.includes(area.parentAreaId))),
-        )
-      );
-    });
+    const seatingInsideContract = seating.every((reservation) =>
+      floorPlanSeatingAreaEligible(reservation.areaId, event.contractedAreaIds, event.guestCount));
     result.push(
       item(
         "SEATING_LOCATION",
@@ -274,9 +269,19 @@ export function validateFloorPlan(
       ),
     );
     const placementWarnings: string[] = [];
+    placementWarnings.push(...searchIssues.filter((issue) => issue.code === "selected-entertainment-override").map((issue) => issue.message));
+    if (event.beoLastModifiedAt && eventEntertainment.some((reservation) =>
+      reservation.active && reservation.manualOverride && reservation.syncKey &&
+      Date.parse(reservation.sourceUpdatedAt ?? "") < Date.parse(event.beoLastModifiedAt ?? ""),
+    )) placementWarnings.push("A staff entertainment override predates the current booking. Verify whether the resource and time are still needed.");
+    const unmappedCategories = new Set(eventEntertainment.filter((reservation) =>
+      reservation.autoAssigned && !reservation.manualOverride && ["darts", "pool", "shuffleboard"].includes(reservation.resourceCategory) &&
+      !AREA_PREFERENCES.some((preference) => preference.entertainmentType === reservation.resourceCategory && event.contractedAreaIds.includes(preference.seatingAreaId)),
+    ).map((reservation) => reservation.resourceCategory));
+    for (const category of unmappedCategories) placementWarnings.push(`No verified ${category} proximity mapping exists for the contracted seating.`);
     const bowlingGroups = new Map<string, EntertainmentReservation[]>();
     for (const reservation of eventEntertainment) {
-      if (reservation.resourceCategory !== "bowling") continue;
+      if (reservation.resourceCategory !== "bowling" || !reservation.autoAssigned || reservation.manualOverride) continue;
       const key = `${reservation.startAt}:${reservation.endAt}`;
       bowlingGroups.set(key, [...(bowlingGroups.get(key) ?? []), reservation]);
     }
@@ -298,7 +303,7 @@ export function validateFloorPlan(
         event.id,
         "Entertainment placement",
         placementWarnings.length ? "Warning" : "Passed",
-        placementWarnings.join(" ") || "Bowling matches the lane preference for the contracted seating; shared entertainment placement is preserved.",
+        placementWarnings.join(" ") || "Automatic entertainment placement matches the configured rules or does not require adjustment.",
         false,
       ),
     );

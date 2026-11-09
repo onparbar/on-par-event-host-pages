@@ -79,6 +79,15 @@ export default async function ItinerariesPage({
     ]);
     const savedPdf = itineraries.find((item) => item.id === plan.id && item.pdf);
     selectedItinerary = buildItineraryAsset({ plan, candidates: sourceItineraries, day, floorPlan, floorPlanPersisted: floorPlanStorage.persistence === "database", sourceSync: eventPlanWindow.sync, savedPdf, edit: editFor(plan), now });
+    // Readiness still considers the full evidence. Only the protected editor receives the diagnostic reasons.
+    if (selectedItinerary.revision) selectedItinerary = {
+      ...selectedItinerary,
+      revision: {
+        ...selectedItinerary.revision,
+        reasons: [],
+        floorPlanStatus: selectedItinerary.revision.floorPlanStatus === "Approved" ? "Approved" : null,
+      },
+    };
   }
   const items: ItineraryChoice[] = visiblePlans.map(({ id, source_event_id, name, date, time, guest_count, rooms }) => ({ id, source_event_id, name, date, time, guest_count, rooms }));
   return (

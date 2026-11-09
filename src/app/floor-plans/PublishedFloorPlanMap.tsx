@@ -19,7 +19,7 @@ import {
   primaryLocalFloorPlanReservation,
   visibleEntertainmentReservations,
 } from "@/lib/floor-plans/presentation";
-import type { FloorPlanDayPayload } from "@/lib/floor-plans/types";
+import { STAFF_FLOOR_PLAN_INCOMPLETE, type StaffFloorPlanPayload } from "@/lib/floor-plans/staff-publication";
 import FloorPlanEventLegend from "./FloorPlanEventLegend";
 import FloorPlanLocalOutlines from "./FloorPlanLocalOutlines";
 import { formatClock } from "@/lib/entertainment/time";
@@ -29,7 +29,7 @@ export default function PublishedFloorPlanMap({
   zoom = 100,
   focusEventId,
 }: {
-  payload: FloorPlanDayPayload;
+  payload: StaffFloorPlanPayload;
   zoom?: number;
   focusEventId?: string;
 }) {
@@ -40,7 +40,7 @@ export default function PublishedFloorPlanMap({
   const contextEvent = selected ? {
     eventId: operationalFloorPlanEventId(selected), eventName: selected.name, date: payload.plan.eventDate,
     area: selected.contractedAreaIds.map((id) => getFloorPlanArea(id)?.name ?? id).join(" · "), guestCount: selected.guestCount,
-    time: selected.startAt && selected.endAt ? `${formatClock(selected.startAt)} – ${formatClock(selected.endAt)}` : "Time needs review",
+    time: selected.startAt && selected.endAt ? `${formatClock(selected.startAt)} – ${formatClock(selected.endAt)}` : "Time not confirmed",
   } : null;
   if (focusEventId && (!selected || (context.requestedDate && context.requestedDate !== payload.plan.eventDate))) return <p className="floor-plan-warning-copy" role="alert">No floor plan assigned. The selected event cannot be uniquely matched to this saved floor plan. No other party was substituted. <button onClick={context.switchEvent} type="button">Switch Event</button></p>;
   return (
@@ -64,7 +64,7 @@ export function PublishedFloorPlanMapView({
   onSelectEvent,
   focused = false,
 }: {
-  payload: FloorPlanDayPayload;
+  payload: StaffFloorPlanPayload;
   zoom?: number;
   selectedEventId: string | null;
   onSelectEvent: (eventId: string | null) => void;
@@ -82,11 +82,7 @@ export function PublishedFloorPlanMapView({
   );
   return (
     <div className="published-floor-plan-map">
-      {view.selectedEventId && (payload.floorPlanConflicts.length || payload.entertainmentConflicts.length) ? (
-        <p className="floor-plan-warning-copy" role="status">
-          Full-day conflicts: {payload.floorPlanConflicts.length + payload.entertainmentConflicts.length}. Showing one event does not remove conflicts with other parties.
-        </p>
-      ) : null}
+      {payload.incomplete ? <p className="floor-plan-warning-copy" role="status">{STAFF_FLOOR_PLAN_INCOMPLETE}</p> : null}
       <div
         className="floor-plan-map-canvas"
         style={{

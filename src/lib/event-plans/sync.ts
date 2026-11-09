@@ -268,6 +268,32 @@ export async function syncRollingEventPlans(
   return syncEventPlanWindow(storageWindow(now), { ...options, now });
 }
 
+/** Refresh only a saved Tripleseat event; never mark another event inactive or advance rolling sync status. */
+export async function syncSingleEventPlan(date: string, eventId: string, options: EventPlanSyncOptions = {}) {
+  validatedWindow({ startDate: date, endDate: date });
+  if (!/^\d+$/.test(eventId)) throw new Error("Choose an exact Tripleseat event.");
+  const storage = options.storage ?? getEventPlanStorage();
+  const adapter = options.adapter ?? getTripleseatAdapter();
+  const baseline = await storage.findById(eventId);
+  if (!baseline?.active || baseline.eventDate !== date || adapter.sourceMode !== "live" || !adapter.fetchEventPlansForRange) {
+    throw new Error("The selected event must have an active saved Tripleseat booking on this date.");
+  }
+  const matches = (await adapter.fetchEventPlansForRange(date, date, eventId)).filter((source) =>
+    source.eventId === eventId && source.localDate === date);
+  if (matches.length !== 1 || (matches[0].status?.trim().toUpperCase() !== "DEFINITE" && !matches[0].fullBuyout)) {
+    throw new Error("Tripleseat did not return one active, exact match. Existing assignments were not changed; verify the booking date or status.");
+  }
+  const source = matches[0];
+  if (baseline.sourceUpdatedAt && !sourceIsAtLeastAsNew(source.sourceUpdatedAt, baseline.sourceUpdatedAt)) {
+    throw new Error("Tripleseat returned an older or undated source. Existing assignments were not changed.");
+  }
+  const syncedAt = (options.now ?? new Date()).toISOString();
+  const plan = { ...buildEventPlan(source, options.legacyPlans ?? legacyEventPlans), synced_at: syncedAt };
+  await storage.replaceEvent({ eventId, eventDate: date, plan: serializeDocument(plan), sourceSnapshot: serializeDocument(source),
+    sourceUpdatedAt: source.sourceUpdatedAt }, baseline.syncedAt);
+  return { plan, syncedAt };
+}
+
 export async function loadEventPlanWindow(
   options: Pick<
     EventPlanSyncOptions,

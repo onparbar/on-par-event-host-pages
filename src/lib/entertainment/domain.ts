@@ -26,7 +26,7 @@ import type {
   EntertainmentStartTimeSource,
 } from "./types";
 import { resolveAreaAlias } from "../floor-plans/configuration/aliases";
-import { prefersLowVipBowlingLanes, selectEntertainmentResources } from "../floor-plans/configuration/adjacency";
+import { AREA_PREFERENCES, bowlingLaneDirection, selectEntertainmentResources } from "../floor-plans/configuration/adjacency";
 
 export type LocalEntertainmentItem = {
   name: string;
@@ -51,7 +51,9 @@ export type LocalEntertainmentEvent = {
 export type BuildScheduleInput = {
   sourceEvents: EntertainmentSourceEvent[];
   localEvents: LocalEntertainmentEvent[];
+  existingEvents?: readonly EntertainmentEventSnapshot[];
   existingReservations?: EntertainmentReservation[];
+  selectedTripleseatEventId?: string;
   now?: string;
 };
 
@@ -190,14 +192,18 @@ export function findAdjacentAvailableResources(
   if (quantity <= 0) {
     return [];
   }
-  if (category === "bowling" && seatingAreaIds.length > 0) {
+  const mappedAreas = category === "darts" || category === "pool" || category === "shuffleboard"
+    ? seatingAreaIds.filter((areaId) => AREA_PREFERENCES.some((entry) => entry.seatingAreaId === areaId && entry.entertainmentType === category))
+    : [];
+  if ((category === "bowling" && seatingAreaIds.length > 0) ||
+    ((category === "darts" || category === "pool" || category === "shuffleboard") && mappedAreas.length > 0)) {
     const availableIds = new Set(available.map((resource) => resource.id));
     const unavailable = new Set(
       resourcesForCategory(category)
         .filter((resource) => !availableIds.has(resource.id))
         .map((resource) => resource.id),
     );
-    return selectEntertainmentResources(seatingAreaIds, category, quantity, unavailable)
+    return selectEntertainmentResources(category === "bowling" ? seatingAreaIds : mappedAreas, category, quantity, unavailable)
       .flatMap((id) => getEntertainmentResource(id) ?? []);
   }
   for (let index = 0; index <= available.length - quantity; index += 1) {
@@ -286,7 +292,11 @@ function manualReservationMatchesSourceEvent(
   reservation: EntertainmentReservation,
   source: EntertainmentSourceEvent,
   localEvent: LocalEntertainmentEvent | null,
+  exactIdentityOnly = false,
 ) {
+  if (exactIdentityOnly && reservation.tripleseatEventId) {
+    return reservation.tripleseatEventId === source.tripleseatEventId;
+  }
   const sourceIds = new Set(
     [source.tripleseatEventId, localEvent?.id]
       .filter((value): value is string => Boolean(value)),
@@ -299,6 +309,7 @@ function manualReservationMatchesSourceEvent(
     return true;
   }
   return (
+    !exactIdentityOnly &&
     reservation.operatingDate === source.localDate &&
     normalizeEventName(reservation.eventName) ===
       normalizeEventName(source.eventName)
@@ -323,7 +334,9 @@ function sourceReferenceForItem(
 export function buildEntertainmentSchedule({
   sourceEvents,
   localEvents,
+  existingEvents = [],
   existingReservations = [],
+  selectedTripleseatEventId,
   now = new Date().toISOString(),
 }: BuildScheduleInput): BuiltSchedule {
   const reservations: EntertainmentReservation[] = [];
@@ -331,8 +344,25 @@ export function buildEntertainmentSchedule({
   const manuallyOccupied = existingReservations.filter(
     (reservation) => reservation.active && reservation.manualOverride,
   );
+  const matchSource = (source: EntertainmentSourceEvent) => matchLocalEvent(source,
+    selectedTripleseatEventId ? localEvents.filter((event) => event.id === source.tripleseatEventId) : localEvents,
+  )?.event ?? null;
+  const seatingAreas = (source: EntertainmentSourceEvent, localEvent: LocalEntertainmentEvent | null) => (source.rooms.length
+    ? source.rooms.map((room) => room.name)
+    : localEvent?.rooms ?? []
+  ).flatMap((room) => resolveAreaAlias(room) ?? []).filter((areaId) => areaId !== "facility");
+  const sourceById = new Map(sourceEvents.map((event) => [event.tripleseatEventId, event]));
+  // Old automatic slots of parties swapping sides will be recalculated in this same day-wide build.
+  // A single-event refresh must keep every other party's saved slots occupied.
+  const changingBowlingSide = new Set(selectedTripleseatEventId ? [] : existingEvents.flatMap((event) => {
+    const source = sourceById.get(event.tripleseatEventId);
+    if (!source?.rooms.length) return [];
+    const previous = bowlingLaneDirection(seatingAreas(event.sourceSnapshot, null));
+    const next = bowlingLaneDirection(seatingAreas(source, null));
+    return previous && next && previous !== next ? [event.tripleseatEventId] : [];
+  }));
   const groupedItems = new Map(sourceEvents.map((source) => [source, groupEntertainmentTimingItems(source.items)]));
-  // Protect exact contract lanes even if their event is processed after a VIP auto-assignment.
+  // Protect exact contract lanes even if their event is processed after an auto-assignment.
   const exactBowlingClaims = sourceEvents.flatMap((source) => groupedItems.get(source)!.flatMap((item) => {
     const text = itemText(item);
     if (canonicalCategoryForText(text) !== "bowling") return [];
@@ -343,11 +373,11 @@ export function buildEntertainmentSchedule({
     const reference = sourceReferenceForItem(item, "bowling", source.tripleseatEventId, existingReservations);
     // Standalone manual assignments can consume slots; only project linked overrides
     // when the exact contract slot mapping is unambiguous.
-    const localEvent = matchLocalEvent(source, localEvents)?.event ?? null;
+    const localEvent = matchSource(source);
     const hasStandaloneAssignments = manuallyOccupied.some((reservation) =>
       !reservation.syncKey && reservation.resourceCategory === "bowling" &&
       sameInstant(reservation.startAt, startAt) && sameInstant(reservation.endAt, endAt) &&
-      manualReservationMatchesSourceEvent(reservation, source, localEvent));
+      manualReservationMatchesSourceEvent(reservation, source, localEvent, Boolean(selectedTripleseatEventId)));
     return [...new Set(ids)].map((resourceId, slot) => {
       const override = !hasStandaloneAssignments && manuallyOccupied.find((reservation) =>
         reservation.syncKey === `${source.tripleseatEventId}:${reference}:${slot}` &&
@@ -362,7 +392,8 @@ export function buildEntertainmentSchedule({
     });
   }));
 
-  for (const source of [...sourceEvents].sort((left, right) => {
+  for (const source of sourceEvents.filter((event) => !selectedTripleseatEventId ||
+    event.tripleseatEventId === selectedTripleseatEventId).sort((left, right) => {
     const leftTime = Date.parse(left.eventStartAt ?? "");
     const rightTime = Date.parse(right.eventStartAt ?? "");
     return (
@@ -372,13 +403,8 @@ export function buildEntertainmentSchedule({
     );
   })) {
     const isContractEvidence = source.sourceSystem === "contract-evidence";
-    const match = matchLocalEvent(source, localEvents);
-    const localEvent = match?.event ?? null;
-    const seatingAreaIds = (source.rooms.length
-      ? source.rooms.map((room) => room.name)
-      : localEvent?.rooms ?? []
-    ).flatMap((room) => resolveAreaAlias(room) ?? [])
-      .filter((areaId) => areaId !== "facility");
+    const localEvent = matchSource(source);
+    const seatingAreaIds = seatingAreas(source, localEvent);
     const eventIssues: EntertainmentReviewIssue[] = [];
     if (isContractEvidence) {
       eventIssues.push({
@@ -457,7 +483,10 @@ export function buildEntertainmentSchedule({
 
     const duplicateKeys = new Set<string>();
     const consumedManualReservationIds = new Set<string>();
-    const occupied = [...manuallyOccupied, ...reservations];
+    const occupied = [...manuallyOccupied, ...reservations, ...(selectedTripleseatEventId
+      ? existingReservations.filter((reservation) => reservation.active && !reservation.manualOverride &&
+        !manualReservationMatchesSourceEvent(reservation, source, localEvent, true))
+      : [])];
     const eventReservations: EntertainmentReservation[] = [];
 
     items.forEach((item) => {
@@ -533,6 +562,7 @@ export function buildEntertainmentSchedule({
               reservation,
               source,
               localEvent,
+              Boolean(selectedTripleseatEventId),
             ),
         )
         .slice(0, desiredCount);
@@ -545,12 +575,12 @@ export function buildEntertainmentSchedule({
       const chosenIds = [...new Set(exactFromSource)].filter(
         (resourceId) => !manuallyAssignedResourceIds.has(resourceId),
       );
-      const vipBowling = category === "bowling" && prefersLowVipBowlingLanes(seatingAreaIds);
+      const directionalBowling = category === "bowling" && bowlingLaneDirection(seatingAreaIds) !== null;
       const ownSyncPrefix = `${source.tripleseatEventId}:${sourceReference}:`;
       const slotCount = desiredCount - matchingManualReservations.length;
-      // Keep a staff override on its original sync slot so a new Lane 1 pick cannot duplicate it.
+      // Keep a staff override on its original sync slot so a new lane pick cannot duplicate it.
       const fixedSlots = new Map<number, EntertainmentReservation>();
-      if (vipBowling && exactFromSource.length === 0) {
+      if (directionalBowling && exactFromSource.length === 0) {
         for (const reservation of manuallyOccupied) {
           if (!reservation.syncKey?.startsWith(ownSyncPrefix)) continue;
           const slot = Number(reservation.syncKey.slice(ownSyncPrefix.length));
@@ -562,12 +592,13 @@ export function buildEntertainmentSchedule({
         slotCount - chosenIds.length - fixedSlots.size,
       );
       if (needed > 0) {
-        const occupiedForItem = occupied.filter((reservation) => vipBowling ||
+        const occupiedForItem = occupied.filter((reservation) => directionalBowling ||
           !(reservation.manualOverride && reservation.syncKey?.startsWith(ownSyncPrefix)));
-        const protectedBowling = vipBowling ? [
+        const protectedBowling = directionalBowling ? [
           ...exactBowlingClaims,
           ...existingReservations.filter((reservation) => reservation.active && reservation.resourceCategory === "bowling" &&
-            reservation.tripleseatEventId !== source.tripleseatEventId && (!localEvent || reservation.localEventId !== localEvent.id)),
+            reservation.tripleseatEventId !== source.tripleseatEventId && (!localEvent || reservation.localEventId !== localEvent.id) &&
+            !(reservation.autoAssigned && !reservation.manualOverride && reservation.tripleseatEventId && changingBowlingSide.has(reservation.tripleseatEventId))),
         ] : [];
         const autoAssigned = findAdjacentAvailableResources(
           category,

@@ -45,6 +45,16 @@ function storageForTest(response: (table: string, method: string) => Response) {
 }
 
 describe("scheduled entertainment optimistic writes", () => {
+  it("does not record a whole-day sync after a guarded single-event refresh", async () => {
+    const update = { ...input(), recordDaySync: false as const };
+    update.reservations[0] = { ...update.reservations[0], resourceId: "bowling-4", resourceName: "Bowling Lane 4", updatedAt: newRevision };
+    const { calls, storage } = storageForTest(() => Response.json([{}]));
+    await storage.saveSync(update);
+    expect(calls.map(({ table, method }) => [table, method])).toEqual([
+      ["entertainment_reservations", "PATCH"], ["entertainment_reservation_audits", "POST"],
+    ]);
+  });
+
   it("writes only changed rows and includes the observed reservation and color revisions", async () => {
     const update = input();
     update.reservations[0] = { ...update.reservations[0], notes: "Changed upstream", updatedAt: newRevision };

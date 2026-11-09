@@ -12,10 +12,7 @@ export type AreaPreference = {
 };
 
 export const AREA_PREFERENCES: readonly AreaPreference[] = [
-  { seatingAreaId: "main-dining", entertainmentType: "bowling", preferredInventoryIds: [["bowling-9", "bowling-10", "bowling-11", "bowling-12"], ["bowling-7", "bowling-8"], ["bowling-5", "bowling-6"]] },
   { seatingAreaId: "wat-tables", entertainmentType: "bowling", preferredInventoryIds: [["bowling-1", "bowling-2", "bowling-3", "bowling-4"], ["bowling-5", "bowling-6"]] },
-  { seatingAreaId: "geg-tables", entertainmentType: "bowling", preferredInventoryIds: [["bowling-10", "bowling-11", "bowling-12"], ["bowling-8", "bowling-9"]] },
-  { seatingAreaId: "big-show-karaoke", entertainmentType: "bowling", preferredInventoryIds: [["bowling-1", "bowling-2", "bowling-3"], ["bowling-4", "bowling-5"]] },
   ...["vip-1", "vip-2", "main-dining", "wat-tables", "geg-tables", "big-show-karaoke"].flatMap((seatingAreaId) => [
     { seatingAreaId, entertainmentType: "darts" as const, preferredInventoryIds: seatingAreaId === "main-dining" || seatingAreaId === "geg-tables" ? [["darts-1", "darts-2", "darts-3", "darts-4", "darts-5"]] : [["darts-1", "darts-2", "darts-3"], ["darts-4", "darts-5"]] },
     { seatingAreaId, entertainmentType: "pool" as const, preferredInventoryIds: [["pool-1", "pool-2", "pool-3"]] },
@@ -32,8 +29,12 @@ const DEFAULT_INVENTORY: Record<AreaPreference["entertainmentType"], string[]> =
   "mini-golf": ["mini-golf-level-up", "mini-golf-wild-axe", "mini-golf-great-escape"],
 };
 
-export function prefersLowVipBowlingLanes(seatingAreaIds: readonly string[]) {
-  return seatingAreaIds.some((id) => id === "vip-1" || id === "vip-2");
+export function bowlingLaneDirection(seatingAreaIds: readonly string[]): "ascending" | "descending" | null {
+  // Retain the existing VIP-first rule when the booking includes multiple sections.
+  if (seatingAreaIds.some((id) => id === "vip-1" || id === "vip-2")) return "ascending";
+  const low = seatingAreaIds.includes("big-show-karaoke");
+  const high = seatingAreaIds.some((id) => id === "main-dining" || id === "geg-tables");
+  return low === high ? null : low ? "ascending" : "descending";
 }
 
 export function preferredInventory(
@@ -41,8 +42,10 @@ export function preferredInventory(
   entertainmentType: AreaPreference["entertainmentType"],
 ) {
   const seatingAreaIds = typeof seatingAreaId === "string" ? [seatingAreaId] : seatingAreaId;
-  if (entertainmentType === "bowling" && prefersLowVipBowlingLanes(seatingAreaIds)) {
-    return [...DEFAULT_INVENTORY.bowling];
+  const direction = entertainmentType === "bowling" ? bowlingLaneDirection(seatingAreaIds) : null;
+  if (direction) {
+    const lanes = [...DEFAULT_INVENTORY.bowling];
+    return direction === "descending" ? lanes.reverse() : lanes;
   }
   const preferences = AREA_PREFERENCES.filter(
     (item) =>
@@ -93,8 +96,8 @@ export function selectEntertainmentResources(
     return ordered.slice(0, Math.min(quantity, ordered.length));
   }
   if (ordered.length < quantity) return [];
-  // VIP starts at the lowest free lane even if an occupied lane splits the group.
-  if (entertainmentType === "bowling" && prefersLowVipBowlingLanes(seatingAreaIds)) {
+  // Start at the requested side and skip occupied lanes, even if they split the group.
+  if (entertainmentType === "bowling" && bowlingLaneDirection(seatingAreaIds)) {
     return ordered.slice(0, quantity);
   }
 
