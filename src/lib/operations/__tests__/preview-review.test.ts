@@ -3,6 +3,8 @@ import { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
 import { isPreviewReviewOnly, previewReviewBlocksRequest } from "../preview-review";
 
+vi.mock("server-only", () => ({}));
+
 afterEach(() => vi.unstubAllEnvs());
 const review = { VERCEL_ENV: "preview", EVENT_HOST_REVIEW_ONLY: "true" };
 
@@ -14,18 +16,18 @@ describe("protected read-only Preview", () => {
       expect(previewReviewBlocksRequest("POST", "/api/vip-checkin", env)).toBe(false);
     }
   });
-  it.each(["POST", "PUT", "PATCH", "DELETE"])("blocks %s before any operational handler", (method) => {
+  it.each(["POST", "PUT", "PATCH", "DELETE"])("blocks %s before any operational handler", async (method) => {
     vi.stubEnv("VERCEL_ENV", "preview"); vi.stubEnv("EVENT_HOST_REVIEW_ONLY", "true");
-    const response = proxy(new NextRequest("https://review.example/api/vip-checkin", { method }));
+    const response = await proxy(new NextRequest("https://review.example/api/vip-checkin", { method }));
     expect(response.status).toBe(403);
   });
-  it.each(["/api/gotab/reconcile", "/api/event-plans/sync", "/api/event-plans/pre-event-refresh", "/api/checklists/auto-submit", "/api/kitchen/oauth/start", "/api/kitchen/oauth/callback"])("blocks mutating GET %s", (pathname) => {
+  it.each(["/api/gotab/reconcile", "/api/event-plans/sync", "/api/event-plans/pre-event-refresh", "/api/checklists/auto-submit", "/api/staffing/sync", "/api/kitchen/oauth/start", "/api/kitchen/oauth/callback"])("blocks mutating GET %s", (pathname) => {
     expect(previewReviewBlocksRequest("GET", pathname, review)).toBe(true);
   });
   it.each(["/api/vip-checkin/health", "/api/vip-checkin", "/api/kitchen/day", "/api/entertainment/schedule", "/api/release-status"])("keeps read-only view %s available", (pathname) => {
     expect(previewReviewBlocksRequest("GET", pathname, review)).toBe(false);
   });
-  it("keeps private JSON blocked independently of review mode", () => {
-    expect(proxy(new NextRequest("https://review.example/data/event-plan-data.json")).status).toBe(404);
+  it("keeps private JSON blocked independently of review mode", async () => {
+    expect((await proxy(new NextRequest("https://review.example/data/event-plan-data.json"))).status).toBe(404);
   });
 });

@@ -7,40 +7,57 @@ import {
 import { loadAdminState } from "@/lib/admin-state";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
 import { activeEvents, easternDateValue } from "@/lib/event-lifecycle";
-import { isValidEntertainmentDate } from "@/lib/entertainment/time";
+import { addCalendarDays, isValidEntertainmentDate } from "@/lib/entertainment/time";
 import { listChecklistRecords } from "@/lib/checklist-storage";
 import { buildOperationalEventSummaries } from "@/lib/operations/command-center";
 import { EventCommandCenter } from "@/app/_components/EventCommandCenter";
 import { loadStaffEventPlans } from "@/lib/operations/staff-events";
+import { loadStaffingCards } from "@/lib/staffing/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
   const now = new Date();
   const { date: requestedDate } = await searchParams;
-  const date = requestedDate && isValidEntertainmentDate(requestedDate) ? requestedDate : easternDateValue(now);
-  const [adminState, eventPlanWindow, checklistRecords] = await Promise.all([
+  const today = easternDateValue(now);
+  const through = addCalendarDays(today, 6);
+  const date = typeof requestedDate === "string" && isValidEntertainmentDate(requestedDate) ? requestedDate : today;
+  const outsideWeek = date < today || date > through;
+  const [adminState, eventPlanWindow, checklistRecords, selectedDay] = await Promise.all([
     loadAdminState(),
-    loadStaffEventPlans(date),
+    loadStaffEventPlans(today, { includeUpcomingVip: true, throughDate: through }),
     listChecklistRecords().catch(() => null),
+    outsideWeek ? loadStaffEventPlans(date, { exactDate: true }) : null,
   ]);
+  const plans = [
+    ...eventPlanWindow.plans.filter((plan) => plan.date >= today && plan.date <= through),
+    ...(selectedDay?.plans.filter((plan) => plan.date === date) ?? []),
+  ];
   const visibleEvents = activeEvents(
-    eventPlanWindow.plans,
+    plans,
     adminState.archivedEventIds,
     now,
   );
   const visibleFloorPlanDates = new Set(visibleEvents.map((event) => event.date)).size;
-  const checklistEvents = checklistEventsForPlans(eventPlanWindow.plans);
+  const checklistEvents = checklistEventsForPlans(plans);
   const visibleChecklists = activeEvents(
     checklistEvents,
     adminState.archivedEventIds,
     now,
   );
   const operationalEvents = buildOperationalEventSummaries(
-    eventPlanWindow.plans.filter((event) => !adminState.archivedEventIds.includes(event.id)),
+    plans.filter((event) => !adminState.archivedEventIds.includes(event.id)),
     checklistRecords,
     eventPlanWindow.sync,
+  ).map(({ attention: _privateReasons, hostAssigned: _checklistHost, ...card }) => card);
+  const weekEvents = operationalEvents.flatMap(({ event, startsAt, endsAt }) =>
+    event.date >= today && event.date <= through ? [{ eventId: event.eventId, date: event.date, startAt: startsAt, endAt: endsAt }] : [],
   );
+  const savedStaffing = weekEvents.length ? await loadStaffingCards(weekEvents, { now }).catch(() => null) : null;
+  const staffingByEvent = Object.fromEntries(weekEvents.flatMap(({ eventId }) => {
+    const staffing = savedStaffing?.[eventId];
+    return staffing ? [[eventId, { status: staffing.status, names: staffing.names }]] : [];
+  }));
 
   return (
     <PortalShell
@@ -62,15 +79,15 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             </PortalStatusBadge>
           </div>
         }
-        description="Choose an event, review what needs attention, and continue into seating, entertainment, kitchen, setup, and add-ons."
+        description="See today’s events and the week ahead, then open an event to get to work."
         eyebrow="On Par operations"
         title="Event Host Portal"
       />
       <EventCommandCenter
-        assignedStaffByEvent={Object.fromEntries((checklistRecords ?? []).filter((record) => record.bwa.trim()).map((record) => [`${record.eventDate}:${record.eventId}`, record.bwa]))}
+        staffingByEvent={staffingByEvent}
         events={operationalEvents}
         initialNow={now.toISOString()}
-        sourceWarning={eventPlanWindow.sourceWarning}
+        sourceWarning={[...new Set([eventPlanWindow.sourceWarning, selectedDay?.sourceWarning].filter(Boolean))].join(" ")}
       />
       <h2 className="portal-modules-title">All operations</h2>
       <nav className="link-grid portal-module-grid" aria-label="Event host sections">

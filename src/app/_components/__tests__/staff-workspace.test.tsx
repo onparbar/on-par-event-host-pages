@@ -8,13 +8,14 @@ import type { EventPlan } from "@/lib/event-plans/types";
 const mocks = vi.hoisted(() => ({
   pathname: "/checklists",
   staffName: "Carlos",
+  signedInStaff: false,
   requestedDate: "2026-10-23",
   requestedEventId: "123" as string | null,
   event: { eventId: "123", eventName: "Staff training", date: "2026-10-23", area: "VIP 1", time: "2:00 PM – 4:00 PM", guestCount: 20 },
 }));
 vi.mock("next/navigation", () => ({ usePathname: () => mocks.pathname, useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("../EventContext", () => ({
-  useEventContext: () => ({ selectedEvent: mocks.event, requestedEventId: mocks.requestedEventId, preferredEventId: "123", requestedDate: mocks.requestedDate, ready: true, staffName: mocks.staffName, setStaffName: vi.fn(), openStaffEvent: vi.fn(), switchEvent: vi.fn(), clearEvent: vi.fn(), eventHref: (path: string) => operationalEventHref(path, mocks.event) }),
+  useEventContext: () => ({ selectedEvent: mocks.event, requestedEventId: mocks.requestedEventId, preferredEventId: "123", requestedDate: mocks.requestedDate, ready: true, staffName: mocks.staffName, signedInStaff: mocks.signedInStaff, setStaffName: vi.fn(), openStaffEvent: vi.fn(), switchEvent: vi.fn(), clearEvent: vi.fn(), eventHref: (path: string) => operationalEventHref(path, mocks.event) }),
   EventSelectionBridge: () => null,
 }));
 vi.mock("../EventWorkspace", () => ({ EventWorkspaceReminders: () => createElement("section", { "aria-label": "Event reminders" }, "Reminders") }));
@@ -26,7 +27,7 @@ import Loading from "../../loading";
 const plan: EventPlan = { id: 123, name: "Staff training", date: "2026-10-23", rooms: ["VIP 1"], time: "2:00 PM – 4:00 PM", day: "Friday", guest_count: 20, color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified" };
 
 describe("staff event workspace shell", () => {
-  beforeEach(() => { mocks.pathname = "/checklists"; mocks.staffName = "Carlos"; mocks.requestedDate = "2026-10-23"; mocks.requestedEventId = "123"; });
+  beforeEach(() => { mocks.pathname = "/checklists"; mocks.staffName = "Carlos"; mocks.signedInStaff = false; mocks.requestedDate = "2026-10-23"; mocks.requestedEventId = "123"; });
   it("renders the six left navigation tabs in order with the same event identity", () => {
     const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace", children: createElement("p", null, "Checklist tasks") }));
     expect(html).toContain("staff-event-workspace");
@@ -91,6 +92,14 @@ describe("staff event workspace shell", () => {
     expect(html).not.toContain('aria-label="My event workspace"');
     expect(html).not.toContain('type="password"');
   });
+  it("recognizes the authenticated employee without offering the legacy name picker", () => {
+    mocks.staffName = "Sample Employee from 7shifts";
+    mocks.signedInStaff = true;
+    const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace", children: "Tasks" }));
+    expect(html).toContain("Employee: Sample Employee from 7shifts");
+    expect(html).not.toContain("Change Staff");
+    expect(html).not.toContain('id="workspace-employee"');
+  });
   it("leaves management and the kitchen outside the focused staff sidebar", () => {
     mocks.pathname = "/kitchen";
     const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Kitchen", sectionSubtitle: "Operations", children: "Prep sheets" }));
@@ -98,17 +107,70 @@ describe("staff event workspace shell", () => {
     expect(html).toContain("VIP CHECK-IN");
     expect(html).toContain("Admin");
   });
-  it("shows only the selected date's cards, known staff, and an Open Event action", () => {
+  it("shows Today first and each remaining day once within the Eastern seven-day window", () => {
     mocks.pathname = "/";
-    const events = buildOperationalEventSummaries([plan, { ...plan, id: 124, date: "2026-10-24", name: "Tomorrow's party" }], [], null);
-    const html = renderToStaticMarkup(createElement(EventCommandCenter, { events, initialNow: "2026-10-24T02:00:00Z", assignedStaffByEvent: { "2026-10-23:123": "Tina" } }));
+    const events = buildOperationalEventSummaries([
+      plan, plan, { ...plan, id: 122, date: "2026-10-22", name: "Yesterday's party" },
+      { ...plan, id: 124, date: "2026-10-24", name: "Tomorrow's party" },
+      { ...plan, id: 125, date: "2026-10-29", name: "Last in the week" },
+      { ...plan, id: 126, date: "2026-10-30", name: "Outside the week" },
+    ], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, { events, initialNow: "2026-10-24T02:00:00Z" }));
     expect(html).toContain('value="2026-10-23"');
     expect(html).toContain('aria-label="Previous day"');
     expect(html).toContain('aria-label="Next day"');
     expect(html).toContain('type="search"');
     expect(html).toContain("Open Event");
-    expect(html).toContain("Tina");
-    expect(html).not.toContain("Tomorrow&#x27;s party");
+    expect(html.indexOf('id="event-command-today"')).toBeLessThan(html.indexOf('id="event-command-upcoming"'));
+    expect(html.match(/>Staff training</g)).toHaveLength(1);
+    expect(html).toContain("Tomorrow&#x27;s party");
+    expect(html).toContain("Last in the week");
+    expect(html).not.toContain("Yesterday&#x27;s party");
+    expect(html).not.toContain("Outside the week");
     expect(html).not.toContain("/vip-check-in");
+  });
+
+  it("only links confirmed unassigned events to protected Admin review and renders safe staffing facts", () => {
+    mocks.pathname = "/";
+    const events = buildOperationalEventSummaries([
+      { ...plan, needs_review: true },
+      { ...plan, id: 124, name: "Confirmed unassigned" },
+      { ...plan, id: 125, name: "Unverified shift" },
+      { ...plan, id: 126, name: "Ambiguous assignment" },
+      { ...plan, id: 127, name: "No staffing data returned" },
+    ], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, {
+      events, initialNow: "2026-10-23T19:00:00Z",
+      staffingByEvent: {
+        "123": { status: "assigned", names: ["Tina", "Carlos"] },
+        "124": { status: "unassigned", names: [] },
+        "125": { status: "unverified", names: ["Brooke"] },
+        "126": { status: "review", names: [] },
+      },
+    }));
+    expect(html).toContain("Tina, Carlos");
+    expect(html).toContain("Brooke");
+    expect(html).toContain("Staffing not yet verified");
+    expect(html.match(/>No Staff Assigned</g)).toHaveLength(1);
+    expect(html).toContain('class="event-command-unassigned" href="/admin/staffing?eventId=124&amp;date=2026-10-23"');
+    expect(html).not.toContain("Needs attention");
+    expect(html).not.toContain("Contract needs review");
+    expect(html).not.toContain("Source refresh not verified");
+  });
+
+  it("uses calendar days across the fall DST change and keeps an explicitly selected older day accessible", () => {
+    mocks.pathname = "/";
+    mocks.requestedDate = "2026-10-30";
+    const events = buildOperationalEventSummaries([
+      { ...plan, date: "2026-10-30", name: "Explicit older party" },
+      { ...plan, id: 124, date: "2026-10-31", name: "Local today" },
+      { ...plan, id: 125, date: "2026-11-06", name: "Last after DST" },
+      { ...plan, id: 126, date: "2026-11-07", name: "Out of range after DST" },
+    ], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, { events, initialNow: "2026-11-01T03:30:00Z" }));
+    expect(html).toContain("Local today");
+    expect(html).toContain("Last after DST");
+    expect(html).not.toContain("Out of range after DST");
+    expect(html).toContain("Explicit older party");
   });
 });

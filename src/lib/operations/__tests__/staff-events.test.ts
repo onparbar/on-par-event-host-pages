@@ -99,6 +99,13 @@ describe("read-only staff event feed", () => {
     expect(result.plans).toHaveLength(2);
     expect(result.sourceWarning).toBe("");
   });
+  it("loads only the seven displayed days from both sources for the staff home", async () => {
+    const loadPlans = vi.fn().mockResolvedValue({ plans: [plan], sync: null });
+    const fetchRange = vi.fn().mockResolvedValue({ ...vipPrepPayload, reservations: [reservation] });
+    await loadStaffEventPlans("2026-10-23", { includeUpcomingVip: true, throughDate: "2026-10-29", loadPlans, vipClient: { configured: true, fetchRange } });
+    expect(loadPlans).toHaveBeenCalledWith({ now: new Date("2026-10-23T12:00:00Z"), window: { startDate: "2026-10-23", endDate: "2026-10-29" } });
+    expect(fetchRange).toHaveBeenCalledExactlyOnceWith("2026-10-23", "2026-10-29");
+  });
   it("includes future VIPs in the itinerary lookahead without widening exact-date reads", async () => {
     const current = { ...plan, date: "2026-11-09", day: "Monday" };
     const upcoming = { ...reservation, operatingDate: "2026-11-14", startAt: "2026-11-14T18:00:00Z", endAt: "2026-11-14T20:00:00Z" };

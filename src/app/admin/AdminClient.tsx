@@ -430,6 +430,11 @@ export default function AdminClient({
             <strong>Floor Plans</strong>
             <span>Synchronize, edit, validate, approve, and print operational floor plans.</span>
           </Link>
+          <Link className="portal-operation-card" href="/admin/staffing">
+            <span className="portal-module-kicker">Published 7shifts schedule</span>
+            <strong>Staffing Review</strong>
+            <span>Review the next seven days of event assignments and correct uncertain matches.</span>
+          </Link>
           <Link className="portal-operation-card" href="/entertainment-schedules">
             <span className="portal-module-kicker">Supabase-backed</span>
             <strong>Entertainment Schedule</strong>

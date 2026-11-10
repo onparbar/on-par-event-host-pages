@@ -21,6 +21,7 @@ type EventContextValue = {
   requestedDate: string | null;
   ready: boolean;
   staffName: string;
+  signedInStaff: boolean;
   setStaffName: (name: string) => void;
   openStaffEvent: (event: SelectedOperationalEvent, name: string) => void;
   switchEvent: () => void;
@@ -37,6 +38,7 @@ const EventContext = createContext<EventContextValue>({
   requestedDate: null,
   ready: false,
   staffName: "",
+  signedInStaff: false,
   setStaffName: () => {},
   openStaffEvent: () => {},
   switchEvent: () => {},
@@ -46,7 +48,7 @@ const EventContext = createContext<EventContextValue>({
   publishEvent: () => {},
 });
 
-export function EventContextProvider({ children }: { children: ReactNode }) {
+export function EventContextProvider({ children, authenticatedStaffName = "" }: { children: ReactNode; authenticatedStaffName?: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -54,18 +56,19 @@ export function EventContextProvider({ children }: { children: ReactNode }) {
   const requestedDate = searchParams.get("date");
   const [stored, setStored] = useState<SelectedOperationalEvent | null>(null);
   const [ready, setReady] = useState(false);
-  const [staffName, setStoredStaffName] = useState("");
+  const [legacyStaffName, setStoredStaffName] = useState("");
+  const staffName = authenticatedStaffName || legacyStaffName;
   const selectionCleared = useRef(false);
 
   useEffect(() => {
     try {
       setStored(readPersistedEventContext(sessionStorage.getItem(EVENT_CONTEXT_STORAGE_KEY)));
-      setStoredStaffName(readPersistedStaffContext(sessionStorage.getItem(STAFF_CONTEXT_STORAGE_KEY)));
+      if (!authenticatedStaffName) setStoredStaffName(readPersistedStaffContext(sessionStorage.getItem(STAFF_CONTEXT_STORAGE_KEY)));
     } catch {
       // A restricted browser can still use explicit event links for this session.
     }
     setReady(true);
-  }, []);
+  }, [authenticatedStaffName]);
 
   const persist = useCallback((event: SelectedOperationalEvent | null) => {
     setStored(event);
@@ -81,6 +84,7 @@ export function EventContextProvider({ children }: { children: ReactNode }) {
   const setupDayView = pathname === "/set-up" && !requestedId;
   const selectedEvent = !setupDayView && stored && eventMatchesNavigation(stored, requestedId, requestedDate) ? stored : null;
   const setStaffName = useCallback((name: string) => {
+    if (authenticatedStaffName) return;
     const safe = validatedStaffName(name);
     setStoredStaffName(safe);
     try {
@@ -89,16 +93,16 @@ export function EventContextProvider({ children }: { children: ReactNode }) {
     } catch {
       // Staff can continue with explicit event links when storage is unavailable.
     }
-  }, []);
+  }, [authenticatedStaffName]);
   const openStaffEvent = useCallback((event: SelectedOperationalEvent, name: string) => {
     const safe = validatedOperationalEvent(event);
-    const staff = validatedStaffName(name);
+    const staff = authenticatedStaffName || validatedStaffName(name);
     if (!safe || !staff) return;
     selectionCleared.current = false;
     persist(safe);
     setStaffName(staff);
     router.push(operationalEventHref("/checklists", safe));
-  }, [persist, router, setStaffName]);
+  }, [authenticatedStaffName, persist, router, setStaffName]);
   const switchEvent = useCallback(() => {
     selectionCleared.current = true;
     persist(null);
@@ -136,6 +140,7 @@ export function EventContextProvider({ children }: { children: ReactNode }) {
     requestedDate,
     ready,
     staffName,
+    signedInStaff: Boolean(authenticatedStaffName),
     setStaffName,
     openStaffEvent,
     switchEvent,
@@ -143,7 +148,7 @@ export function EventContextProvider({ children }: { children: ReactNode }) {
     clearEvent,
     publishEvent,
     eventHref: (path) => selectedEvent ? operationalEventHref(path, selectedEvent) : operationalEventRequestHref(path, requestedId, requestedDate),
-  }), [selectedEvent, requestedId, requestedDate, ready, staffName, setStaffName, openStaffEvent, switchEvent, selectEvent, clearEvent, publishEvent]);
+  }), [selectedEvent, requestedId, requestedDate, ready, staffName, authenticatedStaffName, setStaffName, openStaffEvent, switchEvent, selectEvent, clearEvent, publishEvent]);
 
   return <EventContext.Provider value={value}>{children}</EventContext.Provider>;
 }

@@ -24,14 +24,19 @@ export async function loadStaffEventPlans(date: string, options: {
   vipClient?: Pick<VipPrepClient, "configured" | "fetchRange">;
   exactDate?: boolean;
   includeUpcomingVip?: boolean;
+  throughDate?: string;
   includeUnsubmitted?: boolean;
   loadChecklists?: typeof listChecklistRecords;
   findPlan?: typeof findEventPlanById;
 } = {}) {
   if (!isValidEntertainmentDate(date)) throw new Error("Event date must use a valid YYYY-MM-DD value.");
+  const through = options.throughDate;
+  if (through !== undefined && (!isValidEntertainmentDate(through) || through < date || through > addOneCalendarMonthClamped(date))) {
+    throw new Error("Event date range must end within one month.");
+  }
   const client = options.vipClient ?? new VipPrepClient();
-  const startDate = options.exactDate ? date : addCalendarDays(date, -1);
-  const endDate = options.exactDate ? date : addOneCalendarMonthClamped(date);
+  const startDate = options.exactDate || through ? date : addCalendarDays(date, -1);
+  const endDate = options.exactDate ? date : through ?? addOneCalendarMonthClamped(date);
   const vipEndDate = options.includeUpcomingVip ? endDate : date;
   // On Par Bookings accepts at most 31 days between the range endpoints.
   const vipRangeLimit = addCalendarDays(startDate, 31);
