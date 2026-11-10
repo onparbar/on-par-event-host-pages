@@ -6,10 +6,10 @@ export default async function StaffSignIn({ searchParams }: { searchParams: Prom
   const { retry } = await searchParams;
   return <main className="portal-auth-shell"><section className="portal-auth-card">
     <div className="portal-auth-form-wrap">
-      <h1>Sign in through Staff Tools</h1>
-      <p>Use your 7shifts Punch ID in Staff Tools. If you’re already signed in there, Event Host won’t ask for it again.</p>
+      <h1>Sign in to Event Host</h1>
+      <p>Choose your name and enter your 4-digit 7shifts Punch ID to open Event Host. If you launch Event Host from your signed-in Staff Tools dashboard, you won’t need to enter it again.</p>
       {retry === "1" ? <p role="alert">This device was signed out, but Event Host couldn’t confirm server-side sign-out. Contact a manager before using a shared device.</p> : null}
-      <a className="button-link" href="/api/staff-auth/start">Continue to Staff Tools</a>
+      <a className="button-link" href="/api/staff-auth/start">Continue to Punch ID sign-in</a>
       <Link className="portal-back-link" href="/admin">Admin access</Link>
     </div>
   </section></main>;

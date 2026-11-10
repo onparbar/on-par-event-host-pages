@@ -5,9 +5,11 @@ import { findStaffSession, revokeStaffSession } from "./storage";
 export type StaffIdentity = { employeeId: string; name: string };
 
 export async function verifyStaffIdentity(employeeId: string, staffSession: string, bridge: StaffBridge): Promise<StaffIdentity | null> {
+  const headers = new Headers({ authorization: `Bearer ${bridge.secret}`, "content-type": "application/json" });
+  if (bridge.previewAutomationSecret) headers.set("x-vercel-protection-bypass", bridge.previewAutomationSecret);
   const response = await fetch(new URL("/api/event-host/identity", bridge.issuer), {
     method: "POST",
-    headers: { authorization: `Bearer ${bridge.secret}`, "content-type": "application/json" },
+    headers,
     body: JSON.stringify({ employeeId, staffSession }),
     cache: "no-store",
     redirect: "error",

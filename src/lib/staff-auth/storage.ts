@@ -1,11 +1,19 @@
 import "server-only";
 import { getSupabaseSecret } from "@/lib/kitchen/storage";
+import { isPreviewStaffAuthRehearsal } from "@/lib/operations/preview-review";
 import { isEmployeeId, isStaffSessionProof, SESSION_SECONDS, tokenHash, type Handoff } from "./protocol";
 
 export async function staffPrivateRequest(path: string, init: RequestInit = {}) {
-  const secret = getSupabaseSecret();
-  const base = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
+  const env = process.env;
+  const rehearsal = isPreviewStaffAuthRehearsal(env);
+  if (env.VERCEL_ENV === "preview" && !rehearsal) throw new Error("Staff data storage is disabled outside the protected preview rehearsal.");
+  const secret = rehearsal ? env.EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_KEY?.trim() : getSupabaseSecret(env);
+  const base = (rehearsal ? env.EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_URL : env.SUPABASE_URL)?.trim().replace(/\/+$/, "");
+  if (rehearsal && (!base || !/^https:\/\/[a-z0-9]{20}\.supabase\.co$/.test(base) || base === "https://tmnstuthbllnoqgepotn.supabase.co")) {
+    throw new Error("A separate hosted Supabase project or branch is required for the staff rehearsal.");
+  }
   if (!secret || !base) throw new Error("Staff data storage is not configured.");
+  if (rehearsal && getSupabaseSecret(env)) throw new Error("Remove operational Supabase credentials from the staff rehearsal.");
   const headers = new Headers(init.headers);
   headers.set("apikey", secret);
   headers.set("content-type", "application/json");
@@ -16,7 +24,8 @@ export async function staffPrivateRequest(path: string, init: RequestInit = {}) 
 export async function createStaffSession(token: string, handoff: Handoff, now = Date.now()) {
   const response = await staffPrivateRequest("rpc/create_event_host_staff_session", {
     method: "POST",
-    body: JSON.stringify({ p_token_hash: tokenHash(token), p_handoff_hash: tokenHash(handoff.jti), p_employee_id: handoff.sub,
+    // Consume the browser challenge, even if the issuer signs a second assertion for the same state.
+    body: JSON.stringify({ p_token_hash: tokenHash(token), p_handoff_hash: tokenHash(handoff.state), p_employee_id: handoff.sub,
       p_staff_session: handoff.staffSession, p_expires_at: new Date(now + SESSION_SECONDS * 1000).toISOString() }),
   });
   if (!response.ok) throw new Error("Staff session storage is unavailable.");

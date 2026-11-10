@@ -1,7 +1,7 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GET as begin } from "@/app/api/staff-auth/start/route";
+import { GET as begin, POST as beginPortal } from "@/app/api/staff-auth/start/route";
 import { POST as exchange } from "@/app/api/staff-auth/exchange/route";
 import { POST as logout } from "@/app/api/staff-auth/logout/route";
 import { POST as revoke } from "@/app/api/staff-auth/revoke/route";
@@ -10,6 +10,7 @@ import { ADMIN_COOKIE_NAME, createAdminSessionValue, hasAdminSession, STRONG_ADM
 import { proxy } from "@/proxy";
 import { HANDOFF_COOKIE, isStaffSessionProof, makeHandoffState, opaqueId, signHandoff, STAFF_COOKIE, staffBridge, tokenHash, verifyHandoff } from "../protocol";
 import { readStaffSession } from "../session";
+import { staffPrivateRequest } from "../storage";
 
 vi.mock("server-only", () => ({}));
 
@@ -17,6 +18,9 @@ const staffTools = "https://staff-tools.example";
 const host = "https://event-host.example";
 const user = { employeeId: "12345", name: "Test Employee", active: true };
 const testSecret = "fake-bridge-secret-at-least-32-characters";
+const rehearsalDb = "https://eventhoststagingtest.supabase.co";
+const rehearsalDbKey = "fake-rehearsal-database-key";
+const rehearsalAutomation = "fake-rehearsal-automation-token";
 const testPassphrase = "local-only-long-test-admin-passphrase";
 type Row = { token_hash: string; handoff_hash: string; employee_id: string; staff_session: string; expires_at: string; revoked_at?: string };
 let rows: Row[];
@@ -87,6 +91,31 @@ function exchangeRequest(assertion: string, stateCookie: string, origin = staffT
 
 const loginProof = () => `${opaqueId()}.${opaqueId()}`;
 
+function readStartClaim(result: Response) {
+  const location = new URL(result.headers.get("location")!);
+  return JSON.parse(Buffer.from(location.searchParams.get("request")!.split(".")[0], "base64url").toString());
+}
+
+function launchTicket(staffSession: string, options: { iss?: string; aud?: string; exp?: number } = {}) {
+  const data = Buffer.from(JSON.stringify({ iss: staffTools, aud: host,
+    binding: createHash("sha256").update(staffSession).digest("base64url"), exp: Math.floor(Date.now() / 1000) + 30, ...options })).toString("base64url");
+  const signature = createHmac("sha256", testSecret).update(`staff-tools-event-host-launch-v1:${data}`).digest("base64url");
+  return `${data}.${signature}`;
+}
+
+function launchRequest(launch: string, origin = staffTools) {
+  return new Request(`${host}/api/staff-auth/start`, { method: "POST", headers: { origin }, body: new URLSearchParams({ launch }) });
+}
+
+function configureRehearsal() {
+  for (const [key, value] of Object.entries({
+    VERCEL_ENV: "preview", EVENT_HOST_REVIEW_ONLY: "true", EVENT_HOST_STAFF_AUTH_REHEARSAL: "true",
+    EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_URL: rehearsalDb,
+    EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_KEY: rehearsalDbKey,
+    STAFF_TOOLS_STAGING_AUTOMATION_SECRET: rehearsalAutomation,
+  })) vi.stubEnv(key, value);
+}
+
 function revokeRequest(staffSession: string, authorization = `Bearer ${testSecret}`) {
   return new NextRequest(`${host}/api/staff-auth/revoke`, {
     method: "POST", headers: { authorization, "content-type": "application/json" },
@@ -101,7 +130,7 @@ async function signedIn(staffSession = loginProof()) {
   expect(initial.status).toBe(303);
   expect(location.origin).toBe(staffTools);
   expect(initial.headers.get("set-cookie")).toContain("SameSite=none");
-  const assertion = signHandoff(staffBridge()!, user.employeeId, location.searchParams.get("state")!, staffSession);
+  const assertion = signHandoff(staffBridge()!, user.employeeId, readStartClaim(initial).state, staffSession);
   const result = await exchange(exchangeRequest(assertion, stateCookie.value));
   expect(result.status).toBe(303);
   expect(result.headers.get("location")).toBe(`${host}/`);
@@ -111,12 +140,71 @@ async function signedIn(staffSession = loginProof()) {
 
 describe("Staff Tools to Event Host handoff (simulated signed-in issuer)", () => {
   it("refuses live aliases in Vercel preview and rejects dotted origin spellings", () => {
-    vi.stubEnv("VERCEL_ENV", "preview");
+    configureRehearsal();
     vi.stubEnv("STAFF_TOOLS_ORIGIN", "https://on-par.vercel.app:444");
     expect(staffBridge()).toBeNull();
     vi.stubEnv("STAFF_TOOLS_ORIGIN", staffTools);
+    vi.stubEnv("EVENT_HOST_ORIGIN", "https://eventhost-opal.vercel.app");
+    expect(staffBridge()).toBeNull();
     vi.stubEnv("EVENT_HOST_ORIGIN", "https://eventhost-opal.vercel.app.");
     expect(staffBridge()).toBeNull();
+  });
+
+  it("keeps ordinary previews from starting handoff or using the operational database", async () => {
+    configureRehearsal();
+    vi.stubEnv("EVENT_HOST_STAFF_AUTH_REHEARSAL", "false");
+    expect(staffBridge()).toBeNull();
+    await expect(staffPrivateRequest("rpc/find_event_host_staff_session")).rejects.toThrow("disabled");
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  it("stores and reads rehearsal sessions only in the isolated database and sends the protection header only to the configured issuer", async () => {
+    configureRehearsal();
+    vi.stubEnv("SUPABASE_SECRET_KEY", "");
+    const { token } = await signedIn();
+    expect(await readStaffSession(token)).toEqual({ employeeId: user.employeeId, name: user.name });
+    expect(network).toHaveBeenCalledTimes(4);
+    for (const [input, init] of network.mock.calls) {
+      const url = new URL(input);
+      const headers = new Headers(init?.headers);
+      expect(init?.redirect).toBe("error");
+      if (url.origin === staffTools) {
+        expect(url.href).toBe(`${staffTools}/api/event-host/identity`);
+        expect(headers.get("x-vercel-protection-bypass")).toBe(rehearsalAutomation);
+        expect(headers.has("apikey")).toBe(false);
+      } else {
+        expect(url.origin).toBe(rehearsalDb);
+        expect(headers.get("apikey")).toBe(rehearsalDbKey);
+        expect(headers.has("x-vercel-protection-bypass")).toBe(false);
+      }
+    }
+  });
+
+  it("does not fall back to operational credentials for a missing or live rehearsal store", async () => {
+    configureRehearsal();
+    vi.stubEnv("EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_KEY", "");
+    await expect(staffPrivateRequest("rpc/find_event_host_staff_session")).rejects.toThrow("not configured");
+    vi.stubEnv("EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_KEY", rehearsalDbKey);
+    for (const url of ["", "https://tmnstuthbllnoqgepotn.supabase.co", "https://eventhoststagingtest.supabase.co/path", "http://127.0.0.1:1234"]) {
+      vi.stubEnv("EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_URL", url);
+      await expect(staffPrivateRequest("rpc/find_event_host_staff_session")).rejects.toThrow("separate hosted Supabase");
+    }
+    vi.stubEnv("EVENT_HOST_STAFF_AUTH_STAGING_SUPABASE_URL", rehearsalDb);
+    await expect(staffPrivateRequest("rpc/find_event_host_staff_session")).rejects.toThrow("Remove operational Supabase credentials");
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  it("never uses rehearsal database or protection credentials in Production", async () => {
+    configureRehearsal();
+    vi.stubEnv("VERCEL_ENV", "production");
+    await signedIn();
+    for (const [input, init] of network.mock.calls) {
+      const url = new URL(input);
+      const headers = new Headers(init?.headers);
+      expect(headers.has("x-vercel-protection-bypass")).toBe(false);
+      expect(url.origin).not.toBe(rehearsalDb);
+      if (url.origin !== staffTools) expect(headers.get("apikey")).toBe("fake-local-server-value");
+    }
   });
   it("recognizes a stable employee once, with neither Punch ID nor handoff assertion in the browser URL or session storage", async () => {
     const { token, assertion, stateCookie } = await signedIn();
@@ -128,14 +216,53 @@ describe("Staff Tools to Event Host handoff (simulated signed-in issuer)", () =>
     expect((await exchange(exchangeRequest(assertion, stateCookie))).status).toBe(401);
   });
 
+  it("keeps direct starts in Punch mode even with a portal ticket, spoofed referrer or signed portal assertion", async () => {
+    const bridge = staffBridge()!;
+    const proof = loginProof();
+    const result = begin(new Request(`${host}/api/staff-auth/start?mode=portal&launch=${launchTicket(proof)}`, { headers: { referer: `${staffTools}/dashboard`, origin: staffTools } }));
+    const { state, mode } = readStartClaim(result);
+    expect(mode).toBe("punch");
+    const cookie = result.cookies.get(HANDOFF_COOKIE)!.value;
+    expect((await exchange(exchangeRequest(signHandoff(bridge, user.employeeId, state, proof, Date.now(), "portal"), cookie))).status).toBe(401);
+    expect(network).not.toHaveBeenCalled();
+    expect((await exchange(exchangeRequest(signHandoff(bridge, user.employeeId, state, proof), cookie))).status).toBe(303);
+  });
+
+  it("only allows a signed portal launch from Staff Tools and binds exchange to that exact login", async () => {
+    const bridge = staffBridge()!;
+    const proof = loginProof();
+    const valid = launchTicket(proof);
+    for (const bad of [`x${valid}`, launchTicket(proof, { iss: "https://other.example" }), launchTicket(proof, { aud: "https://other.example" }), launchTicket(proof, { exp: 1 })]) {
+      expect((await beginPortal(launchRequest(bad))).status).toBe(403);
+    }
+    expect((await beginPortal(launchRequest(valid, "https://other.example"))).status).toBe(403);
+    const result = await beginPortal(launchRequest(valid));
+    expect(result.status).toBe(303);
+    const { state, mode } = readStartClaim(result);
+    expect(mode).toBe("portal");
+    const cookie = result.cookies.get(HANDOFF_COOKIE)!.value;
+    expect((await exchange(exchangeRequest(signHandoff(bridge, user.employeeId, state, loginProof(), Date.now(), "portal"), cookie))).status).toBe(401);
+    expect(network).not.toHaveBeenCalled();
+    expect((await exchange(exchangeRequest(signHandoff(bridge, user.employeeId, state, proof, Date.now(), "portal"), cookie))).status).toBe(303);
+  });
+
+  it("consumes a browser challenge once even when two independently signed assertions race", async () => {
+    const bridge = staffBridge()!;
+    const { state, cookie } = makeHandoffState(bridge);
+    const proof = loginProof();
+    const responses = await Promise.all(Array.from({ length: 2 }, () => exchange(exchangeRequest(signHandoff(bridge, user.employeeId, state, proof), cookie))));
+    expect(responses.map(({ status }) => status).sort()).toEqual([303, 401]);
+    expect(rows).toHaveLength(1);
+  });
+
   it("rejects cross-origin, expired, incorrect state and tampered handoffs", async () => {
     const bridge = staffBridge()!;
     const now = Date.now();
-    const original = makeHandoffState(bridge, now);
+    const original = makeHandoffState(bridge, undefined, now);
     const signature = signHandoff(bridge, user.employeeId, original.state, loginProof(), now);
     expect((await exchange(exchangeRequest(signature, original.cookie, "https://other.example"))).status).toBe(403);
     expect(verifyHandoff(signature, original.cookie, bridge, now + 61_000)).toBeNull();
-    expect(verifyHandoff(signature, makeHandoffState(bridge, now).cookie, bridge, now)).toBeNull();
+    expect(verifyHandoff(signature, makeHandoffState(bridge, undefined, now).cookie, bridge, now)).toBeNull();
     expect(verifyHandoff(`x${signature}`, original.cookie, bridge, now)).toBeNull();
     expect(network).not.toHaveBeenCalled();
   });
@@ -183,7 +310,7 @@ describe("Staff Tools to Event Host handoff (simulated signed-in issuer)", () =>
     expect(result.headers.get("location")).toBe(`${host}/api/staff-auth/start?switch=1`);
     expect(await readStaffSession(token)).toBeNull();
     const fresh = begin(new Request(result.headers.get("location")!));
-    expect(new URL(fresh.headers.get("location")!).searchParams.get("switch")).toBe("1");
+    expect(readStartClaim(fresh)).toMatchObject({ mode: "punch", switching: true });
   });
 
   it("revokes all Event Host sessions for one Staff Tools sign-in, without affecting another sign-in for the same employee", async () => {
