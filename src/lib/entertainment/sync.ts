@@ -48,8 +48,7 @@ import {
   vipPrepEntertainmentEvents,
 } from "../vip-prep/client";
 import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "../vip-prep/known-inactive";
-import { isDecemberOwnerHoldVip } from "../vip-prep/owner-holds";
-import { ownerHoldReservation, projectDecemberOwnerHoldEntertainmentVisibility } from "./owner-holds";
+import { isOwnerHoldEvent, ownerHoldReservation, projectDecemberOwnerHoldEntertainmentVisibility } from "./owner-holds";
 import { getFloorPlanStorage, type FloorPlanStorage } from "../floor-plans/storage";
 import type { FloorPlanEvent } from "../floor-plans/types";
 import { projectDayEventColors } from "../floor-plans/event-colors";
@@ -373,14 +372,6 @@ function isVipEntertainmentReservation(reservation: EntertainmentReservation) {
   );
 }
 
-function isPlanningOwnerHoldEvent(event: EntertainmentEventSnapshot) {
-  return isDecemberOwnerHoldVip({
-    operatingDate: event.operatingDate, eventName: event.eventName, sourceEventId: event.tripleseatEventId,
-    sourceSystem: event.sourceSnapshot.sourceSystem, linkedTripleseatEventIds: event.sourceSnapshot.linkedTripleseatEventIds,
-    foodCount: event.sourceSnapshot.vipFoodCount, extraCount: event.sourceSnapshot.vipExtraCount ?? event.sourceSnapshot.items.length,
-  });
-}
-
 function manualOwnerHoldReservation(reservation: EntertainmentReservation, events: readonly EntertainmentEventSnapshot[]) {
   return (reservation.manualOverride || reservation.source === "manual") && ownerHoldReservation(reservation, events);
 }
@@ -390,7 +381,7 @@ function ownerHoldPlanningProjection(stored: StoredEntertainmentDay): StoredEnte
   const manualIds = new Set(stored.reservations.filter((row) => row.active && manualOwnerHoldReservation(row, stored.events))
     .flatMap((row) => [row.tripleseatEventId, row.localEventId].filter((id): id is string => Boolean(id))));
   return { ...stored,
-    events: stored.events.filter((event) => !isPlanningOwnerHoldEvent(event) ||
+    events: stored.events.filter((event) => !isOwnerHoldEvent(event) ||
       [event.eventId, event.tripleseatEventId, event.localEventId].some((id) => id && manualIds.has(id))),
     reservations: stored.reservations.filter((row) => !ownerHoldReservation(row, stored.events) || manualOwnerHoldReservation(row, stored.events)),
   };
@@ -398,7 +389,7 @@ function ownerHoldPlanningProjection(stored: StoredEntertainmentDay): StoredEnte
 
 function preserveOwnerHoldCache(stored: StoredEntertainmentDay, events: EntertainmentEventSnapshot[], reservations: EntertainmentReservation[]) {
   const refreshedIds = new Set(events.flatMap((event) => [event.eventId, event.tripleseatEventId]));
-  const retainedEvents = stored.events.filter((event) => isPlanningOwnerHoldEvent(event) && !refreshedIds.has(event.tripleseatEventId));
+  const retainedEvents = stored.events.filter((event) => isOwnerHoldEvent(event) && !refreshedIds.has(event.tripleseatEventId || event.localEventId || ""));
   const byId = new Map(reservations.map((row) => [row.id, row]));
   for (const row of stored.reservations) {
     if (ownerHoldReservation(row, stored.events) && ![row.tripleseatEventId, row.localEventId].some((id) => id && refreshedIds.has(id))) byId.set(row.id, row);

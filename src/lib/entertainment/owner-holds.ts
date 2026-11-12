@@ -1,9 +1,9 @@
 import { isDecemberOwnerHoldVip } from "@/lib/vip-prep/owner-holds";
 import type { EntertainmentEventSnapshot, EntertainmentReservation } from "./types";
 
-function isOwnerHoldEvent(event: EntertainmentEventSnapshot) {
+export function isOwnerHoldEvent(event: EntertainmentEventSnapshot) {
   return isDecemberOwnerHoldVip({
-    operatingDate: event.operatingDate, eventName: event.eventName, sourceEventId: event.tripleseatEventId,
+    operatingDate: event.operatingDate, eventName: event.eventName, sourceEventId: event.tripleseatEventId || event.localEventId,
     sourceSystem: event.sourceSnapshot.sourceSystem, linkedTripleseatEventIds: event.sourceSnapshot.linkedTripleseatEventIds,
     foodCount: event.sourceSnapshot.vipFoodCount, extraCount: event.sourceSnapshot.vipExtraCount ?? event.sourceSnapshot.items.length,
   });
@@ -18,7 +18,7 @@ export function ownerHoldReservation(row: EntertainmentReservation, events: read
       Number(isOwnerHoldEvent(left)) - Number(isOwnerHoldEvent(right)))[0];
   if (event) return isOwnerHoldEvent(event);
   return isDecemberOwnerHoldVip({ operatingDate: row.operatingDate, eventName: row.eventName,
-    sourceEventId: row.tripleseatEventId ?? row.localEventId, sourceSystem: row.source === "manual" ? undefined : row.source });
+    sourceEventId: row.tripleseatEventId || row.localEventId, sourceSystem: row.source === "manual" ? undefined : row.source });
 }
 
 /** Read projection only: preserve source/reservation history, including manual overrides. */

@@ -73,6 +73,23 @@ describe("December owner holds in entertainment planning", () => {
     }
   });
 
+  it.each([null, ""])("hides legacy manual placeholders with only a local VIP ID and preserves real rows (%s)", async (tripleseatEventId) => {
+    const storage = new MemoryEntertainmentStorage();
+    const built = buildEntertainmentSchedule({ sourceEvents: [legacySource()], localEvents: [] });
+    const base = { ...built.reservations[0], source: "manual" as const, manualOverride: true };
+    const reservations = [
+      { ...base, tripleseatEventId, localEventId: "vip-redacted-placeholder", eventName: "EVENT  BLOCK VIP" },
+      { ...base, id: "real-vip", tripleseatEventId, localEventId: "vip-redacted-customer", eventName: "Event Block VIP Party" },
+      { ...base, id: "real-corporate", tripleseatEventId: "redacted-corporate", localEventId: "vip-redacted-linked", eventName: "EVENT BLOCK VIP" },
+    ];
+    await storage.saveContractEvidence({ events: [], reservations });
+    const before = await storage.getDay(DATE);
+    const day = await getEntertainmentDay(DATE, { storage, adapter: adapter(), localEvents: [], vipPrepClient: unavailable, floorPlanStorage: noFloorPlan, readOnly: true });
+    expect(day.events.map((row) => row.localEventId)).toEqual(["vip-redacted-customer", "vip-redacted-linked"]);
+    expect(day.reservations.map((row) => row.id)).toEqual(["real-vip", "real-corporate"]);
+    expect(await storage.getDay(DATE)).toEqual(before);
+  });
+
   it.each(["Owner hold VIP", "Event Block", "Owner Hold"])("allocates a corporate VIP while preserving the cached %s row and history", async (name) => {
     const storage = await cached(legacySource(name), true);
     const before = await storage.getDay(DATE);
