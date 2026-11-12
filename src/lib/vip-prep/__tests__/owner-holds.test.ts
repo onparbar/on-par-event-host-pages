@@ -7,7 +7,7 @@ const evidence = { operatingDate: "2026-12-02", eventName: "Owner hold VIP", sou
   sourceSystem: "vip-prep", linkedTripleseatEventIds: [], foodCount: 0, extraCount: 0 };
 
 describe("December internal VIP planning holds", () => {
-  it.each(["Owner hold VIP", " VIP   unavailable ", "VIP Unavailable VIP", "\tOWNER HOLD VIP\n"])("accepts only the authorized exact label %s", (eventName) => {
+  it.each(["Owner hold", "Owner hold VIP", " VIP   unavailable ", "VIP Unavailable VIP", "\tOWNER HOLD VIP\n", "Event Block", " EVENT   BLOCK VIP "])("accepts only the authorized exact label %s", (eventName) => {
     expect(isDecemberOwnerHoldVip({ ...evidence, eventName })).toBe(true);
   });
 
@@ -19,21 +19,21 @@ describe("December internal VIP planning holds", () => {
     expect(isDecemberOwnerHoldVip({ ...evidence, operatingDate })).toBe(false);
   });
 
-  it.each(["Owner hold", "Owner hold VIP party", "VIP unavailable guest party", "Owner-hold VIP", "Redacted VIP", "VIP"])("keeps unrelated/similar name %s", (eventName) => {
+  it.each(["Owner Hold LLC", "Owner hold VIP party", "VIP unavailable guest party", "Event Block Company", "Owner-hold VIP", "Redacted VIP", "VIP"])("keeps unrelated/similar name %s", (eventName) => {
     expect(isDecemberOwnerHoldVip({ ...evidence, eventName })).toBe(false);
   });
 
-  it("preserves purchased food/extras, linked corporate sources, and non-VIP identities", () => {
+  it.each(["Owner Hold", "VIP Unavailable", "Event Block"])("preserves customer evidence for the exact label %s", (eventName) => {
     for (const protectedEvidence of [
       { foodCount: 1 }, { extraCount: 1 }, { foodCount: -1 }, { extraCount: Number.NaN },
       { linkedTripleseatEventIds: ["corporate-source"] }, { sourceEventId: "corporate-source" },
       { sourceEventId: null }, { sourceEventId: "vip-" }, { sourceSystem: "tripleseat" },
-    ]) expect(isDecemberOwnerHoldVip({ ...evidence, ...protectedEvidence })).toBe(false);
+    ]) expect(isDecemberOwnerHoldVip({ ...evidence, eventName, ...protectedEvidence })).toBe(false);
   });
 
-  it("hides staff projections without changing raw active-source membership", () => {
+  it.each(["Owner Hold", "VIP Unavailable", "Event Block"])("hides %s from staff projections without changing raw active-source membership", (eventName) => {
     const booking = { ...structuredClone(vipPrepPayload.reservations[0]), operatingDate: evidence.operatingDate,
-      eventName: evidence.eventName, foodPrep: [], extras: [], linkedTripleseatEventIds: [],
+      eventName, foodPrep: [], extras: [], linkedTripleseatEventIds: [],
       startAt: "2026-12-02T22:00:00Z", endAt: "2026-12-03T00:00:00Z" };
     expect(isActiveVipPrepReservation(booking)).toBe(true);
     expect(vipPrepKitchenEvents([booking])).toEqual([]);

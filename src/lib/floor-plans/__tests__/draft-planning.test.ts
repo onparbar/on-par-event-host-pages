@@ -176,6 +176,33 @@ describe("opt-in add-only seating for existing planning drafts", () => {
     expect(await storage.get(date)).toEqual(before);
   });
 
+  it.each(["VIP Unavailable", "Event Block", "Owner Hold"])("ignores a saved %s while preserving its stored row", async (name) => {
+    const storage = new MemoryFloorPlanStorage();
+    const red = { ...corporate, contractedAreaIds: ["vip-2"], source: { ...corporate.source, rooms: ["VIP 2"] }, guestCount: 20 };
+    const hold = { ...red, id: "saved-hold", tripleseatEventId: "vip-placeholder", name, source: { ...red.source, food: [] } };
+    const held: FloorPlanReservation = { ...manual, id: "vip-room", floorPlanEventId: hold.id, areaId: "vip-2", reservationType: "room" };
+    const before = await storage.save({ ...mixed, events: [...mixed.events, hold], reservations: [...mixed.reservations, held] }, "Staff draft.");
+    // The live read projection hides the placeholder, but the durable plan retains it.
+    const result = await prepareFloorPlanDraftWindow(date, date, storage, opts({ ...before, events: [staffEvent, red], reservations: [manual] }));
+    expect(result.results[0]).toMatchObject({ status: "updated" });
+    const after = (await storage.get(date))!;
+    expect(after.events).toContainEqual(hold);
+    expect(after.reservations).toContainEqual(held);
+    expect(after.reservations).toContainEqual(expect.objectContaining({ floorPlanEventId: red.id, areaId: "vip-2", reservationType: "room" }));
+  });
+
+  it("preserves occupancy if a cached placeholder is now a real VIP booking", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const red = { ...corporate, contractedAreaIds: ["vip-2"], source: { ...corporate.source, rooms: ["VIP 2"] }, guestCount: 20 };
+    const hold = { ...red, id: "saved-hold", tripleseatEventId: "vip-placeholder", name: "Event Block", source: { ...red.source, food: [] } };
+    const held: FloorPlanReservation = { ...manual, id: "vip-room", floorPlanEventId: hold.id, areaId: "vip-2", reservationType: "room" };
+    const before = await storage.save({ ...mixed, events: [...mixed.events, hold], reservations: [...mixed.reservations, held] }, "Staff draft.");
+    const actual = { ...hold, name: "Redacted real VIP" };
+    const result = await prepareFloorPlanDraftWindow(date, date, storage, opts({ ...before, events: [staffEvent, actual, red] }));
+    expect(result.results[0]).toMatchObject({ status: "needs-review" });
+    expect(await storage.get(date)).toEqual(before);
+  });
+
   it("does not infer placement from unresolved current rooms", async () => {
     const storage = new MemoryFloorPlanStorage();
     const before = await storage.save(mixed, "Staff draft.");

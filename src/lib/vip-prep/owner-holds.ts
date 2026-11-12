@@ -12,6 +12,9 @@ type OwnerHoldPlanningEvidence = {
 };
 
 const DECEMBER_OWNER_HOLD_LABELS = new Set([
+  "event block",
+  "event block vip",
+  "owner hold",
   "owner hold vip",
   "vip unavailable",
   "vip unavailable vip",

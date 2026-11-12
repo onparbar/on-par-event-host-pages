@@ -49,7 +49,7 @@ import {
 } from "../vip-prep/client";
 import { inactiveVipIsNewer, KNOWN_INACTIVE_VIP_WARNING, knownInactiveVipBookings } from "../vip-prep/known-inactive";
 import { isDecemberOwnerHoldVip } from "../vip-prep/owner-holds";
-import { projectDecemberOwnerHoldEntertainmentVisibility } from "./owner-holds";
+import { ownerHoldReservation, projectDecemberOwnerHoldEntertainmentVisibility } from "./owner-holds";
 import { getFloorPlanStorage, type FloorPlanStorage } from "../floor-plans/storage";
 import type { FloorPlanEvent } from "../floor-plans/types";
 import { projectDayEventColors } from "../floor-plans/event-colors";
@@ -379,15 +379,6 @@ function isPlanningOwnerHoldEvent(event: EntertainmentEventSnapshot) {
     sourceSystem: event.sourceSnapshot.sourceSystem, linkedTripleseatEventIds: event.sourceSnapshot.linkedTripleseatEventIds,
     foodCount: event.sourceSnapshot.vipFoodCount, extraCount: event.sourceSnapshot.vipExtraCount ?? event.sourceSnapshot.items.length,
   });
-}
-
-function ownerHoldReservation(reservation: EntertainmentReservation, events: readonly EntertainmentEventSnapshot[]) {
-  const event = events.find((candidate) => [candidate.eventId, candidate.tripleseatEventId, candidate.localEventId].some((id) =>
-    id && [reservation.tripleseatEventId, reservation.localEventId].includes(id)));
-  if (event) return isPlanningOwnerHoldEvent(event);
-  return isDecemberOwnerHoldVip({ operatingDate: reservation.operatingDate, eventName: reservation.eventName,
-    sourceEventId: reservation.tripleseatEventId ?? reservation.localEventId,
-    sourceSystem: reservation.source === "manual" ? undefined : reservation.source });
 }
 
 function manualOwnerHoldReservation(reservation: EntertainmentReservation, events: readonly EntertainmentEventSnapshot[]) {

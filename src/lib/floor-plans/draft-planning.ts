@@ -6,7 +6,7 @@ import { StaleSaveError } from "@/lib/stale-save";
 import { distinctFloorPlanEventColor } from "./configuration/colors";
 import { detectFloorPlanConflicts } from "./conflicts";
 import { generateFloorPlanReservationProposal } from "./generator";
-import { isProtectedFloorPlanAssignment } from "./owner-holds";
+import { isDecemberOwnerHoldFloorPlanEvent, isProtectedFloorPlanAssignment, projectDecemberOwnerHoldFloorPlanVisibility } from "./owner-holds";
 import { sameReservationInterval } from "./reservation-state";
 import { summarizeEventSeating } from "./seating-summary";
 import { getFloorPlanDay } from "./service";
@@ -62,6 +62,12 @@ async function addMissingDraftSeating(
   const unavailableSources = payload.sourceMode !== "live" || payload.warnings.some((warning) => /^(?:Tripleseat source could not be loaded|On Par Bookings is unavailable|The shared Entertainment Schedule could not be loaded)/.test(warning));
   const events = [...existing.events];
   const reservations = [...existing.reservations];
+  const currentById = new Map(payload.plan.events.map((event) => [event.id, event]));
+  // Exclude placeholders only from the planning view, not the document we save.
+  // A current booking with the same identity supersedes its older placeholder label.
+  const planningView = (plan: FloorPlanDocument) => projectDecemberOwnerHoldFloorPlanVisibility({
+    ...plan, events: plan.events.map((event) => isDecemberOwnerHoldFloorPlanEvent(event, date) ? currentById.get(event.id) ?? event : event),
+  });
   // The current projection can contain real VIP bookings or moved source intervals
   // not in the durable draft. Treat both versions as constraints, not new writes.
   const projected = payload.plan.reservations.filter((row) => !existing.reservations.some((saved) =>
@@ -98,14 +104,14 @@ async function addMissingDraftSeating(
     const event = previous ?? { ...current, color: distinctFloorPlanEventColor(current.color, events.length, events.map((item) => item.color)) };
     const trialEvents = [...events, ...(!previous ? [event] : [])];
     const contextEvents = [...trialEvents, ...payload.plan.events.filter((item) => !trialEvents.some((other) => other.id === item.id))];
-    const contextReservations = [...reservations, ...projected];
-    const proposal = generateFloorPlanReservationProposal({ ...existing, events: contextEvents, reservations: contextReservations }, "fill-missing", event.id);
+    const context = planningView({ ...existing, events: contextEvents, reservations: [...reservations, ...projected] });
+    const proposal = generateFloorPlanReservationProposal(context, "fill-missing", event.id);
     const added = proposal.reservations.filter((row) => row.floorPlanEventId === event.id && proposal.addedReservationIds.includes(row.id));
-    const trialReservations = [...contextReservations, ...added];
+    const trialReservations = [...context.reservations, ...added];
     const coverage = summarizeEventSeating(event, trialReservations, { allReservations: trialReservations });
     if (!proposal.complete || proposal.issues.some((issue) => issue.code === "placement-unavailable") ||
         !added.length || !coverage.fullEventCoverage || coverage.foodAssigned < coverage.foodRequired ||
-        detectFloorPlanConflicts({ ...existing, events: contextEvents, reservations: trialReservations }).some((conflict) => conflict.eventIds.includes(event.id))) {
+        detectFloorPlanConflicts({ ...context, reservations: trialReservations }).some((conflict) => conflict.eventIds.includes(event.id))) {
       needsSeatingReview = true;
       continue;
     }
@@ -115,8 +121,9 @@ async function addMissingDraftSeating(
   if (reservations.length === existing.reservations.length) return needsSeatingReview ? review : { ...preserved, status: "skipped", message: "An existing saved plan was preserved." };
 
   const draft = { ...existing, events, reservations };
-  const conflicts = detectFloorPlanConflicts(draft);
-  const validation = validateFloorPlan(draft, payload.entertainmentReservations, conflicts, payload.entertainmentConflicts);
+  const visible = planningView(draft);
+  const conflicts = detectFloorPlanConflicts(visible);
+  const validation = validateFloorPlan(visible, payload.entertainmentReservations, conflicts, payload.entertainmentConflicts);
   draft.status = existing.status === "Conflict" || conflicts.length || payload.entertainmentConflicts.length ? "Conflict"
     : existing.status === "Needs Review" || needsSeatingReview || payload.warnings.length || hasBlockingValidationFailures(validation) ? "Needs Review" : "Draft";
   const saved = await floorPlanStorageAtVersion(storage, existing.version).save(draft, "Added complete seating and food-table suggestions to an unapproved draft; existing assignments and entertainment were preserved.");

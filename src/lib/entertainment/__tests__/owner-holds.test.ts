@@ -73,18 +73,24 @@ describe("December owner holds in entertainment planning", () => {
     }
   });
 
-  it("allocates the corporate VIP while preserving ignored cached holds unchanged", async () => {
-    const storage = await cached();
+  it.each(["Owner hold VIP", "Event Block", "Owner Hold"])("allocates a corporate VIP while preserving the cached %s row and history", async (name) => {
+    const storage = await cached(legacySource(name), true);
     const before = await storage.getDay(DATE);
+    const prior = before.reservations[0];
+    const audit = { id: "redacted-hold-audit", reservationId: prior.id, action: "manual-create" as const,
+      previousValue: null, newValue: prior, changedBy: "test-staff", changeSource: "manual" as const,
+      reason: "Existing internal hold", intentionalConflict: false, createdAt: prior.createdAt };
+    await storage.saveManualReservation(prior, audit);
     const corporate = { ...legacySource("Redacted corporate event"), tripleseatEventId: "corporate-source", sourceSystem: "tripleseat" as const };
     const day = await syncEntertainmentDay(DATE, { storage, adapter: adapter([corporate]), localEvents: [],
-      vipPrepClient: { configured: true, fetchRange: async () => payload() }, floorPlanStorage: noFloorPlan });
+      vipPrepClient: { configured: true, fetchRange: async () => payload([booking(name)]) }, floorPlanStorage: noFloorPlan });
     expect(day.events).toHaveLength(1); expect(day.events[0].tripleseatEventId).toBe("corporate-source");
-    expect(day.reservations).toHaveLength(1); expect(day.conflicts).toEqual([]);
+    expect(day.reservations).toEqual([expect.objectContaining({ tripleseatEventId: "corporate-source", resourceId: "private-room-vip-1", needsReview: false })]);
+    expect(day.conflicts).toEqual([]);
     const after = await storage.getDay(DATE);
     expect(after.events.find((row) => row.eventId === before.events[0].eventId)).toEqual(before.events[0]);
-    expect(after.reservations.find((row) => row.id === before.reservations[0].id)).toEqual(before.reservations[0]);
-    expect(await storage.getAudit(before.reservations[0].id)).toEqual([]);
+    expect(after.reservations.find((row) => row.id === prior.id)).toEqual(prior);
+    expect(await storage.getAudit(prior.id)).toEqual([audit]);
   });
 
   it("allocates a corporate VIP through a cached manual December placeholder without changing its row or audit", async () => {
@@ -110,10 +116,12 @@ describe("December owner holds in entertainment planning", () => {
   });
 
   it("still rejects manual VIP conflicts with genuine customers and non-December internal holds", async () => {
-    for (const original of [legacySource("Redacted genuine VIP"),
+    for (const original of [legacySource("Redacted genuine VIP"), legacySource("Event Block Party"), legacySource("Owner Hold Celebration"),
       { ...legacySource(), vipFoodCount: 1 }, { ...legacySource(), vipExtraCount: 1 },
       { ...legacySource(), linkedTripleseatEventIds: ["redacted-linked-corporate"] },
+      { ...legacySource("Event Block"), linkedTripleseatEventIds: ["redacted-linked-corporate"] },
       { ...legacySource(), localDate: "2026-11-30" },
+      { ...legacySource("Owner Hold"), localDate: "2026-11-30" },
     ]) {
       const source = { ...original };
       const date = source.localDate;

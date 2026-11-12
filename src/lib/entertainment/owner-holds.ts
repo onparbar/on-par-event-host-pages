@@ -9,7 +9,7 @@ function isOwnerHoldEvent(event: EntertainmentEventSnapshot) {
   });
 }
 
-function ownerHoldReservation(row: EntertainmentReservation, events: readonly EntertainmentEventSnapshot[]) {
+export function ownerHoldReservation(row: EntertainmentReservation, events: readonly EntertainmentEventSnapshot[]) {
   const event = events.filter((candidate) => candidate.operatingDate === row.operatingDate &&
     [candidate.eventId, candidate.tripleseatEventId, candidate.localEventId].some((id) => id && [row.tripleseatEventId, row.localEventId].includes(id)))
     .sort((left, right) =>
