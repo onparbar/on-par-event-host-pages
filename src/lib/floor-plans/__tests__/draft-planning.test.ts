@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareFloorPlanDraftWindow } from "../draft-planning";
 import { getFloorPlanDay } from "../service";
 import { MemoryFloorPlanStorage } from "../storage";
-import { FLOOR_PLAN_RULE_VERSION, type FloorPlanDayPayload, type FloorPlanDocument } from "../types";
+import { summarizeEventSeating } from "../seating-summary";
+import { FLOOR_PLAN_RULE_VERSION, type FloorPlanDayPayload, type FloorPlanDocument, type FloorPlanReservation } from "../types";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
 import { createMemoryEventPlanStorage, setEventPlanStorageForTests } from "@/lib/event-plans/storage";
 import { createMemoryEntertainmentStorage, setEntertainmentStorageForTests } from "@/lib/entertainment/storage";
@@ -111,5 +112,115 @@ describe("missing-only planning drafts", () => {
     expect(await storage.get(DATE)).toBeNull();
     await expect(prepareFloorPlanDraftWindow("2026-12-01", "2027-01-01", storage, { vipPrepClient: noVip, loadDay })).rejects.toThrow("at most 31");
     await expect(prepareFloorPlanDraftWindow("2026-12-32", "2026-12-31", storage, { vipPrepClient: noVip, loadDay })).rejects.toThrow("at most 31");
+  });
+});
+
+describe("opt-in add-only seating for existing planning drafts", () => {
+  const date = "2026-12-08";
+  const sourceId = "93000090";
+  const blank = document(date);
+  const corporate = { ...blank.events[0], id: "redacted-new-event", tripleseatEventId: sourceId, guestCount: 90, color: "#BE123C" };
+  const staffEvent = { ...blank.events[0], color: "#15803D" };
+  const manual: FloorPlanReservation = { id: "staff-table", floorPlanEventId: staffEvent.id, areaId: "main-rect-left-1", reservationType: "seating", startAt: staffEvent.startAt, endAt: staffEvent.endAt, label: "Staff choice", source: "manual", lockedByUser: true };
+  const mixed = { ...blank, ruleVersion: "prior-rules", events: [staffEvent], reservations: [manual] };
+  const opts = (plan: FloorPlanDocument) => ({ vipPrepClient: noVip, fillMissingSeating: true,
+    refreshedTripleseatEventDates: new Map([[sourceId, date]]), loadDay: reader({ ...payload(date), plan }) });
+
+  it("adds complete red-party seating beside the existing green party without changing any saved rows or events", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const before = await storage.save(mixed, "Staff draft.");
+    const dependencies = opts({ ...before, events: [...before.events, corporate] });
+    const result = await prepareFloorPlanDraftWindow(date, date, storage, dependencies);
+    expect(result.results[0]).toMatchObject({ status: "updated", eventCount: 2 });
+    expect(dependencies.loadDay.mock.calls[0][2]).toMatchObject({ readOnly: true });
+    const after = (await storage.get(date))!;
+    expect(after.events[0]).toEqual(before.events[0]);
+    expect(after.reservations[0]).toEqual(manual);
+    expect(after.ruleVersion).toBe(before.ruleVersion);
+    expect(after.lastTripleseatSyncAt).toBe(before.lastTripleseatSyncAt);
+    const added = after.reservations.slice(1);
+    expect(added.every((row) => row.floorPlanEventId === corporate.id && row.source === "generated" && row.areaId !== manual.areaId)).toBe(true);
+    expect(summarizeEventSeating(corporate, after.reservations, { allReservations: after.reservations })).toMatchObject({ fullEventCoverage: true, foodAssigned: 1, foodRequired: 1 });
+    expect((await prepareFloorPlanDraftWindow(date, date, storage, opts(after))).results[0].status).toBe("skipped");
+    expect(await storage.get(date)).toEqual(after);
+  });
+
+  it("fills a verified, unchanged saved event with no current or historic seating without replacing the event", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const before = await storage.save({ ...mixed, events: [...mixed.events, corporate] }, "Staff draft.");
+    const result = await prepareFloorPlanDraftWindow(date, date, storage, opts(before));
+    expect(result.results[0]).toMatchObject({ status: "updated", eventCount: 2 });
+    const after = (await storage.get(date))!;
+    expect(after.events).toEqual(before.events);
+    expect(summarizeEventSeating(corporate, after.reservations)).toMatchObject({ fullEventCoverage: true, foodAssigned: 1 });
+  });
+
+  it("does not restore intentionally cleared seating or move a previously saved party after a source change", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const existing = await storage.save({ ...mixed, events: [...mixed.events, corporate], reservations: [manual, { ...manual, id: "removed", floorPlanEventId: corporate.id }] }, "Existing placements.");
+    const cleared = await storage.save({ ...existing, reservations: [manual] }, "Staff cleared seating.");
+    expect((await prepareFloorPlanDraftWindow(date, date, storage, opts(cleared))).results[0].status).toBe("skipped");
+    const changed = { ...cleared, events: [staffEvent, { ...corporate, guestCount: 91 }] };
+    expect((await prepareFloorPlanDraftWindow(date, date, storage, opts(changed))).results[0]).toMatchObject({ status: "needs-review", needsSeatingReview: true });
+    expect(await storage.get(date)).toEqual(cleared);
+  });
+
+  it("uses a projected VIP room hold as a placement constraint without saving that projection or partial seating", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const before = await storage.save(mixed, "Staff draft.");
+    const red = { ...corporate, contractedAreaIds: ["vip-2"], source: { ...corporate.source, rooms: ["VIP 2"] }, guestCount: 30 };
+    const vip = { ...red, id: "projected-vip", tripleseatEventId: "vip-source", guestCount: 20 };
+    const held: FloorPlanReservation = { ...manual, id: "vip-room", floorPlanEventId: vip.id, areaId: "vip-2", reservationType: "room", source: "generated", lockedByUser: false };
+    const result = await prepareFloorPlanDraftWindow(date, date, storage, opts({ ...before, events: [...before.events, red, vip], reservations: [...before.reservations, held] }));
+    expect(result.results[0]).toMatchObject({ status: "needs-review", needsSeatingReview: true });
+    expect(await storage.get(date)).toEqual(before);
+  });
+
+  it("does not infer placement from unresolved current rooms", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const before = await storage.save(mixed, "Staff draft.");
+    const result = await prepareFloorPlanDraftWindow(date, date, storage, opts({ ...before, events: [...before.events, { ...corporate, unresolvedAreaNames: ["Unmapped area"] }] }));
+    expect(result.results[0]).toMatchObject({ status: "needs-review", needsSeatingReview: true });
+    expect(await storage.get(date)).toEqual(before);
+  });
+
+  it("reports a separate unverified party while saving a complete verified addition", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const before = await storage.save(mixed, "Staff draft.");
+    const unverifiedId = "93000091";
+    const unverified = { ...corporate, id: "unverified", tripleseatEventId: unverifiedId, source: {
+      ...corporate.source, reviewReasons: ["Guest count was filled from the exact structured Tripleseat package selection quantity because the event-level guest count is missing."],
+    } };
+    const dependencies = opts({ ...before, events: [...before.events, corporate, unverified] });
+    dependencies.refreshedTripleseatEventDates.set(unverifiedId, date);
+    const result = await prepareFloorPlanDraftWindow(date, date, storage, dependencies);
+    expect(result.results[0]).toMatchObject({ status: "updated", needsSeatingReview: true, eventCount: 2, planStatus: "Needs Review" });
+    expect((await storage.get(date))!.events.some((event) => event.id === unverified.id)).toBe(false);
+  });
+
+  it("does not fill an old saved date when the verified source moved to another date", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const before = await storage.save({ ...mixed, events: [...mixed.events, corporate] }, "Staff draft.");
+    const dependencies = opts(before);
+    dependencies.refreshedTripleseatEventDates.set(sourceId, "2026-12-09");
+    expect((await prepareFloorPlanDraftWindow(date, date, storage, dependencies)).results[0].status).toBe("skipped");
+    expect(await storage.get(date)).toEqual(before);
+  });
+
+  it("preserves previously approved work and concurrent staff saves", async () => {
+    const storage = new MemoryFloorPlanStorage();
+    const approved = await storage.save({ ...mixed, status: "Updated After Approval", approvedAt: mixed.updatedAt }, "Previously approved.");
+    const approvedDeps = opts(approved);
+    expect((await prepareFloorPlanDraftWindow(date, date, storage, approvedDeps)).results[0].status).toBe("skipped");
+    expect(approvedDeps.loadDay).not.toHaveBeenCalled();
+    const separate = new MemoryFloorPlanStorage();
+    const before = await separate.save(mixed, "Staff draft.");
+    const concurrentDeps = opts({ ...before, events: [...before.events, corporate] });
+    concurrentDeps.loadDay.mockImplementationOnce(async () => {
+      await separate.save({ ...before, reservations: [{ ...manual, label: "New staff choice" }] }, "Concurrent staff save.");
+      return { ...payload(date), plan: { ...before, events: [...before.events, corporate] } };
+    });
+    expect((await prepareFloorPlanDraftWindow(date, date, separate, concurrentDeps)).results[0]).toMatchObject({ status: "skipped", message: "A concurrent saved plan was preserved." });
+    expect((await separate.get(date))!.reservations).toEqual([{ ...manual, label: "New staff choice" }]);
   });
 });

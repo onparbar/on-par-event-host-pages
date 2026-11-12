@@ -56,7 +56,7 @@ type FloorPlanMonthDraftResult = {
   month: string;
   startDate: string;
   endDate: string;
-  results: Array<{ date: string; status: "created" | "skipped" | "error"; eventCount: number; planStatus?: string; message?: string }>;
+  results: Array<{ date: string; status: "created" | "updated" | "needs-review" | "skipped" | "error"; eventCount: number; needsSeatingReview?: boolean; planStatus?: string; message?: string }>;
 };
 
 export type FloorPlanPublication = {
@@ -158,7 +158,7 @@ export async function prepareFloorPlanMonthDrafts(month: string, fetchImpl: type
     body: JSON.stringify({ month }),
   });
   const result = await response.json().catch(() => null) as (FloorPlanMonthDraftResult & { error?: string }) | null;
-  if (!response.ok || result?.month !== month || result.startDate !== `${month}-01` || result.endDate !== `${month}-31` || !Array.isArray(result.results) || result.results.length !== 31 || result.results.some((entry) => !entry || !["created", "skipped", "error"].includes(entry.status) || typeof entry.date !== "string" || !entry.date.startsWith(`${month}-`))) {
+  if (!response.ok || result?.month !== month || result.startDate !== `${month}-01` || result.endDate !== `${month}-31` || !Array.isArray(result.results) || result.results.length !== 31 || result.results.some((entry) => !entry || !["created", "updated", "needs-review", "skipped", "error"].includes(entry.status) || typeof entry.date !== "string" || !entry.date.startsWith(`${month}-`))) {
     throw new Error("Unable to prepare this month’s floor plans. Existing plans are unchanged.");
   }
   return result;
@@ -669,13 +669,16 @@ export default function FloorPlansClient({
 
   async function handlePrepareMonthDrafts() {
     if (monthDraftState.status === "preparing") return;
-    setMonthDraftState({ status: "preparing", message: "Reading booked contracts and preparing missing drafts…" });
+    setMonthDraftState({ status: "preparing", message: "Reading booked contracts and checking December drafts…" });
     try {
       const result = await prepareFloorPlanMonthDrafts(planningMonth);
       const created = result.results.filter((entry) => entry.status === "created").length;
+      const updated = result.results.filter((entry) => entry.status === "updated").length;
       const skipped = result.results.filter((entry) => entry.status === "skipped").length;
       const errors = result.results.filter((entry) => entry.status === "error").length;
-      setMonthDraftState({ status: errors ? "error" : "success", message: errors ? STAFF_FLOOR_PLAN_INCOMPLETE : `${created} draft${created === 1 ? "" : "s"} created · ${skipped} date${skipped === 1 ? "" : "s"} skipped. Existing saved plans were preserved.` });
+      const reviewDates = result.results.filter((entry) => entry.status === "needs-review" || entry.needsSeatingReview).map((entry) => entry.date);
+      const summary = [`${created} draft${created === 1 ? "" : "s"} created`, ...(updated ? [`${updated} draft${updated === 1 ? "" : "s"} updated`] : []), `${skipped} date${skipped === 1 ? "" : "s"} skipped`].join(" · ");
+      setMonthDraftState({ status: errors || reviewDates.length ? "error" : "success", message: errors ? STAFF_FLOOR_PLAN_INCOMPLETE : `${summary}. ${updated ? "Existing assignments were preserved." : "Existing saved plans were preserved."}${reviewDates.length ? ` Seating needs review: ${reviewDates.join("; ")}.` : ""}` });
       router.refresh();
     } catch (error) {
       setMonthDraftState({ status: "error", message: "Unable to prepare this month’s floor plans. Existing plans are unchanged." });
@@ -816,7 +819,7 @@ export default function FloorPlansClient({
         <div className="floor-plan-display-list">
           <p>{monthLabel} plans stay separate from upcoming events. Confirm any unfinished plan with a manager before use.</p>
           <div className="floor-plan-live-sync-bar">
-            <div><strong>Prepare missing drafts</strong><span>Reads booked contracts and creates only missing drafts. Existing saved plans, entertainment reservations, and approvals are never changed.</span></div>
+            <div><strong>Prepare December drafts</strong><span>Creates missing drafts. With Admin access, it also fills missing seating on eligible drafts without moving existing assignments or changing entertainment and approvals.</span></div>
             <button className="floor-plan-live-sync-button" disabled={monthDraftState.status === "preparing"} onClick={() => void handlePrepareMonthDrafts()} type="button">{monthDraftState.status === "preparing" ? `Preparing ${monthName} drafts…` : `Prepare ${monthName} drafts`}</button>
           </div>
           {monthDraftState.message ? <p className={`floor-plan-live-sync-message${monthDraftState.status === "error" ? " is-error" : ""}`} role="status" aria-live="polite">{monthDraftState.message}</p> : null}

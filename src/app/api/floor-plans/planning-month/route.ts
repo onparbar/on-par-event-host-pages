@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         results: result.results.map(({ date, status, removedHolds }) => ({ date, status, removedHolds })),
       }, { headers });
     }
-    const result = await prepareDecemberFloorPlanDrafts();
+    const result = await prepareDecemberFloorPlanDrafts(admin ? { fillMissingSeating: true } : undefined);
     return NextResponse.json(admin ? result : {
       month: result.month, startDate: result.startDate, endDate: result.endDate,
       results: result.results.map(({ date, status, eventCount }) => ({ date, status, eventCount })),

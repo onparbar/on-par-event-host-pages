@@ -15,7 +15,12 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("December planning route", () => {
   it("allows the bounded same-origin staff preparation request", async () => {
-    expect((await POST(request())).status).toBe(200); expect(prepare).toHaveBeenCalledOnce(); expect(reconcile).not.toHaveBeenCalled();
+    expect((await POST(request())).status).toBe(200); expect(prepare).toHaveBeenCalledExactlyOnceWith(undefined); expect(reconcile).not.toHaveBeenCalled();
+  });
+  it("allows only an authenticated Admin to fill seating on existing drafts", async () => {
+    hasAdminSession.mockReturnValue(true);
+    expect((await POST(request())).status).toBe(200);
+    expect(prepare).toHaveBeenCalledExactlyOnceWith({ fillMissingSeating: true });
   });
   it("runs only the explicit December owner-hold reconciliation action without preparing or synchronizing sources", async () => {
     const response = await POST(request({ month: "2026-12", action: "release-owner-holds" }));

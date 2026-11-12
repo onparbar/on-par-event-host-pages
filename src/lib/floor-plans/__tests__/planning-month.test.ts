@@ -6,6 +6,7 @@ import { MemoryFloorPlanStorage } from "../storage";
 import { prepareFloorPlanDraftWindow } from "../draft-planning";
 import { prepareDecemberFloorPlanDrafts } from "../planning-month";
 import { FLOOR_PLAN_RULE_VERSION, type FloorPlanDocument } from "../types";
+import { summarizeEventSeating } from "../seating-summary";
 
 vi.mock("server-only", () => ({}));
 const window = { startDate: "2026-12-01", endDate: "2026-12-31" };
@@ -81,5 +82,39 @@ describe("December server-side planning orchestration", () => {
     expect(prepareDrafts).toHaveBeenCalledExactlyOnceWith(window.startDate, window.endDate, deps.floorPlanStorage, { vipPrepClient: deps.vipPrepClient });
     expect(JSON.stringify(result)).not.toMatch(/PRIVATE_TOKEN|guest contact|Redacted December source/);
     expect(result.results[1]).toMatchObject({ date: "2026-12-06", status: "error", eventCount: 0 });
+  });
+
+  it("opts in to existing-draft repair using only the IDs from the freshly loaded December contracts", async () => {
+    const deps = await setup();
+    const prepareDrafts = vi.fn<typeof prepareFloorPlanDraftWindow>().mockResolvedValue({ ...window, results: [
+      { date: "2026-12-05", status: "updated", eventCount: 2, needsSeatingReview: true },
+    ] });
+    const result = await prepareDecemberFloorPlanDrafts({ ...deps, prepareDrafts, fillMissingSeating: true });
+    expect(prepareDrafts).toHaveBeenCalledExactlyOnceWith(window.startDate, window.endDate, deps.floorPlanStorage, {
+      vipPrepClient: deps.vipPrepClient, fillMissingSeating: true, refreshedTripleseatEventDates: new Map([["93000001", "2026-12-05"]]),
+    });
+    expect(result.results[0]).toMatchObject({ status: "updated", needsSeatingReview: true });
+  });
+
+  it("adds a newly synced 90-guest booking to an already prepared date without replacing its first party", async () => {
+    const deps = await setup();
+    const date = "2026-12-08";
+    const first = { ...source(date), rooms: ["VIP 1"] };
+    const second = { ...source(date, "93000002"), eventName: "Redacted large December event", guestCount: 90 };
+    deps.adapter.fetchEventPlansForRange = vi.fn(async () => [first]);
+    await prepareDecemberFloorPlanDrafts(deps);
+    const original = (await deps.floorPlanStorage.get(date))!;
+    expect(original.events).toHaveLength(1);
+    const sharedBefore = await deps.entertainment.getDay(date);
+    deps.adapter.fetchEventPlansForRange = vi.fn(async () => [first, second]);
+
+    const result = await prepareDecemberFloorPlanDrafts({ ...deps, fillMissingSeating: true });
+    expect(result.results.find((entry) => entry.date === date)).toMatchObject({ status: "updated", eventCount: 2 });
+    const repaired = (await deps.floorPlanStorage.get(date))!;
+    expect(repaired.events[0]).toEqual(original.events[0]);
+    expect(repaired.reservations.filter((row) => row.floorPlanEventId === original.events[0].id)).toEqual(original.reservations);
+    expect(summarizeEventSeating(repaired.events[1], repaired.reservations)).toMatchObject({ fullEventCoverage: true, coveredCapacity: 90, foodAssigned: 1 });
+    expect(await deps.entertainment.getDay(date)).toEqual(sharedBefore);
+    expect(repaired.approvedAt).toBeNull();
   });
 });

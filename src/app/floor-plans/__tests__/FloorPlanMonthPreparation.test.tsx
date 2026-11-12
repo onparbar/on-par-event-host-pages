@@ -17,7 +17,7 @@ vi.mock("@/app/_components/EventContext", () => ({ useEventContext: () => ({ rea
 vi.mock("@/app/_components/PortalShell", () => ({ PortalShell: () => null, PortalPageHeader: () => null, PortalCard: () => null, PortalStatusBadge: () => null, PortalZoomControls: () => null }));
 
 const props = { initialState: { archivedAssetKeys: [], overlaysByAsset: {} } as unknown as AdminState, plans: [], publications: [], specialPages: [], today: "2026-10-27" };
-function result(statuses: Array<"created" | "skipped" | "error"> = []) {
+function result(statuses: Array<"created" | "updated" | "needs-review" | "skipped" | "error"> = []) {
   return { month: "2026-12", startDate: "2026-12-01", endDate: "2026-12-31", results: Array.from({ length: 31 }, (_, index) => ({ date: `2026-12-${String(index + 1).padStart(2, "0")}`, status: statuses[index] ?? "skipped", eventCount: statuses[index] === "created" ? 1 : 0 })) };
 }
 function findButton(node: unknown, text: string): ReactElement<{ disabled: boolean; onClick: () => void }> | null {
@@ -67,6 +67,16 @@ describe("December missing-draft preparation", () => {
     expect(state()).toMatchObject({ status: "success" });
     expect(state().message).toContain("0 drafts created · 31 dates skipped");
     expect(state().message).toContain("Existing saved plans were preserved");
+    expect(hooks.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("reports updates and identifies dates that still need seating review", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(result(["updated", "needs-review"]))));
+    button().props.onClick(); await settle();
+    expect(state()).toMatchObject({ status: "error" });
+    expect(state().message).toContain("1 draft updated");
+    expect(state().message).toContain("Existing assignments were preserved");
+    expect(state().message).toContain("Seating needs review: 2026-12-02");
     expect(hooks.refresh).toHaveBeenCalledOnce();
   });
 
