@@ -97,6 +97,48 @@ describe("GoTab dispatch worker", () => {
   });
 
   it.each([
+    { storedQuantity: 8, payloadQuantity: 8, hasContract: true, allowed: false },
+    { storedQuantity: 2, payloadQuantity: 8, hasContract: true, allowed: false },
+    { storedQuantity: 2, payloadQuantity: 2, hasContract: false, allowed: false },
+    { storedQuantity: 2, payloadQuantity: 2, hasContract: true, allowed: true },
+  ])("checks a queued platter against the contract before sending ($storedQuantity, $payloadQuantity, $hasContract)", async ({ storedQuantity, payloadQuantity, hasContract, allowed }) => {
+    const storage = {
+      claimDueDispatches: vi.fn().mockResolvedValue([{
+        id: "platter-dispatch", request_id: "platter-request",
+        idempotency_key: "event:TRIPLESEAT_CONTRACT:platter-chicken-tenders:1:DISPATCH",
+        action: "DISPATCH", status: "SENDING", attempt_count: 1,
+        sanitized_payload: { eventName: "Redacted Event", product: "Chicken Tender Platter", gotabProductUuid: "prd_tenders", quantity: payloadQuantity },
+      }]),
+      getDispatchRequestContext: vi.fn().mockResolvedValue({
+        event_id: "event-123", source_type: "TRIPLESEAT_CONTRACT", source_record_id: "platter-chicken-tenders", quantity: storedQuantity,
+      }),
+      getContractFoodDispatchDecision: vi.fn().mockResolvedValue({ allowed: true, reason: "CANONICAL" }),
+      getContractFoodSelections: vi.fn().mockResolvedValue(hasContract ? [{
+        kinds: ["platter:chicken-tenders"], quantity: 2, quantityProvided: true, isFood: true,
+      }] : []),
+      getKitchenFoodRunner: vi.fn().mockResolvedValue(null),
+      finishDispatch: vi.fn().mockResolvedValue(undefined),
+    };
+    const createEventFoodTab = vi.fn().mockResolvedValue({ orderUuid: "order-1" });
+    const result = await processGoTabDispatches({
+      storage: storage as never,
+      client: { createEventFoodTab },
+      env: environment({ EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false" }),
+    });
+    expect(storage.getContractFoodSelections).toHaveBeenCalledWith("event-123");
+    if (allowed) {
+      expect(result).toMatchObject({ sent: 1, held: 0 });
+      expect(createEventFoodTab).toHaveBeenCalledWith(expect.objectContaining({ quantity: 2 }));
+    } else {
+      expect(result).toMatchObject({ sent: 0, held: 1 });
+      expect(createEventFoodTab).not.toHaveBeenCalled();
+      expect(storage.finishDispatch).toHaveBeenCalledWith("platter-dispatch", expect.objectContaining({
+        status: "HELD", lastError: expect.stringContaining("verified contract platter count"),
+      }));
+    }
+  });
+
+  it.each([
     { scenario: "a timeout after possible order acceptance", status: null },
     { scenario: "a server error after possible order acceptance", status: 500 },
   ])("holds a non-VIP order for review after $scenario without scheduling a blind retry", async ({ status }) => {

@@ -938,9 +938,31 @@ describe("dessert and platter quantities", () => {
     },
   );
 
-  it("does not infer a platter from an unapproved appended description", () => {
+  it.each(["", "."])("preps the Fry Platter with the confirmed signature sauce description (%s)", (punctuation) => {
+    const checklist = generateKitchenChecklist(sourceEvent([
+      {
+        name: `Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack. Served with our signature OPE sauce${punctuation}`,
+        quantity: 1,
+        sourceCategory: "Food Platters",
+        isFood: true,
+      },
+    ]));
+
+    expect(row(checklist, "platter-fries")).toMatchObject({
+      quantity: 1,
+      unit: "bags",
+      numberOfPans: 1,
+      panSize: "1/2",
+    });
+    expect(warningCodes(checklist)).not.toContain("UNKNOWN_FOOD_ITEM");
+  });
+
+  it.each([
+    "Wing PlatterChef special description.",
+    "Fry PlatterChef special description.",
+  ])("does not infer a platter from an unapproved appended description: %s", (name) => {
     const selection = normalizeKitchenSelection({
-      name: "Wing PlatterChef special description.",
+      name,
       quantity: 1,
       sourceCategory: "Food Platters",
       isFood: true,

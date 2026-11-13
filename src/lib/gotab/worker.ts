@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { GoTabClient, GoTabApiError } from "./client";
 import { getGoTabConfigurationStatus, requireGoTabConfiguration } from "./config";
 import { GoTabIntegrationStorage } from "./storage";
+import { contractPlatterOrderQuantity, isContractPlatterRow } from "./project-kitchen";
 import { VipPrepClient, vipPrepExternalId, vipPrepKitchenEvents, isActiveVipPrepReservation, KITCHEN_ROW_KEY_BY_VIP_CODE } from "@/lib/vip-prep/client";
 import { vipKdsTestReservation } from "@/lib/vip-checkin/test-reservation";
 import { readVipInitialFoodSnapshot, vipInitialFoodSnapshot, vipReleaseFingerprint } from "@/lib/vip-checkin/release-snapshot";
@@ -75,6 +76,23 @@ export async function processGoTabDispatches(options?: {
           });
           summary.held += 1;
           continue;
+        }
+        if (dispatch.action === "DISPATCH" && isContractPlatterRow(context.source_record_id)) {
+          const normalizedSelections = await storage.getContractFoodSelections(eventId);
+          let orderedQuantity: number | null = null;
+          try {
+            orderedQuantity = contractPlatterOrderQuantity({ normalizedSelections }, context.source_record_id);
+          } catch {
+            // Missing or ambiguous purchase evidence cannot authorize an order.
+          }
+          if (orderedQuantity === null || orderedQuantity !== context.quantity ||
+              orderedQuantity !== dispatch.sanitized_payload?.quantity) {
+            const lastError = "The saved ticket quantity does not match a verified contract platter count. Review the order; no food was sent.";
+            await storage.finishDispatch(dispatch.id, { status: "HELD", lastError });
+            summary.held += 1;
+            summary.lastError = lastError;
+            continue;
+          }
         }
       }
       vipDispatch = context.event_id.startsWith("vip-");

@@ -12,11 +12,11 @@ const env = {
   EVENT_KDS_ENABLED: "true", EVENT_KDS_DRY_RUN: "false", EVENT_KDS_DEFAULT_PREP_LEAD_MINUTES: "60",
 };
 
-function contract(name = "Wing Platter") {
+function contract(name = "Wing Platter", quantity = 1) {
   const checklist = generateKitchenChecklist({
     eventId: "contract-123", eventName: "Redacted contract", localDate: "2026-10-22",
     startTime: "18:00", guestCount: 20, status: "DEFINITE", room: "VIP 1",
-    selections: [{ name, quantity: 1, sourceCategory: "Food Platters", isFood: true }],
+    selections: [{ name, quantity, sourceCategory: "Food Platters", isFood: true }],
     sourceUpdatedAt: "2026-10-22T12:00:00Z",
   });
   return { ...checklist, sections: checklist.sections.filter((section) => section.category === "platters") };
@@ -57,7 +57,7 @@ describe("contract sync across prep-rule revisions", () => {
     const checklist = contract();
     expect(checklist.sections[0].rows[0]).toMatchObject({ numberOfPans: 4, panSize: "1/3" });
     const storage = storageFor(checklist, [{
-      id: "legacy-request", source_record_id: "platter-wings", quantity: 1, pan_size: "THIRD_PAN", dispatch_status: "SCHEDULED",
+      id: "legacy-request", source_record_id: "platter-wings", quantity: 1, pan_size: "HALF_PAN", dispatch_status: "SCHEDULED",
     }]);
     const result = await synchronizeKitchenChecklistToEventFood(checklist, { sourceVersion: 987654321, storage, env });
     expect(result).toMatchObject({ requestCount: 0, duplicateCount: 1, exceptionCount: 1 });
@@ -79,8 +79,31 @@ describe("contract sync across prep-rule revisions", () => {
     expect(result).toMatchObject({ requestCount: 1, exceptionCount: 0 });
     expect(storage.enqueueRequest).toHaveBeenCalledOnce();
     expect(storage.enqueueRequest).toHaveBeenCalledWith(expect.objectContaining({
-      sourceType: "TRIPLESEAT_CONTRACT", sourceRecordId: "platter-wings", sourceVersion: 1, quantity: 4,
+      sourceType: "TRIPLESEAT_CONTRACT", sourceRecordId: "platter-wings", sourceVersion: 1, quantity: 1,
     }), expect.anything(), "SYSTEM");
+  });
+
+  it("queues two tender platters and previews two while keeping eight prep pans", async () => {
+    const checklist = contract("Chicken Tender Platter", 2);
+    expect(checklist.sections[0].rows[0]).toMatchObject({ quantity: 128, numberOfPans: 8, panSize: "1/3" });
+    const storage = storageFor(checklist);
+    const result = await synchronizeKitchenChecklistToEventFood(checklist, { sourceVersion: 987654321, storage, env });
+    expect(result).toMatchObject({ requestCount: 1, exceptionCount: 0 });
+    expect(storage.enqueueRequest).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      sourceType: "TRIPLESEAT_CONTRACT", sourceRecordId: "platter-chicken-tenders", sourceVersion: 1, quantity: 2, panSize: "THIRD_PAN",
+    }), expect.objectContaining({ quantity: 2, panSize: "THIRD_PAN" }), "SYSTEM");
+  });
+
+  it("flags a previously sent eight-item tender request without requeueing it", async () => {
+    const storage = storageFor(contract("Chicken Tender Platter", 2), [{
+      id: "legacy-tender-request", source_record_id: "platter-chicken-tenders", quantity: 8, pan_size: "THIRD_PAN", dispatch_status: "SENT_TO_GOTAB",
+    }]);
+    const result = await synchronizeKitchenChecklistToEventFood(contract("Chicken Tender Platter", 2), { sourceVersion: 987654321, storage, env });
+    expect(result).toMatchObject({ requestCount: 0, duplicateCount: 1, exceptionCount: 1 });
+    expect(storage.enqueueRequest).not.toHaveBeenCalled();
+    expect(storage.saveProjectionExceptions).toHaveBeenCalledWith(expect.objectContaining({
+      exceptions: [expect.objectContaining({ itemKey: "platter-chicken-tenders", reason: expect.stringContaining("do not submit a second full order") })],
+    }));
   });
 
   it("uses the same database idempotency key during concurrent differing calculation revisions", async () => {

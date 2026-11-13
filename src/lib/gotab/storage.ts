@@ -1,6 +1,8 @@
 import "server-only";
 
 import { getSupabaseSecret, KITCHEN_ROLE_METADATA_PREFIX } from "@/lib/kitchen/storage";
+import { normalizeKitchenSelections } from "@/lib/kitchen/normalize";
+import type { KitchenSourceEvent } from "@/lib/kitchen/types";
 import type { GoTabCapabilityCheck } from "./client";
 import type { NormalizedEventFoodItem } from "./event-food";
 import type { EventFoodDelivery } from "./delivery";
@@ -562,7 +564,7 @@ export class GoTabIntegrationStorage {
     const response = await this.request(
       "event_food_requests",
       new URLSearchParams({
-        select: "event_id,source_type,source_record_id,food_service_time",
+        select: "event_id,source_type,source_record_id,food_service_time,quantity",
         id: `eq.${requestId}`,
         limit: "1",
       }),
@@ -573,8 +575,19 @@ export class GoTabIntegrationStorage {
       source_type: string;
       source_record_id: string;
       food_service_time: string;
+      quantity: number;
     }>;
     return rows[0] ?? null;
+  }
+
+  async getContractFoodSelections(eventId: string) {
+    const response = await this.request("kitchen_event_snapshots", new URLSearchParams({
+      select: "selections:source_snapshot->selections",
+      event_id: `eq.${eventId}`,
+      limit: "1",
+    }), { method: "GET" });
+    const [snapshot] = await response.json() as Array<Pick<KitchenSourceEvent, "selections">>;
+    return Array.isArray(snapshot?.selections) ? normalizeKitchenSelections(snapshot.selections) : [];
   }
 
   async getContractFoodDispatchDecision(input: {

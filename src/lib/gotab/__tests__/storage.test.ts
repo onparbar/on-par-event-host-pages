@@ -3,6 +3,22 @@ import { GoTabIntegrationStorage } from "../storage";
 
 vi.mock("server-only", () => ({}));
 
+it("reads only the saved source selections for an exact contract event", async () => {
+  const fetchImpl = vi.fn().mockResolvedValue(Response.json([{ selections: [
+    { name: "Chicken Tender Platter", quantity: 2, sourceCategory: "Food Platters", isFood: true },
+  ] }]));
+  const storage = new GoTabIntegrationStorage({ NODE_ENV: "test", SUPABASE_SECRET_KEY: "test-secret" }, fetchImpl);
+  expect(await storage.getContractFoodSelections("contract-123")).toEqual([
+    expect.objectContaining({ kinds: ["platter:chicken-tenders"], quantity: 2, quantityProvided: true }),
+  ]);
+  const [url, init] = fetchImpl.mock.calls[0];
+  expect(new URL(url).pathname).toBe("/rest/v1/kitchen_event_snapshots");
+  expect(Object.fromEntries(new URL(url).searchParams)).toEqual({
+    select: "selections:source_snapshot->selections", event_id: "eq.contract-123", limit: "1",
+  });
+  expect(init.method).toBe("GET");
+});
+
 describe("scoped immediate food dispatch claims", () => {
   const candidate = {
     id: "dispatch-new", request_id: "request-new", idempotency_key: "event:REFILL:wings:1:DISPATCH",

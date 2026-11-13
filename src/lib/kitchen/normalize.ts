@@ -83,6 +83,12 @@ const EXACT_SELECTION_ALIASES: Readonly<
   "fry plattera shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack": [
     "platter:fries",
   ],
+  "fry plattera shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack. served with our signature ope sauce": [
+    "platter:fries",
+  ],
+  "fry plattera shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack. served with our signature ope sauce.": [
+    "platter:fries",
+  ],
   ranch: ["sauce:ranch"],
   "ranch sauce": ["sauce:ranch"],
   marinara: ["sauce:marinara"],

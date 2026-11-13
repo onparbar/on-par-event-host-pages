@@ -1,5 +1,6 @@
 import { zonedDateTimeToIso } from "@/lib/entertainment/time";
 import { resolveKitchenLiveFoodAddOns } from "@/lib/kitchen/addons";
+import { KITCHEN_RULE_CONFIG } from "@/lib/kitchen/config";
 import type { KitchenChecklist } from "@/lib/kitchen/types";
 import {
   normalizeEventFoodItem,
@@ -52,6 +53,26 @@ function mappingKey(row: ProjectableKitchenRow) {
   return `${row.key}:${panSize}`;
 }
 
+const contractPlatterKinds = new Map<string, string>(
+  Object.entries(KITCHEN_RULE_CONFIG.platter.rules).map(([kind, rule]) => [rule.rowKey, kind]),
+);
+
+export function isContractPlatterRow(rowKey: string) {
+  return contractPlatterKinds.has(rowKey);
+}
+
+export function contractPlatterOrderQuantity(checklist: Pick<KitchenChecklist, "normalizedSelections">, rowKey: string) {
+  const kind = contractPlatterKinds.get(rowKey);
+  if (!kind) return null;
+  const selections = (checklist.normalizedSelections ?? []).filter((selection) => selection.kinds.some((value) => value === kind));
+  const quantity = selections.reduce((total, selection) => total + selection.quantity, 0);
+  if (selections.some((selection) => selection.quantityProvided !== true || !Number.isSafeInteger(selection.quantity) || selection.quantity < 1) ||
+      !Number.isSafeInteger(quantity) || quantity < KITCHEN_RULE_CONFIG.platter.minQuantity || quantity > KITCHEN_RULE_CONFIG.platter.maxQuantity) {
+    throw new Error("A verified contract platter quantity is required; prep pan counts cannot be sent as ordered platters.");
+  }
+  return quantity;
+}
+
 export function projectKitchenChecklist(
   checklist: KitchenChecklist,
   mappings: readonly EventFoodProductMapping[],
@@ -65,6 +86,7 @@ export function projectKitchenChecklist(
   },
 ): EventFoodProjection {
   const eventId = String(checklist.event.eventId);
+  const sourceType = options.sourceType ?? (eventId.startsWith("vip-") ? "VIP_ADDON" : "TRIPLESEAT_CONTRACT");
   const liveAddOnOrderQuantities = new Map(
     resolveKitchenLiveFoodAddOns(checklist.liveFoodAddOns).map((effect) => [
       effect.item.itemKey,
@@ -152,12 +174,15 @@ export function projectKitchenChecklist(
       continue;
     }
     try {
-      const request = normalizeEventFoodItem(row, {
+      // Contract platter products are purchased in platters, not in prep pans.
+      // Preserve the prep quantities and mapping while giving GoTab the ordered count.
+      const orderQuantity = (sourceType === "TRIPLESEAT_CONTRACT" ? contractPlatterOrderQuantity(checklist, row.key) : null) ?? row.orderQuantity;
+      const request = normalizeEventFoodItem({ ...row, orderQuantity }, {
         id: `${eventId}-${row.key}-${options.sourceVersion}`,
         eventId,
         tripleseatEventId: eventId.startsWith("vip-") ? null : eventId,
         tripleseatBookingId: checklist.event.bookingId == null ? null : String(checklist.event.bookingId),
-        sourceType: options.sourceType ?? (eventId.startsWith("vip-") ? "VIP_ADDON" : "TRIPLESEAT_CONTRACT"),
+        sourceType,
         sourceRecordId: row.key,
         sourceVersion: options.sourceVersion,
         originalSourceName: row.foodName,

@@ -259,7 +259,7 @@ describe("Tripleseat kitchen projection", () => {
     expect(result.exceptions.some((item) => item.reason.includes("verified GoTab product mapping"))).toBe(true);
   });
 
-  it("preserves Event Host pan output and America/New_York timing", () => {
+  it("uses the contracted platter count while preserving pan size and America/New_York timing", () => {
     const checklist = generateKitchenChecklist(sourceEvent);
     const row = checklist.sections.flatMap((section) => section.rows)
       .find((item) => item.key === "platter-mozzarella-sticks")!;
@@ -276,10 +276,82 @@ describe("Tripleseat kitchen projection", () => {
     }], { sourceVersion: 1 });
     expect(result.requests[0]).toMatchObject({
       eventName: "OPE KDS Integration Test",
-      quantity: row.numberOfPans,
+      quantity: 1,
       panSize,
       preparationStation: "FRYER",
       foodServiceAt: "2026-08-15T21:45:00.000Z",
+    });
+  });
+
+  it.each([
+    { packing: "third", companion: [], panSize: "1/3", mappedPanSize: "THIRD_PAN", pans: 8 },
+    { packing: "half", companion: [{ name: "Wing Platter", quantity: 1, sourceCategory: "Food Platters", isFood: true }], panSize: "1/2", mappedPanSize: "HALF_PAN", pans: 4 },
+  ] as const)("sends two contracted chicken tender platters, not $pans $packing pans", ({ companion, panSize, mappedPanSize, pans }) => {
+    const checklist = generateKitchenChecklist({ ...sourceEvent, selections: [
+      { name: "Chicken Tender Platter", quantity: 2, sourceCategory: "Food Platters", isFood: true }, ...companion,
+    ] });
+    const tender = checklist.sections.flatMap((section) => section.rows).find((row) => row.key === "platter-chicken-tenders")!;
+    expect(tender).toMatchObject({ quantity: 128, numberOfPans: pans, panSize });
+    const projection = projectKitchenChecklist({ ...checklist, sections: [{ category: "platters", label: "Platters", rows: [tender] }] }, [{
+      id: "contract-tenders", canonicalProductKey: tender.key, displayName: "Chicken Tender Platter", aliases: [],
+      panSize: mappedPanSize, preparationStation: "FRYER", gotabProductUuid: "test-tenders", verifiedAt: null,
+    }], { sourceType: "TRIPLESEAT_CONTRACT", sourceVersion: 1 });
+    expect(projection.exceptions).toEqual([]);
+    expect(projection.requests).toEqual([expect.objectContaining({ sourceRecordId: tender.key, quantity: 2, panSize: mappedPanSize })]);
+    expect(tender).toMatchObject({ quantity: 128, numberOfPans: pans, panSize });
+  });
+
+  it("does not use prep pans when a contract platter has missing or invalid ordered quantity evidence", () => {
+    const checklist = generateKitchenChecklist({ ...sourceEvent, selections: [{ name: "Chicken Tender Platter", quantity: 2, isFood: true }] });
+    const tender = checklist.sections.flatMap((section) => section.rows).find((row) => row.key === "platter-chicken-tenders")!;
+    const selection = checklist.normalizedSelections[0];
+    for (const normalizedSelections of [[], [{ ...selection, quantityProvided: false }], [{ ...selection, quantity: 1.5 }], [selection, { ...selection, quantityProvided: false }]]) {
+      const projection = projectKitchenChecklist({ ...checklist, normalizedSelections, sections: [{ category: "platters", label: "Platters", rows: [tender] }] }, [{
+        id: "contract-tenders", canonicalProductKey: tender.key, displayName: "Chicken Tender Platter", aliases: [],
+        panSize: "THIRD_PAN", preparationStation: "FRYER", gotabProductUuid: "test-tenders", verifiedAt: null,
+      }], { sourceType: "TRIPLESEAT_CONTRACT", sourceVersion: 1 });
+      expect(projection.requests).toEqual([]);
+      expect(projection.exceptions).toEqual([expect.objectContaining({ itemKey: tender.key, reason: expect.stringContaining("verified contract platter quantity") })]);
+    }
+  });
+
+  it("projects both purchased platters from the redacted contract descriptions", () => {
+    const checklist = generateKitchenChecklist({ ...sourceEvent, selections: [
+      { name: "Chicken Tender PlatterFried chicken tenders with ranch dipping sauce", quantity: 2, sourceCategory: "Food Platters", isFood: true },
+      { name: "Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack. Served with our signature OPE sauce", quantity: 1, sourceCategory: "Food Platters", isFood: true },
+    ] });
+    const sections = checklist.sections.filter((section) => section.category === "platters");
+    const rows = sections.flatMap((section) => section.rows);
+    const mappings = rows.map((row): EventFoodProductMapping => ({
+      id: row.key, canonicalProductKey: row.key, displayName: row.foodName, aliases: [],
+      panSize: row.panSize === "1/3" ? "THIRD_PAN" : "HALF_PAN",
+      preparationStation: "FRYER", gotabProductUuid: `test-${row.key}`, verifiedAt: null,
+    }));
+    const projection = projectKitchenChecklist({ ...checklist, sections }, mappings, { sourceType: "TRIPLESEAT_CONTRACT", sourceVersion: 1 });
+    expect(projection.exceptions).toEqual([]);
+    expect(Object.fromEntries(projection.requests.map((request) => [request.sourceRecordId, request.quantity]))).toEqual({
+      "platter-chicken-tenders": 2, "platter-fries": 1,
+    });
+  });
+
+  it("keeps buffet pans and sauce bowls as operational quantities beside a contracted platter", () => {
+    const checklist = generateKitchenChecklist({ ...sourceEvent, guestCount: 50, selections: [
+      { name: "The Full Course - Food + $20 Drink Cards", quantity: 50, isFood: true },
+      { name: "Jumbo Wing Bar — Premium wings, expertly prepared and designed for effortless group dining.", quantity: 1, isFood: true },
+      { name: "Chicken Tender Platter", quantity: 2, isFood: true },
+    ] });
+    const keys = ["wing-wings", "platter-chicken-tenders", "sauce-bbq"];
+    const sections = checklist.sections.map((section) => ({ ...section, rows: section.rows.filter((row) => keys.includes(row.key)) }));
+    const rows = sections.flatMap((section) => section.rows);
+    const mappings = rows.map((row): EventFoodProductMapping => ({
+      id: row.key, canonicalProductKey: row.key, displayName: row.foodName, aliases: [],
+      panSize: row.panSize === "1/3" ? "THIRD_PAN" : row.panSize === "1/2" ? "HALF_PAN" : "BOWL",
+      preparationStation: "FRYER", gotabProductUuid: `test-${row.key}`, verifiedAt: null,
+    }));
+    const projection = projectKitchenChecklist({ ...checklist, sections }, mappings, { sourceType: "TRIPLESEAT_CONTRACT", sourceVersion: 1 });
+    expect(projection.exceptions).toEqual([]);
+    expect(Object.fromEntries(projection.requests.map((request) => [request.sourceRecordId, request.quantity]))).toEqual({
+      "platter-chicken-tenders": 2, "wing-wings": 16, "sauce-bbq": 3,
     });
   });
 

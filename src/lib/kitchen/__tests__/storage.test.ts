@@ -772,6 +772,29 @@ describe("Supabase kitchen storage authentication", () => {
     });
   });
 
+  it("restores the contracted Fry Platter on a saved staff sheet without a resync", async () => {
+    const storage = createMemoryKitchenStorage();
+    const event = {
+      ...sourceEvent("redacted-contract"),
+      selections: [{
+        name: "Fry PlatterA shareable platter of crispy golden fries, lightly seasoned and served hot for the perfect group snack. Served with our signature OPE sauce",
+        quantity: 1, sourceCategory: "Food Platters", isFood: true,
+      }],
+    };
+    const staleChecklist = generateKitchenChecklist(event);
+    staleChecklist.ruleVersion = "ope-kitchen-2026-10-23.1";
+    staleChecklist.sections = [];
+    await storage.saveEvent({ sourceEvent: event, checklist: staleChecklist });
+    await storage.saveManualBwa(String(event.eventId), "Kitchen Runner");
+
+    const [checklist] = (await storage.getDay(event.localDate, { staffPrep: true })).events;
+    expect(checklist.ruleVersion).toBe(KITCHEN_RULE_CONFIG.ruleVersion);
+    expect(checklist.foodRunnerOrBwa).toBe("Kitchen Runner");
+    expect(checklist.sections.flatMap((section) => section.rows)).toContainEqual(
+      expect.objectContaining({ key: "platter-fries", quantity: 1, numberOfPans: 1, panSize: "1/2" }),
+    );
+  });
+
   it("does not infer a confirmed prep count for a different event on the same date", async () => {
     const storage = createMemoryKitchenStorage();
     const event = {
