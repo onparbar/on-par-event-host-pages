@@ -1,23 +1,32 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMemoryKitchenStorage,
   SupabaseKitchenStorage,
 } from "../storage";
 import { quantityAwareReadinessKey } from "../readiness";
+import { generateKitchenChecklist } from "../rules";
+import { MOCK_KITCHEN_EVENTS } from "../fixtures";
+import { confirmedContractKitchenSourcesForDate } from "../../confirmed-contract-events";
 import {
   getKitchenEventFoodAddOns,
   getKitchenDay,
   normalizeKitchenEventAddOnFood,
+  refreshTripleseatKitchenDay,
   syncKitchenDay,
+  syncVipBookingDay,
   updateKitchenEventFoodAddOns,
   updateKitchenItemCompletion,
+  updateKitchenItemPrepped,
   updateKitchenItemReadiness,
+  updateKitchenManualAssignments,
   updateKitchenManualBwa,
 } from "../sync";
 import type {
   TripleseatAdapter,
   TripleseatKitchenSourceEvent,
 } from "../tripleseat";
+import { vipPrepPayload } from "../../vip-prep/__tests__/fixtures";
+import { VipPrepClient, vipPrepKitchenEvents } from "../../vip-prep/client";
 
 function testAdapter(
   getEvents: () => TripleseatKitchenSourceEvent[],
@@ -48,7 +57,610 @@ function viewingTime(date: string) {
   return new Date(`${date}T12:00:00-04:00`);
 }
 
+describe("scheduled Tripleseat-only kitchen refresh", () => {
+  const date = "2026-08-15";
+  const original: TripleseatKitchenSourceEvent = {
+    ...MOCK_KITCHEN_EVENTS[2],
+    eventId: "12345",
+    localDate: date,
+    statusVerified: true,
+    documentMetadata: [],
+  };
+  const liveAdapter = (getEvents: () => TripleseatKitchenSourceEvent[]): TripleseatAdapter => ({
+    ...testAdapter(getEvents),
+    sourceMode: "live",
+  });
+  const readOptions = {
+    now: viewingTime(date),
+    vipPrepClient: { configured: false, fetchRange: async () => { throw new Error("VIP prep must not be fetched."); } },
+    floorPlanStorage: { get: async () => null },
+    persistSourceChanges: false,
+  };
+
+  it("refreshes only exact-date Tripleseat sources and preserves saved VIP, prep and add-on records", async () => {
+    const storage = createMemoryKitchenStorage();
+    const priorMissing = { ...original, eventId: "67890" };
+    const vip = vipPrepKitchenEvents(vipPrepPayload.reservations)[0];
+    for (const sourceEvent of [original, priorMissing, vip]) {
+      await storage.saveEvent({ sourceEvent, checklist: generateKitchenChecklist(sourceEvent) });
+    }
+    await storage.saveManualAssignments("12345", ["Brooke"], ["Carlos"], "Brooke", "Carlos", ["Brooke"]);
+    await storage.saveItemPrepped("12345", "appetizer-chicken-tenders", true, "Brooke", "2026-08-15T17:00:00Z");
+    await storage.saveItemReadiness("12345", "appetizer-chicken-tenders", true);
+    for (const id of ["12345", "67890"]) {
+      await updateKitchenEventFoodAddOns(id, { wings: { quantity: 1 } }, { storage });
+    }
+    const vipBefore = (await storage.getDay(date)).events.find((entry) => entry.event.eventId === vip.eventId);
+    const missingAddOnsBefore = await storage.getFoodAddOns("67890");
+    const addOnsBefore = await storage.getFoodAddOns("12345");
+    const replaceDay = vi.spyOn(storage, "replaceDay");
+    const saveEvent = vi.spyOn(storage, "saveEvent");
+    const vipConfigured = vi.spyOn(VipPrepClient.prototype, "configured", "get").mockReturnValue(true);
+    const fetchRange = vi.spyOn(VipPrepClient.prototype, "fetchRange").mockRejectedValue(new Error("Unexpected VIP refresh"));
+    const revised = { ...original, room: "VIP 1", guestCount: 44, sourceUpdatedAt: "2026-08-15T17:30:00Z" };
+    const adapter = liveAdapter(() => [
+      revised,
+      { ...original, eventId: "another-day", localDate: "2026-08-16" },
+      { ...original, eventId: "cancelled", status: "CANCELLED", fullBuyout: true },
+      { ...original, eventId: "lost", status: "LOST" },
+      { ...original, ...vip },
+    ]);
+    try {
+      await expect(refreshTripleseatKitchenDay(date, { adapter, storage, now: viewingTime(date) }))
+        .resolves.toEqual({ eventCount: 1, retainedUnverifiedCount: 1 });
+      expect(fetchRange).not.toHaveBeenCalled();
+      expect(replaceDay).not.toHaveBeenCalled();
+      expect(saveEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sourceEvent: revised }));
+    } finally {
+      fetchRange.mockRestore();
+      vipConfigured.mockRestore();
+    }
+
+    const day = await storage.getDay(date);
+    expect(day.sync).toMatchObject({ status: "success", eventCount: 1, lastSuccessfulSyncAt: expect.any(String) });
+    expect(day.events).toHaveLength(3);
+    expect(day.events.find((entry) => entry.event.eventId === "12345")).toMatchObject({
+      event: { room: "VIP 1", guestCount: 44, sourceUpdatedAt: revised.sourceUpdatedAt },
+      foodRunners: ["Brooke"], pocs: ["Carlos"], preppedBy: "Brooke", verifiedBy: "Carlos", setup: ["Brooke"],
+      preppedItemDetails: { "appetizer-chicken-tenders": { employeeName: "Brooke", preppedAt: "2026-08-15T17:00:00Z" } },
+      completedItemKeys: ["appetizer-chicken-tenders"],
+    });
+    expect(day.events.find((entry) => entry.event.eventId === vip.eventId)).toEqual(vipBefore);
+    await expect(storage.getFoodAddOns("12345")).resolves.toEqual(addOnsBefore);
+    await expect(storage.getFoodAddOns("67890")).resolves.toEqual(missingAddOnsBefore);
+    expect((await storage.getDay("2026-08-16")).events).toEqual([]);
+
+    const visible = await getKitchenDay(date, { ...readOptions, adapter, storage });
+    expect(visible.syncStatus).toBe("success");
+    expect(visible.syncError).toBeNull();
+    expect(visible.warnings).toContainEqual(expect.stringContaining("could not verify some saved kitchen checklists"));
+    expect(visible.warnings.join(" ")).not.toContain("67890");
+    expect(visible.events.filter((checklist) => checklist.warnings.some((warning) =>
+      warning.code === "SOURCE_STALE" && warning.message.includes("did not verify"))).map((checklist) => checklist.event.eventId)).toEqual(["67890"]);
+    expect(visible.events.find((entry) => entry.event.eventId === "67890")?.needsReview).toBe(true);
+
+    await refreshTripleseatKitchenDay(date, { adapter: liveAdapter(() => [revised, priorMissing]), storage, now: readOptions.now });
+    const refreshed = await getKitchenDay(date, { ...readOptions, adapter, storage });
+    expect(refreshed.syncStatus).toBe("success");
+    expect(refreshed.syncError).toBeNull();
+    expect(refreshed.warnings).not.toContainEqual(expect.stringContaining("could not verify some saved kitchen checklists"));
+    expect(refreshed.events.flatMap((checklist) => checklist.warnings)).not.toContainEqual(expect.objectContaining({ code: "SOURCE_STALE" }));
+  });
+
+  it("records a failed attempt without discarding the last success or saved checklists", async () => {
+    const storage = createMemoryKitchenStorage();
+    await refreshTripleseatKitchenDay(date, { adapter: liveAdapter(() => [original]), storage });
+    const before = await storage.getDay(date);
+    const adapter = liveAdapter(() => { throw new Error("private upstream detail"); });
+    await expect(refreshTripleseatKitchenDay(date, { adapter, storage })).rejects.toThrow("Kitchen synchronization failed.");
+    const after = await storage.getDay(date);
+    expect(after.events).toEqual(before.events);
+    expect(after.sync).toMatchObject({ status: "error", lastSuccessfulSyncAt: before.sync?.lastSuccessfulSyncAt, errorMessage: "Kitchen synchronization failed." });
+    const visible = await getKitchenDay(date, { ...readOptions, adapter, storage });
+    expect(visible.syncError).toBe("Kitchen synchronization failed.");
+    expect(visible.events[0]?.warnings).toContainEqual(expect.objectContaining({ code: "SOURCE_SYNC_FAILED" }));
+  });
+
+  it("round-trips retained IDs as internal success metadata without changing failed sync messages", async () => {
+    let syncRow: Record<string, unknown> = { event_date: date, started_at: new Date().toISOString() };
+    const storage = new SupabaseKitchenStorage({
+      env: { NODE_ENV: "test", SUPABASE_URL: "https://example.test", SUPABASE_SECRET_KEY: "test-only-key" },
+      fetchImpl: async (input, init) => {
+        if (new URL(String(input)).pathname.endsWith("/kitchen_sync_runs")) {
+          if (init?.method === "PATCH") {
+            syncRow = { ...syncRow, ...JSON.parse(String(init.body)) };
+            return new Response(null, { status: 204 });
+          }
+          return Response.json([syncRow]);
+        }
+        return Response.json([]);
+      },
+    });
+    await storage.completeSync(date, 1, ["67890"]);
+    expect((await storage.getDay(date)).sync).toMatchObject({
+      status: "success", errorMessage: null, unverifiedEventIds: ["67890"],
+    });
+    await storage.completeSync(date, 2);
+    expect((await storage.getDay(date)).sync).not.toHaveProperty("unverifiedEventIds");
+    expect(syncRow.error_message).toBeNull();
+    await storage.failSync(date, "Source is unavailable.");
+    expect((await storage.getDay(date)).sync).toMatchObject({ status: "error", errorMessage: "Source is unavailable." });
+  });
+
+  it("rejects the mock adapter and does not restore an absent contract fallback", async () => {
+    const storage = createMemoryKitchenStorage();
+    const fetchEvents = vi.fn(() => [original]);
+    await expect(refreshTripleseatKitchenDay(date, { adapter: testAdapter(fetchEvents), storage })).rejects.toThrow("Live Tripleseat is required");
+    expect(fetchEvents).not.toHaveBeenCalled();
+    expect((await storage.getDay(date)).sync).toBeNull();
+
+    const evidenceDate = "2026-08-21";
+    expect(confirmedContractKitchenSourcesForDate(evidenceDate)).not.toHaveLength(0);
+    await expect(refreshTripleseatKitchenDay(evidenceDate, { adapter: liveAdapter(() => []), storage }))
+      .resolves.toEqual({ eventCount: 0, retainedUnverifiedCount: 0 });
+    expect((await storage.getDay(evidenceDate)).events).toEqual([]);
+  });
+});
+
 describe("kitchen synchronization", () => {
+  it("refreshes VIP bookings without Tripleseat sync and preserves other kitchen events", async () => {
+    const storage = createMemoryKitchenStorage();
+    const corporateEvent = {
+      ...MOCK_KITCHEN_EVENTS[0],
+      localDate: "2026-08-15",
+    };
+    await storage.saveEvent({
+      sourceEvent: corporateEvent,
+      checklist: generateKitchenChecklist(corporateEvent),
+    });
+    const fetchRange = vi.fn(async () => structuredClone(vipPrepPayload));
+    const adapter = testAdapter(() => {
+      throw new Error("Tripleseat is unavailable");
+    });
+
+    const day = await syncVipBookingDay("2026-08-15", {
+      adapter,
+      storage,
+      vipPrepClient: { configured: true, fetchRange },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(fetchRange).toHaveBeenCalledExactlyOnceWith("2026-08-15", "2026-08-15");
+    expect(day.bookingCount).toBe(1);
+    expect(day.events.map((event) => event.event.eventId)).toEqual(
+      expect.arrayContaining(["mock-taco-001", "vip-reservation-uuid"]),
+    );
+    expect((await storage.getDay("2026-08-15")).events).toHaveLength(2);
+  });
+
+  it("reports a booking feed failure without replacing the saved kitchen day", async () => {
+    const storage = createMemoryKitchenStorage();
+    const existing = {
+      ...MOCK_KITCHEN_EVENTS[0],
+      localDate: "2026-08-15",
+    };
+    await storage.saveEvent({
+      sourceEvent: existing,
+      checklist: generateKitchenChecklist(existing),
+    });
+
+    await expect(syncVipBookingDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          throw new Error("network detail must not reach the UI");
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    })).rejects.toThrow("OnPar bookings could not be refreshed.");
+    expect((await storage.getDay("2026-08-15")).events.map(
+      (event) => event.event.eventId,
+    )).toEqual(["mock-taco-001"]);
+  });
+
+  it("keeps a red full-buyout event in the kitchen dashboard", async () => {
+    const storage = createMemoryKitchenStorage();
+    const result = await syncKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => [
+        {
+          eventId: "red-buyout-1",
+          eventName: "Redacted Full Buyout",
+          localDate: "2026-08-15",
+          startTime: "2026-08-15T18:00:00-04:00",
+          endTime: "2026-08-16T01:00:00-04:00",
+          guestCount: 140,
+          status: "PROSPECT",
+          fullBuyout: true,
+          room: "Full Building Buyout",
+          selections: [
+            {
+              name: "Wing Bar",
+              sourceCategory: "Wing Bar",
+              quantity: 1,
+              isFood: true,
+            },
+          ],
+        },
+      ]),
+      storage,
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: expect.objectContaining({
+            eventId: "red-buyout-1",
+            name: "Redacted Full Buyout",
+            status: "PROSPECT",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("shows the confirmed August 21 Wing Bar and five dessert platters", async () => {
+    const storage = createMemoryKitchenStorage();
+    const day = await getKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+      now: viewingTime("2026-08-21"),
+    });
+
+    const checklist = day.events.find(
+      (event) => event.event.name === "Amazon 08/21/2026",
+    );
+    expect(checklist).toBeDefined();
+    expect(checklist?.event).toMatchObject({
+      localDate: "2026-08-21",
+      guestCount: 50,
+      room: "VIP 1",
+    });
+    expect(checklist?.timing).toMatchObject({
+      startTime: "2026-08-21T16:00",
+      foodReadyBy: "2026-08-21T15:45",
+      earliestPrepTime: "2026-08-21T14:45",
+    });
+    expect(
+      checklist?.sections.flatMap((section) => section.rows),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          foodName: "Wings",
+          quantity: 400,
+          numberOfPans: 16,
+          panSize: "1/3",
+        }),
+        expect.objectContaining({
+          foodName: "Fries",
+          quantity: 10,
+          numberOfPans: 2,
+          panSize: "1/2",
+        }),
+        expect.objectContaining({
+          foodName: "Assorted Desserts",
+          quantity: 5,
+          numberOfPans: 5,
+          unit: "pretzel plates",
+          panSize: null,
+        }),
+      ]),
+    );
+    expect(checklist?.chafingDishes.total).toBe(1);
+    await expect(storage.getEventDate("62238275")).resolves.toBe(
+      "2026-08-21",
+    );
+    await updateKitchenManualAssignments(
+      "62238275",
+      ["Ryan"],
+      ["Diana"],
+      { storage },
+    );
+    const reloaded = await getKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: false,
+        async fetchRange() {
+          throw new Error("VIP Prep is disabled for this test.");
+        },
+      },
+      now: viewingTime("2026-08-21"),
+    });
+    expect(reloaded.events[0]).toMatchObject({
+      foodRunners: ["Ryan"],
+      pocs: ["Diana"],
+    });
+  });
+
+  it("saves VIP booking prep under its stable kitchen event ID", async () => {
+    const storage = createMemoryKitchenStorage();
+    const day = await getKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.missingEnvironmentVariables).not.toContain("SUPABASE_SECRET_KEY");
+    expect(day.events[0].event.eventId).toBe("vip-reservation-uuid");
+    await expect(storage.getEventDate("vip-reservation-uuid")).resolves.toBe("2026-08-15");
+    await updateKitchenManualAssignments(
+      "vip-reservation-uuid",
+      ["Ryan"],
+      ["Diana"],
+      { storage },
+    );
+    await updateKitchenEventFoodAddOns(
+      "vip-reservation-uuid",
+      { "tater-kegs": { quantity: 1 } },
+      { storage },
+    );
+    const refreshed = await getKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+    expect(refreshed.events[0].foodRunners).toEqual(["Ryan"]);
+    expect(refreshed.events[0].pocs).toEqual(["Diana"]);
+    expect(refreshed.events[0].liveFoodAddOns).toEqual([
+      expect.objectContaining({ itemKey: "addon:tater-kegs", quantity: 64 }),
+    ]);
+  });
+
+  it("refreshes older VIP food labels even when the booking timestamp has not changed", async () => {
+    const storage = createMemoryKitchenStorage();
+    const payload = structuredClone(vipPrepPayload);
+    payload.reservations[0].foodPrep[0].code = "tater-kegs";
+    const sourceEvent = vipPrepKitchenEvents(payload.reservations)[0];
+    const oldSource = {
+      ...sourceEvent,
+      selections: sourceEvent.selections.map((selection) => ({
+        ...selection,
+        name: "Tater Kegs",
+      })),
+    };
+    await storage.saveEvent({ sourceEvent: oldSource, checklist: generateKitchenChecklist(oldSource) });
+
+    const day = await getKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return payload;
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.events[0].sections.flatMap((section) => section.rows))
+      .toContainEqual(expect.objectContaining({ key: "platter-tater-kegs", quantity: 128 }));
+    expect(day.events[0].normalizedSelections[0].originalName).toBe("Tater Keg Platter");
+  });
+
+  it("keeps same-name event and VIP preorders distinct without a verified source link", async () => {
+    const eventBooking: TripleseatKitchenSourceEvent = {
+      eventId: "tripleseat-event-123",
+      bookingId: "tripleseat-booking-123",
+      eventName: "Redacted VIP",
+      localDate: "2026-08-15",
+      startTime: "2026-08-15T17:00:00-04:00",
+      endTime: "2026-08-15T20:00:00-04:00",
+      guestCount: 40,
+      status: "DEFINITE",
+      room: "Main Dining",
+      selections: [
+        {
+          name: "The Full Course",
+          sourceCategory: "Food Packages",
+          quantity: 40,
+          isFood: true,
+        },
+        {
+          name: "Wing Bar",
+          quantity: 40,
+          sourceCategory: "Food Packages",
+          isFood: true,
+        },
+      ],
+      specialNotes: [],
+      sourceUpdatedAt: "2026-08-15T12:00:00.000Z",
+      sourceState: "fresh",
+    };
+    const vipPayload = structuredClone(vipPrepPayload);
+    vipPayload.reservations[0].eventName = "Redacted VIP";
+
+    const day = await syncKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => [eventBooking]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return vipPayload;
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.events).toHaveLength(2);
+    const event = day.events.find((item) => item.event.eventId === "tripleseat-event-123")!;
+    expect(day.events.some((item) => item.event.eventId === "vip-reservation-uuid")).toBe(true);
+    expect(event.sections.flatMap((section) => section.rows)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ foodName: "Wings", quantity: 320 }),
+      ]),
+    );
+  });
+
+  it("does not suppress a VIP because its name has an event-booking suffix", async () => {
+    const eventBooking: TripleseatKitchenSourceEvent = {
+      eventId: "tripleseat-buyout-924",
+      eventName: "Peoples Buy out",
+      localDate: "2026-09-24",
+      startTime: "2026-09-24T18:00:00-04:00",
+      endTime: "2026-09-25T01:00:00-04:00",
+      guestCount: 200,
+      status: "PROSPECT",
+      fullBuyout: true,
+      room: "Full Building Buyout",
+      selections: [],
+      specialNotes: [],
+      sourceUpdatedAt: "2026-09-24T12:00:00.000Z",
+      sourceState: "fresh",
+    };
+    const vipPayload = structuredClone(vipPrepPayload);
+    vipPayload.reservations = vipPayload.reservations.map((reservation) => ({
+      ...reservation,
+      operatingDate: "2026-09-24",
+      eventName: "Peoples Buy out VIP",
+    }));
+
+    const day = await syncKitchenDay("2026-09-24", {
+      adapter: testAdapter(() => [eventBooking]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return vipPayload;
+        },
+      },
+      now: viewingTime("2026-09-24"),
+    });
+
+    expect(day.events.filter((event) => String(event.event.eventId).startsWith("vip-"))).toHaveLength(1);
+    expect(day.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: expect.objectContaining({
+            eventId: "tripleseat-buyout-924",
+            name: "Peoples Buy out",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("replaces an older same-name kitchen snapshot with contract evidence", async () => {
+    const storage = createMemoryKitchenStorage();
+    const stale = confirmedContractKitchenSourcesForDate("2026-08-21")[0];
+    stale.eventId = "older-manager-outing";
+    stale.sourceUpdatedAt = "2026-08-14T20:00:00.000Z";
+    stale.selections = [];
+    await storage.replaceDay("2026-08-21", [
+      { sourceEvent: stale, checklist: generateKitchenChecklist(stale) },
+    ]);
+
+    const day = await getKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
+      now: viewingTime("2026-08-21"),
+    });
+
+    expect(
+      day.events.filter((event) => event.event.name === "Amazon 08/21/2026"),
+    ).toEqual([
+      expect.objectContaining({
+        event: expect.objectContaining({ eventId: "62238275" }),
+      }),
+    ]);
+  });
+
+  it("replaces an older incomplete live Amazon kitchen source during sync", async () => {
+    const incomplete = confirmedContractKitchenSourcesForDate("2026-08-21")[0];
+    incomplete.selections = [];
+    incomplete.sourceUpdatedAt = "2026-08-14T20:00:00.000Z";
+
+    const day = await syncKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => [incomplete]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: {
+        configured: false,
+        fetchRange: async () => vipPrepPayload,
+      },
+      now: new Date("2026-08-14T22:00:00.000Z"),
+    });
+
+    expect(day.events).toHaveLength(1);
+    expect(day.events[0].event.eventId).toBe("62238275");
+    expect(day.events[0].sections.flatMap((section) => section.rows)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ foodName: "Wings", quantity: 400 }),
+        expect.objectContaining({ foodName: "Assorted Desserts", quantity: 5 }),
+      ]),
+    );
+  });
+
+  it("does not restore the confirmed Amazon kitchen event after Tripleseat marks it LOST", async () => {
+    const lost = confirmedContractKitchenSourcesForDate("2026-08-21")[0];
+    lost.status = "LOST";
+
+    const day = await syncKitchenDay("2026-08-21", {
+      adapter: testAdapter(() => [lost]),
+      storage: createMemoryKitchenStorage(),
+      vipPrepClient: { configured: false, fetchRange: async () => vipPrepPayload },
+      now: new Date("2026-08-14T22:00:00.000Z"),
+    });
+
+    expect(day.events).toEqual([]);
+  });
+
+  it("imports paid VIP food quantities into the Kitchen checklist", async () => {
+    const storage = createMemoryKitchenStorage();
+    const day = await syncKitchenDay("2026-08-15", {
+      adapter: testAdapter(() => []),
+      storage,
+      vipPrepClient: {
+        configured: true,
+        async fetchRange() {
+          return structuredClone(vipPrepPayload);
+        },
+      },
+      now: viewingTime("2026-08-15"),
+    });
+
+    expect(day.events).toHaveLength(1);
+    expect(day.events[0].event).toMatchObject({
+      eventId: "vip-reservation-uuid",
+      name: "Redacted VIP",
+      room: "VIP 2",
+    });
+    expect(day.events[0].sections.flatMap((section) => section.rows)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ foodName: "Wings", quantity: 128 }),
+      ]),
+    );
+  });
+
   it("refuses to persist mock events in the database backend", async () => {
     let requested = false;
     const storage = new SupabaseKitchenStorage({
@@ -70,6 +682,85 @@ describe("kitchen synchronization", () => {
       "Mock Tripleseat data cannot be persisted to the kitchen database.",
     );
     expect(requested).toBe(false);
+  });
+
+  it("persists multiple Food Runners and POCs independently", async () => {
+    const storage = createMemoryKitchenStorage();
+    const adapter = testAdapter(() => [
+      {
+        eventId: "staff-123",
+        bookingId: null,
+        eventName: "Staff assignment test",
+        localDate: "2026-07-28",
+        localDateVerified: true,
+        startTime: "12:00",
+        endTime: "14:00",
+        guestCount: 20,
+        status: "DEFINITE",
+        statusVerified: true,
+        room: "VIP 1",
+        selections: [{ name: "Taco Bar", isFood: true }],
+        specialNotes: [],
+        sourceUpdatedAt: "2026-07-28T12:00:00Z",
+        sourceState: "fresh",
+        documentMetadata: [],
+      },
+    ]);
+    await syncKitchenDay("2026-07-28", { adapter, storage });
+    await updateKitchenManualAssignments(
+      "staff-123",
+      ["Ryan", "Diana"],
+      ["Molly", "Taylor"],
+      { storage },
+    );
+
+    const day = await getKitchenDay("2026-07-28", {
+      adapter,
+      storage,
+      now: viewingTime("2026-07-28"),
+    });
+    expect(day.events[0].foodRunners).toEqual(["Ryan", "Diana"]);
+    expect(day.events[0].pocs).toEqual(["Molly", "Taylor"]);
+  });
+
+  it("validates and records the Prepped employee with one server timestamp", async () => {
+    const storage = createMemoryKitchenStorage();
+    const now = new Date("2026-08-14T16:05:00.000Z");
+
+    await expect(
+      updateKitchenItemPrepped(
+        "staff-123",
+        "taco-beef",
+        true,
+        null,
+        { storage, now },
+      ),
+    ).rejects.toThrow("Select the employee who prepped this item.");
+    await expect(
+      updateKitchenItemPrepped(
+        "staff-123",
+        "taco-beef",
+        true,
+        "Not On Roster",
+        { storage, now },
+      ),
+    ).rejects.toThrow("outside the approved roster");
+
+    await expect(
+      updateKitchenItemPrepped(
+        "staff-123",
+        "taco-beef",
+        true,
+        "  Diana  ",
+        { storage, now },
+      ),
+    ).resolves.toEqual({
+      eventId: "staff-123",
+      itemKey: "taco-beef",
+      prepped: true,
+      employeeName: "Diana",
+      preppedAt: "2026-08-14T16:05:00.000Z",
+    });
   });
 
   it("marks stored database events stale when live Tripleseat is unavailable", async () => {
@@ -142,7 +833,7 @@ describe("kitchen synchronization", () => {
     ]);
 
     await syncKitchenDay("2026-07-28", { adapter, storage });
-    await updateKitchenManualBwa("12345", "  Jamie   K.  ", { storage });
+    await updateKitchenManualBwa("12345", "  Ryan  ", { storage });
     sourceUpdatedAt = "2026-07-28T13:00:00Z";
     await syncKitchenDay("2026-07-28", { adapter, storage });
 
@@ -152,7 +843,10 @@ describe("kitchen synchronization", () => {
       now: viewingTime("2026-07-28"),
     });
     expect(day.events).toHaveLength(1);
-    expect(day.events[0].foodRunnerOrBwa).toBe("Jamie K.");
+    expect(day.events[0].foodRunnerOrBwa).toBe("Ryan");
+    expect(day.bwaOptions).toEqual(
+      expect.arrayContaining(["Adrian", "Molly", "Veronica"]),
+    );
     expect(day.events[0].event.sourceUpdatedAt).toBe(
       "2026-07-28T13:00:00Z",
     );
@@ -182,7 +876,7 @@ describe("kitchen synchronization", () => {
         (warning) => warning.code === "SOURCE_SYNC_FAILED",
       ),
     ).toBe(true);
-    expect(failedDay.events[0].foodRunnerOrBwa).toBe("Jamie K.");
+    expect(failedDay.events[0].foodRunnerOrBwa).toBe("Ryan");
   });
 
   it("preserves the safe reconnect instruction when Tripleseat rejects a refresh token", async () => {
@@ -327,7 +1021,7 @@ describe("kitchen synchronization", () => {
     expect(uncheckedDay.events[0].finalCompletedItemKeys).toEqual([]);
   });
 
-  it("archives ended events without deleting active add-on alert metadata", async () => {
+  it("keeps ended events visible through their operating day", async () => {
     const storage = createMemoryKitchenStorage();
     const baseEvent = {
       bookingId: null,
@@ -389,16 +1083,27 @@ describe("kitchen synchronization", () => {
       now: viewingTime("2026-07-29"),
     });
 
-    expect(visibleDay.archivedEventCount).toBe(1);
+    expect(visibleDay.archivedEventCount).toBe(0);
     expect(
       visibleDay.events.map((event) => String(event.event.eventId)),
-    ).toEqual(["active-event"]);
+    ).toEqual(["ended-event", "active-event"]);
     expect(
       visibleDay.addOnActivity.map((activity) => activity.eventId),
-    ).toEqual(["active-event"]);
+    ).toEqual(["ended-event", "active-event"]);
     expect(
       visibleDay.addOnCompletions.map((completion) => completion.eventId),
-    ).toEqual(["active-event"]);
+    ).toEqual(["ended-event", "active-event"]);
+
+    const archivedDay = await getKitchenDay("2026-07-29", {
+      adapter,
+      storage,
+      now: new Date("2026-07-30T04:00:00.000Z"),
+    });
+
+    expect(archivedDay.archivedEventCount).toBe(2);
+    expect(archivedDay.events).toEqual([]);
+    expect(archivedDay.addOnActivity).toEqual([]);
+    expect(archivedDay.addOnCompletions).toEqual([]);
     expect(await storage.getEventDate("ended-event")).toBe("2026-07-29");
   });
 
@@ -577,6 +1282,8 @@ describe("kitchen synchronization", () => {
   });
 
   it("validates full add-on snapshots and treats blank or zero as removal", async () => {
+    expect(normalizeKitchenEventAddOnFood({ "chicken-tenders": { quantity: "1", panSize: "1/2", notes: "  Sauce on side  " } })).toEqual({ "chicken-tenders": { quantity: 1, panSize: "1/2", notes: "Sauce on side" } });
+    expect(() => normalizeKitchenEventAddOnFood({ "chicken-tenders": { quantity: 1, notes: "a".repeat(501) } })).toThrow("500");
     expect(
       normalizeKitchenEventAddOnFood({
         wings: { quantity: "" },

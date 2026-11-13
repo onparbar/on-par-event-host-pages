@@ -1,4 +1,14 @@
 import { events as legacyEventPlans } from "@/lib/events";
+import {
+  confirmedContractDatesInWindow,
+  confirmedContractEventPlanById,
+  confirmedContractEventPlanSourcesForDate,
+  eventMatchesConfirmedContract,
+  isConfirmedContractEventPlanId,
+  mergeConfirmedContractEventPlans,
+  sourceIsAtLeastAsNew,
+} from "@/lib/confirmed-contract-events";
+import { legacyTaterKegSelection } from "@/lib/kitchen/legacy-tater-keg-selection";
 import { getTripleseatAdapter, type TripleseatAdapter } from "@/lib/kitchen/tripleseat";
 
 import { buildEventPlan } from "./domain";
@@ -8,6 +18,7 @@ import {
   type EventPlanDocument,
   type EventPlanStorage,
   type EventPlanWindow,
+  type StoredEventPlan,
 } from "./storage";
 import type {
   EventPlan,
@@ -21,6 +32,8 @@ export type EventPlanSyncOptions = {
   adapter?: TripleseatAdapter;
   storage?: EventPlanStorage;
   legacyPlans?: readonly EventPlan[];
+  /** A scoped pre-event refresh must not replace the rolling window's status. */
+  recordRollingSync?: boolean;
 };
 
 export type EventPlanSyncResult = StoredEventPlanWindow & {
@@ -56,8 +69,38 @@ function serializeDocument(value: EventPlan | TripleseatEventPlanSource) {
   return structuredClone(value) as unknown as EventPlanDocument;
 }
 
-function storedPlan(value: EventPlanDocument): EventPlan {
-  return structuredClone(value) as unknown as EventPlan;
+function storedPlan(row: StoredEventPlan): EventPlan {
+  const plan = structuredClone(row.plan) as unknown as EventPlan;
+  const taterKegs = legacyTaterKegSelection(row.sourceSnapshot as unknown as TripleseatEventPlanSource);
+  if (!taterKegs || plan.food.some((line) => /^(?:\d+\s*[×x]\s*)?tater kegs?(?: platter)?$/i.test(line.trim()))) return plan;
+
+  plan.food.push("1 × Tater Keg Platter");
+  const warning = 'Structured selection "Tater Kegs" is not mapped to food, drink, or entertainment.';
+  if (plan.review_reasons?.includes(warning)) {
+    plan.review_reasons = plan.review_reasons.filter((reason) => reason !== warning);
+    plan.needs_review = plan.review_reasons.length > 0;
+    plan.verification_status = plan.needs_review
+      ? `Needs Review: ${plan.review_reasons.join(" ")}`
+      : "Verified from current structured Tripleseat event data.";
+  }
+  return plan;
+}
+
+const EXCLUDED_OPERATIONAL_STATUSES = new Set(["LOST", "PROSPECT"]);
+
+export function isOperationalEventStatus(status: unknown, fullBuyout = false) {
+  return !(
+    !fullBuyout &&
+    typeof status === "string" &&
+    EXCLUDED_OPERATIONAL_STATUSES.has(status.trim().toUpperCase())
+  );
+}
+
+function storedPlanIsOperational(row: { sourceSnapshot: EventPlanDocument }) {
+  return isOperationalEventStatus(
+    row.sourceSnapshot.status,
+    row.sourceSnapshot.fullBuyout === true,
+  );
 }
 
 function legacyPlansForWindow(
@@ -76,6 +119,25 @@ function legacyPlansForWindow(
         left.time.localeCompare(right.time) ||
         left.name.localeCompare(right.name),
     );
+}
+
+function plansWithConfirmedContractEvidence(
+  plans: readonly EventPlan[],
+  window: EventPlanWindow,
+  includeConfirmedContractEvidence: boolean,
+  lastSuccessfulSyncAt?: string | null,
+  syncCoverage?: EventPlanWindow | null,
+) {
+  if (!includeConfirmedContractEvidence) {
+    return plans.map((plan) => structuredClone(plan));
+  }
+  return mergeConfirmedContractEventPlans(
+    plans,
+    window.startDate,
+    window.endDate,
+    lastSuccessfulSyncAt,
+    syncCoverage,
+  );
 }
 
 function syncStateFromStorage(
@@ -104,6 +166,7 @@ export async function syncEventPlanWindow(
   const adapter = options.adapter ?? getTripleseatAdapter();
   const storage = options.storage ?? getEventPlanStorage();
   const legacyPlans = options.legacyPlans ?? legacyEventPlans;
+  const recordRollingSync = options.recordRollingSync !== false;
 
   if (
     adapter.sourceMode !== "live" ||
@@ -114,12 +177,59 @@ export async function syncEventPlanWindow(
     );
   }
 
-  await storage.start(window);
+  if (recordRollingSync) await storage.start(window);
   try {
-    const sources = await adapter.fetchEventPlansForRange(
+    const fetchedSources = await adapter.fetchEventPlansForRange(
       window.startDate,
       window.endDate,
     );
+    let sources = fetchedSources.filter((source) =>
+      isOperationalEventStatus(source.status, source.fullBuyout),
+    );
+    const confirmedRows = confirmedContractDatesInWindow(
+      window.startDate,
+      window.endDate,
+    )
+      .flatMap((date) => confirmedContractEventPlanSourcesForDate(date))
+      .filter(
+        (row) =>
+          Date.parse(row.source.sourceUpdatedAt ?? "") <= now.getTime(),
+      );
+    for (const confirmed of confirmedRows) {
+      const matchingFetched = fetchedSources.find(
+        (source) =>
+          source.eventId === confirmed.source.eventId ||
+          eventMatchesConfirmedContract(
+            source.localDate,
+            source.eventName,
+            confirmed.source.localDate,
+            confirmed.source.eventName,
+          ),
+      );
+      if (
+        matchingFetched &&
+        (!isOperationalEventStatus(matchingFetched.status, matchingFetched.fullBuyout) ||
+          sourceIsAtLeastAsNew(
+            matchingFetched.sourceUpdatedAt,
+            confirmed.source.sourceUpdatedAt,
+          ))
+      ) {
+        continue;
+      }
+      sources = [
+        ...sources.filter(
+          (source) =>
+            source.eventId !== confirmed.source.eventId &&
+            !eventMatchesConfirmedContract(
+              source.localDate,
+              source.eventName,
+              confirmed.source.localDate,
+              confirmed.source.eventName,
+            ),
+        ),
+        confirmed.source,
+      ];
+    }
     const syncedAt = now.toISOString();
     const plans = sources.map((source) => ({
       ...buildEventPlan(source, legacyPlans),
@@ -135,15 +245,15 @@ export async function syncEventPlanWindow(
         sourceUpdatedAt: sources[index].sourceUpdatedAt,
       })),
     );
-    await storage.finish(plans.length);
+    if (recordRollingSync) await storage.finish(plans.length);
     return {
       plans,
-      sync: syncStateFromStorage(await storage.getSyncState()),
+      sync: recordRollingSync ? syncStateFromStorage(await storage.getSyncState()) : null,
       sourceMode: "live",
     };
   } catch (error) {
     try {
-      await storage.fail(errorMessage(error));
+      if (recordRollingSync) await storage.fail(errorMessage(error));
     } catch {
       // Preserve the original synchronization error.
     }
@@ -158,16 +268,45 @@ export async function syncRollingEventPlans(
   return syncEventPlanWindow(storageWindow(now), { ...options, now });
 }
 
+/** Refresh only a saved Tripleseat event; never mark another event inactive or advance rolling sync status. */
+export async function syncSingleEventPlan(date: string, eventId: string, options: EventPlanSyncOptions = {}) {
+  validatedWindow({ startDate: date, endDate: date });
+  if (!/^\d+$/.test(eventId)) throw new Error("Choose an exact Tripleseat event.");
+  const storage = options.storage ?? getEventPlanStorage();
+  const adapter = options.adapter ?? getTripleseatAdapter();
+  const baseline = await storage.findById(eventId);
+  if (!baseline?.active || baseline.eventDate !== date || adapter.sourceMode !== "live" || !adapter.fetchEventPlansForRange) {
+    throw new Error("The selected event must have an active saved Tripleseat booking on this date.");
+  }
+  const matches = (await adapter.fetchEventPlansForRange(date, date, eventId)).filter((source) =>
+    source.eventId === eventId && source.localDate === date);
+  if (matches.length !== 1 || (matches[0].status?.trim().toUpperCase() !== "DEFINITE" && !matches[0].fullBuyout)) {
+    throw new Error("Tripleseat did not return one active, exact match. Existing assignments were not changed; verify the booking date or status.");
+  }
+  const source = matches[0];
+  if (baseline.sourceUpdatedAt && !sourceIsAtLeastAsNew(source.sourceUpdatedAt, baseline.sourceUpdatedAt)) {
+    throw new Error("Tripleseat returned an older or undated source. Existing assignments were not changed.");
+  }
+  const syncedAt = (options.now ?? new Date()).toISOString();
+  const plan = { ...buildEventPlan(source, options.legacyPlans ?? legacyEventPlans), synced_at: syncedAt };
+  await storage.replaceEvent({ eventId, eventDate: date, plan: serializeDocument(plan), sourceSnapshot: serializeDocument(source),
+    sourceUpdatedAt: source.sourceUpdatedAt }, baseline.syncedAt);
+  return { plan, syncedAt };
+}
+
 export async function loadEventPlanWindow(
   options: Pick<
     EventPlanSyncOptions,
     "now" | "storage" | "legacyPlans"
-  > = {},
+  > & { window?: EventPlanWindow } = {},
 ): Promise<StoredEventPlanWindow> {
   const now = options.now ?? new Date();
-  const window = storageWindow(now);
+  const window = options.window ? validatedWindow(options.window) : storageWindow(now);
   const storage = options.storage ?? getEventPlanStorage();
   const legacyPlans = options.legacyPlans ?? legacyEventPlans;
+  const includeConfirmedContractEvidence =
+    options.legacyPlans == null ||
+    legacyPlans.some((plan) => isConfirmedContractEventPlanId(plan.id));
 
   try {
     const [rows, syncState] = await Promise.all([
@@ -176,7 +315,20 @@ export async function loadEventPlanWindow(
     ]);
     if (rows.length > 0 || syncState?.status === "success") {
       return {
-        plans: rows.map((row) => storedPlan(row.plan)),
+        plans: plansWithConfirmedContractEvidence(
+          rows
+            .filter(storedPlanIsOperational)
+            .map(storedPlan),
+          window,
+          includeConfirmedContractEvidence,
+          syncState?.lastSuccessfulSyncAt,
+          syncState
+            ? {
+                startDate: syncState.windowStart,
+                endDate: syncState.windowEnd,
+              }
+            : null,
+        ),
         sync: syncStateFromStorage(syncState),
       };
     }
@@ -186,9 +338,48 @@ export async function loadEventPlanWindow(
   }
 
   return {
-    plans: legacyPlansForWindow(window, legacyPlans),
+    plans: plansWithConfirmedContractEvidence(
+      legacyPlansForWindow(window, legacyPlans),
+      window,
+      includeConfirmedContractEvidence,
+    ),
     sync: null,
   };
+}
+
+export async function loadHistoricalEventPlans(
+  endDate: string,
+  options: Pick<EventPlanSyncOptions, "storage" | "legacyPlans"> = {},
+) {
+  const storage = options.storage ?? getEventPlanStorage();
+  const legacyPlans = options.legacyPlans ?? legacyEventPlans;
+  const historicalLegacyPlans = legacyPlans.filter(
+    (plan) => plan.date <= endDate,
+  );
+  let storedPlans: EventPlan[] = [];
+
+  try {
+    const rows = await storage.plansForWindow({
+      startDate: "2000-01-01",
+      endDate,
+    });
+    storedPlans = rows
+      .filter(storedPlanIsOperational)
+      .map(storedPlan);
+  } catch {
+    // Keep the static itinerary archive available if historical storage is
+    // unavailable during a local preview or a temporary database outage.
+  }
+
+  const byId = new Map<number, EventPlan>();
+  for (const plan of historicalLegacyPlans) byId.set(plan.id, plan);
+  for (const plan of storedPlans) byId.set(plan.id, plan);
+  return [...byId.values()].sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) ||
+      left.time.localeCompare(right.time) ||
+      left.name.localeCompare(right.name),
+  );
 }
 
 export async function findEventPlanById(
@@ -203,12 +394,45 @@ export async function findEventPlanById(
 
   try {
     const row = await storage.findById(String(eventId));
-    if (row?.active) {
-      return storedPlan(row.plan);
+    if (row?.active && storedPlanIsOperational(row)) {
+      return storedPlan(row);
     }
   } catch {
     // Fall through to an exact-ID redacted legacy plan.
   }
-  const legacy = legacyPlans.find((plan) => plan.id === eventId);
-  return legacy ? structuredClone(legacy) : null;
+  const legacy =
+    legacyPlans.find((plan) => plan.id === eventId) ??
+    (options.legacyPlans == null
+      ? confirmedContractEventPlanById(eventId)
+      : null);
+  if (!legacy) return null;
+  try {
+    const [syncState, matchingRows] = await Promise.all([
+      storage.getSyncState(),
+      storage.plansForWindow({
+        startDate: legacy.date,
+        endDate: legacy.date,
+      }),
+    ]);
+    const visible = plansWithConfirmedContractEvidence(
+      matchingRows
+        .filter(storedPlanIsOperational)
+        .map(storedPlan),
+      { startDate: legacy.date, endDate: legacy.date },
+      true,
+      syncState?.lastSuccessfulSyncAt,
+      syncState
+        ? {
+            startDate: syncState.windowStart,
+            endDate: syncState.windowEnd,
+          }
+        : null,
+    ).some((plan) => plan.id === legacy.id);
+    if (isConfirmedContractEventPlanId(legacy.id) && !visible) {
+      return null;
+    }
+  } catch {
+    // The exact contract-evidence fallback remains available before migration.
+  }
+  return structuredClone(legacy);
 }

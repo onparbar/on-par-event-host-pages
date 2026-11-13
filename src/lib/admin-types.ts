@@ -1,3 +1,5 @@
+import type { ItineraryEdit } from "@/lib/itineraries/edits";
+
 export type AdminAssetOverlay = {
   id: string;
   kind: "highlight" | "cover";
@@ -16,6 +18,7 @@ export type AdminState = {
   archivedAssetKeys: string[];
   archivedEventIds: number[];
   overlaysByAsset: Record<string, AdminAssetOverlay[]>;
+  itineraryEditsByEvent?: Record<string, ItineraryEdit>;
 };
 
 export const ADMIN_STATE_VERSION_HEADER =
@@ -26,5 +29,6 @@ export function emptyAdminState(): AdminState {
     archivedAssetKeys: [],
     archivedEventIds: [],
     overlaysByAsset: {},
+    itineraryEditsByEvent: {},
   };
 }

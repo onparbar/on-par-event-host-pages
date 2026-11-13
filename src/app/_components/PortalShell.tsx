@@ -1,14 +1,22 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
 } from "react";
+import { formatEventDate } from "@/lib/event-format";
+import { useEventContext } from "./EventContext";
+import { ConnectivityBanner } from "./ConnectivityBanner";
+import { isStaffWorkspaceRoute, STAFF_WORKSPACE_NAVIGATION } from "@/lib/operations/staff-workspace";
+import { StaffNameSelect } from "./StaffNameSelect";
+import { EventWorkspaceReminders } from "./EventWorkspace";
+import { operationalEventRequestHref } from "@/lib/operations/event-context";
 
 const PORTAL_NAVIGATION = [
   { href: "/", label: "Home" },
@@ -16,7 +24,9 @@ const PORTAL_NAVIGATION = [
   { href: "/entertainment-schedules", label: "Entertainment" },
   { href: "/itineraries", label: "Itineraries" },
   { href: "/checklists", label: "Checklists" },
+  { href: "/set-up", label: "Set Up" },
   { href: "/event-host-addons", label: "Add-Ons" },
+  { href: "/vip-check-in", label: "VIP CHECK-IN" },
   { href: "/kitchen", label: "Kitchen" },
   { href: "/admin", label: "Admin" },
 ] as const;
@@ -24,10 +34,12 @@ const PORTAL_NAVIGATION = [
 type PortalHeaderProps = {
   actions?: ReactNode;
   allowFullscreen?: boolean;
+  beforeNavigate?: () => boolean;
   blocked?: boolean;
   onLock?: () => void;
   sectionSubtitle: string;
   sectionTitle: string;
+  showEventContext?: boolean;
 };
 
 function isActiveRoute(pathname: string, href: string) {
@@ -36,14 +48,22 @@ function isActiveRoute(pathname: string, href: string) {
     : pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function PortalLinkPending() {
+  const { pending } = useLinkStatus();
+  return pending ? <span className="portal-link-pending" role="status">Opening…</span> : null;
+}
+
 function PortalNavigation({
+  beforeNavigate,
   mobile = false,
-  onNavigate,
+  onCurrentTab,
 }: {
+  beforeNavigate?: () => boolean;
   mobile?: boolean;
-  onNavigate?: () => void;
+  onCurrentTab?: () => void;
 }) {
   const pathname = usePathname();
+  const { eventHref, requestedDate, selectedEvent } = useEventContext();
 
   return (
     <nav
@@ -56,11 +76,15 @@ function PortalNavigation({
           <Link
             aria-current={active ? "page" : undefined}
             className={active ? "is-active" : undefined}
-            href={item.href}
+            href={item.href === "/set-up" ? item.href : item.href === "/floor-plans" ? operationalEventRequestHref(item.href, null, requestedDate ?? selectedEvent?.date ?? null) : eventHref(item.href)}
             key={item.href}
-            onClick={onNavigate}
+            onNavigate={(event) => {
+              if (beforeNavigate?.() === false) event.preventDefault();
+              else if (active) onCurrentTab?.();
+            }}
           >
             {item.label}
+            <PortalLinkPending />
           </Link>
         );
       })}
@@ -71,13 +95,31 @@ function PortalNavigation({
 export function PortalHeader({
   actions,
   allowFullscreen = false,
+  beforeNavigate,
   blocked = false,
   onLock,
   sectionSubtitle,
   sectionTitle,
+  showEventContext = true,
 }: PortalHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [changingStaff, setChangingStaff] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+  const pathname = usePathname();
+  const { selectedEvent, requestedEventId, preferredEventId, ready, clearEvent, staffName, setStaffName, switchEvent } = useEventContext();
+
+  // Keep the destination link (and its pending feedback) visible until navigation commits.
+  useEffect(() => setMenuOpen(false), [pathname]);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    const shell = header?.closest<HTMLElement>(".portal-shell");
+    if (!header || !shell || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => shell.style.setProperty("--event-header-height", `${header.getBoundingClientRect().height}px`));
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     function updateFullscreenState() {
@@ -101,12 +143,17 @@ export function PortalHeader({
   }
 
   return (
+    <>
     <header
       aria-hidden={blocked ? true : undefined}
       className="portal-header"
       inert={blocked ? true : undefined}
+      ref={headerRef}
     >
-      <Link className="portal-brand" href="/">
+      <Link className="portal-brand" href="/" onNavigate={(event) => {
+        if (beforeNavigate?.() === false) event.preventDefault();
+        else if (selectedEvent) { event.preventDefault(); switchEvent(); }
+      }}>
         <Image
           alt="On Par Entertainment"
           className="portal-brand-logo"
@@ -121,7 +168,7 @@ export function PortalHeader({
         </span>
       </Link>
 
-      <PortalNavigation />
+      <PortalNavigation beforeNavigate={beforeNavigate} />
 
       <div className="portal-header-actions">
         {actions}
@@ -158,25 +205,128 @@ export function PortalHeader({
       {menuOpen ? (
         <div className="portal-mobile-panel">
           <PortalNavigation
+            beforeNavigate={beforeNavigate}
             mobile
-            onNavigate={() => setMenuOpen(false)}
+            onCurrentTab={() => setMenuOpen(false)}
           />
         </div>
       ) : null}
     </header>
+    {!blocked ? <ConnectivityBanner /> : null}
+    {showEventContext && !pathname.startsWith("/admin") && (pathname !== "/floor-plans" || requestedEventId) && !blocked && ready && (selectedEvent || preferredEventId) ? (
+      <section aria-label="Selected event workspace" className="portal-event-context">
+        <div>
+          <span className="portal-event-context-label">Selected event</span>
+          <strong>{selectedEvent?.eventName ?? "Requested event is not available in this view"}</strong>
+          {selectedEvent ? <span>{formatEventDate(selectedEvent.date)} · {selectedEvent.time || "Time needs review"} · {selectedEvent.guestCount || "Guest count needs review"}{selectedEvent.guestCount ? " guests" : ""} · {selectedEvent.area || "Reserved area needs review"}</span> : <span>Select the matching party before making changes. A different event has not been substituted.</span>}
+          {selectedEvent ? <span>Employee: {staffName || "Select your name to open your staff workspace"}</span> : null}
+          {selectedEvent?.foodRunner || selectedEvent?.poc ? <span>Food Runner: {selectedEvent.foodRunner || "Not assigned"} · POC: {selectedEvent.poc || "Not assigned"}</span> : null}
+        </div>
+        <div className="portal-event-context-actions">
+          {selectedEvent && (changingStaff || !staffName) ? <StaffNameSelect id="workspace-employee" onChange={(name) => { setStaffName(name); if (name) setChangingStaff(false); }} value={staffName} /> : null}
+          {selectedEvent && staffName && !changingStaff ? <button className="secondary" onClick={() => setChangingStaff(true)} type="button">Change Staff</button> : null}
+          <button className="secondary" onClick={() => { if (beforeNavigate?.() !== false) (selectedEvent ? switchEvent : clearEvent)(); }} type="button">Switch Event</button>
+        </div>
+      </section>
+    ) : null}
+    </>
   );
 }
 
 export function PortalFrame({
+  beforeNavigate,
   children,
   className = "",
 }: {
+  beforeNavigate?: () => boolean;
   children: ReactNode;
   className?: string;
 }) {
+  const pathname = usePathname();
+  const { selectedEvent, requestedEventId, staffName, ready, switchEvent } = useEventContext();
+  const workspace = Boolean(ready && selectedEvent && staffName && isStaffWorkspaceRoute(pathname) && (pathname !== "/floor-plans" || requestedEventId));
+  const shellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!workspace || !shell || typeof ResizeObserver === "undefined") return;
+    let observed: HTMLElement[] = [];
+    const updateSidebarOffset = () => {
+      const height = observed.reduce((total, element) => total + element.getBoundingClientRect().height, 0);
+      shell.style.setProperty("--staff-sidebar-top", `${Math.ceil(height)}px`);
+    };
+    const observer = new ResizeObserver(updateSidebarOffset);
+    const observeHeader = () => {
+      for (const element of observed) observer.unobserve(element);
+      observed = Array.from(shell.querySelectorAll<HTMLElement>(":scope > .portal-header, :scope > .portal-event-context"));
+      for (const element of observed) observer.observe(element);
+      updateSidebarOffset();
+    };
+    observeHeader();
+    // A modal temporarily removes the event strip; remeasure when it returns.
+    const mutations = new MutationObserver(observeHeader);
+    mutations.observe(shell, { childList: true });
+    return () => { observer.disconnect(); mutations.disconnect(); };
+  }, [workspace]);
   return (
-    <div className={`portal-shell${className ? ` ${className}` : ""}`}>
+    <div className={`portal-shell${workspace ? " staff-event-workspace" : ""}${className ? ` ${className}` : ""}`} ref={shellRef}>
       {children}
+      {workspace ? <aside aria-label="Event workspace sidebar" className="staff-workspace-sidebar"><StaffWorkspaceNavigation beforeNavigate={beforeNavigate} /><EventWorkspaceReminders /><button className="staff-all-operations" onClick={() => { if (beforeNavigate?.() !== false) switchEvent(); }} type="button">All operations</button></aside> : null}
+    </div>
+  );
+}
+
+export function StaffWorkspaceNavigation({ beforeNavigate }: { beforeNavigate?: () => boolean }) {
+  const pathname = usePathname();
+  const { eventHref } = useEventContext();
+  return <nav aria-label="My event workspace" className="staff-workspace-navigation">{STAFF_WORKSPACE_NAVIGATION.map((item) => <Link aria-current={pathname === item.href ? "page" : undefined} className={pathname === item.href ? "is-active" : undefined} href={eventHref(item.href)} key={item.href} onNavigate={(event) => { if (beforeNavigate?.() === false) event.preventDefault(); }}>{item.label}<PortalLinkPending /></Link>)}</nav>;
+}
+
+export function PortalZoomControls({
+  label,
+  maximum,
+  minimum,
+  onChange,
+  resetValue,
+  step,
+  value,
+}: {
+  label: string;
+  maximum: number;
+  minimum: number;
+  onChange: (value: number) => void;
+  resetValue: number;
+  step: number;
+  value: number;
+}) {
+  return (
+    <div aria-label={label} className="portal-zoom-controls" role="group">
+      <button
+        aria-label={`${label}: zoom out`}
+        className="portal-header-button"
+        disabled={value <= minimum}
+        onClick={() => onChange(Math.max(minimum, value - step))}
+        type="button"
+      >
+        −
+      </button>
+      <button
+        aria-label={`Reset ${label.toLowerCase()} from ${value}% to ${resetValue}%`}
+        className="portal-header-button portal-zoom-value"
+        disabled={value === resetValue}
+        onClick={() => onChange(resetValue)}
+        type="button"
+      >
+        {value}%
+      </button>
+      <button
+        aria-label={`${label}: zoom in`}
+        className="portal-header-button"
+        disabled={value >= maximum}
+        onClick={() => onChange(Math.min(maximum, value + step))}
+        type="button"
+      >
+        +
+      </button>
     </div>
   );
 }
@@ -184,6 +334,7 @@ export function PortalFrame({
 export function PortalShell({
   actions,
   allowFullscreen,
+  beforeNavigate,
   blocked,
   children,
   className = "",
@@ -197,10 +348,11 @@ export function PortalShell({
   mainClassName?: string;
 }) {
   return (
-    <PortalFrame className={className}>
+    <PortalFrame beforeNavigate={beforeNavigate} className={className}>
       <PortalHeader
         actions={actions}
         allowFullscreen={allowFullscreen}
+        beforeNavigate={beforeNavigate}
         blocked={blocked}
         onLock={onLock}
         sectionSubtitle={sectionSubtitle}

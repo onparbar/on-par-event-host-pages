@@ -1,4 +1,9 @@
-export type SoundAlertState = "off" | "enabling" | "on" | "error";
+export type SoundAlertState =
+  | "off"
+  | "waiting"
+  | "enabling"
+  | "on"
+  | "error";
 
 export const AUDIO_ALERT_ERROR =
   "This browser could not enable alert sounds. Select Retry sound alerts to try again.";
@@ -8,7 +13,9 @@ export function soundAlertButtonLabel(state: SoundAlertState) {
     case "enabling":
       return "Enabling sound alerts…";
     case "on":
-      return "Sound alerts on";
+      return "Sound alerts always on";
+    case "waiting":
+      return "Sound alerts armed";
     case "error":
       return "Retry sound alerts";
     case "off":

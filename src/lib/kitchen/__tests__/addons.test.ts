@@ -4,13 +4,22 @@ import {
   KITCHEN_EVENT_ADD_ON_FIELDS,
   KITCHEN_EVENT_ADD_ON_SECTIONS,
   resolveKitchenLiveFoodAddOns,
+  normalizeKitchenOrderNotes,
   translateEventHostFoodAddOns,
 } from "../addons";
 
 describe("translateEventHostFoodAddOns", () => {
+  it("retains bounded per-request instructions without changing quantities or pan allocation", () => {
+    const plain = translateEventHostFoodAddOns({ "chicken-tenders": { quantity: 1, panSize: "1/2" } }, "2026-10-23T17:00:00Z");
+    const noted = translateEventHostFoodAddOns({ "chicken-tenders": { quantity: 1, panSize: "1/2", notes: "  Keep sauce on side  " } }, "2026-10-23T17:00:00Z");
+    expect(noted).toEqual([{ ...plain[0], requestNotes: "Keep sauce on side" }]);
+    expect(normalizeKitchenOrderNotes("")).toBeUndefined();
+    expect(() => normalizeKitchenOrderNotes("a".repeat(501))).toThrow("500");
+    expect(() => normalizeKitchenOrderNotes("bad\u0000note")).toThrow("control");
+  });
   it("exports the canonical Event Host entry fields and source units", () => {
     expect(
-      KITCHEN_EVENT_ADD_ON_FIELDS.map(
+      KITCHEN_EVENT_ADD_ON_FIELDS.slice(0, 22).map(
         ({ sourceKey, foodName, sourceUnitLabel }) => ({
           sourceKey,
           foodName,
@@ -129,11 +138,35 @@ describe("translateEventHostFoodAddOns", () => {
         sourceUnitLabel: "requested units",
       },
     ]);
+    expect(
+      KITCHEN_EVENT_ADD_ON_FIELDS.slice(22).map(
+        ({ sourceKey, foodName, sourceUnitLabel }) => ({
+          sourceKey,
+          foodName,
+          sourceUnitLabel,
+        }),
+      ),
+    ).toEqual([
+      { sourceKey: "appetizer-refill-tater-kegs", foodName: "Tater Kegs", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-mozzarella-sticks", foodName: "Mozzarella Sticks", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-chicken-tenders", foodName: "Chicken Tenders", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-marinara", foodName: "Marinara", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-ranch", foodName: "Ranch", sourceUnitLabel: "requested units" },
+      { sourceKey: "appetizer-refill-bbq", foodName: "BBQ Sauce", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-wings", foodName: "Wings", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-fries", foodName: "Fries", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-ranch", foodName: "Ranch", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-bbq", foodName: "BBQ Sauce", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-garlic-parm", foodName: "Garlic Parm", sourceUnitLabel: "requested units" },
+      { sourceKey: "wing-refill-buffalo", foodName: "Buffalo Sauce", sourceUnitLabel: "requested units" },
+    ]);
     expect(KITCHEN_EVENT_ADD_ON_SECTIONS).toEqual([
       { key: "party-platters", label: "Party Platters" },
       { key: "sauces", label: "Sauces" },
       { key: "dessert", label: "Dessert" },
       { key: "taco-bar", label: "Taco Bar" },
+      { key: "appetizer-bar-refills", label: "Appetizer Bar Refills" },
+      { key: "wing-bar-refills", label: "Wing Bar Refills" },
     ]);
   });
 
@@ -173,13 +206,13 @@ describe("translateEventHostFoodAddOns", () => {
       {
         quantity: 128,
         unit: "each",
-        numberOfPans: 6,
+        numberOfPans: 8,
         panSize: "1/3",
       },
       {
         quantity: 8,
         unit: "pounds",
-        numberOfPans: 3,
+        numberOfPans: 4,
         panSize: "1/3",
       },
       {
@@ -191,13 +224,13 @@ describe("translateEventHostFoodAddOns", () => {
       {
         quantity: 2,
         unit: "bags",
-        numberOfPans: null,
-        panSize: null,
+        numberOfPans: 2,
+        panSize: "1/2",
       },
       {
-        quantity: 100,
+        quantity: 128,
         unit: "each",
-        numberOfPans: 4,
+        numberOfPans: 8,
         panSize: "1/3",
       },
       {
@@ -241,6 +274,97 @@ describe("translateEventHostFoodAddOns", () => {
     expect(addOns.every((item) => item.sourceUpdatedAt === sourceUpdatedAt)).toBe(
       true,
     );
+  });
+
+  it("uses a staff-selected pan size for a live food add-on", () => {
+    expect(
+      translateEventHostFoodAddOns(
+        { "mozzarella-sticks": { quantity: 2, panSize: "1/2" } },
+        "2026-08-11T20:00:00.000Z",
+      ),
+    ).toMatchObject([
+      {
+        itemKey: "addon:mozzarella-sticks",
+        quantity: 8,
+        unit: "pounds",
+        numberOfPans: 2,
+        panSize: "1/2",
+        selectedPanSize: "1/2",
+      },
+    ]);
+  });
+
+  it("keeps an automatic pan size distinct from a staff-selected one", () => {
+    const [addOn] = translateEventHostFoodAddOns(
+      { "tater-kegs": { quantity: 1 } },
+      "2026-08-11T20:00:00.000Z",
+    );
+    expect(addOn).toMatchObject(
+      {
+        itemKey: "addon:tater-kegs",
+        numberOfPans: 3,
+        panSize: "1/3",
+      },
+    );
+    expect(addOn).not.toHaveProperty("selectedPanSize");
+  });
+
+  const platterFormulaCases = [
+    { key: "tater-kegs", amount: 64, unit: "each", halfPans: 2, thirdPans: 3 },
+    { key: "mozzarella-sticks", amount: 4, unit: "pounds", halfPans: 1, thirdPans: 2 },
+    { key: "chicken-tenders", amount: 64, unit: "each", halfPans: 2, thirdPans: 4 },
+    { key: "wings", amount: 64, unit: "each", halfPans: 2, thirdPans: 4 },
+    { key: "fry-platters", amount: 1, unit: "bags", halfPans: 1, thirdPans: null },
+  ] as const;
+
+  it.each(platterFormulaCases.flatMap((formula) => [1, 2, 10].flatMap((count) =>
+    (["1/2", "1/3"] as const).map((panSize) => ({ ...formula, count, panSize })),
+  )))("uses exact $panSize pans for $count $key add-on platter(s)", ({
+    key, amount, unit, halfPans, thirdPans, count, panSize,
+  }) => {
+    const [addOn] = translateEventHostFoodAddOns({
+      [key]: { quantity: count, panSize },
+    }, null);
+    const pansPerPlatter = panSize === "1/2" ? halfPans : thirdPans;
+    expect(addOn).toMatchObject({
+      quantity: amount * count,
+      unit,
+      numberOfPans: pansPerPlatter === null ? null : pansPerPlatter * count,
+      panSize,
+      selectedPanSize: panSize,
+    });
+    expect(resolveKitchenLiveFoodAddOns([addOn])[0].sourceQuantity).toBe(count);
+  });
+
+  it.each(platterFormulaCases.flatMap((formula) => [1, 2, 10].map((count) => ({
+    ...formula, count,
+  }))))("keeps automatic $key platter packing approved at quantity $count", ({
+    key, amount, thirdPans, halfPans, count,
+  }) => {
+    const [addOn] = translateEventHostFoodAddOns({ [key]: { quantity: count } }, null);
+    expect(addOn).toMatchObject({
+      quantity: amount * count,
+      numberOfPans: count * (thirdPans ?? halfPans),
+      panSize: thirdPans === null ? "1/2" : "1/3",
+    });
+    expect(addOn).not.toHaveProperty("selectedPanSize");
+  });
+
+  it("keeps bar food refills as requested units rather than inventing platter conversions", () => {
+    const addOns = translateEventHostFoodAddOns({
+      "appetizer-refill-tater-kegs": { quantity: 2 },
+      "appetizer-refill-mozzarella-sticks": { quantity: 2 },
+      "appetizer-refill-chicken-tenders": { quantity: 2 },
+      "wing-refill-wings": { quantity: 2 },
+      "wing-refill-fries": { quantity: 2 },
+    }, null);
+    expect(addOns).toHaveLength(5);
+    expect(addOns.every((item) => item.quantity === 2 &&
+      item.unit === "requested units" && item.numberOfPans === null && item.panSize === null)).toBe(true);
+  });
+
+  it.each([undefined, "1/2", "1/3"] as const)("omits zero-quantity mozzarella platter add-ons with pan size %s", (panSize) => {
+    expect(translateEventHostFoodAddOns({ "mozzarella-sticks": { quantity: 0, panSize } }, null)).toEqual([]);
   });
 
   it("accepts positive whole number values and ignores invalid or unknown entries", () => {

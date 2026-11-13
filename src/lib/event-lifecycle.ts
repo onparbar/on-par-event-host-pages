@@ -178,6 +178,42 @@ export function activeEvents<T extends TimedEvent>(
     .map(({ event }) => event);
 }
 
+export function availableChecklistEvents<T extends TimedEvent>(
+  items: T[],
+  manuallyArchivedIds: number[] = [],
+  now = new Date(),
+) {
+  const manuallyArchived = new Set(manuallyArchivedIds);
+  const currentDate = easternDateValue(now);
+  const current = parseEventDate(currentDate)!;
+  const previous = new Date(
+    Date.UTC(current.year, current.month - 1, current.day - 1),
+  );
+  const previousDate = `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}-${String(previous.getUTCDate()).padStart(2, "0")}`;
+
+  return items
+    .map((event, index) => ({
+      event,
+      index,
+      keys: eventMinuteKeys(event),
+    }))
+    .filter(({ event }) => {
+      if (!parseEventDate(event.date)) {
+        return !manuallyArchived.has(event.id);
+      }
+      if (event.date >= previousDate) {
+        return true;
+      }
+      return false;
+    })
+    .sort((left, right) => {
+      if (!left.keys) return right.keys ? 1 : left.index - right.index;
+      if (!right.keys) return -1;
+      return left.keys.start - right.keys.start || left.index - right.index;
+    })
+    .map(({ event }) => event);
+}
+
 export function eventsForDatedAsset<T extends NamedTimedEvent>(
   asset: DatedAsset,
   items: T[],

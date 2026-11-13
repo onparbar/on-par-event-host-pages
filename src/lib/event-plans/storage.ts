@@ -1,4 +1,5 @@
 import { getSupabaseSecret } from "../kitchen/storage";
+import { StaleSaveError } from "../stale-save";
 import { isValidEventPlanDate } from "./horizon";
 
 const DEFAULT_SUPABASE_URL = "https://tmnstuthbllnoqgepotn.supabase.co";
@@ -45,6 +46,7 @@ export interface EventPlanStorage {
     window: EventPlanWindow,
     plans: readonly EventPlanWrite[],
   ): Promise<void>;
+  replaceEvent(plan: EventPlanWrite, expectedSyncedAt: string): Promise<void>;
   plansForWindow(window: EventPlanWindow): Promise<StoredEventPlan[]>;
   findById(eventId: string): Promise<StoredEventPlan | null>;
   getSyncState(): Promise<EventPlanSyncState | null>;
@@ -358,6 +360,19 @@ export class SupabaseEventPlanStorage implements EventPlanStorage {
       .sort(comparePlans);
   }
 
+  async replaceEvent(requestedPlan: EventPlanWrite, expectedSyncedAt: string) {
+    const plan = requiredPlan(requestedPlan, { startDate: requestedPlan.eventDate, endDate: requestedPlan.eventDate });
+    const rows = await this.jsonRequest<{ event_id: string }[]>("event_host_event_plans", new URLSearchParams({
+      event_id: `eq.${plan.eventId}`,
+      event_date: `eq.${plan.eventDate}`,
+      active: "eq.true",
+      synced_at: `eq.${expectedSyncedAt}`,
+      select: "event_id",
+    }), { method: "PATCH", headers: { Prefer: "return=representation" },
+      body: JSON.stringify(rowFromPlan(plan, this.now().toISOString())) });
+    if (rows.length !== 1 || rows[0].event_id !== plan.eventId) throw new StaleSaveError();
+  }
+
   async findById(requestedEventId: string) {
     const eventId = requiredEventId(requestedEventId);
     const rows = await this.jsonRequest<EventPlanRow[]>(
@@ -508,6 +523,13 @@ export class MemoryEventPlanStorage implements EventPlanStorage {
       )
       .sort(comparePlans)
       .map(clone);
+  }
+
+  async replaceEvent(requestedPlan: EventPlanWrite, expectedSyncedAt: string) {
+    const plan = requiredPlan(requestedPlan, { startDate: requestedPlan.eventDate, endDate: requestedPlan.eventDate });
+    const previous = this.plans.get(plan.eventId);
+    if (!previous?.active || previous.eventDate !== plan.eventDate || previous.syncedAt !== expectedSyncedAt) throw new StaleSaveError();
+    this.plans.set(plan.eventId, { ...clone(plan), active: true, syncedAt: this.now().toISOString() });
   }
 
   async findById(requestedEventId: string) {

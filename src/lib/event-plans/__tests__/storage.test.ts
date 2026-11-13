@@ -146,6 +146,26 @@ describe("in-memory event-plan storage", () => {
 });
 
 describe("Supabase event-plan storage", () => {
+  it("compares and replaces only the exact active event, never the date window", async () => {
+    const fetchImpl = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>()
+      .mockImplementationOnce(async () => Response.json([{ event_id: "event-a" }]))
+      .mockImplementationOnce(async () => Response.json([]));
+    const storage = new SupabaseEventPlanStorage({
+      env: { NODE_ENV: "test", SUPABASE_URL: "https://example.supabase.co", SUPABASE_SECRET_KEY: "sb_secret_test" },
+      fetchImpl: fetchImpl as typeof fetch,
+      now: () => new Date("2026-07-30T14:00:00Z"),
+    });
+    const savedAt = "2026-07-30T13:00:00Z";
+    await storage.replaceEvent(plan("event-a", "2026-07-30"), savedAt);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(Object.fromEntries(new URL(url).searchParams)).toEqual({
+      event_id: "eq.event-a", event_date: "eq.2026-07-30", active: "eq.true", synced_at: `eq.${savedAt}`, select: "event_id",
+    });
+    expect(init?.method).toBe("PATCH");
+    await expect(storage.replaceEvent(plan("event-a", "2026-07-30"), savedAt)).rejects.toMatchObject({ status: 409 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("upserts current plans before deactivating stale rows in the window", async () => {
     const requests: Array<{
       url: URL;

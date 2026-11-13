@@ -4,9 +4,9 @@ import {
   revertEntertainmentReservation,
 } from "@/lib/entertainment/sync";
 import {
-  entertainmentUnauthorized,
-  requireEntertainmentSession,
-} from "../../../_auth";
+  isSameOriginOperationalRequest,
+  operationalAccessDenied,
+} from "@/lib/operational-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,8 +15,8 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ reservationId: string }> },
 ) {
-  if (!(await requireEntertainmentSession())) {
-    return entertainmentUnauthorized();
+  if (!isSameOriginOperationalRequest(request)) {
+    return operationalAccessDenied();
   }
   let body: { forceConflict?: unknown; reason?: unknown } = {};
   try {
