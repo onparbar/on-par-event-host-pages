@@ -1,5 +1,10 @@
 {
   "framework": "nextjs",
+  "git": {
+    "deploymentEnabled": {
+      "codex/event-host-standalone-staffing": false
+    }
+  },
   "crons": [
     {
       "path": "/api/checklists/auto-submit",

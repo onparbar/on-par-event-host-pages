@@ -139,12 +139,14 @@ export default function ChecklistsClient({
   activeEventIds,
   events,
   initialRecords,
+  staffingPrefills,
   workspace = "checklist",
   sourceWarning = "",
 }: {
   activeEventIds: number[];
   events: ChecklistEvent[];
   initialRecords: ChecklistRecord[] | null;
+  staffingPrefills?: Readonly<Record<string, readonly string[]>>;
   workspace?: ChecklistWorkspace;
   sourceWarning?: string;
 }) {
@@ -193,6 +195,7 @@ export default function ChecklistsClient({
   const [warningConfirmationByEvent, setWarningConfirmationByEvent] = useState<Record<number, { sourceFingerprint: string; employeeName: string }>>({});
   const inFlightEventIds = useRef(new Set<number>());
   const finalSubmissionEventIds = useRef(new Set<number>());
+  const touchedBwaEventIds = useRef(new Set<number>());
   const metaByEventRef = useRef(metaByEvent);
   const appliedSnapshot = useRef({ events, savedRecordsById });
   const revisionByEventRef = useRef<Record<number, number>>(
@@ -652,6 +655,9 @@ export default function ChecklistsClient({
 
   const isSubmitted = activeMeta.status === "submitted";
   const isEditable = loadState === "ready" && !isSubmitted && activeSaveState !== "submitting";
+  const assignedBwaNames = isEditable && !activeChecklist.bwa && !activeMeta.updatedAt
+    && !recordForEvent(savedRecordsById, activeEvent) && !touchedBwaEventIds.current.has(activeEvent.id)
+    ? staffingPrefills?.[activeEvent.source_event_id ?? String(activeEvent.id)] ?? [] : [];
   const foodSaveBusy = activeKitchenSyncState === "syncing" || activeSaveState === "saving";
   const canSendFood = isEditable && !conflictByEvent[activeEvent.id] && !foodSaveBusy;
   const readiness = activeReadiness!;
@@ -746,18 +752,19 @@ export default function ChecklistsClient({
               placeholder="Enter staff POC name"
               onChange={(value) => updateEventChecklist(activeEvent.id, (current) => ({ ...current, poc: value }))}
             />
-            <EditableField
-              disabled={!isEditable}
-              label="BWA"
-              value={activeChecklist.bwa}
-              placeholder="Type employee name"
-              onChange={(value) =>
-                updateEventChecklist(activeEvent.id, (current) => ({
-                  ...current,
-                  bwa: value,
-                }))
-              }
-            />
+            <div>
+              <EditableField
+                disabled={!isEditable}
+                label="BWA"
+                value={activeChecklist.bwa}
+                placeholder={assignedBwaNames.join(", ") || "Type employee name"}
+                onChange={(value) => enterBwa(value)}
+              />
+              {assignedBwaNames.length ? <div className="meta">
+                <p>From this event’s staffing assignment. Choose the BWA or type another name.</p>
+                {assignedBwaNames.map((name) => <button type="button" className="button-link" key={name} onClick={() => enterBwa(name)}>Use {name}</button>)}
+              </div> : null}
+            </div>
           </div>
           <div className="notes-grid">
             <EditableTextArea
@@ -884,6 +891,12 @@ export default function ChecklistsClient({
         )}
     </PortalShell>
   );
+
+  function enterBwa(value: string) {
+    if (!activeEvent) return;
+    touchedBwaEventIds.current.add(activeEvent.id);
+    updateEventChecklist(activeEvent.id, (current) => ({ ...current, bwa: value }));
+  }
 
   function updateEventChecklist(eventId: number, updater: (current: EventChecklistState) => EventChecklistState) {
     if (loadState !== "ready" || metaByEventRef.current[eventId]?.status === "submitted" || finalSubmissionEventIds.current.has(eventId)) {

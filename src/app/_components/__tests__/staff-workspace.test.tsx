@@ -26,6 +26,22 @@ import Loading from "../../loading";
 const plan: EventPlan = { id: 123, name: "Staff training", date: "2026-10-23", rooms: ["VIP 1"], time: "2:00 PM – 4:00 PM", day: "Friday", guest_count: 20, color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified" };
 
 describe("staff event workspace shell", () => {
+  it("shows staffing edit and review controls for the exact event, without replacing the VIP Shift Lead", () => {
+    const events = buildOperationalEventSummaries([
+      plan, { ...plan, id: 124, name: "Needs a team" }, { ...plan, id: 125, source_event_id: "vip-test", name: "VIP booking" },
+    ], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, {
+      events, initialNow: "2026-10-23T19:00:00Z", staffingByEvent: {
+        "2026-10-23:123": { status: "review", names: ["Assigned Staff"] }, "2026-10-23:124": { status: "unassigned", names: [] },
+        "vip-test": { status: "review", names: ["Do not disclose"] },
+      },
+    }));
+    expect(html).toContain('href="/admin/staffing?eventId=123&amp;date=2026-10-23#staffing-assignment"');
+    expect(html).toContain("Staffing Needs Review: Staff training");
+    expect(html).toContain("No Staff Assigned: Needs a team");
+    expect(html).toContain("Shift Lead");
+    expect(html).not.toContain("Do not disclose");
+  });
   beforeEach(() => { mocks.pathname = "/checklists"; mocks.staffName = "Carlos"; mocks.requestedDate = "2026-10-23"; mocks.requestedEventId = "123"; });
   it("renders the six left navigation tabs in order with the same event identity", () => {
     const html = renderToStaticMarkup(createElement(PortalShell, { sectionTitle: "Checklists", sectionSubtitle: "Event workspace", children: createElement("p", null, "Checklist tasks") }));

@@ -3,6 +3,7 @@
 import { kitchenProductionTotals, kitchenProgress } from "@/lib/kitchen/production";
 import type { KitchenChecklist } from "@/lib/kitchen/types";
 import { eventFoodDeliveryState, type EventFoodDelivery } from "@/lib/gotab/delivery";
+import { kitchenFoodRunnerPrefill, type KitchenSheetChecklist } from "./staff-prefill";
 
 function clock(value: string | null) {
   return value ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(value)) : "Needs review";
@@ -26,12 +27,12 @@ export function KitchenProductionPanel({ events }: { events: KitchenChecklist[] 
   </section>;
 }
 
-export function KitchenExpoPanel({ events }: { events: KitchenChecklist[] }) {
+export function KitchenExpoPanel({ events }: { events: KitchenSheetChecklist[] }) {
   return <section className="kitchen-operations-panel" aria-labelledby="kitchen-expo-heading"><h2 id="kitchen-expo-heading">Expo and Food Runner</h2>
     <div className="kitchen-operations-scroll"><table><thead><tr><th>Event / area</th><th>Food Runner</th><th>POC</th><th>Prepped</th><th>Ready</th></tr></thead><tbody>{events.map((event) => {
       const progress = kitchenProgress(event);
       return <tr key={String(event.event.eventId)}><th scope="row">{event.event.name}<small>{event.event.room || "Area not listed"}</small></th>
-        <td>{event.foodRunners?.join(", ") || event.foodRunnerOrBwa || "Unassigned"}</td><td>{event.pocs?.join(", ") || "Unassigned"}</td><td>{progress.prepped}/{progress.total}</td><td>{progress.ready}/{progress.total}</td></tr>;
+        <td>{event.foodRunners?.join(", ") || event.foodRunnerOrBwa || kitchenFoodRunnerPrefill(event) || "Unassigned"}</td><td>{event.pocs?.join(", ") || "Unassigned"}</td><td>{progress.prepped}/{progress.total}</td><td>{progress.ready}/{progress.total}</td></tr>;
     })}</tbody></table></div>
   </section>;
 }

@@ -1,9 +1,11 @@
+import { cookies } from "next/headers";
 import {
   PortalPageHeader,
   PortalShell,
   PortalStatusBadge,
 } from "@/app/_components/PortalShell";
 import { loadAdminState } from "@/lib/admin-state";
+import { hasAdminSession, requiresStrongAdminSession } from "@/lib/admin-auth";
 import { checklistEventsForPlans } from "@/lib/checklist-events";
 import { activeEvents, easternDateValue } from "@/lib/event-lifecycle";
 import { addCalendarDays, isValidEntertainmentDate } from "@/lib/entertainment/time";
@@ -11,6 +13,7 @@ import { listChecklistRecords } from "@/lib/checklist-storage";
 import { buildOperationalEventSummaries } from "@/lib/operations/command-center";
 import { EventCommandCenter } from "@/app/_components/EventCommandCenter";
 import { loadStaffEventPlans } from "@/lib/operations/staff-events";
+import { loadStaffingCards } from "@/lib/staffing/service";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +54,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const assignedStaffByEvent = Object.fromEntries((checklistRecords ?? [])
     .filter((record) => record.bwa.trim())
     .map((record) => [`${record.eventDate}:${record.eventId}`, record.bwa]));
+  const staffingEvents = operationalEvents.flatMap(({ event, startsAt, endsAt }) =>
+    event.date >= today && event.date <= through && !event.eventId.startsWith("vip-")
+      ? [{ eventId: event.eventId, date: event.date, startAt: startsAt, endAt: endsAt }] : []);
+  const staffingByEvent = staffingEvents.length && requiresStrongAdminSession() && hasAdminSession(await cookies())
+    ? await loadStaffingCards(staffingEvents, { now, allowAdminPreview: true }).catch(() => ({})) : {};
 
   return (
     <PortalShell
@@ -78,6 +86,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       />
       <EventCommandCenter
         assignedStaffByEvent={assignedStaffByEvent}
+        staffingByEvent={staffingByEvent}
         events={operationalEvents}
         initialNow={now.toISOString()}
         sourceWarning={[...new Set([eventPlanWindow.sourceWarning, selectedDay?.sourceWarning].filter(Boolean))].join(" ")}

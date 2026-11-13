@@ -438,11 +438,13 @@ export function PortalState({
 
 export function PortalAccessGate({
   description,
+  passphrase = false,
   productLabel,
   submitLabel,
   title,
 }: {
   description: string;
+  passphrase?: boolean;
   productLabel: string;
   submitLabel: string;
   title: string;
@@ -465,7 +467,7 @@ export function PortalAccessGate({
       const response = await fetch("/api/admin-session", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ pin }),
+        body: JSON.stringify(passphrase ? { passphrase: pin } : { pin }),
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as {
@@ -506,25 +508,26 @@ export function PortalAccessGate({
           <h1 id={`${inputId}-title`}>{title}</h1>
           <p>{description}</p>
           <form className="portal-auth-form" onSubmit={handleSubmit}>
-            <label htmlFor={inputId}>Event Host PIN</label>
+            <label htmlFor={inputId}>{passphrase ? "Admin passphrase" : "Event Host PIN"}</label>
             <input
               aria-describedby={error ? `${inputId}-error` : undefined}
-              autoComplete="one-time-code"
+              autoComplete={passphrase ? "current-password" : "one-time-code"}
               autoFocus
               id={inputId}
-              inputMode="numeric"
-              maxLength={4}
+              inputMode={passphrase ? "text" : "numeric"}
+              maxLength={passphrase ? 256 : 4}
               onChange={(event) =>
                 setPin(
-                  event.target.value.replace(/\D/g, "").slice(0, 4),
+                  passphrase ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 4),
                 )
               }
-              pattern="[0-9]{4}"
+              minLength={passphrase ? 16 : 4}
+              pattern={passphrase ? undefined : "[0-9]{4}"}
               type="password"
               value={pin}
             />
             <button
-              disabled={pin.length !== 4 || state === "submitting"}
+              disabled={(passphrase ? pin.length < 16 : pin.length !== 4) || state === "submitting"}
               type="submit"
             >
               {state === "submitting" ? "Checking…" : submitLabel}

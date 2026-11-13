@@ -18,6 +18,43 @@ function json(value: unknown, status = 200) {
 }
 
 describe("Tripleseat adapter security and normalization", () => {
+  it("reads only staffing metadata across a complete search and rejects an incomplete search", async () => {
+    const calls: Array<{ url: URL; method: string }> = [];
+    let incomplete = false;
+    const adapter = new LiveTripleseatAdapter({
+      env: { NODE_ENV: "test", TRIPLESEAT_CLIENT_ID: "client", TRIPLESEAT_CLIENT_SECRET: "secret",
+        TRIPLESEAT_ACCESS_TOKEN: "access", TRIPLESEAT_REFRESH_TOKEN: "refresh", TRIPLESEAT_LOCATION_ID: "26059" },
+      storage: createMemoryKitchenStorage(),
+      fetchImpl: async (input, init) => {
+        const url = new URL(String(input));
+        calls.push({ url, method: init?.method ?? "GET" });
+        if (url.pathname.endsWith("/events/search")) {
+          const page = Number(url.searchParams.get("page"));
+          return json({ total_pages: 2, results: page === 1 ? [{ id: 45, status: "TENTATIVE", location_id: 26059 }] :
+            incomplete ? [] : [{ id: 46, status: "LOST", location_id: 26059 }] });
+        }
+        if (url.pathname.endsWith("/events/45")) {
+          return json({ event: { id: 45, name: "<p>Sample Party</p>", location_id: 26059, status: "TENTATIVE",
+            event_date_iso8601: "2026-11-13", event_start_iso8601: "2026-11-13T18:00:00-05:00",
+            event_end_iso8601: "2026-11-13T20:00:00-05:00", deposit: 50, guest_count: 20 } });
+        }
+        throw new Error("Unexpected test request.");
+      },
+    });
+    await expect(adapter.fetchStaffingEventsForRange("2026-11-13", "2026-11-19")).resolves.toEqual([{
+      eventId: "45", eventName: "Sample Party", localDate: "2026-11-13",
+      eventStartAt: "2026-11-13T18:00:00-05:00", eventEndAt: "2026-11-13T20:00:00-05:00",
+    }]);
+    expect(calls.map(({ url, method }) => [url.pathname.split("/").slice(-2).join("/"), method])).toEqual([
+      ["events/search", "GET"], ["events/search", "GET"], ["events/45", "GET"],
+    ]);
+    expect(calls[2].url.searchParams.has("show_financial")).toBe(false);
+    calls.length = 0;
+    incomplete = true;
+    await expect(adapter.fetchStaffingEventsForRange("2026-11-13", "2026-11-19")).rejects.toThrow("did not complete every page");
+    expect(calls).toHaveLength(2);
+  });
+
   it("loads all active Tripleseat statuses for Floor Plans without changing the definite-only kitchen search", async () => {
     const storage = createMemoryKitchenStorage();
     const searchUrls: string[] = [];

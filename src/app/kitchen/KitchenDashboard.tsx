@@ -7,6 +7,7 @@ import { kitchenProgress } from "@/lib/kitchen/production";
 import { FoodDeliveryPanel, KitchenExpoPanel, KitchenProductionPanel } from "./KitchenOperationsPanel";
 import type { EventFoodDelivery } from "@/lib/gotab/delivery";
 import { KitchenSheetViewport } from "./KitchenSheetViewport";
+import { kitchenFoodRunnerPrefill, type KitchenSheetChecklist } from "./staff-prefill";
 import { servingChafingSetup } from "@/lib/operations/setup";
 import {
   useCallback,
@@ -53,7 +54,7 @@ import type {
 type KitchenDayResponse = {
   date: string;
   serverTime: string;
-  events: KitchenChecklist[];
+  events: KitchenSheetChecklist[];
   bwaOptions: string[];
   archivedEventCount: number;
   addOnActivity: KitchenAddOnActivity[];
@@ -74,7 +75,7 @@ type KitchenDayResponse = {
   };
 };
 
-export function printableEventChecklists(events: readonly KitchenChecklist[]) {
+export function printableEventChecklists<T extends KitchenChecklist>(events: readonly T[]) {
   return [...events];
 }
 
@@ -1805,7 +1806,7 @@ export function ChecklistPanel({
   staffDraft: StaffAssignmentDraft;
   bwaOptions: readonly string[];
   bwaSaveState: BwaSaveState;
-  checklist: KitchenChecklist;
+  checklist: KitchenSheetChecklist;
   completionPending?: ReadonlySet<string>;
   onStaffChange: (value: StaffAssignmentDraft) => void;
   onClose: () => void;
@@ -1906,7 +1907,7 @@ export function KitchenEventAccordion({
   children,
   onOpen,
 }: {
-  checklist: KitchenChecklist;
+  checklist: KitchenSheetChecklist;
   children?: ReactNode;
   onOpen?: (trigger: HTMLElement) => void;
 }) {
@@ -1935,7 +1936,7 @@ export function KitchenEventAccordion({
           <strong>{checklist.event.name}</strong>
           <span className="kitchen-event-area">Area reserved: {checklist.event.room || "Area not listed"}</span>
           {checklist.event.vipBooking || String(checklist.event.eventId).startsWith("vip-") ? <span className="kitchen-event-readiness">{vipKitchenArrivalLabel(checklist)}</span> : null}
-          <span className="kitchen-event-readiness">Prepped {progress.prepped}/{progress.total} · Ready {progress.ready}/{progress.total}{checklist.needsReview ? " · Needs review" : ""}{!(checklist.foodRunners?.length || checklist.foodRunnerOrBwa) ? " · Food Runner unassigned" : ""}</span>
+          <span className="kitchen-event-readiness">Prepped {progress.prepped}/{progress.total} · Ready {progress.ready}/{progress.total}{checklist.needsReview ? " · Needs review" : ""}{!(checklist.foodRunners?.length || checklist.foodRunnerOrBwa || kitchenFoodRunnerPrefill(checklist)) ? " · Food Runner unassigned" : ""}</span>
         </span>
         <span className="kitchen-event-accordion-time">{eventTime}</span>
       </summary>
@@ -1947,12 +1948,14 @@ export function KitchenEventAccordion({
 function StaffMultiSelect({
   label,
   className = "kitchen-staff-select",
+  defaultLabel,
   onChange,
   options,
   selected,
 }: {
   label: string;
   className?: string;
+  defaultLabel?: string;
   onChange: (values: string[]) => void;
   options: readonly string[];
   selected: readonly string[];
@@ -1962,7 +1965,9 @@ function StaffMultiSelect({
     <details className={className} name="kitchen-staff-assignment">
       <summary>
         <span>{label}</span>
-        <strong>{selected.length ? selected.join(", ") : "Select employees"}</strong>
+        <strong style={!selected.length && defaultLabel ? { whiteSpace: "normal", overflowWrap: "anywhere" } : undefined}>
+          {selected.length ? selected.join(", ") : defaultLabel || "Select employees"}
+        </strong>
       </summary>
       <fieldset>
         <legend>{label}</legend>
@@ -2014,7 +2019,7 @@ export function KitchenChecklistSheet({
   bwaDraft?: string;
   bwaOptions?: readonly string[];
   bwaSaveState: BwaSaveState;
-  checklist: KitchenChecklist;
+  checklist: KitchenSheetChecklist;
   completionPending?: ReadonlySet<string>;
   fitToScreen?: boolean;
   hideEventIdentity?: boolean;
@@ -2041,6 +2046,7 @@ export function KitchenChecklistSheet({
     .sort((left, right) => categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category));
   const dropReminder = appetizerDropReminder(checklist);
   const servingSetup = servingChafingSetup(checklist);
+  const foodRunnerPrefill = kitchenFoodRunnerPrefill(checklist);
   const reviewMessages = [
     ...new Set([
       ...checklist.warnings.map((warning) => warning.message),
@@ -2160,6 +2166,7 @@ export function KitchenChecklistSheet({
               selected={staffDraft.setup}
             />
             <StaffMultiSelect
+              defaultLabel={foodRunnerPrefill}
               label="Food Runner"
               onChange={(foodRunners) =>
                 onStaffChange({ ...staffDraft, foodRunners })

@@ -72,6 +72,9 @@ export type TripleseatDiagnostics = {
   locationId: string;
 };
 
+export type TripleseatStaffingEvent = Pick<TripleseatEventPlanSource,
+  "eventId" | "eventName" | "localDate" | "eventStartAt" | "eventEndAt">;
+
 export interface TripleseatAdapter {
   readonly sourceMode: "live" | "mock";
   fetchEventsForDate(date: string): Promise<TripleseatKitchenSourceEvent[]>;
@@ -80,6 +83,7 @@ export interface TripleseatAdapter {
     endDate: string,
     exactEventId?: string,
   ): Promise<TripleseatEventPlanSource[]>;
+  fetchStaffingEventsForRange?(startDate: string, endDate: string): Promise<TripleseatStaffingEvent[]>;
   fetchEntertainmentEventsForDate?(
     date: string,
   ): Promise<EntertainmentSourceEvent[]>;
@@ -1079,11 +1083,13 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     startDate: string,
     endDate = startDate,
     status: string | null = REQUIRED_STATUS,
+    strict = false,
   ) {
     const events: UnknownRecord[] = [];
     const seen = new Set<string>();
 
     const searchStatus = async (requestedStatus: string | null) => {
+      let expectedTotalPages: number | null = null;
       for (let page = 1; page <= MAX_EVENT_PAGES; page += 1) {
         const query = new URLSearchParams({
           event_start_date: apiDate(startDate),
@@ -1097,7 +1103,13 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
           query.set("status", requestedStatus);
         }
         const payload = await this.requestJson(`events/search?${query}`);
-        const records = extractArray(payload, ["results", "events", "data"])
+        const envelope = asRecord(payload);
+        const listKeys = ["results", "events", "data"];
+        if (strict && !Array.isArray(payload) && !listKeys.some((key) => Array.isArray(envelope?.[key]))) {
+          throw new Error("Tripleseat staffing search did not return a verifiable result list.");
+        }
+        const rawRecords = extractArray(payload, listKeys);
+        const records = rawRecords
           .map(asRecord)
           .filter((record): record is UnknownRecord => record != null);
         let added = 0;
@@ -1110,8 +1122,17 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
           }
         }
 
-        const envelope = asRecord(payload);
         const totalPages = envelope ? asNumber(envelope.total_pages) : null;
+        if (strict && (records.length !== rawRecords.length || added !== records.length ||
+            (envelope?.total_pages != null && totalPages == null) ||
+            (expectedTotalPages != null && totalPages !== expectedTotalPages) ||
+            (totalPages != null && (!Number.isInteger(totalPages) || totalPages < 0 ||
+              (page > totalPages && records.length > 0) ||
+              (records.length === 0 && (page < totalPages || (page === totalPages && page > 1))))) ||
+            (page === MAX_EVENT_PAGES && records.length > 0 && (totalPages == null || page < totalPages)))) {
+          throw new Error("Tripleseat staffing search did not complete every page.");
+        }
+        if (strict && page === 1) expectedTotalPages = totalPages;
         if (
           records.length === 0 ||
           added === 0 ||
@@ -1123,7 +1144,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     };
 
     await searchStatus(status);
-    if (status === null && events.length === 0) {
+    if (!strict && status === null && events.length === 0) {
       for (const fallbackStatus of [
         "DEFINITE",
         "TENTATIVE",
@@ -1143,9 +1164,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     return events;
   }
 
-  private async eventDetail(eventId: string) {
+  private async eventDetail(eventId: string, showFinancial = true) {
     const payload = await this.requestJson(
-      `events/${encodeURIComponent(eventId)}?show_financial=true`,
+      `events/${encodeURIComponent(eventId)}${showFinancial ? "?show_financial=true" : ""}`,
     );
     const envelope = asRecord(payload);
     const event = asRecord(envelope?.event ?? payload);
@@ -1686,6 +1707,42 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         left.eventName.localeCompare(right.eventName)
       );
     });
+  }
+
+  /** Staffing needs authoritative identity and clock times, not BEOs, menus, or guest details. */
+  async fetchStaffingEventsForRange(startDate: string, endDate: string): Promise<TripleseatStaffingEvent[]> {
+    if (!isValidKitchenDate(startDate) || !isValidKitchenDate(endDate) || startDate > endDate) {
+      throw new Error("Staffing event range must use ordered YYYY-MM-DD dates.");
+    }
+    if (!this.locationId.trim()) throw new Error("Tripleseat staffing location is not configured.");
+    await this.ensureInitialized();
+    const summaries = await this.eventSummaries(startDate, endDate, null, true);
+    const events: TripleseatStaffingEvent[] = [];
+    const operating = new Set(["DEFINITE", "TENTATIVE", "CLOSED"]);
+    const excluded = new Set(["PROSPECT", "LOST", "CANCELED", "CANCELLED"]);
+    for (const summary of summaries) {
+      const summaryStatus = asString(summary.status)?.toUpperCase();
+      if (summaryStatus && excluded.has(summaryStatus)) continue;
+      const summaryLocation = asString(summary.location_id);
+      if (summaryLocation && summaryLocation !== this.locationId) continue;
+      const eventId = sourceEventId(summary)!;
+      const detail = await this.eventDetail(eventId, false);
+      const detailStatus = asString(detail.status)?.toUpperCase();
+      const location = asString(detail.location_id) ?? asString(summary.location_id);
+      if (!detailStatus || !location || sourceEventId(detail) !== eventId) throw new Error("Tripleseat staffing event identity could not be verified.");
+      if (location !== this.locationId || excluded.has(detailStatus)) continue;
+      if (!operating.has(detailStatus)) throw new Error("Tripleseat returned an unrecognized staffing event status.");
+      const localDate = normalizeDate(detail.event_date_iso8601) ?? normalizeDate(detail.start_date) ?? normalizeDate(detail.event_date) ??
+        normalizeDate(summary.event_date_iso8601) ?? normalizeDate(summary.start_date) ?? normalizeDate(summary.event_date);
+      const eventName = stripMarkup(asString(detail.name) ?? asString(detail.post_as) ?? "").slice(0, 200);
+      if (!localDate || !isValidKitchenDate(localDate) || !eventName) throw new Error("Tripleseat staffing event date or name could not be verified.");
+      if (localDate < startDate || localDate > endDate) continue;
+      events.push({ eventId, eventName, localDate,
+        eventStartAt: asString(detail.event_start_iso8601) ?? asString(detail.event_start) ?? asString(detail.start_time),
+        eventEndAt: asString(detail.event_end_iso8601) ?? asString(detail.event_end) ?? asString(detail.end_time),
+      });
+    }
+    return events;
   }
 
   async fetchEntertainmentEventsForDate(date: string) {

@@ -65,9 +65,9 @@ function treeText(node: unknown): string {
   if (Array.isArray(node)) return node.map(treeText).join(" ");
   return node && typeof node === "object" ? treeText((node as ReactElement<any>).props?.children) : "";
 }
-function render(workspace: "addons" | "checklist" = "addons") {
+function render(workspace: "addons" | "checklist" = "addons", staffingPrefills?: Record<string, string[]>) {
   hooks.stateIndex = 0; hooks.refIndex = 0; hooks.effects = [];
-  return ChecklistsClient({ activeEventIds: [77, 88], events, initialRecords, workspace })!;
+  return ChecklistsClient({ activeEventIds: [77, 88], events, initialRecords, workspace, staffingPrefills })!;
 }
 function quickOrder() { return findElement(render(), (element) => element.type === AddOnQuickOrder)!; }
 function submit(order = foodOrder) { return quickOrder().props.onSubmit(order) as Promise<string>; }
@@ -92,6 +92,38 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("simplified add-on explicit submission", () => {
+  it("shows assigned staff suggestions without using them as saved names or completion evidence", () => {
+    initialRecords = [];
+    hooks.staffName = "";
+    const fetch = acceptFetch();
+    const prefills = { "77": ["Assigned Alex", "Assigned Jordan"] };
+    const tree = render("checklist", prefills);
+    const field = findElement(tree, (element) => element.props?.label === "BWA")!;
+    expect(field.props).toMatchObject({ value: "", placeholder: "Assigned Alex, Assigned Jordan" });
+    expect(currentState().bwa).toBe("");
+    expect(hooks.states[6]).toEqual([]);
+    expect(treeText(tree)).toContain("Enter the BWA name before submitting.");
+    expect(fetch).not.toHaveBeenCalled();
+    findElement(tree, (element) => element.type === "button" && treeText(element) === "Use  Assigned Jordan")!.props.onClick();
+    expect(currentState().bwa).toBe("Assigned Jordan");
+    const edited = render("checklist", prefills);
+    const accepted = findElement(edited, (element) => element.props?.label === "BWA")!;
+    expect(accepted.props.value).toBe("Assigned Jordan");
+    accepted.props.onChange("");
+    expect(findElement(render("checklist", prefills), (element) => element.props?.label === "BWA")!.props).toMatchObject({
+      value: "", placeholder: "Type employee name",
+    });
+  });
+
+  it.each(["Saved BWA", ""])("preserves a saved BWA value, including a saved blank: %j", (bwa) => {
+    initialRecords = [{ ...initialRecord(event), bwa }];
+    const tree = render("checklist", { "77": ["Assigned Alex"] });
+    expect(findElement(tree, (element) => element.props?.label === "BWA")!.props).toMatchObject({
+      value: bwa, placeholder: "Type employee name",
+    });
+    expect(treeText(tree)).not.toContain("Assigned Alex");
+  });
+
   it("uses saved server data immediately without fetching all checklist records again", () => {
     const fetch = acceptFetch();
     const tree = render();

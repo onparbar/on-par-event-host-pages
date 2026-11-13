@@ -1,8 +1,11 @@
+import { createHmac } from "node:crypto";
 import { NextResponse } from "next/server";
-import { ADMIN_COOKIE_NAME, createAdminSessionValue, getAdminPin, isValidAdminPin } from "@/lib/admin-auth";
+import { ADMIN_COOKIE_NAME, createAdminSessionValue, getAdminPassphrase, getAdminPin, getAdminSessionSecret, isValidAdminPassphrase, isValidAdminPin, requiresStrongAdminSession, STRONG_ADMIN_SESSION_SECONDS } from "@/lib/admin-auth";
+import { recordStaffingAdminAttempt, staffingOrigin } from "@/lib/staffing/security";
 
 type AccessRequest = {
   pin?: string;
+  passphrase?: string;
 };
 
 function badRequest(message: string) {
@@ -10,11 +13,17 @@ function badRequest(message: string) {
 }
 
 export async function POST(request: Request) {
-  if (!getAdminPin() || !createAdminSessionValue()) {
+  const strong = requiresStrongAdminSession();
+  const origin = staffingOrigin();
+  const secret = getAdminSessionSecret();
+  if ((strong ? !getAdminPassphrase() || !origin : !getAdminPin()) || !secret) {
     return NextResponse.json(
       { error: "Admin access is not configured for this deployment." },
       { status: 503 },
     );
+  }
+  if (strong && request.headers.get("origin") !== origin) {
+    return NextResponse.json({ error: "This sign-in must come from Event Host." }, { status: 403 });
   }
 
   let body: AccessRequest;
@@ -25,11 +34,24 @@ export async function POST(request: Request) {
     return badRequest("Invalid admin access payload.");
   }
 
-  if (!/^\d{4}$/.test(body.pin ?? "")) {
+  if (strong) {
+    const client = process.env.VERCEL === "1"
+      ? request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() : null;
+    const key = createHmac("sha256", secret).update(`event-host-staffing-admin-attempt:${client || "unknown"}`).digest("hex");
+    try {
+      if (!await recordStaffingAdminAttempt(key)) {
+        return NextResponse.json({ error: "Too many sign-in attempts. Wait 15 minutes and try again." },
+          { status: 429, headers: { "retry-after": "900" } });
+      }
+    } catch {
+      return NextResponse.json({ error: "Admin sign-in is temporarily unavailable." }, { status: 503 });
+    }
+    if (typeof body?.passphrase !== "string" || body.passphrase.length > 256 || !isValidAdminPassphrase(body.passphrase)) {
+      return NextResponse.json({ error: "Incorrect admin passphrase." }, { status: 401 });
+    }
+  } else if (typeof body?.pin !== "string" || !/^\d{4}$/.test(body.pin)) {
     return badRequest("Enter a 4 digit admin PIN.");
-  }
-
-  if (!isValidAdminPin(body.pin!)) {
+  } else if (!isValidAdminPin(body.pin)) {
     return NextResponse.json({ error: "Incorrect admin PIN." }, { status: 401 });
   }
 
@@ -41,12 +63,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
   response.cookies.set({
     name: ADMIN_COOKIE_NAME,
     value: sessionValue,
     httpOnly: true,
-    maxAge: 60 * 60 * 12,
+    maxAge: strong ? STRONG_ADMIN_SESSION_SECONDS : 60 * 60 * 12,
     path: "/",
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -54,7 +76,11 @@ export async function POST(request: Request) {
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const origin = staffingOrigin();
+  if (requiresStrongAdminSession() && (!origin || request.headers.get("origin") !== origin)) {
+    return NextResponse.json({ error: "This sign-out must come from Event Host." }, { status: 403 });
+  }
   const response = NextResponse.json({ ok: true });
   response.cookies.set({
     name: ADMIN_COOKIE_NAME,

@@ -61,6 +61,7 @@ const allowlist = [
   "src/lib/operational-access.ts",
   "src/lib/operations",
   "src/lib/stale-save.ts",
+  "src/lib/staffing",
   "src/proxy.ts",
 ];
 

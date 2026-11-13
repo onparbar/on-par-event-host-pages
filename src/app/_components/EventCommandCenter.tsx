@@ -11,16 +11,18 @@ import { EventSelectionBridge, useEventContext } from "./EventContext";
 import { StaffNameSelect } from "./StaffNameSelect";
 
 type EventCard = Omit<OperationalEventSummary, "attention" | "hostAssigned">;
+type StaffingCards = Record<string, { status: "assigned" | "unassigned" | "review" | "unverified"; names: string[] }>;
 const eventKey = ({ event }: EventCard) => `${event.date}:${event.eventId}`;
 
 function timestampLabel(value: string | null) {
   return value ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }).format(new Date(value)) : "Not verified";
 }
 
-export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = {}, sourceWarning }: {
+export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = {}, staffingByEvent = {}, sourceWarning }: {
   events: EventCard[];
   initialNow: string;
   assignedStaffByEvent?: Record<string, string>;
+  staffingByEvent?: StaffingCards;
   sourceWarning?: string;
 }) {
   const router = useRouter();
@@ -58,7 +60,12 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
   function cards(items: EventCard[]) {
     return <div className="event-command-grid">{items.map((item) => {
       const isVip = item.event.eventId.startsWith("vip-");
-      const assignedStaff = assignedStaffByEvent[eventKey(item)];
+      const existingBwa = assignedStaffByEvent[eventKey(item)];
+      const staffing = isVip ? undefined : staffingByEvent[eventKey(item)];
+      const names = staffing?.names ?? [];
+      const alert = staffing?.status === "review" ? "Staffing Needs Review"
+        : staffing?.status === "unassigned" ? "No Staff Assigned" : null;
+      const reviewHref = `/admin/staffing?${new URLSearchParams({ eventId: item.event.eventId, date: item.event.date })}#staffing-assignment`;
       return (
         <article className={`event-command-card${selectedEvent?.eventId === item.event.eventId && selectedEvent.date === item.event.date ? " is-selected" : ""}`} key={eventKey(item)}>
           <h5 className="event-command-card-title">{item.event.eventName}</h5>
@@ -67,11 +74,16 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
             <div><dt>Guests</dt><dd>{item.event.guestCount || "Not confirmed"}</dd></div>
             <div><dt>Reserved area</dt><dd>{item.event.area || "Not confirmed"}</dd></div>
             <div><dt>Checklist</dt><dd>{item.checklistStatus === "submitted" ? "Submitted" : item.checklistStatus === "unavailable" ? "Unavailable" : item.checklistStatus === "not-started" ? "Not started" : `${item.checklistCompleted}/${item.checklistTotal} tasks checked`}</dd></div>
-            <div><dt>Assigned staff</dt><dd>{isVip ? "Shift Lead" : assignedStaff || "Not assigned"}</dd></div>
+            <div><dt>Assigned staff</dt><dd>{isVip ? "Shift Lead" : names.length
+              ? <a className="event-command-edit-staff" href={reviewHref} aria-label={`Edit assigned staff: ${item.event.eventName} — ${names.join(", ")}`}>{names.join(", ")}</a>
+              : staffing?.status === "unassigned" ? "None" : existingBwa || (staffing ? "Not confirmed" : "Not assigned")}
+              {names.length > 0 && staffing?.status === "unverified" ? <small className="event-command-staffing-note">Staffing not yet verified</small> : null}
+            </dd></div>
           </dl>
           <p className="event-command-freshness">Source refreshed: {timestampLabel(item.sourceSyncedAt)} · Source updated: {timestampLabel(item.sourceUpdatedAt)}</p>
           <div className="event-command-links">
             <button className="button" onClick={() => { setOpeningId(eventKey(item)); setEmployee(staffName); }} type="button">Open Event</button>
+            {alert ? <a className="event-command-staffing-alert" href={reviewHref} aria-label={`${alert}: ${item.event.eventName}`}>{alert}</a> : null}
           </div>
         </article>
       );

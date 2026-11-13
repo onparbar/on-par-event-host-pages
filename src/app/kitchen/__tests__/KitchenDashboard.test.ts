@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MOCK_KITCHEN_EVENTS } from "../../../lib/kitchen/fixtures";
 import { quantityAwareReadinessKey } from "../../../lib/kitchen/readiness";
 import { generateKitchenChecklist } from "../../../lib/kitchen/rules";
+import { KitchenExpoPanel } from "../KitchenOperationsPanel";
 import {
   clockParts,
   ChecklistPanel,
@@ -356,6 +357,29 @@ describe("kitchen checklist day layout", () => {
     expect(html).toContain("Ryan");
     expect(html).not.toContain("Ryan (POC)</span>");
     expect(html).not.toContain('placeholder="Enter employee name"');
+  });
+
+  it("shows multiple event staffing names in the printable Food Runner summary without enabling Save", () => {
+    const checklist = {
+      ...generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]),
+      staffingFoodRunners: ["Sample Staff A", "Sample Staff B"],
+    };
+    const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, { checklist, bwaSaveState: "idle" }));
+    expect(html).toContain('<span>Food Runner</span><strong style="white-space:normal;overflow-wrap:anywhere">Sample Staff A, Sample Staff B (from event staffing; not saved here)</strong>');
+    expect(html).toMatch(/<button class="kitchen-primary-button kitchen-bwa-save" disabled=""/);
+    expect(html).not.toContain("Unsaved staff changes");
+    expect(renderToStaticMarkup(createElement(KitchenExpoPanel, { events: [checklist] }))).toContain("<td>Sample Staff A, Sample Staff B (from event staffing; not saved here)</td>");
+  });
+
+  it("does not show the event staffing default over a kitchen assignment or explicit saved blank", () => {
+    const checklist = {
+      ...generateKitchenChecklist(MOCK_KITCHEN_EVENTS[0]),
+      staffingFoodRunners: ["Sample Staff A"],
+    };
+    for (const override of [{ foodRunners: ["Ryan"] }, { assignmentUpdatedAt: "2026-08-15T19:00:00Z" }]) {
+      const html = renderToStaticMarkup(createElement(KitchenChecklistSheet, { checklist: { ...checklist, ...override }, bwaSaveState: "idle" }));
+      expect(html).not.toContain("Sample Staff A");
+    }
   });
 
   it("renders independent Prepped, Verified and Ready controls in workflow order", () => {
