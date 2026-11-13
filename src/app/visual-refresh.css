@@ -51,7 +51,7 @@
   .event-command-card { gap: 12px; padding: 22px; border: 1px solid var(--workspace-ui-line); border-radius: 14px; box-shadow: 0 2px 5px rgb(24 51 47 / .025); }
   .event-command-card.is-selected { border-color: var(--ope-action-green); box-shadow: 0 0 0 1px var(--ope-action-green); }
   .event-command-card-top { font-size: .72rem; color: var(--workspace-ui-muted); }
-  .event-command-card h3 { font-size: 1.25rem; font-weight: 650; line-height: 1.3; letter-spacing: -.025em; }
+  .event-command-card-title { font-size: 1.25rem; font-weight: 650; line-height: 1.3; letter-spacing: -.025em; }
   .event-command-time { color: var(--ope-forest); font-size: .9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
   .event-command-facts { margin: 2px 0; padding-block: 16px; gap: 18px; border-block: 1px solid #edf1ee; }
   .event-command-facts dt { font-size: .65rem; color: var(--workspace-ui-muted); font-weight: 600; letter-spacing: .06em; }

@@ -249,7 +249,28 @@ describe("event completeness", () => {
     expect(result.checks.find((item) => item.key === "food-service-time")?.status).toBe("needs-review");
     expect(result.checks.find((item) => item.key === "staff-assignments")?.status).toBe("needs-review");
     expect(result.checks.find((item) => item.key === "floor-plan")?.status).toBe("complete");
+    expect(result.checks.find((item) => item.key === "contract")).toBeUndefined();
     expect(result.issueCount).toBe(2);
+  });
+
+  it.each([
+    { needs_review: true },
+    { verification_status: "Needs Review: unresolved contract item" },
+  ])("shows flagged contracts in Admin readiness without copying source reasons (%o)", (flags) => {
+    const eventPlan = plan({ ...flags, review_reasons: ["Non-public source detail"] });
+    const result = evaluateEventCompleteness({
+      plan: eventPlan,
+      source: source(eventPlan),
+      kitchen: kitchen(eventPlan),
+      floorPlan: floorPlan([eventPlan]),
+    });
+
+    expect(result.checks.find((item) => item.key === "contract")).toMatchObject({
+      status: "needs-review",
+      detail: expect.stringContaining("Contract needs review"),
+    });
+    expect(result.issueCount).toBe(3);
+    expect(JSON.stringify(result)).not.toContain("Non-public source detail");
   });
 
   it("matches a Tripleseat event through a merged OnPar floor-plan source alias", () => {

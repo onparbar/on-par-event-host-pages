@@ -41,6 +41,7 @@ export type AdminCompletenessStatus =
   | "not-applicable";
 
 export type AdminCompletenessKey =
+  | "contract"
   | "end-time"
   | "reserved-section"
   | "food-service-time"
@@ -293,6 +294,9 @@ export function evaluateEventCompleteness({
     floorPlanCheck,
     staffAssignments,
   ];
+  if (plan.needs_review || /needs\s+review/i.test(plan.verification_status)) {
+    checks.unshift(check("contract", "Contract", "needs-review", "Contract needs review. Use View Source to check the imported details."));
+  }
   return {
     eventId: plan.id,
     eventName: plan.name,

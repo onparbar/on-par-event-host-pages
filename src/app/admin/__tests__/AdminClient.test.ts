@@ -28,8 +28,14 @@ const operations: AdminOperationsPayload = {
       date: "2026-08-06",
       time: "1:00 PM - 3:00 PM",
       color: "#297025",
-      issueCount: 1,
+      issueCount: 2,
       checks: [
+        {
+          key: "contract",
+          label: "Contract",
+          status: "needs-review",
+          detail: "Contract needs review. Use View Source to check the imported details.",
+        },
         {
           key: "end-time",
           label: "End time",
@@ -78,6 +84,8 @@ describe("admin event readiness UI", () => {
     expect(html).toContain("View Source");
     expect(html).toContain("End time");
     expect(html).toContain("Missing");
+    expect(html).toContain("Contract needs review");
+    expect(html).toContain("Events needing attention");
     expect(html).toContain("Entertainment &amp; floor-plan conflicts");
     expect(html).toContain("VIP 1");
     expect(html).toContain("Blocking overlap");

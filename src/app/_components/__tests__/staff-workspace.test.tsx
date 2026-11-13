@@ -98,17 +98,47 @@ describe("staff event workspace shell", () => {
     expect(html).toContain("VIP CHECK-IN");
     expect(html).toContain("Admin");
   });
-  it("shows only the selected date's cards, known staff, and an Open Event action", () => {
+  it("shows the seven Eastern dates in order, with exact-date staff, VIP Shift Lead, and an Open Event action", () => {
     mocks.pathname = "/";
-    const events = buildOperationalEventSummaries([plan, { ...plan, id: 124, date: "2026-10-24", name: "Tomorrow's party" }], [], null);
+    const events = buildOperationalEventSummaries([
+      { ...plan, needs_review: true },
+      { ...plan, id: 124, date: "2026-10-24", name: "Tomorrow's party" },
+      { ...plan, id: 125, source_event_id: "vip-125", date: "2026-10-27", name: "Future VIP booking" },
+      { ...plan, id: 126, date: "2026-10-29", name: "Last day party" },
+      { ...plan, id: 127, date: "2026-10-30", name: "Day outside week" },
+    ], [], null);
     const html = renderToStaticMarkup(createElement(EventCommandCenter, { events, initialNow: "2026-10-24T02:00:00Z", assignedStaffByEvent: { "2026-10-23:123": "Tina" } }));
     expect(html).toContain('value="2026-10-23"');
     expect(html).toContain('aria-label="Previous day"');
     expect(html).toContain('aria-label="Next day"');
     expect(html).toContain('type="search"');
-    expect(html).toContain("Open Event");
+    expect(html.match(/>Open Event<\/button>/g)).toHaveLength(4);
     expect(html).toContain("Tina");
-    expect(html).not.toContain("Tomorrow&#x27;s party");
+    expect(html).toContain("Tomorrow&#x27;s party");
+    expect(html).toContain("Future VIP booking");
+    expect(html).toContain("Shift Lead");
+    expect(html).toContain("Last day party");
+    expect(html).toContain("No events scheduled.");
+    expect(html).not.toContain("Day outside week");
+    expect(html).not.toContain("Needs attention");
+    expect(html).not.toContain("Contract needs review");
+    expect(html).not.toContain("Source refresh not verified");
+    expect([...html.matchAll(/id="event-command-day-([\d-]+)"/g)].map((match) => match[1])).toEqual([
+      "2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29",
+    ]);
     expect(html).not.toContain("/vip-check-in");
+  });
+
+  it("keeps an explicitly requested date outside this week without replacing the week", () => {
+    mocks.pathname = "/";
+    mocks.requestedDate = "2026-10-22";
+    const events = buildOperationalEventSummaries([
+      { ...plan, date: "2026-10-22", name: "Selected-date party" },
+      { ...plan, id: 124, date: "2026-10-23", name: "Current-week party" },
+    ], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, { events, initialNow: "2026-10-24T02:00:00Z" }));
+    expect(html).toContain("Selected date outside this week");
+    expect(html).toContain("Selected-date party");
+    expect(html).toContain("Current-week party");
   });
 });
