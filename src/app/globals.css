@@ -9184,9 +9184,15 @@ a {
 .event-command-links { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: auto; padding-top: 8px; }
 .event-command-links a { color: var(--ope-action-green); font-weight: 800; font-size: .8rem; min-height: 44px; display: inline-flex; align-items: center; }
 .event-command-links .button { padding: 10px 14px; background: var(--ope-action-green); color: white; border-radius: 8px; text-decoration: none; }
-.event-command-links .event-command-staffing-alert { justify-content: center; padding: 0 14px; border-radius: 8px; background: #a32428; color: #fff; text-decoration: none; }
+.event-command-links button.event-command-staffing-alert { justify-content: center; min-height: 44px; padding: 0 14px; border: 1px solid #a32428; border-radius: 8px; background: #a32428; color: #fff; font-size: .8rem; font-weight: 800; cursor: pointer; }
 .event-command-staffing-alert:focus-visible, .event-command-edit-staff:focus-visible { outline: 2px solid var(--ope-forest); outline-offset: 3px; }
-.event-command-edit-staff { color: var(--ope-forest); font-weight: 700; text-decoration: underline; text-underline-offset: .16em; }
+.event-command-edit-staff { padding: 0; border: 0; background: transparent; color: var(--ope-forest); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: .16em; cursor: pointer; }
+.event-command-staffing-picker { margin-top: 12px; padding: 12px; border: 1px solid var(--portal-border); border-radius: 8px; }
+.event-command-staffing-picker summary { font-weight: 700; cursor: pointer; }
+.event-command-staffing-picker fieldset { margin: 8px 0; border: 0; padding: 0; max-height: 16rem; overflow: auto; }
+.event-command-staffing-picker label { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px; }
+.event-command-staffing-picker small { display: block; }
+.event-command-staffing-picker button { margin: 4px 8px 0 0; }
 .event-command-staffing-note { display: block; margin-top: 4px; color: var(--portal-muted-text); }
 .event-command-empty { padding: 24px; border: 1px dashed var(--ope-sage); border-radius: var(--portal-radius-md); background: var(--portal-surface-muted); }
 .staff-event-selection-controls,

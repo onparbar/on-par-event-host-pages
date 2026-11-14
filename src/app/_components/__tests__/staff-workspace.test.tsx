@@ -33,10 +33,13 @@ describe("staff event workspace shell", () => {
     const html = renderToStaticMarkup(createElement(EventCommandCenter, {
       events, initialNow: "2026-10-23T19:00:00Z", staffingByEvent: {
         "2026-10-23:123": { status: "review", names: ["Assigned Staff"] }, "2026-10-23:124": { status: "unassigned", names: [] },
-        "vip-test": { status: "review", names: ["Do not disclose"] },
+        "2026-10-23:vip-test": { status: "review", names: ["Do not disclose"] },
       },
     }));
-    expect(html).toContain('href="/admin/staffing?eventId=123&amp;date=2026-10-23#staffing-assignment"');
+    expect(html).toContain('class="event-command-staffing-alert" type="button" aria-expanded="false"');
+    expect(html).toContain('class="event-command-edit-staff" type="button" aria-expanded="false"');
+    expect(html).not.toContain('href="/admin/staffing?');
+    expect(html).not.toContain('aria-label="Event staffing picker"');
     expect(html).toContain("Staffing Needs Review: Staff training");
     expect(html).toContain("No Staff Assigned: Needs a team");
     expect(html).toContain("Shift Lead");

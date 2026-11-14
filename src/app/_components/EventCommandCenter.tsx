@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatEventDate } from "@/lib/event-format";
 import { easternDateValue } from "@/lib/event-lifecycle";
 import { addCalendarDays, isValidEntertainmentDate } from "@/lib/entertainment/time";
@@ -9,6 +9,7 @@ import type { OperationalEventSummary } from "@/lib/operations/command-center";
 import { eventSelectionHref } from "@/lib/operations/staff-workspace";
 import { EventSelectionBridge, useEventContext } from "./EventContext";
 import { StaffNameSelect } from "./StaffNameSelect";
+import { EventStaffingPicker } from "./EventStaffingPicker";
 
 type EventCard = Omit<OperationalEventSummary, "attention" | "hostAssigned">;
 type StaffingCards = Record<string, { status: "assigned" | "unassigned" | "review" | "unverified"; names: string[] }>;
@@ -32,11 +33,13 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
   const through = addCalendarDays(today, 6);
   const [search, setSearch] = useState("");
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [staffingId, setStaffingId] = useState<string | null>(null);
+  const staffingTrigger = useRef<HTMLButtonElement | null>(null);
   const [employee, setEmployee] = useState(staffName);
   const selected = events.find((item) => item.event.eventId === preferredEventId && (!requestedDate || item.event.date === requestedDate));
   const opening = events.find((item) => eventKey(item) === openingId);
   useEffect(() => { setEmployee(staffName); }, [staffName]);
-  useEffect(() => { setOpeningId(null); }, [date]);
+  useEffect(() => { setOpeningId(null); setStaffingId(null); }, [date]);
   const term = search.trim().toLocaleLowerCase("en-US");
   const groups = new Map<string, EventCard[]>();
   const seen = new Set<string>();
@@ -57,6 +60,11 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
     if (isValidEntertainmentDate(nextDate)) router.push(eventSelectionHref(nextDate));
   }
 
+  function closeStaffingPicker() {
+    setStaffingId(null);
+    staffingTrigger.current?.focus();
+  }
+
   function cards(items: EventCard[]) {
     return <div className="event-command-grid">{items.map((item) => {
       const isVip = item.event.eventId.startsWith("vip-");
@@ -65,7 +73,13 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
       const names = staffing?.names ?? [];
       const alert = staffing?.status === "review" ? "Staffing Needs Review"
         : staffing?.status === "unassigned" ? "No Staff Assigned" : null;
-      const reviewHref = `/admin/staffing?${new URLSearchParams({ eventId: item.event.eventId, date: item.event.date })}#staffing-assignment`;
+      const key = eventKey(item);
+      const pickerId = `staffing-picker-${item.event.date}-${item.event.eventId}`;
+      const pickerOpen = staffingId === key;
+      function togglePicker(trigger: HTMLButtonElement) {
+        if (pickerOpen) closeStaffingPicker();
+        else { staffingTrigger.current = trigger; setStaffingId(key); }
+      }
       return (
         <article className={`event-command-card${selectedEvent?.eventId === item.event.eventId && selectedEvent.date === item.event.date ? " is-selected" : ""}`} key={eventKey(item)}>
           <h5 className="event-command-card-title">{item.event.eventName}</h5>
@@ -75,7 +89,7 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
             <div><dt>Reserved area</dt><dd>{item.event.area || "Not confirmed"}</dd></div>
             <div><dt>Checklist</dt><dd>{item.checklistStatus === "submitted" ? "Submitted" : item.checklistStatus === "unavailable" ? "Unavailable" : item.checklistStatus === "not-started" ? "Not started" : `${item.checklistCompleted}/${item.checklistTotal} tasks checked`}</dd></div>
             <div><dt>Assigned staff</dt><dd>{isVip ? "Shift Lead" : names.length
-              ? <a className="event-command-edit-staff" href={reviewHref} aria-label={`Edit assigned staff: ${item.event.eventName} — ${names.join(", ")}`}>{names.join(", ")}</a>
+              ? <button className="event-command-edit-staff" type="button" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined} aria-label={`Edit assigned staff: ${item.event.eventName} — ${names.join(", ")}`} onClick={(event) => togglePicker(event.currentTarget)}>{names.join(", ")}</button>
               : staffing?.status === "unassigned" ? "None" : existingBwa || (staffing ? "Not confirmed" : "Not assigned")}
               {names.length > 0 && staffing?.status === "unverified" ? <small className="event-command-staffing-note">Staffing not yet verified</small> : null}
             </dd></div>
@@ -83,8 +97,10 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
           <p className="event-command-freshness">Source refreshed: {timestampLabel(item.sourceSyncedAt)} · Source updated: {timestampLabel(item.sourceUpdatedAt)}</p>
           <div className="event-command-links">
             <button className="button" onClick={() => { setOpeningId(eventKey(item)); setEmployee(staffName); }} type="button">Open Event</button>
-            {alert ? <a className="event-command-staffing-alert" href={reviewHref} aria-label={`${alert}: ${item.event.eventName}`}>{alert}</a> : null}
+            {alert ? <button className="event-command-staffing-alert" type="button" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined} aria-label={`${alert}: ${item.event.eventName}`} onClick={(event) => togglePicker(event.currentTarget)}>{alert}</button> : null}
           </div>
+          {pickerOpen ? <EventStaffingPicker id={pickerId} eventId={item.event.eventId} date={item.event.date}
+            onClose={closeStaffingPicker} onSaved={() => router.refresh()} /> : null}
         </article>
       );
     })}</div>;

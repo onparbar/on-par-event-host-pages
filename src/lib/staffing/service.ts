@@ -61,11 +61,43 @@ export class StaffingReviewError extends Error {}
 export type StaffingAdminChange = { expectedVersion: number } & (
   | ({ action: "assign"; eventId: string } & StaffingAssignmentChoice)
   | { action: "assign-many"; eventId: string; choices: StaffingAssignmentChoice[] }
-  | { action: "replace-team"; eventId: string; choices: StaffingAssignmentChoice[] }
+  | { action: "replace-team"; eventId: string; eventDate?: string; choices: StaffingAssignmentChoice[] }
   | { action: "remove-manual"; eventId: string; employeeId: string }
   | { action: "keep-clear"; eventId: string; enabled: boolean }
   | { action: "policy"; earlyStartMinutes: number; allowIntermediateStarts: boolean }
 );
+
+function hasOverlappingAssignment(shift: CorporateStaffShift, event: StaffingEvent, assignments: readonly StaffingAssignment[], events: readonly StaffingEvent[]) {
+  return assignments.some((row) => {
+    if (row.employeeId !== shift.employeeId || row.eventId === event.eventId || row.shiftId === shift.shiftId) return false;
+    const other = events.find((item) => item.eventId === row.eventId && item.date === row.eventDate);
+    return other && staffingInstant(other.startAt) < staffingInstant(event.endAt) && staffingInstant(other.endAt) > staffingInstant(event.startAt);
+  });
+}
+
+/** Project only the requested event's roster from the verified, saved snapshot; no provider calls. */
+export function staffingEditorRoster(state: StaffingState, eventId: string, date: string, now = new Date()) {
+  const window = staffingWindow(now);
+  if (eventId.startsWith("vip-") || date < window.startDate || date > window.endDate) return null;
+  if (!staffingSnapshotIsFresh(state, now) || !state.dailyScheduleComplete) {
+    throw new StaffingReviewError("Refresh the published schedule before editing an event assignment.");
+  }
+  const matches = state.events.filter((event) => event.eventId === eventId);
+  const event = matches.length === 1 && matches[0].date === date ? matches[0] : null;
+  if (!event) return null;
+  const assignments = state.reconciliation?.assignments ?? [];
+  const shifts = state.shifts.filter((shift) => staffingShiftIsOnEventDay(shift, date))
+    .map((shift) => ({
+      shiftId: shift.shiftId, employeeId: shift.employeeId, employeeName: shift.employeeName, startAt: shift.startAt, endAt: shift.endAt,
+      coversEvent: staffingShiftCoversEvent(shift, event),
+      needsMove: assignments.some((row) => row.shiftId === shift.shiftId && row.eventId !== eventId),
+      conflict: hasOverlappingAssignment(shift, event, assignments, state.events),
+    }))
+    .sort((a, b) => a.employeeName.localeCompare(b.employeeName) || staffingInstant(a.startAt) - staffingInstant(b.startAt));
+  const available = new Set(shifts.map((shift) => shift.shiftId));
+  const selectedShiftIds = assignments.flatMap((row) => row.eventId === eventId && row.eventDate === date && row.shiftId && available.has(row.shiftId) ? [row.shiftId] : []);
+  return { version: state.version, selectedShiftIds, shifts };
+}
 
 export async function updateStaffingOverride(change: StaffingAdminChange, dependencies: Pick<Dependencies, "now" | "load" | "save"> = {}) {
   const now = dependencies.now ?? new Date();
@@ -88,7 +120,10 @@ export async function updateStaffingOverride(change: StaffingAdminChange, depend
       throw new StaffingReviewError("Refresh the published schedule before editing an event assignment.");
     }
     const window = staffingWindow(now);
-    const event = previous.events.find((item) => item.eventId === change.eventId && item.date >= window.startDate && item.date <= window.endDate);
+    const eventDate = change.action === "replace-team" ? change.eventDate : undefined;
+    const candidates = previous.events.filter((item) => item.eventId === change.eventId);
+    const event = candidates.find((item) => item.date >= window.startDate && item.date <= window.endDate &&
+      (eventDate === undefined || (candidates.length === 1 && item.date === eventDate && !change.eventId.startsWith("vip-"))));
     if (!event) throw new StaffingReviewError("Choose a verified event in the current staffing window.");
     if (change.action === "assign" || change.action === "assign-many" || change.action === "replace-team") {
       const choices = change.action === "assign" ? [change] : change.choices;
@@ -111,11 +146,7 @@ export async function updateStaffingOverride(change: StaffingAdminChange, depend
         if (previousEvents.length && choice.confirmMove !== true) {
           throw new StaffingReviewError("Confirm moving the shift from its current event.");
         }
-        if (assignments.some((row) => {
-          if (row.employeeId !== shift.employeeId || row.eventId === event.eventId || row.shiftId === shift.shiftId) return false;
-          const other = previous.events.find((item) => item.eventId === row.eventId && item.date === row.eventDate);
-          return other && staffingInstant(other.startAt) < eventEnd && staffingInstant(other.endAt) > eventStart;
-        })) throw new StaffingReviewError("This employee is already assigned to an overlapping event.");
+        if (hasOverlappingAssignment(shift, event, assignments, previous.events)) throw new StaffingReviewError("This employee is already assigned to an overlapping event.");
         for (const row of previousEvents) suppress(row.eventId, row.eventDate, row.employeeId);
         employeeIds.add(shift.employeeId);
         shiftIds.add(shift.shiftId);

@@ -1,11 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { hasAdminSession, requiresStrongAdminSession } from "@/lib/admin-auth";
+import { isValidEntertainmentDate } from "@/lib/entertainment/time";
 import { isSameOriginOperationalRequest } from "@/lib/operational-access";
 import { isPreviewReviewOnly } from "@/lib/operations/preview-review";
 import { staffingOrigin } from "@/lib/staffing/security";
-import { refreshStaffing, StaffingReviewError, staffingSnapshotIsFresh, updateStaffingOverride, type StaffingAssignmentChoice } from "@/lib/staffing/service";
-import type { StaffingState } from "@/lib/staffing/storage";
+import { refreshStaffing, staffingEditorRoster, StaffingReviewError, staffingSnapshotIsFresh, updateStaffingOverride, type StaffingAssignmentChoice } from "@/lib/staffing/service";
+import { loadStaffingState, type StaffingState } from "@/lib/staffing/storage";
 import { StaleSaveError } from "@/lib/stale-save";
 
 export const runtime = "nodejs";
@@ -24,6 +25,23 @@ function assignmentChoice(value: unknown): StaffingAssignmentChoice | null {
 
 function reviewedState(state: StaffingState) {
   return NextResponse.json({ state: { ...state, shifts: state.shifts.map(({ notes: _notes, ...shift }) => shift) }, fresh: staffingSnapshotIsFresh(state) }, { headers });
+}
+
+export async function GET(request: Request) {
+  if (!requiresStrongAdminSession()) return error("Staffing is not enabled.", 503);
+  if (!hasAdminSession(await cookies())) return error("Admin sign-in required.", 401);
+  const params = new URL(request.url).searchParams;
+  const eventId = params.get("eventId"), date = params.get("date");
+  if (!id(eventId) || eventId.startsWith("vip-") || !date || !isValidEntertainmentDate(date)) {
+    return error("Choose a valid event and date.", 400);
+  }
+  try {
+    const roster = staffingEditorRoster(await loadStaffingState(), eventId, date);
+    return roster ? NextResponse.json(roster, { headers }) : error("This event isn't in the verified staffing schedule for this date.", 404);
+  } catch (caught) {
+    if (caught instanceof StaffingReviewError) return error(caught.message, 422);
+    return error("The staffing schedule could not be loaded.", 503);
+  }
 }
 
 export async function POST(request: Request) {
@@ -48,6 +66,13 @@ export async function POST(request: Request) {
       const choices = body.choices.map(assignmentChoice);
       if (!choices.every((choice) => choice !== null) || new Set(choices.map((choice) => choice.shiftId)).size !== choices.length) {
         return error("Choose distinct published shifts.", 400);
+      }
+      if (body.action === "replace-team" && body.eventDate !== undefined) {
+        if (typeof body.eventDate !== "string" || !isValidEntertainmentDate(body.eventDate) || body.eventId.startsWith("vip-")) {
+          return error("Choose a valid event and date.", 400);
+        }
+        const saved = await updateStaffingOverride({ action: "replace-team", eventId: body.eventId, eventDate: body.eventDate, choices, expectedVersion: version });
+        return NextResponse.json({ version: saved.version }, { headers });
       }
       change = { action: body.action, eventId: body.eventId, choices, expectedVersion: version };
     } else if (body.action === "remove-manual" && id(body.eventId) && id(body.employeeId)) {

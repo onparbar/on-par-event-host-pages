@@ -21,10 +21,19 @@ describe("Tripleseat adapter security and normalization", () => {
   it("reads only staffing metadata across a complete search and rejects an incomplete search", async () => {
     const calls: Array<{ url: URL; method: string }> = [];
     let incomplete = false;
+    const now = Date.parse("2026-11-13T17:00:00Z");
+    const key = "12345678901234567890123456789012";
+    const expiresAt = now + 60_000;
+    const storage = createMemoryKitchenStorage();
+    await storage.saveEncryptedTokenState({
+      encryptedTokens: encryptTripleseatTokenState({ accessToken: "access", refreshToken: "refresh", expiresAt }, key),
+      expiresAt: new Date(expiresAt).toISOString(),
+    });
     const adapter = new LiveTripleseatAdapter({
       env: { NODE_ENV: "test", TRIPLESEAT_CLIENT_ID: "client", TRIPLESEAT_CLIENT_SECRET: "secret",
-        TRIPLESEAT_ACCESS_TOKEN: "access", TRIPLESEAT_REFRESH_TOKEN: "refresh", TRIPLESEAT_LOCATION_ID: "26059" },
-      storage: createMemoryKitchenStorage(),
+        TRIPLESEAT_TOKEN_ENCRYPTION_KEY: key, TRIPLESEAT_LOCATION_ID: "26059" },
+      now: () => now,
+      storage,
       fetchImpl: async (input, init) => {
         const url = new URL(String(input));
         calls.push({ url, method: init?.method ?? "GET" });

@@ -209,6 +209,18 @@ describe("Staffing snapshot service", () => {
     expect(resumed.reconciliation?.assignments).toHaveLength(2);
   });
 
+  it("rejects a date-scoped team replacement if the event is no longer on that card date", async () => {
+    const storage = persistence();
+    const deps = { ...storage, now, readEvents: async () => [event], readShifts: async () => [shift] };
+    const current = await refreshStaffing(deps, 0);
+    storage.save.mockClear();
+    const change = { action: "replace-team" as const, eventId: event.eventId, expectedVersion: current.version, choices: [{ shiftId: shift.shiftId }] };
+    await expect(updateStaffingOverride({ ...change, eventDate: "2026-11-11" }, deps)).rejects.toThrow("Choose a verified event");
+    expect(storage.save).not.toHaveBeenCalled();
+    const saved = await updateStaffingOverride({ ...change, eventDate: event.date }, deps);
+    expect(saved.reconciliation?.assignments).toMatchObject([{ eventId: event.eventId, eventDate: event.date, source: "manual" }]);
+  });
+
   it("does not automatically reassign an employee to the previous event after a confirmed move", async () => {
     const second = { ...event, eventId: "456", eventName: "Second party", startAt: "2026-11-11T01:00:00Z", endAt: "2026-11-11T02:00:00Z" };
     const movedShift = { ...shift, endAt: second.endAt, notes: "Event ID: 123" };

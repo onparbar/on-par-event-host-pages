@@ -31,6 +31,7 @@ const DEFAULT_TOKEN_URL = "https://api.tripleseat.com/oauth2/token";
 const DEFAULT_LOCATION_ID = "26059";
 const REQUIRED_STATUS = "DEFINITE";
 const TOKEN_AAD = Buffer.from("ope-kitchen:tripleseat-token-state:v1");
+const STAFFING_TOKEN_EXPIRATION_MARGIN_MS = 30_000;
 const MAX_EVENT_PAGES = 100;
 const MAX_NOTE_PAGES = 20;
 const UNASSIGNABLE_BOOKING_DOCUMENTS_NOTE =
@@ -47,6 +48,7 @@ const CATEGORYLESS_TOP_LEVEL_FOOD_SELECTIONS = new Set([
 
 type UnknownRecord = Record<string, unknown>;
 type FetchImplementation = typeof fetch;
+type StaffingRequest = (path: string) => Promise<unknown>;
 
 type OAuthTokenState = {
   accessToken: string | null;
@@ -1079,12 +1081,43 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     return response.json();
   }
 
+  /** Staffing must never initialize, refresh, or persist Kitchen's OAuth state. */
+  private async staffingRequest(): Promise<StaffingRequest> {
+    const unavailable = () => new Error("An existing unexpired Tripleseat access token could not be verified for staffing.");
+    if (!this.configuredEncryptionKey) throw unavailable();
+
+    let accessToken: string | null;
+    let expiresAt: number | null;
+    try {
+      const stored = await this.storage.getEncryptedTokenState();
+      if (!stored?.expiresAt) throw unavailable();
+      ({ accessToken, expiresAt } = decryptTripleseatTokenState(stored.encryptedTokens, this.configuredEncryptionKey));
+      if (expiresAt !== Date.parse(stored.expiresAt)) throw unavailable();
+    } catch {
+      throw unavailable();
+    }
+    if (!accessToken || !/^[A-Za-z0-9._~+/=-]+$/.test(accessToken) || expiresAt === null) throw unavailable();
+
+    return async (path) => {
+      if (expiresAt <= this.now() + STAFFING_TOKEN_EXPIRATION_MARGIN_MS) throw unavailable();
+      const response = await this.fetchImpl(`${this.apiBaseUrl}/${path}`, {
+        method: "GET",
+        headers: { accept: "application/json", authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+        redirect: "error",
+      });
+      if (!response.ok) throw new TripleseatApiError(response.status);
+      return response.status === 204 ? null : response.json();
+    };
+  }
+
   private async eventSummaries(
     startDate: string,
     endDate = startDate,
     status: string | null = REQUIRED_STATUS,
-    strict = false,
+    staffingRequest?: StaffingRequest,
   ) {
+    const strict = staffingRequest !== undefined;
     const events: UnknownRecord[] = [];
     const seen = new Set<string>();
 
@@ -1102,7 +1135,8 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
         if (requestedStatus) {
           query.set("status", requestedStatus);
         }
-        const payload = await this.requestJson(`events/search?${query}`);
+        const path = `events/search?${query}`;
+        const payload = await (staffingRequest ? staffingRequest(path) : this.requestJson(path));
         const envelope = asRecord(payload);
         const listKeys = ["results", "events", "data"];
         if (strict && !Array.isArray(payload) && !listKeys.some((key) => Array.isArray(envelope?.[key]))) {
@@ -1164,10 +1198,9 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
     return events;
   }
 
-  private async eventDetail(eventId: string, showFinancial = true) {
-    const payload = await this.requestJson(
-      `events/${encodeURIComponent(eventId)}${showFinancial ? "?show_financial=true" : ""}`,
-    );
+  private async eventDetail(eventId: string, staffingRequest?: StaffingRequest) {
+    const path = `events/${encodeURIComponent(eventId)}`;
+    const payload = await (staffingRequest ? staffingRequest(path) : this.requestJson(`${path}?show_financial=true`));
     const envelope = asRecord(payload);
     const event = asRecord(envelope?.event ?? payload);
     if (!event) {
@@ -1715,8 +1748,8 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       throw new Error("Staffing event range must use ordered YYYY-MM-DD dates.");
     }
     if (!this.locationId.trim()) throw new Error("Tripleseat staffing location is not configured.");
-    await this.ensureInitialized();
-    const summaries = await this.eventSummaries(startDate, endDate, null, true);
+    const request = await this.staffingRequest();
+    const summaries = await this.eventSummaries(startDate, endDate, null, request);
     const events: TripleseatStaffingEvent[] = [];
     const operating = new Set(["DEFINITE", "TENTATIVE", "CLOSED"]);
     const excluded = new Set(["PROSPECT", "LOST", "CANCELED", "CANCELLED"]);
@@ -1726,7 +1759,7 @@ export class LiveTripleseatAdapter implements TripleseatAdapter {
       const summaryLocation = asString(summary.location_id);
       if (summaryLocation && summaryLocation !== this.locationId) continue;
       const eventId = sourceEventId(summary)!;
-      const detail = await this.eventDetail(eventId, false);
+      const detail = await this.eventDetail(eventId, request);
       const detailStatus = asString(detail.status)?.toUpperCase();
       const location = asString(detail.location_id) ?? asString(summary.location_id);
       if (!detailStatus || !location || sourceEventId(detail) !== eventId) throw new Error("Tripleseat staffing event identity could not be verified.");
