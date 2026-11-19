@@ -521,13 +521,13 @@ export function PortalAccessGate({
                   passphrase ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 4),
                 )
               }
-              minLength={passphrase ? 16 : 4}
+              minLength={4}
               pattern={passphrase ? undefined : "[0-9]{4}"}
               type="password"
               value={pin}
             />
             <button
-              disabled={(passphrase ? pin.length < 16 : pin.length !== 4) || state === "submitting"}
+              disabled={(passphrase ? pin.length < 16 && !/^\d{4}$/.test(pin) : pin.length !== 4) || state === "submitting"}
               type="submit"
             >
               {state === "submitting" ? "Checking…" : submitLabel}

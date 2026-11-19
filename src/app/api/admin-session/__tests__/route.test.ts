@@ -37,7 +37,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("standalone staffing Admin session", () => {
+describe.each([
+  { label: "long passphrase", passphrase },
+  { label: "four-digit password", passphrase: "4464" },
+])("standalone staffing Admin session with $label", ({ passphrase }) => {
+  beforeEach(() => {
+    vi.stubEnv("EVENT_HOST_STAFFING_ADMIN_PASSPHRASE", passphrase);
+  });
+
   it("keeps legacy Admin independent and unchanged while staffing is off", async () => {
     vi.stubEnv("EVENT_HOST_STAFFING_ADMIN_ENABLED", "false");
     vi.stubEnv("EVENT_HOST_STAFF_LOGIN_REQUIRED", "true");
@@ -58,6 +65,13 @@ describe("standalone staffing Admin session", () => {
 
   it("counts a PIN attempt but never accepts legacy access when staffing is on", async () => {
     expect((await POST(request({ pin: "1234" }))).status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an incorrect password without issuing an Admin cookie", async () => {
+    const response = await POST(request({ passphrase: "incorrect-synthetic-password" }));
+    expect(response.status).toBe(401);
+    expect(response.cookies.get(ADMIN_COOKIE_NAME)).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -87,6 +101,12 @@ describe("standalone staffing Admin session", () => {
     expect(hasAdminSession(cookies, started)).toBe(false);
   });
 
+  it("rejects a tampered timed Admin cookie", () => {
+    const value = createAdminSessionValue()!;
+    const tampered = `${value.slice(0, -1)}${value.endsWith("0") ? "1" : "0"}`;
+    expect(hasAdminSession({ get: () => ({ name: ADMIN_COOKIE_NAME, value: tampered }) })).toBe(false);
+  });
+
   it("fails closed on throttling, an unavailable database, or missing dedicated session secret", async () => {
     fetchMock.mockResolvedValueOnce(Response.json(false));
     const throttled = await POST(request({ passphrase }));
@@ -108,4 +128,23 @@ describe("standalone staffing Admin session", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
+});
+
+describe("standalone staffing Admin password configuration", () => {
+  it.each([16, 256])("continues accepting a %i-character passphrase", async (length) => {
+    const passphrase = "a".repeat(length);
+    vi.stubEnv("EVENT_HOST_STAFFING_ADMIN_PASSPHRASE", passphrase);
+    expect((await POST(request({ passphrase }))).status).toBe(200);
+  });
+
+  it.each(["", "123", "12345", "abcd", "12a4", "4464 ", " 4464", "４４６４", "a".repeat(15), "a".repeat(257)])(
+    "fails closed for invalid configured password %j",
+    async (passphrase) => {
+      vi.stubEnv("EVENT_HOST_STAFFING_ADMIN_PASSPHRASE", passphrase);
+      const response = await POST(request({ passphrase }));
+      expect(response.status).toBe(503);
+      expect(response.cookies.get(ADMIN_COOKIE_NAME)).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 });

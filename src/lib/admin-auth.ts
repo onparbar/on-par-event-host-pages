@@ -54,7 +54,7 @@ export function getAdminSessionSecret() {
 
 export function getAdminPassphrase() {
   const value = process.env.EVENT_HOST_STAFFING_ADMIN_PASSPHRASE;
-  return value && value.length >= 16 && value.length <= 256 ? value : null;
+  return value && (/^\d{4}$/.test(value) || value.length >= 16) && value.length <= 256 ? value : null;
 }
 
 function signTimedAdminSession(payload: string, secret: string, passphrase: string) {
