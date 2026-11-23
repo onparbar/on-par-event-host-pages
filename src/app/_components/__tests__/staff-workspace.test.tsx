@@ -34,7 +34,7 @@ describe("staff event workspace shell", () => {
     }));
     expect(html).toContain("Open Event");
     expect(html).toContain('class="event-command-staffing-alert"');
-    expect(html).toContain("Staffing Needs Review: Staff training");
+    expect(html).toContain("Assign Staff: Staff training");
     expect(html).not.toContain("No Staff Assigned");
     expect(html).not.toContain('aria-label="Event staffing picker"');
   });
@@ -75,8 +75,10 @@ describe("staff event workspace shell", () => {
     expect(html).toContain('class="event-command-edit-staff" type="button" aria-expanded="false"');
     expect(html).not.toContain('href="/admin/staffing?');
     expect(html).not.toContain('aria-label="Event staffing picker"');
-    expect(html).toContain("Staffing Needs Review: Staff training");
-    expect(html).toContain("No Staff Assigned: Needs a team");
+    expect(html).toContain("Assign Staff: Staff training");
+    expect(html).toContain("Assign Staff: Needs a team");
+    expect(html).not.toContain("Staffing Needs Review");
+    expect(html).not.toContain("No Staff Assigned");
     expect(html).toContain("Shift Lead");
     expect(html).not.toContain("Do not disclose");
   });

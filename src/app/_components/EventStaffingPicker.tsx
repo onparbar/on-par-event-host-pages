@@ -30,6 +30,7 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
   const [stale, setStale] = useState(false);
   const [saved, setSaved] = useState(false);
   const [needsAdmin, setNeedsAdmin] = useState(false);
+  const [needsSchedule, setNeedsSchedule] = useState(false);
 
   useEffect(() => {
     panel.current?.focus();
@@ -44,6 +45,7 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
           setRoster(null);
           setSelected([]);
         }
+        if ([404, 422].includes(response.status) && !controller.signal.aborted) setNeedsSchedule(true);
         if (!response.ok || !result) throw new Error(result?.error || "The shift list couldn’t be loaded.");
         if (controller.signal.aborted) return;
         setRoster(result);
@@ -106,6 +108,7 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
     {roster && !saved ? <>
       {roster.shifts.length ? <details open>
         <summary>Employees working this day ({choices.length} selected)</summary>
+        <p>Select one or more employees, then save the staffing team.</p>
         <fieldset disabled={busy || stale} aria-label="Select employees from published shifts">
           {roster.shifts.map((shift) => {
             const checked = selected.includes(shift.shiftId);
@@ -124,6 +127,7 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
     </> : null}
     {message ? <p role={saved ? "status" : "alert"}>{message}{stale && !needsAdmin ? " Close and reopen the picker before trying again." : ""}</p> : null}
     {needsAdmin ? <p><a className="button" href="/admin">Sign in to Admin</a></p> : null}
+    {needsSchedule ? <p><a className="button" href={`/admin/staffing?${new URLSearchParams({ eventId, date })}`}>Review published schedule</a></p> : null}
     <button className="secondary" disabled={busy} type="button" onClick={onClose}>{saved ? "Done" : "Close staffing picker"}</button>
   </section>;
 }

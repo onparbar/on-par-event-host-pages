@@ -70,6 +70,18 @@ describe("staffing picker Admin sign-in guidance", () => {
     expect(html).toContain("Refresh the published schedule before editing an event assignment.");
     expect(html).not.toContain("Sign in to Admin");
     expect(html).not.toContain("Save staffing team");
+    expect(html).toContain('href="/admin/staffing?eventId=501&amp;date=2026-11-23">Review published schedule</a>');
+  });
+
+  it("offers the exact event's schedule review when no verified roster is available", async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ error: "This event isn't in the verified staffing schedule for this date." }, { status: 404 }));
+    vi.stubGlobal("fetch", fetch);
+    await load();
+    const html = render();
+    expect(html).toContain('href="/admin/staffing?eventId=501&amp;date=2026-11-23">Review published schedule</a>');
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain("Save staffing team");
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the multi-select save payload but hides its roster and offers sign-in when the session expires", async () => {
@@ -82,6 +94,7 @@ describe("staffing picker Admin sign-in guidance", () => {
     expect(loaded.match(/type="checkbox"/g)).toHaveLength(2);
     expect(loaded).toContain("Jordan");
     expect(loaded).toContain("Casey");
+    expect(loaded).toContain("Select one or more employees, then save the staffing team.");
     expect(loaded).not.toContain("Sign in to Admin");
     hooks.index = 0;
     saveButton(EventStaffingPicker(props))!.props.onClick();

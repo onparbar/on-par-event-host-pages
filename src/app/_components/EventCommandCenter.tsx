@@ -71,8 +71,7 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
       const existingBwa = assignedStaffByEvent[eventKey(item)];
       const staffing = isVip ? undefined : staffingByEvent[eventKey(item)];
       const names = staffing?.names ?? [];
-      const alert = staffing?.status === "review" || staffing?.status === "unverified" ? "Staffing Needs Review"
-        : staffing?.status === "unassigned" ? "No Staff Assigned" : null;
+      const alert = staffing && staffing.status !== "assigned" ? "Assign Staff" : null;
       const key = eventKey(item);
       const pickerId = `staffing-picker-${item.event.date}-${item.event.eventId}`;
       const pickerOpen = staffingId === key;

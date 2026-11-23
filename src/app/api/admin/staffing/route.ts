@@ -5,6 +5,7 @@ import { isValidEntertainmentDate } from "@/lib/entertainment/time";
 import { isSameOriginOperationalRequest } from "@/lib/operational-access";
 import { isPreviewReviewOnly } from "@/lib/operations/preview-review";
 import { staffingOrigin } from "@/lib/staffing/security";
+import { staffingWindow } from "@/lib/staffing/domain";
 import { refreshStaffing, staffingEditorRoster, StaffingReviewError, staffingSnapshotIsFresh, updateStaffingOverride, type StaffingAssignmentChoice } from "@/lib/staffing/service";
 import { loadStaffingState, type StaffingState } from "@/lib/staffing/storage";
 import { StaleSaveError } from "@/lib/stale-save";
@@ -34,6 +35,10 @@ export async function GET(request: Request) {
   const eventId = params.get("eventId"), date = params.get("date");
   if (!id(eventId) || eventId.startsWith("vip-") || !date || !isValidEntertainmentDate(date)) {
     return error("Choose a valid event and date.", 400);
+  }
+  const window = staffingWindow();
+  if (date < window.startDate || date > window.endDate) {
+    return error(`This date is outside the current staffing window (${window.startDate} through ${window.endDate}). Staff names cannot be verified for this date yet.`, 404);
   }
   try {
     const roster = staffingEditorRoster(await loadStaffingState(), eventId, date);

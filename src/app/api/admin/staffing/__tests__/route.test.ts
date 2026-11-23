@@ -91,6 +91,18 @@ describe("inline staffing roster", () => {
     vi.setSystemTime(new Date(`${date}T15:46:00Z`));
     expect((await get()).status).toBe(422);
   });
+
+  it("explains dates outside the verified window without loading or refreshing a roster", async () => {
+    admin();
+    for (const date of ["2026-11-09", "2026-11-17"]) {
+      const response = await get(`eventId=42&date=${date}`);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "This date is outside the current staffing window (2026-11-10 through 2026-11-16). Staff names cannot be verified for this date yet." });
+    }
+    expect(mocks.load).not.toHaveBeenCalled();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.override).not.toHaveBeenCalled();
+  });
 });
 
 describe("staffing mutation and sync access", () => {
