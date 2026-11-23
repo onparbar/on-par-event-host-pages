@@ -27,18 +27,45 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-async function homeStaffing() {
-  const page = await HomePage({ searchParams: Promise.resolve({}) });
+async function homeStaffing(date?: string) {
+  const page = await HomePage({ searchParams: Promise.resolve(date ? { date } : {}) });
   return (page.props.children.find((child: unknown) => isValidElement(child) && child.type === EventCommandCenter) as ReactElement<{ staffingByEvent: object }>).props.staffingByEvent;
 }
 
 describe("standalone home staffing privacy", () => {
-  it("does not read or disclose staffing on the legacy homepage, even with a legacy Admin cookie", async () => {
+  it("does not read or disclose staffing when the staffing feature is off, even with a legacy Admin cookie", async () => {
     vi.mocked(hasAdminSession).mockReturnValue(true);
     expect(await homeStaffing()).toEqual({});
+    expect(loadStaffingCards).not.toHaveBeenCalled();
+  });
+
+  it("requests status-only alerts without an Admin session, never employee names", async () => {
     vi.mocked(requiresStrongAdminSession).mockReturnValue(true);
     vi.mocked(hasAdminSession).mockReturnValue(false);
-    expect(await homeStaffing()).toEqual({});
+    vi.mocked(loadStaffingCards).mockResolvedValue({ "2026-11-13:41": { names: [], status: "unassigned" } });
+    expect(await homeStaffing()).toEqual({ "2026-11-13:41": { names: [], status: "unassigned" } });
+    expect(loadStaffingCards).toHaveBeenCalledExactlyOnceWith([{
+      eventId: "41", date: "2026-11-13", startAt: "2026-11-13T22:00:00.000Z", endAt: "2026-11-14T01:00:00.000Z",
+    }], { now: new Date("2026-11-13T18:00:00Z"), allowPublicStatus: true });
+  });
+
+  it("keeps a review status when the saved staffing data is missing or unavailable", async () => {
+    vi.mocked(requiresStrongAdminSession).mockReturnValue(true);
+    vi.mocked(hasAdminSession).mockReturnValue(false);
+    vi.mocked(loadStaffingCards).mockResolvedValueOnce({});
+    expect(await homeStaffing()).toEqual({ "2026-11-13:41": { names: [], status: "unverified" } });
+    vi.mocked(loadStaffingCards).mockRejectedValueOnce(new Error("Saved schedule unavailable"));
+    expect(await homeStaffing()).toEqual({ "2026-11-13:41": { names: [], status: "unverified" } });
+  });
+
+  it("keeps an outside-week card in review without asking the staffing loader to verify a historical assignment", async () => {
+    vi.mocked(requiresStrongAdminSession).mockReturnValue(true);
+    vi.mocked(hasAdminSession).mockReturnValue(true);
+    vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [{
+      id: 43, name: "Historical event", date: "2026-11-12", day: "Thursday", time: "5:00 PM – 8:00 PM", guest_count: 10,
+      rooms: ["Main room"], color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified",
+    }], sync: null, unfinishedEventIds: [], sourceWarning: "" });
+    expect(await homeStaffing("2026-11-12")).toEqual({ "2026-11-12:43": { names: [], status: "unverified" } });
     expect(loadStaffingCards).not.toHaveBeenCalled();
   });
 

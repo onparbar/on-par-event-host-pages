@@ -71,7 +71,7 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
       const existingBwa = assignedStaffByEvent[eventKey(item)];
       const staffing = isVip ? undefined : staffingByEvent[eventKey(item)];
       const names = staffing?.names ?? [];
-      const alert = staffing?.status === "review" ? "Staffing Needs Review"
+      const alert = staffing?.status === "review" || staffing?.status === "unverified" ? "Staffing Needs Review"
         : staffing?.status === "unassigned" ? "No Staff Assigned" : null;
       const key = eventKey(item);
       const pickerId = `staffing-picker-${item.event.date}-${item.event.eventId}`;
@@ -90,7 +90,7 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
             <div><dt>Checklist</dt><dd>{item.checklistStatus === "submitted" ? "Submitted" : item.checklistStatus === "unavailable" ? "Unavailable" : item.checklistStatus === "not-started" ? "Not started" : `${item.checklistCompleted}/${item.checklistTotal} tasks checked`}</dd></div>
             <div><dt>Assigned staff</dt><dd>{isVip ? "Shift Lead" : names.length
               ? <button className="event-command-edit-staff" type="button" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined} aria-label={`Edit assigned staff: ${item.event.eventName} — ${names.join(", ")}`} onClick={(event) => togglePicker(event.currentTarget)}>{names.join(", ")}</button>
-              : staffing?.status === "unassigned" ? "None" : existingBwa || (staffing ? "Not confirmed" : "Not assigned")}
+              : staffing?.status === "unassigned" ? "None" : staffing?.status === "assigned" ? "Assigned" : existingBwa || (staffing ? "Not confirmed" : "Not assigned")}
               {names.length > 0 && staffing?.status === "unverified" ? <small className="event-command-staffing-note">Staffing not yet verified</small> : null}
             </dd></div>
           </dl>

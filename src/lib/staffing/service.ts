@@ -196,7 +196,7 @@ function unambiguousDisplayInstant(timestamp: number) {
   return label !== wallClock.format(timestamp - 3_600_000) && label !== wallClock.format(timestamp + 3_600_000);
 }
 
-type StaffingProjectionOptions = Pick<Dependencies, "now" | "load"> & { allowAdminPreview?: boolean };
+type StaffingProjectionOptions = Pick<Dependencies, "now" | "load"> & { allowAdminPreview?: boolean; allowPublicStatus?: boolean };
 type StaffingEventIdentity = Omit<StaffingEvent, "eventName">;
 
 function verifiedStaffingTiming(event: StaffingEventIdentity, saved: StaffingEvent | undefined) {
@@ -215,18 +215,18 @@ function repeatedEventIds(events: readonly StaffingEventIdentity[]) {
   return repeated;
 }
 
-/** Never expose employee schedules on legacy code-free Event Host. Return just names and safe card status. */
+/** Public cards may expose safe staffing status; employee names still require an authorized Admin. */
 export async function loadStaffingCards(events: readonly StaffingEventIdentity[], dependencies: StaffingProjectionOptions = {}): Promise<Record<string, StaffingCard>> {
-  if (dependencies.allowAdminPreview !== true || !events.length) return {};
+  if ((dependencies.allowAdminPreview !== true && dependencies.allowPublicStatus !== true) || !events.length) return {};
   const state = await (dependencies.load ?? loadStaffingState)();
   const fresh = staffingSnapshotIsFresh(state, dependencies.now);
   const known = new Map(state.events.map((event) => [event.eventId, event]));
   const repeated = repeatedEventIds(events);
   return Object.fromEntries(events.filter(({ eventId }) => !repeated.has(eventId)).map((event) => {
     const timingMatches = verifiedStaffingTiming(event, known.get(event.eventId));
-    const names = new Map(state.reconciliation?.assignments.filter((row) => row.eventId === event.eventId && row.eventDate === event.date &&
+    const names = dependencies.allowAdminPreview === true ? new Map(state.reconciliation?.assignments.filter((row) => row.eventId === event.eventId && row.eventDate === event.date &&
       (row.source === "manual" || timingMatches))
-      .map((row) => [row.employeeId, row.employeeName]));
+      .map((row) => [row.employeeId, row.employeeName])) : new Map<string, string>();
     return [`${event.date}:${event.eventId}`, { names: [...names.values()].sort((a, b) => a.localeCompare(b)),
       status: fresh && timingMatches ? state.reconciliation?.eventStatuses[event.eventId] ?? "unverified" : "unverified" }];
   }));

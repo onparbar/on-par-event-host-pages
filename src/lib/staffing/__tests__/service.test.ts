@@ -3,7 +3,7 @@ import { setTripleseatAdapterForTests, type TripleseatAdapter } from "@/lib/kitc
 import { createMemoryEventPlanStorage, setEventPlanStorageForTests } from "@/lib/event-plans/storage";
 import { StaleSaveError } from "@/lib/stale-save";
 import type { CorporateStaffShift, StaffingEvent } from "../domain";
-import { loadStaffingCards, refreshStaffing, staffingSnapshotIsFresh, updateStaffingOverride } from "../service";
+import { loadStaffingCards, loadStaffingPrefills, refreshStaffing, staffingSnapshotIsFresh, updateStaffingOverride } from "../service";
 import { emptyStaffingState, type StaffingState } from "../storage";
 import { StaffingSourceError } from "../sevenshifts";
 
@@ -78,6 +78,52 @@ describe("Staffing snapshot service", () => {
     expect(await loadStaffingCards([event, { ...event, date: "2026-11-11" }], admin)).toEqual({});
     expect(await loadStaffingCards([{ ...event, startAt: "2026-11-10T18:00:00-05:00" }], admin)).toEqual({ "2026-11-10:123": { names: ["Staff Two"], status: "assigned" } });
     expect(await loadStaffingCards([{ ...event, startAt: "2026-11-10T23:30:00Z" }], admin)).toEqual({ "2026-11-10:123": { names: [], status: "unverified" } });
+  });
+
+  it("projects only explicitly requested public statuses from one saved snapshot without employee details or provider reads", async () => {
+    const storage = persistence();
+    const deps = { ...storage, now, readEvents: vi.fn(async () => [event]),
+      readShifts: vi.fn(async () => [{ ...shift, notes: "Private employee schedule note" }]) };
+    const good = await refreshStaffing(deps);
+    const unassigned = { ...event, eventId: "456" }, review = { ...event, eventId: "789" }, unknown = { ...event, eventId: "999" };
+    const state: StaffingState = { ...good, events: [event, unassigned, review],
+      reconciliation: { ...good.reconciliation!, eventStatuses: { 123: "assigned", 456: "unassigned", 789: "review" } } };
+    const load = vi.fn(async () => state);
+    storage.save.mockClear();
+    deps.readEvents.mockClear();
+    deps.readShifts.mockClear();
+    vi.stubEnv("EVENT_HOST_STAFF_LOGIN_REQUIRED", "false");
+
+    expect(await loadStaffingCards([event, unassigned, review, unknown], { ...deps, load, allowPublicStatus: true })).toEqual({
+      "2026-11-10:123": { names: [], status: "assigned" },
+      "2026-11-10:456": { names: [], status: "unassigned" },
+      "2026-11-10:789": { names: [], status: "review" },
+      "2026-11-10:999": { names: [], status: "unverified" },
+    });
+    expect(load).toHaveBeenCalledOnce();
+    expect(storage.save).not.toHaveBeenCalled();
+    expect(deps.readEvents).not.toHaveBeenCalled();
+    expect(deps.readShifts).not.toHaveBeenCalled();
+  });
+
+  it("keeps public staffing statuses unverified for stale or changed timing and omits repeated event identities", async () => {
+    const deps = { ...persistence(), now, readEvents: async () => [event], readShifts: async () => [shift] };
+    const good = await refreshStaffing(deps);
+    const publicStatus = { ...deps, allowPublicStatus: true };
+    expect(await loadStaffingCards([event], { ...publicStatus, now: new Date("2026-11-10T14:46:00Z") }))
+      .toEqual({ "2026-11-10:123": { names: [], status: "unverified" } });
+    expect(await loadStaffingCards([{ ...event, startAt: "2026-11-10T23:30:00Z" }], publicStatus))
+      .toEqual({ "2026-11-10:123": { names: [], status: "unverified" } });
+    expect(await loadStaffingCards([event, { ...event, date: "2026-11-11" }], publicStatus)).toEqual({});
+    expect(good.reconciliation?.assignments).toHaveLength(1);
+  });
+
+  it("does not treat the public-status option as permission for employee names or form prefills", async () => {
+    const load = vi.fn(async () => emptyStaffingState());
+    expect(await loadStaffingCards([event], { now, load, allowPublicStatus: false })).toEqual({});
+    expect(await loadStaffingCards([], { now, load, allowPublicStatus: true })).toEqual({});
+    expect(await loadStaffingPrefills([event], { now, load, allowPublicStatus: true })).toEqual({});
+    expect(load).not.toHaveBeenCalled();
   });
 
   it("does not confirm home cards from a wall clock duplicated during the DST fallback", async () => {

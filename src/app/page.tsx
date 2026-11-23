@@ -13,7 +13,7 @@ import { listChecklistRecords } from "@/lib/checklist-storage";
 import { buildOperationalEventSummaries } from "@/lib/operations/command-center";
 import { EventCommandCenter } from "@/app/_components/EventCommandCenter";
 import { loadStaffEventPlans } from "@/lib/operations/staff-events";
-import { loadStaffingCards } from "@/lib/staffing/service";
+import { loadStaffingCards, type StaffingCard } from "@/lib/staffing/service";
 
 export const dynamic = "force-dynamic";
 
@@ -57,8 +57,15 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const staffingEvents = operationalEvents.flatMap(({ event, startsAt, endsAt }) =>
     event.date >= today && event.date <= through && !event.eventId.startsWith("vip-")
       ? [{ eventId: event.eventId, date: event.date, startAt: startsAt, endAt: endsAt }] : []);
-  const staffingByEvent = staffingEvents.length && requiresStrongAdminSession() && hasAdminSession(await cookies())
-    ? await loadStaffingCards(staffingEvents, { now, allowAdminPreview: true }).catch(() => ({})) : {};
+  const staffingEnabled = requiresStrongAdminSession();
+  const staffingByEvent: Record<string, StaffingCard> = staffingEnabled ? Object.fromEntries(operationalEvents
+    .filter(({ event }) => !event.eventId.startsWith("vip-"))
+    .map(({ event }) => [`${event.date}:${event.eventId}`, { names: [], status: "unverified" as const }])) : {};
+  if (staffingEnabled && staffingEvents.length) {
+    Object.assign(staffingByEvent, await loadStaffingCards(staffingEvents, {
+      now, ...(hasAdminSession(await cookies()) ? { allowAdminPreview: true } : { allowPublicStatus: true }),
+    }).catch(() => ({})));
+  }
 
   return (
     <PortalShell

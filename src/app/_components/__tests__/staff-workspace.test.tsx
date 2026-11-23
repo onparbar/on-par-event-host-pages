@@ -26,6 +26,41 @@ import Loading from "../../loading";
 const plan: EventPlan = { id: 123, name: "Staff training", date: "2026-10-23", rooms: ["VIP 1"], time: "2:00 PM – 4:00 PM", day: "Friday", guest_count: 20, color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified" };
 
 describe("staff event workspace shell", () => {
+  it("keeps a red review alert beside Open Event when staffing is unverified, without treating it as a confirmed absence", () => {
+    const events = buildOperationalEventSummaries([plan], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, {
+      events, initialNow: "2026-10-23T19:00:00Z",
+      staffingByEvent: { "2026-10-23:123": { status: "unverified", names: [] } },
+    }));
+    expect(html).toContain("Open Event");
+    expect(html).toContain('class="event-command-staffing-alert"');
+    expect(html).toContain("Staffing Needs Review: Staff training");
+    expect(html).not.toContain("No Staff Assigned");
+    expect(html).not.toContain('aria-label="Event staffing picker"');
+  });
+
+  it("shows assigned status without exposing names or a false absence alert on status-only cards", () => {
+    const events = buildOperationalEventSummaries([plan], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, {
+      events, initialNow: "2026-10-23T19:00:00Z",
+      staffingByEvent: { "2026-10-23:123": { status: "assigned", names: [] } },
+    }));
+    expect(html).toContain("<dt>Assigned staff</dt><dd>Assigned</dd>");
+    expect(html).not.toContain("event-command-staffing-alert");
+    expect(html).not.toContain("event-command-edit-staff");
+  });
+
+  it("does not add a staffing alert to VIP Shift Lead cards or disabled staffing cards", () => {
+    const events = buildOperationalEventSummaries([plan, { ...plan, id: 124, source_event_id: "vip-124" }], [], null);
+    const html = renderToStaticMarkup(createElement(EventCommandCenter, {
+      events, initialNow: "2026-10-23T19:00:00Z",
+      staffingByEvent: { "2026-10-23:vip-124": { status: "unverified", names: ["Private name"] } },
+    }));
+    expect(html).toContain("Shift Lead");
+    expect(html).not.toContain("Private name");
+    expect(html).not.toContain("event-command-staffing-alert");
+  });
+
   it("shows staffing edit and review controls for the exact event, without replacing the VIP Shift Lead", () => {
     const events = buildOperationalEventSummaries([
       plan, { ...plan, id: 124, name: "Needs a team" }, { ...plan, id: 125, source_event_id: "vip-test", name: "VIP booking" },

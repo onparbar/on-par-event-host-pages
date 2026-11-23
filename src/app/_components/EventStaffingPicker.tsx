@@ -29,6 +29,7 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [needsAdmin, setNeedsAdmin] = useState(false);
 
   useEffect(() => {
     panel.current?.focus();
@@ -38,6 +39,11 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
       try {
         const response = await fetch(`/api/admin/staffing?${query}`, { cache: "no-store", signal: controller.signal });
         const result = await response.json().catch(() => null);
+        if (response.status === 401 && !controller.signal.aborted) {
+          setNeedsAdmin(true);
+          setRoster(null);
+          setSelected([]);
+        }
         if (!response.ok || !result) throw new Error(result?.error || "The shift list couldn’t be loaded.");
         if (controller.signal.aborted) return;
         setRoster(result);
@@ -77,6 +83,11 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
       const result = await response.json().catch(() => null);
       if (!response.ok || !Number.isSafeInteger(result?.version)) {
         if ([401, 403, 409, 422, 503].includes(response.status)) setStale(true);
+        if (response.status === 401) {
+          setNeedsAdmin(true);
+          setRoster(null);
+          setSelected([]);
+        }
         throw new Error(result?.error || "The team couldn’t be saved.");
       }
       setSaved(true);
@@ -111,7 +122,8 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
       {blocked ? <p role="status">Remove the conflicting shift before saving.</p> : null}
       <button className="button" type="button" disabled={!canSave} onClick={() => void save()}>{busy ? "Saving…" : `Save staffing team (${choices.length})`}</button>
     </> : null}
-    {message ? <p role={saved ? "status" : "alert"}>{message}{stale ? " Close and reopen the picker before trying again." : ""}</p> : null}
+    {message ? <p role={saved ? "status" : "alert"}>{message}{stale && !needsAdmin ? " Close and reopen the picker before trying again." : ""}</p> : null}
+    {needsAdmin ? <p><a className="button" href="/admin">Sign in to Admin</a></p> : null}
     <button className="secondary" disabled={busy} type="button" onClick={onClose}>{saved ? "Done" : "Close staffing picker"}</button>
   </section>;
 }
