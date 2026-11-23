@@ -1,4 +1,5 @@
 import "server-only";
+import { addCalendarDays, localDateForIso, todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { getTripleseatAdapter } from "@/lib/kitchen/tripleseat";
 import { StaleSaveError } from "@/lib/stale-save";
 import { MAX_STAFFING_EARLY_START_MINUTES, reconcileStaffing, staffingInstant, staffingShiftCoversEvent, staffingShiftIsOnEventDay, staffingWindow, type CorporateStaffShift, type StaffingAssignment, type StaffingEvent, type StaffingEventStatus } from "./domain";
@@ -9,6 +10,7 @@ export const STAFFING_FRESHNESS_MINUTES = 45;
 type Window = ReturnType<typeof staffingWindow>;
 type Dependencies = {
   now?: Date;
+  date?: string;
   load?: typeof loadStaffingState;
   save?: typeof saveStaffingState;
   readEvents?: (window: Window) => Promise<StaffingEvent[]>;
@@ -16,10 +18,11 @@ type Dependencies = {
 };
 
 /** Use exact Tripleseat snapshots; never replace durable operational plans or advance their sync status. */
-async function readTripleseatStaffingEvents({ startDate, endDate }: Window) {
+async function readTripleseatStaffingEvents({ shiftStartDate, endDate }: Window) {
   const adapter = getTripleseatAdapter();
   if (adapter.sourceMode !== "live" || !adapter.fetchStaffingEventsForRange) throw new Error("Verified Tripleseat staffing reads are unavailable.");
-  return (await adapter.fetchStaffingEventsForRange(startDate, endDate)).map((source) => ({
+  // Include overnight events on either boundary when checking retained assignments.
+  return (await adapter.fetchStaffingEventsForRange(shiftStartDate, addCalendarDays(endDate, 1))).map((source) => ({
     eventId: source.eventId, eventName: source.eventName, date: source.localDate, startAt: source.eventStartAt, endAt: source.eventEndAt,
   }));
 }
@@ -28,8 +31,18 @@ export function staffingSnapshotIsFresh(state: StaffingState, now = new Date()) 
   const saved = state.reconciliation;
   const time = saved?.lastSuccessfulSyncAt ? Date.parse(saved.lastSuccessfulSyncAt) : NaN;
   const age = now.getTime() - time;
-  return !state.failure && saved?.dataStatus === "verified" && saved.window.startDate === staffingWindow(now).startDate &&
-    Number.isFinite(age) && age >= 0 && age <= STAFFING_FRESHNESS_MINUTES * 60_000;
+  if (state.failure || saved?.dataStatus !== "verified" || !Number.isFinite(age) || age < 0 ||
+      age > STAFFING_FRESHNESS_MINUTES * 60_000 || todayInEntertainmentTimeZone(new Date(time)) !== todayInEntertainmentTimeZone(now)) return false;
+  try {
+    const expected = staffingWindow(new Date(time), saved.window.startDate);
+    return expected.startDate === saved.window.startDate && expected.endDate === saved.window.endDate &&
+      expected.shiftStartDate === saved.window.shiftStartDate;
+  } catch { return false; }
+}
+
+function dateInSnapshot(state: StaffingState, date: string, now: Date) {
+  const window = state.reconciliation?.window;
+  return Boolean(window && date >= todayInEntertainmentTimeZone(now) && date >= window.startDate && date <= window.endDate);
 }
 
 export async function refreshStaffing(dependencies: Dependencies = {}, expectedVersion?: number) {
@@ -37,21 +50,35 @@ export async function refreshStaffing(dependencies: Dependencies = {}, expectedV
   const previous = await (dependencies.load ?? loadStaffingState)();
   if (expectedVersion !== undefined && previous.version !== expectedVersion) throw new StaleSaveError();
   const save = dependencies.save ?? saveStaffingState;
-  const window = staffingWindow(now);
+  const window = staffingWindow(now, dependencies.date);
+  const contextEnd = addCalendarDays(window.endDate, 1);
   const [events, shifts] = await Promise.allSettled([
     (dependencies.readEvents ?? readTripleseatStaffingEvents)(window),
-    (dependencies.readShifts ?? readPublishedStaffingShifts)(window),
+    (dependencies.readShifts ?? readPublishedStaffingShifts)({ ...window, endDate: contextEnd }),
   ]);
   const lastAttemptAt = now.toISOString();
   const fail = (failure: NonNullable<StaffingState["failure"]>) => save({ ...previous, lastAttemptAt, failure }, previous.version);
   if (events.status === "rejected") return fail("events");
   if (shifts.status === "rejected") return fail(shifts.reason instanceof StaffingSourceError && shifts.reason.reason === "incomplete" ? "incomplete" : "shifts");
-  const reconciliation = reconcileStaffing({ events: events.value, shifts: shifts.value, complete: true, now,
+  const returnedIds = new Set(events.value.map((event) => event.eventId));
+  const retainedEvents = previous.events.filter((event) => !returnedIds.has(event.eventId) &&
+    (event.date < window.shiftStartDate || event.date > contextEnd) && previous.reconciliation?.assignments.some((row) =>
+      row.eventId === event.eventId && row.eventDate === event.date));
+  const combinedEvents = [...events.value, ...retainedEvents];
+  const previousAssignments = previous.reconciliation?.assignments.filter((row) => {
+    if (row.source === "manual") return true;
+    const event = combinedEvents.find((item) => item.eventId === row.eventId && item.date === row.eventDate);
+    if (!event) return false;
+    if (row.eventDate < window.shiftStartDate || row.eventDate > contextEnd) return true;
+    return shifts.value.some((shift) => shift.shiftId === row.shiftId && shift.employeeId === row.employeeId &&
+      shift.corporate !== false && staffingShiftIsOnEventDay(shift, event.date) && staffingShiftCoversEvent(shift, event));
+  });
+  const reconciliation = reconcileStaffing({ events: combinedEvents, shifts: shifts.value, complete: true, now, startDate: window.startDate,
     policy: previous.policy, keepClearEventIds: previous.keepClearEventIds, manualTeams: previous.manualTeams,
-    suppressedAssignments: previous.suppressedAssignments, previousAssignments: previous.reconciliation?.assignments,
+    suppressedAssignments: previous.suppressedAssignments, previousAssignments,
     previousAlerts: previous.reconciliation?.alerts, lastSuccessfulSyncAt: previous.reconciliation?.lastSuccessfulSyncAt });
   if (reconciliation.dataStatus === "unverified") return fail("incomplete");
-  return save({ ...previous, reconciliation, events: events.value, shifts: shifts.value, dailyScheduleComplete: true, lastAttemptAt, failure: null }, previous.version);
+  return save({ ...previous, reconciliation, events: combinedEvents, shifts: shifts.value, dailyScheduleComplete: true, lastAttemptAt, failure: null }, previous.version);
 }
 
 export type StaffingAssignmentChoice = { shiftId: string; confirmPartialCoverage?: boolean; confirmMove?: boolean };
@@ -71,16 +98,17 @@ function hasOverlappingAssignment(shift: CorporateStaffShift, event: StaffingEve
   return assignments.some((row) => {
     if (row.employeeId !== shift.employeeId || row.eventId === event.eventId || row.shiftId === shift.shiftId) return false;
     const other = events.find((item) => item.eventId === row.eventId && item.date === row.eventDate);
-    return other && staffingInstant(other.startAt) < staffingInstant(event.endAt) && staffingInstant(other.endAt) > staffingInstant(event.startAt);
+    const start = staffingInstant(other?.startAt ?? null), end = staffingInstant(other?.endAt ?? null);
+    return !(start < end) || localDateForIso(other!.startAt!) !== row.eventDate ||
+      (start < staffingInstant(event.endAt) && end > staffingInstant(event.startAt));
   });
 }
 
 /** Project only the requested event's roster from the verified, saved snapshot; no provider calls. */
 export function staffingEditorRoster(state: StaffingState, eventId: string, date: string, now = new Date()) {
-  const window = staffingWindow(now);
-  if (eventId.startsWith("vip-") || date < window.startDate || date > window.endDate) return null;
-  if (!staffingSnapshotIsFresh(state, now) || !state.dailyScheduleComplete) {
-    throw new StaffingReviewError("Refresh the published schedule before editing an event assignment.");
+  if (eventId.startsWith("vip-") || date < todayInEntertainmentTimeZone(now)) return null;
+  if (!staffingSnapshotIsFresh(state, now) || !state.dailyScheduleComplete || !dateInSnapshot(state, date, now)) {
+    throw new StaffingReviewError("Verify the published schedule for this event's week in Staffing Review before assigning staff.");
   }
   const matches = state.events.filter((event) => event.eventId === eventId);
   const event = matches.length === 1 && matches[0].date === date ? matches[0] : null;
@@ -119,12 +147,11 @@ export async function updateStaffingOverride(change: StaffingAdminChange, depend
     if (!staffingSnapshotIsFresh(previous, now) || !previous.dailyScheduleComplete) {
       throw new StaffingReviewError("Refresh the published schedule before editing an event assignment.");
     }
-    const window = staffingWindow(now);
     const eventDate = change.action === "replace-team" ? change.eventDate : undefined;
     const candidates = previous.events.filter((item) => item.eventId === change.eventId);
-    const event = candidates.find((item) => item.date >= window.startDate && item.date <= window.endDate &&
+    const event = candidates.find((item) => dateInSnapshot(previous, item.date, now) &&
       (eventDate === undefined || (candidates.length === 1 && item.date === eventDate && !change.eventId.startsWith("vip-"))));
-    if (!event) throw new StaffingReviewError("Choose a verified event in the current staffing window.");
+    if (!event) throw new StaffingReviewError("Choose a verified event in the selected staffing week.");
     if (change.action === "assign" || change.action === "assign-many" || change.action === "replace-team") {
       const choices = change.action === "assign" ? [change] : change.choices;
       if (!choices.length && change.action !== "replace-team") throw new StaffingReviewError("Choose at least one verified published shift.");
@@ -146,7 +173,7 @@ export async function updateStaffingOverride(change: StaffingAdminChange, depend
         if (previousEvents.length && choice.confirmMove !== true) {
           throw new StaffingReviewError("Confirm moving the shift from its current event.");
         }
-        if (hasOverlappingAssignment(shift, event, assignments, previous.events)) throw new StaffingReviewError("This employee is already assigned to an overlapping event.");
+        if (hasOverlappingAssignment(shift, event, assignments, previous.events)) throw new StaffingReviewError("This employee's existing assignment overlaps or could not be verified. Review it before assigning this event.");
         for (const row of previousEvents) suppress(row.eventId, row.eventDate, row.employeeId);
         employeeIds.add(shift.employeeId);
         shiftIds.add(shift.shiftId);
@@ -178,7 +205,7 @@ export async function updateStaffingOverride(change: StaffingAdminChange, depend
   const saved = previous.reconciliation;
   const reconciliation = saved && (staffingSnapshotIsFresh(previous, now) ? {
     ...reconcileStaffing({ events: previous.events, shifts: previous.shifts, previousAssignments: assignments, previousAlerts: saved.alerts,
-      ...overrides, complete: true, now }),
+      ...overrides, complete: true, now, startDate: saved.window.startDate }),
     // A manager edit is not a fresh upstream observation.
     lastSuccessfulSyncAt: saved.lastSuccessfulSyncAt,
   } : { ...saved, assignments });
@@ -228,7 +255,8 @@ export async function loadStaffingCards(events: readonly StaffingEventIdentity[]
       (row.source === "manual" || timingMatches))
       .map((row) => [row.employeeId, row.employeeName])) : new Map<string, string>();
     return [`${event.date}:${event.eventId}`, { names: [...names.values()].sort((a, b) => a.localeCompare(b)),
-      status: fresh && timingMatches ? state.reconciliation?.eventStatuses[event.eventId] ?? "unverified" : "unverified" }];
+      status: fresh && dateInSnapshot(state, event.date, dependencies.now ?? new Date()) && timingMatches
+        ? state.reconciliation?.eventStatuses[event.eventId] ?? "unverified" : "unverified" }];
   }));
 }
 
@@ -243,7 +271,7 @@ export async function loadStaffingPrefills(events: readonly StaffingEventIdentit
   const repeated = repeatedEventIds(events);
   return Object.fromEntries(events.flatMap((event) => {
     if (repeated.has(event.eventId) || event.eventId.startsWith("vip-") || eventStatuses[event.eventId] !== "assigned" ||
-        !verifiedStaffingTiming(event, known.get(event.eventId))) return [];
+        !dateInSnapshot(state, event.date, dependencies.now ?? new Date()) || !verifiedStaffingTiming(event, known.get(event.eventId))) return [];
     const byEmployee = new Map<string, string>();
     for (const row of assignments) {
       if (row.source !== "manual" || row.eventId !== event.eventId || row.eventDate !== event.date || !row.shiftId) continue;

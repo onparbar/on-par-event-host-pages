@@ -77,4 +77,18 @@ describe("standalone home staffing privacy", () => {
       eventId: "41", date: "2026-11-13", startAt: "2026-11-13T22:00:00.000Z", endAt: "2026-11-14T01:00:00.000Z",
     }], { now: new Date("2026-11-13T18:00:00Z"), allowAdminPreview: true });
   });
+
+  it("projects the selected future event's exact staffing identity beyond this week's overview", async () => {
+    vi.mocked(requiresStrongAdminSession).mockReturnValue(true);
+    vi.mocked(hasAdminSession).mockReturnValue(true);
+    vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [{
+      id: 44, name: "Selected future event", date: "2026-11-20", day: "Friday", time: "5:00 PM – 8:00 PM", guest_count: 10,
+      rooms: ["Main room"], color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified",
+    }], sync: null, unfinishedEventIds: [], sourceWarning: "" });
+    vi.mocked(loadStaffingCards).mockResolvedValue({ "2026-11-20:44": { names: ["Future assigned staff"], status: "assigned" } });
+    expect(await homeStaffing("2026-11-20")).toEqual({ "2026-11-20:44": { names: ["Future assigned staff"], status: "assigned" } });
+    expect(loadStaffingCards).toHaveBeenCalledExactlyOnceWith([{
+      eventId: "44", date: "2026-11-20", startAt: "2026-11-20T22:00:00.000Z", endAt: "2026-11-21T01:00:00.000Z",
+    }], { now: new Date("2026-11-13T18:00:00Z"), allowAdminPreview: true });
+  });
 });

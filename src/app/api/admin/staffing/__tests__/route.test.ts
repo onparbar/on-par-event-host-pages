@@ -27,7 +27,7 @@ const rosterState = {
   shifts: [shift, { ...shift, shiftId: "112", startAt: `${date}T18:00:00Z` },
     { ...shift, shiftId: "113", employeeId: "22", employeeName: "Synthetic Two" },
     { ...shift, shiftId: "999", employeeName: "Different-day employee", startAt: "2026-11-11T16:00:00Z", endAt: "2026-11-11T21:00:00Z" }],
-  reconciliation: { ...state.reconciliation, dataStatus: "verified", window: { startDate: date }, assignments: [
+  reconciliation: { ...state.reconciliation, dataStatus: "verified", window: { startDate: date, endDate: "2026-11-16", shiftStartDate: "2026-11-09" }, assignments: [
     { eventId: "42", eventDate: date, employeeId: "22", shiftId: "113" },
     { eventId: "43", eventDate: date, employeeId: "11", shiftId: "111" },
   ] },
@@ -92,20 +92,53 @@ describe("inline staffing roster", () => {
     expect((await get()).status).toBe(422);
   });
 
-  it("explains dates outside the verified window without loading or refreshing a roster", async () => {
+  it("keeps historical assignments closed without loading or refreshing a roster", async () => {
     admin();
-    for (const date of ["2026-11-09", "2026-11-17"]) {
-      const response = await get(`eventId=42&date=${date}`);
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ error: "This date is outside the current staffing window (2026-11-10 through 2026-11-16). Staff names cannot be verified for this date yet." });
-    }
+    const response = await get("eventId=42&date=2026-11-09");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Past event assignments cannot be changed." });
     expect(mocks.load).not.toHaveBeenCalled();
     expect(mocks.refresh).not.toHaveBeenCalled();
     expect(mocks.override).not.toHaveBeenCalled();
   });
+
+  it("requires verification for a future week without making upstream calls on GET", async () => {
+    admin();
+    const response = await get("eventId=42&date=2026-11-17");
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "Verify the published schedule for this event's week in Staffing Review before assigning staff." });
+    expect(mocks.load).toHaveBeenCalledOnce();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.override).not.toHaveBeenCalled();
+  });
+
+  it("loads a verified future roster using its real observation time rather than the event day", async () => {
+    admin();
+    const futureDate = "2026-11-17";
+    mocks.load.mockResolvedValue({ ...rosterState,
+      events: [{ ...focusEvent, date: futureDate, startAt: `${futureDate}T17:00:00Z`, endAt: `${futureDate}T20:00:00Z` }],
+      shifts: [{ ...shift, startAt: `${futureDate}T16:00:00Z`, endAt: `${futureDate}T21:00:00Z` }],
+      reconciliation: { ...rosterState.reconciliation, window: { startDate: futureDate, endDate: "2026-11-23", shiftStartDate: "2026-11-16" }, assignments: [] },
+    });
+    const response = await get(`eventId=42&date=${futureDate}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ version: 1, selectedShiftIds: [], shifts: [{ shiftId: "111", employeeName: "Synthetic One" }] });
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
 });
 
 describe("staffing mutation and sync access", () => {
+  it("verifies a selected future week only on an explicit versioned Admin sync", async () => {
+    admin();
+    expect((await post({ action: "sync", date: "2026-11-17", expectedVersion: 1 })).status).toBe(200);
+    expect(mocks.refresh).toHaveBeenCalledExactlyOnceWith({ date: "2026-11-17" }, 1);
+  });
+
+  it.each(["2026-11-09", "2026-11-40", "9999-12-31", "", null, 123])("rejects invalid or past sync dates before provider reads (%s)", async (date) => {
+    admin();
+    expect((await post({ action: "sync", date, expectedVersion: 1 })).status).toBe(400);
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
   it("denies staff sessions and cross-origin requests before exposing diagnostics or changing state", async () => {
     mocks.cookies.mockResolvedValue(new Map([[fakeStaffCookie, { name: fakeStaffCookie, value: "fake-staff-token" }]]));
     const staff = await post({ action: "sync" });

@@ -36,7 +36,7 @@ export type StaffingEventStatus = "assigned" | "unassigned" | "review" | "unveri
 
 export type StaffingReview = {
   code: "invalid-event-time" | "invalid-source" | "overlapping-shifts" | "uncertain-start" |
-    "ambiguous-event" | "conflicting-note" | "unmatched-shift" | "manual-shift-changed" | "manual-coverage";
+    "ambiguous-event" | "conflicting-note" | "unmatched-shift" | "manual-shift-changed" | "manual-coverage" | "unverified-assignment";
   eventIds: string[];
   shiftId?: string;
 };
@@ -55,9 +55,17 @@ export type StaffingAlert = {
 export type StaffingMatchPolicy = { earlyStartMinutes?: number; allowIntermediateStarts?: boolean };
 export const MAX_STAFFING_EARLY_START_MINUTES = 180;
 
-export function staffingWindow(now = new Date()) {
-  const startDate = todayInEntertainmentTimeZone(now);
-  return { startDate, endDate: addCalendarDays(startDate, 6), shiftStartDate: addCalendarDays(startDate, -1) };
+export function staffingWindow(now = new Date(), selectedDate?: string) {
+  const today = todayInEntertainmentTimeZone(now);
+  if (selectedDate !== undefined && (!isValidEntertainmentDate(selectedDate) || selectedDate < today)) {
+    throw new Error("Choose today or a valid future staffing date.");
+  }
+  const startDate = selectedDate ?? today;
+  const endDate = addCalendarDays(startDate, 6), shiftStartDate = addCalendarDays(startDate, -1);
+  if (!isValidEntertainmentDate(endDate) || !isValidEntertainmentDate(shiftStartDate) || !isValidEntertainmentDate(addCalendarDays(endDate, 1))) {
+    throw new Error("Choose today or a valid future staffing date.");
+  }
+  return { startDate, endDate, shiftStartDate };
 }
 
 export type StaffingReconciliation = {
@@ -129,18 +137,20 @@ export function reconcileStaffing(input: {
   suppressedAssignments?: readonly StaffingSuppression[];
   lastSuccessfulSyncAt?: string | null;
   now?: Date;
+  startDate?: string;
   policy?: StaffingMatchPolicy;
 }): StaffingReconciliation {
   const now = input.now ?? new Date();
-  const window = staffingWindow(now);
+  const window = staffingWindow(now, input.startDate);
   const inWindow = (date: string) => date >= window.startDate && date <= window.endDate;
   const events = input.events.filter((event) => isValidEntertainmentDate(event.date) && inWindow(event.date));
   const eventIds = events.map((event) => event.eventId);
+  const selectedEventIds = new Set(eventIds);
   const previous = input.previousAssignments ?? [];
   const previousAlerts = input.previousAlerts ?? [];
   const shiftIntervals = new Map(input.shifts.map((shift) => [shift.shiftId, interval(shift.startAt, shift.endAt)]));
-  const invalidSource = input.events.some((event) => !isValidEntertainmentDate(event.date)) || new Set(eventIds).size !== events.length ||
-    events.some((event) => !event.eventId.trim() || !event.eventName.trim()) ||
+  const invalidSource = input.events.some((event) => !isValidEntertainmentDate(event.date) || !event.eventId.trim() || !event.eventName.trim()) ||
+    new Set(input.events.map((event) => event.eventId)).size !== input.events.length ||
     shiftIntervals.size !== input.shifts.length || input.shifts.some((shift) => !shift.shiftId.trim() || !shift.employeeId.trim() ||
       !shift.employeeName.trim() || !shiftIntervals.get(shift.shiftId) ||
       (shift.corporate !== undefined && typeof shift.corporate !== "boolean"));
@@ -155,15 +165,15 @@ export function reconcileStaffing(input: {
     throw new Error(`Staffing early start must be 0 to ${MAX_STAFFING_EARLY_START_MINUTES} whole minutes.`);
   }
   const leadMs = leadMinutes * 60_000;
-  const eventTimes = new Map(events.flatMap((event) => {
+  const eventTimes = new Map(input.events.flatMap((event) => {
     const time = interval(event.startAt, event.endAt);
     return time && localDateForIso(event.startAt!) === event.date ? [[event.eventId, time] as const] : [];
   }));
   const invalidTimes = new Set(eventIds.filter((id) => !eventTimes.has(id)));
-  const eventById = new Map(events.map((event) => [event.eventId, event]));
+  const eventById = new Map(input.events.map((event) => [event.eventId, event]));
   const reviews: StaffingReview[] = [...invalidTimes].map((eventId) => ({ code: "invalid-event-time", eventIds: [eventId] }));
   const kept = previous.filter((row) => row.source === "manual" || invalidTimes.has(row.eventId) ||
-    (!inWindow(row.eventDate) && !eventById.has(row.eventId)));
+    (!inWindow(row.eventDate) && !selectedEventIds.has(row.eventId)));
   const manual = kept.filter((row) => row.source === "manual");
   const manualByShift = new Map(manual.flatMap((row) => row.shiftId ? [[row.shiftId, row] as const] : []));
   const shiftById = new Map(input.shifts.map((shift) => [shift.shiftId, shift]));
@@ -232,9 +242,12 @@ export function reconcileStaffing(input: {
       reviewed("uncertain-start", [event.eventId]);
       continue;
     }
-    if (manual.some((row) => row.employeeId === shift.employeeId && row.eventId !== event.eventId &&
-        eventById.get(row.eventId)?.date === row.eventDate &&
-        eventTimes.has(row.eventId) && (overlaps(time, eventTimes.get(row.eventId)!) || overlaps(eventTime, eventTimes.get(row.eventId)!)))) {
+    const otherManual = manual.filter((row) => row.employeeId === shift.employeeId && row.eventId !== event.eventId);
+    if (otherManual.some((row) => eventById.get(row.eventId)?.date !== row.eventDate || !eventTimes.has(row.eventId))) {
+      reviewed("unverified-assignment", [event.eventId]);
+      continue;
+    }
+    if (otherManual.some((row) => overlaps(time, eventTimes.get(row.eventId)!) || overlaps(eventTime, eventTimes.get(row.eventId)!))) {
       reviewed("overlapping-shifts", [event.eventId]);
       continue;
     }
@@ -267,7 +280,7 @@ export function reconcileStaffing(input: {
       startAt: event.startAt, endAt: event.endAt, openedAt: previousAlert && !previousAlert.resolvedAt ? previousAlert.openedAt : syncedAt, resolvedAt: null });
   }
   for (const [key, alert] of alerts) {
-    if (!activeKeys.has(key) && !alert.resolvedAt && (!eventById.has(alert.eventId) || eventStatuses[alert.eventId] === "assigned")) {
+    if (inWindow(alert.eventDate) && !activeKeys.has(key) && !alert.resolvedAt && (!selectedEventIds.has(alert.eventId) || eventStatuses[alert.eventId] === "assigned")) {
       alerts.set(key, { ...alert, resolvedAt: syncedAt });
     }
   }

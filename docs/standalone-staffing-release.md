@@ -11,6 +11,14 @@ This release is independent of Staff Tools and ShiftFlow. It adds the 7shifts-ba
 
 New prefill names are suggestions created from explicitly assigned, verified staff. They do not overwrite saved Kitchen or Checklist values, count as checklist evidence, or write to 7shifts. Use **Cancel** or discard local edits when testing with synthetic data; never seed the earlier demonstration choices in production.
 
+## Assigning staff on a selected future date
+
+The home-card **Assign Staff** button opens the event's multi-select roster. If that date is not in the fresh saved schedule, use **Review published schedule**, then explicitly select **Sync published shifts** as Admin. This verifies the seven days starting on the selected date, including boundary-event metadata for overnight conflict checks. Opening a card or roster never triggers upstream reads or a token refresh.
+
+Only one schedule week is verified at a time. Switching weeks retains manual teams and unresolved alerts outside that week, but does not verify their coverage or allow their old data to prefill operational forms. Verify the other week again before editing its teams. Freshness uses the actual observation time, expires after 45 minutes or an Eastern calendar-day change, and is never extended by saving an assignment.
+
+This date-selection change uses the existing versioned staffing document; it requires no new database migration. Preserve the configured owner-approved Admin credential and keep Staff Tools sign-in and handoff off during this release.
+
 ## Rollback
 
 Restore the previous known-good deployment (or turn off the standalone Admin flag and redeploy). Confirm the previous Admin and staff behavior and keep the standalone staffing rows intact for review. Do not drop databases, replay unrelated migrations, reuse staging credentials, or change any Staff Tools or ShiftFlow settings.

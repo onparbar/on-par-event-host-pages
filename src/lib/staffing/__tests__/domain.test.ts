@@ -9,6 +9,66 @@ function shift(overrides: Partial<CorporateStaffShift> = {}): CorporateStaffShif
 const complete = { complete: true, now: NOW, events: [event] };
 
 describe("Corporate Parties staffing reconciliation", () => {
+  it("supports a selected future week without changing the observation time or default window", () => {
+    const now = new Date("2026-11-23T15:00:00Z");
+    expect(staffingWindow(now)).toEqual({ startDate: "2026-11-23", endDate: "2026-11-29", shiftStartDate: "2026-11-22" });
+    expect(staffingWindow(now, "2026-11-30")).toEqual({ startDate: "2026-11-30", endDate: "2026-12-06", shiftStartDate: "2026-11-29" });
+    const future = { ...event, date: "2026-11-30", startAt: "2026-11-30T18:00:00-05:00", endAt: "2026-11-30T20:00:00-05:00" };
+    const result = reconcileStaffing({ complete: true, now, startDate: future.date, events: [{ ...event, eventId: "historical" }, future],
+      shifts: [shift({ startAt: "2026-11-30T17:00:00-05:00", endAt: "2026-11-30T20:00:00-05:00" })] });
+    expect(result.window).toEqual(staffingWindow(now, future.date));
+    expect(result.lastSuccessfulSyncAt).toBe(now.toISOString());
+    expect(result.eventStatuses).toEqual({ 123: "assigned" });
+    expect(result.assignments).toMatchObject([{ eventId: future.eventId, eventDate: future.date, source: "automatic" }]);
+  });
+
+  it("rejects invalid and past explicit staffing dates, including impossible calendar dates", () => {
+    for (const date of ["2026-11-09", "2026-11-31", "2026-02-29", "2026-11-10T00:00:00Z", "9999-12-31", ""]) {
+      expect(() => staffingWindow(NOW, date)).toThrow("Choose today or a valid future staffing date.");
+    }
+    expect(staffingWindow(NOW, "2026-11-10")).toEqual(staffingWindow(NOW));
+    expect(() => reconcileStaffing({ ...complete, startDate: "2026-11-09", shifts: [] })).toThrow("Choose today or a valid future staffing date.");
+  });
+
+  it("uses outside-week overnight event context to block a conflicting automatic assignment without matching context events", () => {
+    const now = new Date("2026-11-23T15:00:00Z");
+    const future: StaffingEvent = { ...event, eventId: "future", date: "2026-11-30", startAt: "2026-11-30T00:30:00-05:00", endAt: "2026-11-30T02:00:00-05:00" };
+    const context: StaffingEvent = { ...event, eventId: "context", date: "2026-11-29", startAt: "2026-11-29T23:00:00-05:00", endAt: "2026-11-30T01:00:00-05:00" };
+    const manual: StaffingAssignment = { eventId: context.eventId, eventDate: context.date, employeeId: "11", employeeName: "Staff One", shiftId: "old-shift", source: "manual" };
+    const candidate = shift({ startAt: "2026-11-30T00:30:00-05:00", endAt: "2026-11-30T02:00:00-05:00" });
+    const result = reconcileStaffing({ complete: true, now, startDate: future.date, events: [context, future], shifts: [candidate], previousAssignments: [manual] });
+    expect(result.assignments).toEqual([manual]);
+    expect(result.reviews).toContainEqual({ code: "overlapping-shifts", eventIds: [future.eventId], shiftId: candidate.shiftId });
+    expect(result.eventStatuses).toEqual({ future: "review" });
+    expect(result.eventStatuses).not.toHaveProperty(context.eventId);
+    const otherEmployee = shift({ shiftId: "2", employeeId: "22", startAt: context.startAt!, endAt: context.endAt! });
+    const noMatch = reconcileStaffing({ complete: true, now, startDate: future.date, events: [context], shifts: [otherEmployee] });
+    expect(noMatch.eventStatuses).toEqual({});
+    expect(noMatch.assignments).toEqual([]);
+  });
+
+  it.each(["missing", "invalid-time", "changed-date"] as const)("does not automatically assign an employee whose retained manual assignment has %s event metadata", (problem) => {
+    const now = new Date("2026-11-23T15:00:00Z");
+    const future: StaffingEvent = { ...event, eventId: "future", date: "2026-11-30", startAt: "2026-11-30T00:30:00-05:00", endAt: "2026-11-30T02:00:00-05:00" };
+    const context: StaffingEvent = { ...event, eventId: "context", date: "2026-11-29", startAt: "2026-11-29T23:00:00-05:00", endAt: "2026-11-30T01:00:00-05:00" };
+    const manual: StaffingAssignment = { eventId: context.eventId, eventDate: context.date, employeeId: "11", employeeName: "Staff One", shiftId: "old-shift", source: "manual" };
+    const candidate = shift({ corporate: true, startAt: future.startAt!, endAt: future.endAt! });
+    const observed = problem === "missing" ? [] : problem === "invalid-time" ? [{ ...context, startAt: "unverified" }]
+      : [{ ...context, date: "2026-11-28", startAt: "2026-11-28T23:00:00-05:00", endAt: "2026-11-29T01:00:00-05:00" }];
+    const result = reconcileStaffing({ complete: true, now, startDate: future.date, events: [...observed, future], shifts: [candidate], previousAssignments: [manual] });
+    expect(result.assignments).toEqual([manual]);
+    expect(result.reviews).toContainEqual({ code: "unverified-assignment", eventIds: [future.eventId], shiftId: candidate.shiftId });
+    expect(result.eventStatuses).toEqual({ future: "review" });
+  });
+
+  it("does not resolve unrelated unassigned-event alerts when another future week is verified", () => {
+    const previous = reconcileStaffing({ ...complete, shifts: [] });
+    const future = { ...event, eventId: "future", date: "2026-11-30", startAt: "2026-11-30T18:00:00-05:00", endAt: "2026-11-30T20:00:00-05:00" };
+    const result = reconcileStaffing({ complete: true, now: NOW, startDate: future.date, events: [future], shifts: [], previousAlerts: previous.alerts });
+    expect(result.alerts.find((alert) => alert.eventId === event.eventId)).toEqual(previous.alerts[0]);
+    expect(result.alerts.find((alert) => alert.eventId === future.eventId)).toMatchObject({ resolvedAt: null, eventDate: future.date });
+  });
+
   it("assigns multiple employees at exactly one hour before or at event start", () => {
     const result = reconcileStaffing({ ...complete, shifts: [shift(), shift({ shiftId: "2", employeeId: "22", employeeName: "Staff Two", startAt: "2026-11-10T23:00:00Z" })] });
     expect(result.assignments.map((row) => [row.eventId, row.shiftId, row.employeeId])).toEqual([["123", "1", "11"], ["123", "2", "22"]]);

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { hasAdminSession, requiresStrongAdminSession } from "@/lib/admin-auth";
-import { isValidEntertainmentDate } from "@/lib/entertainment/time";
+import { isValidEntertainmentDate, todayInEntertainmentTimeZone } from "@/lib/entertainment/time";
 import { isSameOriginOperationalRequest } from "@/lib/operational-access";
 import { isPreviewReviewOnly } from "@/lib/operations/preview-review";
 import { staffingOrigin } from "@/lib/staffing/security";
@@ -36,10 +36,7 @@ export async function GET(request: Request) {
   if (!id(eventId) || eventId.startsWith("vip-") || !date || !isValidEntertainmentDate(date)) {
     return error("Choose a valid event and date.", 400);
   }
-  const window = staffingWindow();
-  if (date < window.startDate || date > window.endDate) {
-    return error(`This date is outside the current staffing window (${window.startDate} through ${window.endDate}). Staff names cannot be verified for this date yet.`, 404);
-  }
+  if (date < todayInEntertainmentTimeZone()) return error("Past event assignments cannot be changed.", 404);
   try {
     const roster = staffingEditorRoster(await loadStaffingState(), eventId, date);
     return roster ? NextResponse.json(roster, { headers }) : error("This event isn't in the verified staffing schedule for this date.", 404);
@@ -62,7 +59,14 @@ export async function POST(request: Request) {
   try {
     const version = body.expectedVersion;
     if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 0) return error("Load the reviewed staffing version.", 400);
-    if (body.action === "sync") return reviewedState(await refreshStaffing({}, version));
+    if (body.action === "sync") {
+      if (body.date !== undefined) {
+        if (typeof body.date !== "string") return error("Choose today or a future date to verify staffing.", 400);
+        try { staffingWindow(new Date(), body.date); }
+        catch { return error("Choose today or a future date to verify staffing.", 400); }
+      }
+      return reviewedState(await refreshStaffing(typeof body.date === "string" ? { date: body.date } : {}, version));
+    }
     let change: Parameters<typeof updateStaffingOverride>[0];
     if (body.action === "assign" && id(body.eventId) && id(body.shiftId)) {
       change = { action: "assign", eventId: body.eventId, ...assignmentChoice(body)!, expectedVersion: version };

@@ -9,7 +9,7 @@ import type { StaffingAdminChange } from "@/lib/staffing/service";
 import type { StaffingState } from "@/lib/staffing/storage";
 
 type WithoutVersion<Change> = Change extends { expectedVersion: number } ? Omit<Change, "expectedVersion"> : never;
-type Action = { action: "sync" } | WithoutVersion<StaffingAdminChange>;
+type Action = { action: "sync"; date?: string } | WithoutVersion<StaffingAdminChange>;
 
 const reviewMessage: Record<StaffingReview["code"], string> = {
   "invalid-event-time": "The event time could not be verified.",
@@ -21,6 +21,7 @@ const reviewMessage: Record<StaffingReview["code"], string> = {
   "unmatched-shift": "No event matched this published shift.",
   "manual-shift-changed": "A shift connected to a manual assignment was removed or changed.",
   "manual-coverage": "A manually assigned shift does not cover the full event.",
+  "unverified-assignment": "An employee's existing assignment time could not be verified.",
 };
 
 function times(start: string | null, end: string | null) {
@@ -50,14 +51,17 @@ export default function StaffingDashboard({ rolloutEnabled, initialState, initia
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const reconciled = state?.reconciliation;
-  const visibleWindow = fresh && reconciled ? reconciled.window : window;
+  const targetDate = requestedDate && requestedDate >= window.startDate ? requestedDate : window.startDate;
+  const snapshotCoversTarget = Boolean(reconciled && targetDate >= reconciled.window.startDate && targetDate <= reconciled.window.endDate);
+  const verifiedForTarget = fresh && snapshotCoversTarget;
+  const visibleWindow = verifiedForTarget && reconciled ? reconciled.window : window;
   const inWindow = (date: string) => date >= visibleWindow.startDate && date <= visibleWindow.endDate;
   const events = (state?.events ?? []).filter((event) => inWindow(event.date));
   const selected = events.find((event) => event.eventId === eventId &&
     (eventId !== initialEventId || !requestedDate || event.date === requestedDate));
   const alerts = (reconciled?.alerts ?? []).filter((alert) => !alert.resolvedAt && inWindow(alert.eventDate) &&
     reconciled?.eventStatuses[alert.eventId] === "unassigned");
-  const reviews = (reconciled?.reviews ?? []).filter((review) => !review.eventIds.length || review.eventIds.includes(eventId));
+  const reviews = snapshotCoversTarget ? (reconciled?.reviews ?? []).filter((review) => !review.eventIds.length || review.eventIds.includes(eventId)) : [];
   const assignments = (reconciled?.assignments ?? []).filter((row) => row.eventId === eventId && row.eventDate === selected?.date);
   const candidateShifts = selected && state?.dailyScheduleComplete ? state.shifts
     .filter((shift) => staffingShiftIsOnEventDay(shift, selected.date))
@@ -67,13 +71,13 @@ export default function StaffingDashboard({ rolloutEnabled, initialState, initia
     state?.suppressedAssignments?.some((row) => row.eventId === eventId && row.eventDate === selected?.date));
   const leadMinutes = Number(earlyStart);
   const validLead = earlyStart.trim() !== "" && Number.isInteger(leadMinutes) && leadMinutes >= 0 && leadMinutes <= MAX_STAFFING_EARLY_START_MINUTES;
-  const canAssign = Boolean(rolloutEnabled && fresh && state?.dailyScheduleComplete && selected && !busy);
+  const canAssign = Boolean(rolloutEnabled && verifiedForTarget && state?.dailyScheduleComplete && selected && !busy);
   const otherAssignment = (id: string) => reconciled?.assignments.find((row) => row.shiftId === id && row.eventId !== eventId);
   const overlappingAssignment = (shift: StaffingState["shifts"][number]) => selected && reconciled?.assignments.find((row) => {
     if (row.employeeId !== shift.employeeId || row.eventId === eventId || row.shiftId === shift.shiftId) return false;
-    const other = events.find((event) => event.eventId === row.eventId && event.date === row.eventDate);
-    return other?.startAt && other.endAt && selected.startAt && selected.endAt &&
-      Date.parse(other.startAt) < Date.parse(selected.endAt) && Date.parse(other.endAt) > Date.parse(selected.startAt);
+    const other = state?.events.find((event) => event.eventId === row.eventId && event.date === row.eventDate);
+    return !other?.startAt || !other.endAt || !Number.isFinite(Date.parse(other.startAt)) || !Number.isFinite(Date.parse(other.endAt)) ||
+      Boolean(selected.startAt && selected.endAt && Date.parse(other.startAt) < Date.parse(selected.endAt) && Date.parse(other.endAt) > Date.parse(selected.startAt));
   });
   const savedShiftIds = assignments.flatMap((row) => row.shiftId ? [row.shiftId] : []);
   const shiftIds = draftShiftIds ?? savedShiftIds;
@@ -124,12 +128,13 @@ export default function StaffingDashboard({ rolloutEnabled, initialState, initia
       <div className="admin-operations-review">
         <PortalCard>
           <h2>Schedule verification</h2>
-          <p><PortalStatusBadge tone={fresh ? "success" : "warning"}>{fresh ? "Verified" : "Not verified"}</PortalStatusBadge></p>
+          <p><PortalStatusBadge tone={verifiedForTarget ? "success" : "warning"}>{verifiedForTarget ? "Verified" : "Not verified"}</PortalStatusBadge></p>
+          <p>{verifiedForTarget ? "Verified schedule" : "Schedule to verify"}: {formatEventDate(visibleWindow.startDate)} through {formatEventDate(visibleWindow.endDate)}.</p>
           <p>Last successful sync: {sourceTime(reconciled?.lastSuccessfulSyncAt ?? null)}</p>
           {state?.lastAttemptAt ? <p>Last attempt: {sourceTime(state.lastAttemptAt)}</p> : null}
-          {!fresh ? <p role="status">{state?.failure === "events" ? "Tripleseat events could not be verified." : state?.failure === "shifts" ? "Published 7shifts schedules could not be verified." : state?.failure === "incomplete" ? "The source returned incomplete staffing data." : "A current staffing snapshot is not available."} Saved assignments and unresolved alerts below are not proof of current coverage. Refresh before editing.</p> : null}
-          {fresh && !state?.dailyScheduleComplete ? <p role="status">Refresh to load the full location schedule before assigning staff.</p> : null}
-          <button className="button-link" disabled={busy} onClick={() => void submit({ action: "sync" })} type="button">{busy ? "Working…" : "Sync published shifts"}</button>
+          {!verifiedForTarget ? <p role="status">{state?.failure === "events" ? "Tripleseat events could not be verified." : state?.failure === "shifts" ? "Published 7shifts schedules could not be verified." : state?.failure === "incomplete" ? "The source returned incomplete staffing data." : "A current staffing snapshot is not available for this date."} Saved assignments and unresolved alerts below are not proof of current coverage. Refresh before editing.</p> : null}
+          {verifiedForTarget && !state?.dailyScheduleComplete ? <p role="status">Refresh to load the full location schedule before assigning staff.</p> : null}
+          <button className="button-link" disabled={busy} onClick={() => void submit({ action: "sync", ...(requestedDate && requestedDate >= window.startDate ? { date: requestedDate } : {}) })} type="button">{busy ? "Working…" : "Sync published shifts"}</button>
           {message ? <p role="status">{message}</p> : null}
         </PortalCard>
         <PortalCard>
@@ -137,7 +142,7 @@ export default function StaffingDashboard({ rolloutEnabled, initialState, initia
           {alerts.length ? <ul>{alerts.map((alert) => <li key={alert.key}>
             <button className="button-link" type="button" onClick={() => chooseEvent(alert.eventId)}>{alert.eventName}</button>{" "}
             {formatEventDate(alert.eventDate)} · {times(alert.startAt, alert.endAt)}
-          </li>)}</ul> : <p>{fresh ? "No confirmed unassigned events are open." : "No current alert status can be verified."}</p>}
+          </li>)}</ul> : <p>{verifiedForTarget ? "No confirmed unassigned events are open." : "No current alert status can be verified."}</p>}
         </PortalCard>
         <PortalCard>
           <h2 id="staffing-assignment">Assignments and match review</h2>
@@ -148,7 +153,7 @@ export default function StaffingDashboard({ rolloutEnabled, initialState, initia
           {!selected && eventId && requestedDate ? <p role="status">The requested event isn’t in the verified staffing snapshot for this date. Sync the published schedule, or choose another event.</p> : null}
           {selected ? <>
             <p>{formatEventDate(selected.date)} · {times(selected.startAt, selected.endAt)}</p>
-            {assignments.length ? <ul>{assignments.map((row) => <li key={row.employeeId}>{row.employeeName} · {row.source === "manual" ? "Admin assigned" : "Automatically matched"}</li>)}</ul> : <p>{fresh ? "No saved assignments for this event." : "Assignments are not confirmed."}</p>}
+            {assignments.length ? <ul>{assignments.map((row) => <li key={row.employeeId}>{row.employeeName} · {row.source === "manual" ? "Admin assigned" : "Automatically matched"}</li>)}</ul> : <p>{verifiedForTarget ? "No saved assignments for this event." : "Assignments are not confirmed."}</p>}
             <fieldset disabled={!canAssign || !candidateShifts.length}>
               <legend>Employees working this day</legend>
               <p>Select one shift per employee. Save to confirm this team or uncheck names to remove them. Automatic matching won’t add staff to a team you’ve saved.</p>
@@ -163,12 +168,12 @@ export default function StaffingDashboard({ rolloutEnabled, initialState, initia
                   {shift.corporate === false ? " · Other station or role" : ""}
                   {!staffingShiftCoversEvent(shift, selected) ? " · Does not cover full event" : ""}
                   {previous ? ` · Assigned to ${events.find((event) => event.eventId === previous.eventId)?.eventName ?? "another event"}` : ""}
-                  {conflict ? " · Already booked during this event" : ""}
+                  {conflict ? " · Existing assignment needs review" : ""}
                 </label></div>;
               })}
             </fieldset>
-            {fresh && state?.dailyScheduleComplete && !candidateShifts.length ? <p>No employees have eligible published shifts this day.</p> : null}
-            {chosenConflict ? <p role="status">A selected employee is already assigned to an overlapping event. Review that assignment first.</p> : null}
+            {verifiedForTarget && state?.dailyScheduleComplete && !candidateShifts.length ? <p>No employees have eligible published shifts this day.</p> : null}
+            {chosenConflict ? <p role="status">A selected employee's existing assignment overlaps or could not be verified. Review that assignment first.</p> : null}
             <button className="button-link" disabled={!canAssign || (!chosenShifts.length && !assignments.length) || chosenConflict} type="button" onClick={() => {
               if ((!chosenShifts.length && !assignments.length) || chosenConflict) return;
               const choices = chosenShifts.map((shift) => ({ shiftId: shift.shiftId,
@@ -181,7 +186,7 @@ export default function StaffingDashboard({ rolloutEnabled, initialState, initia
                 choices.some((choice) => choice.confirmPartialCoverage) ? "One or more shifts do not cover the full event. The event will still need review." : "",
               ].filter(Boolean);
               if (!warnings.length || globalThis.confirm(`${warnings.join(" ")} Continue?`)) {
-                void submit({ action: "replace-team", eventId, choices });
+                void submit({ action: "replace-team", eventId, eventDate: selected.date, choices });
               }
             }}>Save staffing team ({chosenShifts.length})</button>{" "}
             <button className="button-link" disabled={!canAssign} type="button" onClick={() => void submit({ action: "keep-clear", eventId, enabled: !keepClear })}>{keepClear ? "Resume automatic matching" : "Pause automatic matching for this event"}</button>

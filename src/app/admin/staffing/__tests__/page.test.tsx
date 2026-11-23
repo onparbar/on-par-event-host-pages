@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasAdminSession, requiresStrongAdminSession } from "@/lib/admin-auth";
 import { staffingSnapshotIsFresh } from "@/lib/staffing/service";
 import { loadStaffingState, type StaffingState } from "@/lib/staffing/storage";
@@ -14,18 +14,23 @@ vi.mock("../../AdminAccessGate", () => ({ default: () => null }));
 vi.mock("../StaffingDashboard", () => ({ default: () => null }));
 
 const state: StaffingState = {
-  version: 4, reconciliation: null, keepClearEventIds: [], policy: {}, failure: null, lastAttemptAt: null,
+  version: 4, reconciliation: { window: { startDate: "2026-11-10", endDate: "2026-11-16", shiftStartDate: "2026-11-09" },
+    dataStatus: "verified", lastSuccessfulSyncAt: "2026-11-10T14:00:00Z", assignments: [], alerts: [], reviews: [], eventStatuses: {} },
+  keepClearEventIds: [], policy: {}, failure: null, lastAttemptAt: null,
   events: [{ eventId: "111", eventName: "Redacted event", date: "2026-11-10", startAt: null, endAt: null }],
   shifts: [{ shiftId: "1", employeeId: "2", employeeName: "Redacted employee", notes: "PRIVATE RAW SHIFT NOTE", startAt: "2026-11-10T21:00:00Z", endAt: "2026-11-11T01:00:00Z" }],
 };
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-10T14:00:00Z"));
   vi.mocked(hasAdminSession).mockReturnValue(false);
   vi.mocked(requiresStrongAdminSession).mockReturnValue(true);
   vi.mocked(staffingSnapshotIsFresh).mockReturnValue(true);
   vi.mocked(loadStaffingState).mockResolvedValue(state);
 });
+afterEach(() => vi.useRealTimers());
 
 describe("Admin staffing page access", () => {
   it("does not load or serialize private schedule data without Admin authorization", async () => {
@@ -49,5 +54,20 @@ describe("Admin staffing page access", () => {
     const page = await AdminStaffingPage({ searchParams: Promise.resolve({}) });
     expect(page.props).toMatchObject({ initialState: null, initialFresh: false, rolloutEnabled: false });
     expect(loadStaffingState).not.toHaveBeenCalled();
+  });
+
+  it("targets the selected future week without treating another week's fresh snapshot as verified", async () => {
+    vi.mocked(hasAdminSession).mockReturnValue(true);
+    const page = await AdminStaffingPage({ searchParams: Promise.resolve({ eventId: "222", date: "2026-11-17" }) });
+    expect(page.props).toMatchObject({ initialEventId: "222", requestedDate: "2026-11-17", initialFresh: false,
+      window: { startDate: "2026-11-17", endDate: "2026-11-23", shiftStartDate: "2026-11-16" } });
+  });
+
+  it("accepts a fresh saved snapshot that covers the requested future date", async () => {
+    vi.mocked(hasAdminSession).mockReturnValue(true);
+    vi.mocked(loadStaffingState).mockResolvedValue({ ...state, events: [{ ...state.events[0], date: "2026-11-17" }],
+      reconciliation: { ...state.reconciliation!, window: { startDate: "2026-11-17", endDate: "2026-11-23", shiftStartDate: "2026-11-16" } } });
+    const page = await AdminStaffingPage({ searchParams: Promise.resolve({ eventId: "111", date: "2026-11-17" }) });
+    expect(page.props).toMatchObject({ initialEventId: "111", requestedDate: "2026-11-17", initialFresh: true });
   });
 });

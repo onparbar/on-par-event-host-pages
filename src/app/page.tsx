@@ -55,7 +55,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     .filter((record) => record.bwa.trim())
     .map((record) => [`${record.eventDate}:${record.eventId}`, record.bwa]));
   const staffingEvents = operationalEvents.flatMap(({ event, startsAt, endsAt }) =>
-    event.date >= today && event.date <= through && !event.eventId.startsWith("vip-")
+    event.date >= today && !event.eventId.startsWith("vip-")
       ? [{ eventId: event.eventId, date: event.date, startAt: startsAt, endAt: endsAt }] : []);
   const staffingEnabled = requiresStrongAdminSession();
   const staffingByEvent: Record<string, StaffingCard> = staffingEnabled ? Object.fromEntries(operationalEvents

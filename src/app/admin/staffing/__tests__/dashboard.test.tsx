@@ -52,7 +52,7 @@ describe("Admin staffing controls", () => {
       initialState={{ ...state, events: [event, other], reconciliation: { ...state.reconciliation!, assignments: [
         { eventId: other.eventId, eventDate: event.date, employeeId: shift.employeeId, employeeName: shift.employeeName, shiftId: "999", source: "manual" },
       ] } }} />);
-    expect(html).toContain("Already booked during this event");
+    expect(html).toContain("Existing assignment needs review");
   });
 
   it("keeps saved evidence readable but disables shift corrections on an unverified snapshot", () => {
@@ -70,5 +70,29 @@ describe("Admin staffing controls", () => {
       ] } }} />);
     expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*checked=""[^>]*value="112"/);
     expect(html).toContain("Save staffing team (1)");
+  });
+
+  it("shows the selected future range and disables assignments until that week is verified", () => {
+    const html = renderToStaticMarkup(<StaffingDashboard rolloutEnabled initialFresh initialEventId="111" initialState={state}
+      requestedDate="2026-11-17" window={{ startDate: "2026-11-17", endDate: "2026-11-23" }} />);
+    expect(html).toContain("Schedule to verify");
+    expect(html).toContain("Tuesday, November 17, 2026");
+    expect(html).toContain("Monday, November 23, 2026");
+    expect(html).toContain("A current staffing snapshot is not available for this date.");
+    expect(html).not.toContain("Redacted shift employee");
+    expect(html).not.toContain("Save staffing team");
+    expect(html).toContain('href="/?date=2026-11-17"');
+  });
+
+  it("allows assignment from a verified selected future week rather than the old rolling week", () => {
+    const futureWindow = { startDate: "2026-11-17", endDate: "2026-11-23", shiftStartDate: "2026-11-16" };
+    const futureEvent = { ...event, date: "2026-11-17", startAt: "2026-11-17T22:00:00Z", endAt: "2026-11-18T01:00:00Z" };
+    const futureShift = { ...shift, startAt: "2026-11-17T21:00:00Z", endAt: "2026-11-18T01:00:00Z" };
+    const html = renderToStaticMarkup(<StaffingDashboard rolloutEnabled initialFresh initialEventId="111" requestedDate="2026-11-17"
+      window={futureWindow} initialState={{ ...state, events: [futureEvent], shifts: [futureShift],
+        reconciliation: { ...state.reconciliation!, window: futureWindow } }} />);
+    expect(html).toContain("Verified schedule");
+    expect(html).toContain("Redacted shift employee");
+    expect(html).not.toMatch(/<fieldset[^>]* disabled=""/);
   });
 });

@@ -51,7 +51,7 @@ describe("Staffing snapshot service", () => {
       localDate: event.date, eventStartAt: event.startAt, eventEndAt: event.endAt }]);
     setTripleseatAdapterForTests({ sourceMode: "live", fetchStaffingEventsForRange } as unknown as TripleseatAdapter);
     const state = await refreshStaffing({ ...persistence(), now, readShifts: async () => [shift] });
-    expect(fetchStaffingEventsForRange).toHaveBeenCalledExactlyOnceWith("2026-11-10", "2026-11-16");
+    expect(fetchStaffingEventsForRange).toHaveBeenCalledExactlyOnceWith("2026-11-09", "2026-11-17");
     expect(write).not.toHaveBeenCalled();
     expect(await operations.getSyncState()).toBeNull();
     expect(state.reconciliation?.assignments).toHaveLength(1);
@@ -178,7 +178,7 @@ describe("Staffing snapshot service", () => {
     const assigned = await updateStaffingOverride(assign, deps);
     const move = { ...assign, eventId: second.eventId, expectedVersion: assigned.version };
     await expect(updateStaffingOverride(move, deps)).rejects.toThrow("Confirm moving the shift");
-    await expect(updateStaffingOverride({ ...move, shiftId: anotherShift.shiftId, confirmMove: true }, deps)).rejects.toThrow("already assigned to an overlapping event");
+    await expect(updateStaffingOverride({ ...move, shiftId: anotherShift.shiftId, confirmMove: true }, deps)).rejects.toThrow("existing assignment overlaps or could not be verified");
     const moved = await updateStaffingOverride({ ...move, confirmMove: true }, deps);
     expect(moved.reconciliation?.assignments).toMatchObject([{ eventId: second.eventId, shiftId: firstShift.shiftId, source: "manual" }]);
   });

@@ -116,7 +116,7 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
               <input type="checkbox" checked={checked} disabled={!checked && (shift.conflict || employees.has(shift.employeeId))}
                 onChange={() => setSelected((current) => checked ? current.filter((value) => value !== shift.shiftId) : [...current, shift.shiftId])} />
               <span>{shift.employeeName}<small>{formatClock(shift.startAt)} – {formatClock(shift.endAt)}
-                {shift.conflict ? " · Already booked during this event" : shift.needsMove ? " · Assigned to another event" : ""}
+                {shift.conflict ? " · Existing assignment needs review" : shift.needsMove ? " · Assigned to another event" : ""}
                 {!shift.coversEvent ? " · Partial coverage" : ""}</small></span>
             </label>;
           })}
