@@ -13,7 +13,7 @@ New prefill names are suggestions created from explicitly assigned, verified sta
 
 ## Assigning staff on a selected future date
 
-The home-card **Assign Staff** button opens the event's multi-select roster. If that date is not in the fresh saved schedule, use **Review published schedule**, then explicitly select **Sync published shifts** as Admin. This verifies the seven days starting on the selected date, including boundary-event metadata for overnight conflict checks. Opening a card or roster never triggers upstream reads or a token refresh.
+The home-card **Assign Staff** button opens the event's multi-select roster directly inside that card. If a session is needed, enter the existing Admin passphrase in the card's inline unlock form; this uses the same protected session and rate limiter without navigating to Admin. If the schedule needs verification, explicitly choose **Load employees for this day** in the card. This verifies the seven days starting on the selected date, including boundary-event metadata for overnight conflict checks, and updates automatic matches. Opening a card or unlocking it never triggers upstream reads or a token refresh. Manual team changes require **Save staffing team**.
 
 Only one schedule week is verified at a time. Switching weeks retains manual teams and unresolved alerts outside that week, but does not verify their coverage or allow their old data to prefill operational forms. Verify the other week again before editing its teams. Freshness uses the actual observation time, expires after 45 minutes or an Eastern calendar-day change, and is never extended by saving an assignment.
 

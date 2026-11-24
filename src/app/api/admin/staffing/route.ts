@@ -28,6 +28,13 @@ function reviewedState(state: StaffingState) {
   return NextResponse.json({ state: { ...state, shifts: state.shifts.map(({ notes: _notes, ...shift }) => shift) }, fresh: staffingSnapshotIsFresh(state) }, { headers });
 }
 
+function rosterReview(message: string, status: number, state: StaffingState | null) {
+  const version = state?.version;
+  return NextResponse.json({ error: message,
+    ...(typeof version === "number" && Number.isSafeInteger(version) && version >= 0 ? { canVerify: true, version } : {}),
+  }, { status, headers });
+}
+
 export async function GET(request: Request) {
   if (!requiresStrongAdminSession()) return error("Staffing is not enabled.", 503);
   if (!hasAdminSession(await cookies())) return error("Admin sign-in required.", 401);
@@ -37,11 +44,15 @@ export async function GET(request: Request) {
     return error("Choose a valid event and date.", 400);
   }
   if (date < todayInEntertainmentTimeZone()) return error("Past event assignments cannot be changed.", 404);
+  try { staffingWindow(new Date(), date); }
+  catch { return error("Choose today or a future date to verify staffing.", 400); }
+  let state: StaffingState | null = null;
   try {
-    const roster = staffingEditorRoster(await loadStaffingState(), eventId, date);
-    return roster ? NextResponse.json(roster, { headers }) : error("This event isn't in the verified staffing schedule for this date.", 404);
+    state = await loadStaffingState();
+    const roster = staffingEditorRoster(state, eventId, date);
+    return roster ? NextResponse.json(roster, { headers }) : rosterReview("This event isn't in the verified staffing schedule for this date.", 404, state);
   } catch (caught) {
-    if (caught instanceof StaffingReviewError) return error(caught.message, 422);
+    if (caught instanceof StaffingReviewError) return rosterReview(caught.message, 422, state);
     return error("The staffing schedule could not be loaded.", 503);
   }
 }

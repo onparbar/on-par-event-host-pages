@@ -57,9 +57,13 @@ afterEach(() => { vi.unstubAllEnvs(); vi.resetAllMocks(); vi.useRealTimers(); })
 
 describe("inline staffing roster", () => {
   it("keeps the roster private when staffing is inactive or the request lacks Admin access", async () => {
-    expect((await get()).status).toBe(401);
+    const unsigned = await get();
+    expect(unsigned.status).toBe(401);
+    expect(await unsigned.json()).toEqual({ error: "Admin sign-in required." });
     vi.stubEnv("EVENT_HOST_STAFFING_ADMIN_ENABLED", "false");
-    expect((await get()).status).toBe(503);
+    const inactive = await get();
+    expect(inactive.status).toBe(503);
+    expect(await inactive.json()).toEqual({ error: "Staffing is not enabled." });
     expect(mocks.load).not.toHaveBeenCalled();
   });
 
@@ -106,8 +110,63 @@ describe("inline staffing roster", () => {
     admin();
     const response = await get("eventId=42&date=2026-11-17");
     expect(response.status).toBe(422);
-    expect(await response.json()).toEqual({ error: "Verify the published schedule for this event's week in Staffing Review before assigning staff." });
+    expect(await response.json()).toEqual({ error: "Verify the published schedule for this event's week in Staffing Review before assigning staff.", canVerify: true, version: 1 });
     expect(mocks.load).toHaveBeenCalledOnce();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.override).not.toHaveBeenCalled();
+  });
+
+  it("returns only safe verification metadata for an authenticated stale schedule or missing exact event", async () => {
+    admin();
+    const missing = await get("eventId=missing&date=2026-11-10");
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("cache-control")).toBe("private, no-store");
+    expect(await missing.json()).toEqual({ error: "This event isn't in the verified staffing schedule for this date.", canVerify: true, version: 1 });
+    vi.setSystemTime(new Date(`${date}T15:46:00Z`));
+    const stale = await get();
+    expect(stale.status).toBe(422);
+    const body = await stale.json();
+    expect(body).toEqual({ error: "Verify the published schedule for this event's week in Staffing Review before assigning staff.", canVerify: true, version: 1 });
+    expect(JSON.stringify(body)).not.toContain("Synthetic One");
+    expect(JSON.stringify(body)).not.toContain("private roster notes");
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.override).not.toHaveBeenCalled();
+  });
+
+  it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN, "1"])("does not offer verification with an unsafe stored version (%s)", async (version) => {
+    admin();
+    mocks.load.mockResolvedValueOnce({ ...rosterState, version, dailyScheduleComplete: false });
+    const response = await get();
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "Verify the published schedule for this event's week in Staffing Review before assigning staff." });
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.override).not.toHaveBeenCalled();
+  });
+
+  it("offers version zero for an authenticated uninitialized schedule", async () => {
+    admin();
+    mocks.load.mockResolvedValueOnce({ ...rosterState, version: 0, dailyScheduleComplete: false });
+    const response = await get();
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "Verify the published schedule for this event's week in Staffing Review before assigning staff.", canVerify: true, version: 0 });
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.override).not.toHaveBeenCalled();
+  });
+
+  it("does not expose verification metadata for malformed, VIP, overflowing or unavailable requests", async () => {
+    admin();
+    for (const query of ["eventId=vip-42&date=2026-11-10", "eventId=42&date=2026-11-40", "eventId=42&date=9999-12-31"]) {
+      const response = await get(query);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body).not.toHaveProperty("version");
+      expect(body).not.toHaveProperty("canVerify");
+    }
+    expect(mocks.load).not.toHaveBeenCalled();
+    mocks.load.mockRejectedValueOnce(new Error("Storage unavailable"));
+    const unavailable = await get();
+    expect(unavailable.status).toBe(503);
+    expect(await unavailable.json()).toEqual({ error: "The staffing schedule could not be loaded." });
     expect(mocks.refresh).not.toHaveBeenCalled();
     expect(mocks.override).not.toHaveBeenCalled();
   });

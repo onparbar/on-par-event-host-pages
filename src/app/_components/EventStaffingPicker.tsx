@@ -23,6 +23,7 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
   onSaved: () => void;
 }) {
   const panel = useRef<HTMLElement>(null);
+  const controller = useRef<AbortController | null>(null);
   const [roster, setRoster] = useState<Roster | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState("");
@@ -31,31 +32,93 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
   const [saved, setSaved] = useState(false);
   const [needsAdmin, setNeedsAdmin] = useState(false);
   const [needsSchedule, setNeedsSchedule] = useState(false);
+  const [verificationVersion, setVerificationVersion] = useState<number | null>(null);
+  const [passphrase, setPassphrase] = useState("");
 
   useEffect(() => {
     panel.current?.focus();
-    const controller = new AbortController();
-    const query = new URLSearchParams({ eventId, date });
-    void (async () => {
-      try {
-        const response = await fetch(`/api/admin/staffing?${query}`, { cache: "no-store", signal: controller.signal });
-        const result = await response.json().catch(() => null);
-        if (response.status === 401 && !controller.signal.aborted) {
-          setNeedsAdmin(true);
-          setRoster(null);
-          setSelected([]);
-        }
-        if ([404, 422].includes(response.status) && !controller.signal.aborted) setNeedsSchedule(true);
-        if (!response.ok || !result) throw new Error(result?.error || "The shift list couldn’t be loaded.");
-        if (controller.signal.aborted) return;
-        setRoster(result);
-        setSelected(result.selectedShiftIds);
-      } catch (error) {
-        if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : "The shift list couldn’t be loaded.");
-      }
-    })();
-    return () => controller.abort();
+    const request = new AbortController();
+    controller.current = request;
+    void loadRoster(request.signal);
+    return () => request.abort();
   }, [eventId, date]);
+
+  async function loadRoster(signal = controller.current?.signal) {
+    setRoster(null);
+    setSelected([]);
+    setNeedsAdmin(false);
+    setNeedsSchedule(false);
+    setVerificationVersion(null);
+    setStale(false);
+    setSaved(false);
+    setMessage("");
+    const query = new URLSearchParams({ eventId, date });
+    try {
+      const response = await fetch(`/api/admin/staffing?${query}`, { cache: "no-store", signal });
+      const result = await response.json().catch(() => null);
+      if (signal?.aborted) return;
+      if (response.status === 401) setNeedsAdmin(true);
+      if ([404, 422].includes(response.status) && result?.canVerify === true && Number.isSafeInteger(result.version) && result.version >= 0) {
+        setNeedsSchedule(true);
+        setVerificationVersion(result.version);
+      }
+      if (!response.ok || !result) throw new Error(result?.error || "The shift list couldn’t be loaded.");
+      setRoster(result);
+      setSelected(result.selectedShiftIds);
+    } catch (error) {
+      if (!signal?.aborted) setMessage(error instanceof Error ? error.message : "The shift list couldn’t be loaded.");
+    }
+  }
+
+  async function unlock() {
+    if (busy) return;
+    setBusy(true);
+    setMessage("");
+    const signal = controller.current?.signal;
+    try {
+      const response = await fetch("/api/admin-session", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passphrase }), signal });
+      const result = await response.json().catch(() => null);
+      if (signal?.aborted) return;
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || "Staff assignment could not be unlocked.");
+      await loadRoster(signal);
+    } catch (error) {
+      if (!signal?.aborted) setMessage(error instanceof Error ? error.message : "Staff assignment could not be unlocked.");
+    } finally {
+      setPassphrase("");
+      if (!signal?.aborted) setBusy(false);
+    }
+  }
+
+  async function verifySchedule() {
+    if (busy || verificationVersion === null) return;
+    setBusy(true);
+    setMessage("");
+    const signal = controller.current?.signal;
+    try {
+      const response = await fetch("/api/admin/staffing", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "sync", date, expectedVersion: verificationVersion }), signal });
+      const result = await response.json().catch(() => null);
+      if (signal?.aborted) return;
+      if (response.status === 401) {
+        setNeedsAdmin(true);
+        setNeedsSchedule(false);
+        setVerificationVersion(null);
+      }
+      if (response.status === 409) {
+        setNeedsSchedule(false);
+        setStale(true);
+      }
+      if (Number.isSafeInteger(result?.state?.version) && result.state.version >= 0) setVerificationVersion(result.state.version);
+      if (!response.ok) throw new Error(result?.error || "Published employees could not be loaded.");
+      if (result?.fresh !== true) throw new Error("Published employees could not be verified. Saved assignments were retained. Try loading again.");
+      await loadRoster(signal);
+    } catch (error) {
+      if (!signal?.aborted) setMessage(error instanceof Error ? error.message : "Published employees could not be loaded.");
+    } finally {
+      if (!signal?.aborted) setBusy(false);
+    }
+  }
 
   const choices = roster?.shifts.filter((shift) => selected.includes(shift.shiftId)) ?? [];
   const employees = new Set(choices.map((shift) => shift.employeeId));
@@ -125,9 +188,19 @@ export function EventStaffingPicker({ id, eventId, date, onClose, onSaved }: {
       {blocked ? <p role="status">Remove the conflicting shift before saving.</p> : null}
       <button className="button" type="button" disabled={!canSave} onClick={() => void save()}>{busy ? "Saving…" : `Save staffing team (${choices.length})`}</button>
     </> : null}
-    {message ? <p role={saved ? "status" : "alert"}>{message}{stale && !needsAdmin ? " Close and reopen the picker before trying again." : ""}</p> : null}
-    {needsAdmin ? <p><a className="button" href="/admin">Sign in to Admin</a></p> : null}
-    {needsSchedule ? <p><a className="button" href={`/admin/staffing?${new URLSearchParams({ eventId, date })}`}>Review published schedule</a></p> : null}
+    {message ? <p role={saved ? "status" : "alert"}>{message}</p> : null}
+    {needsAdmin ? <form className="event-command-staffing-unlock" onSubmit={(event) => { event.preventDefault(); void unlock(); }}>
+      <p>Unlock staff assignment here. You do not need to open the Admin page.</p>
+      <label htmlFor={`${id}-passphrase`}>Admin passphrase</label>
+      <input id={`${id}-passphrase`} type="password" autoComplete="current-password" minLength={4} maxLength={256}
+        value={passphrase} disabled={busy} onChange={(event) => setPassphrase(event.target.value)} />
+      <button className="button" type="submit" disabled={busy || (!/^\d{4}$/.test(passphrase) && passphrase.length < 16)}>{busy ? "Unlocking…" : "Unlock staff assignment"}</button>
+    </form> : null}
+    {needsSchedule && !needsAdmin ? <div>
+      <p>Load the published employees for this event’s week here. This also updates automatic matches; your manual choices are saved only when you save the staffing team.</p>
+      <button className="button" type="button" disabled={busy || verificationVersion === null} onClick={() => void verifySchedule()}>{busy ? "Loading employees…" : "Load employees for this day"}</button>
+    </div> : null}
+    {stale && !needsAdmin ? <button className="secondary" type="button" disabled={busy} onClick={() => void loadRoster()}>Reload employees</button> : null}
     <button className="secondary" disabled={busy} type="button" onClick={onClose}>{saved ? "Done" : "Close staffing picker"}</button>
   </section>;
 }
