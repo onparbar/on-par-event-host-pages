@@ -67,11 +67,12 @@ export async function GET(request: Request) {
 
 async function loadStaffingForKitchenDay(events: Awaited<ReturnType<typeof getKitchenDay>>["events"]): Promise<Record<string, string[]>> {
   try {
-    const allowAdminPreview = requiresStrongAdminSession() && hasAdminSession(await cookies());
-    if (!allowAdminPreview) return {};
+    const allowPublicAssignments = process.env.EVENT_HOST_PUBLIC_STAFFING_ENABLED === "true";
+    const allowAdminPreview = !allowPublicAssignments && requiresStrongAdminSession() && hasAdminSession(await cookies());
+    if (!allowPublicAssignments && !allowAdminPreview) return {};
     return await loadStaffingPrefills(events.map(({ event }) => ({
       eventId: String(event.eventId), date: event.localDate, startAt: event.startTime, endAt: event.endTime,
-    })), { allowAdminPreview: true });
+    })), allowPublicAssignments ? { allowPublicAssignments: true } : { allowAdminPreview: true });
   } catch {
     // Staffing is optional; an outage can't hide or rewrite a kitchen sheet.
     return {};

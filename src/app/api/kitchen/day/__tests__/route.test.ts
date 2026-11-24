@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKitchenChecklist } from "@/lib/kitchen/rules";
 import { vipPrepKitchenEvents } from "@/lib/vip-prep/client";
 import { vipPrepPayload } from "@/lib/vip-prep/__tests__/fixtures";
@@ -14,6 +14,9 @@ vi.mock("@/lib/staffing/service", () => ({ loadStaffingPrefills }));
 vi.mock("next/headers", () => ({ cookies: async () => new Map() }));
 vi.mock("@/lib/admin-auth", () => ({ requiresStrongAdminSession: strongAdmin, hasAdminSession: adminSession }));
 import { GET } from "../route";
+
+beforeEach(() => vi.stubEnv("EVENT_HOST_PUBLIC_STAFFING_ENABLED", "false"));
+afterEach(() => vi.unstubAllEnvs());
 
 describe("kitchen VIP arrival projection is read-only", () => {
   beforeEach(() => {
@@ -72,6 +75,21 @@ describe("kitchen event staffing display defaults", () => {
     ], warnings: [] });
     listEventFoodDelivery.mockResolvedValue([]);
     loadStaffingPrefills.mockResolvedValue({ "42": ["Sample Staff A", "Sample Staff B"], "43": ["Ignored"], "44": ["Ignored"] });
+  });
+
+  it("projects explicitly enabled public team defaults without changing saved names or explicit blanks", async () => {
+    vi.stubEnv("EVENT_HOST_PUBLIC_STAFFING_ENABLED", "true");
+    const response = await GET(new Request("https://example.test/api/kitchen/day?date=2026-08-15"));
+    const payload = await response.json();
+    expect(loadStaffingPrefills).toHaveBeenCalledExactlyOnceWith([
+      { eventId: "42", date: event.localDate, startAt: event.startTime, endAt: event.endTime },
+    ], { allowPublicAssignments: true });
+    expect(payload.events[0]).toMatchObject({ foodRunners: [], staffingFoodRunners: ["Sample Staff A", "Sample Staff B"] });
+    expect(payload.events[1]).toMatchObject({ foodRunners: ["Saved Runner"] });
+    expect(payload.events[1]).not.toHaveProperty("staffingFoodRunners");
+    expect(payload.events[2]).not.toHaveProperty("staffingFoodRunners");
+    expect(adminSession).not.toHaveBeenCalled();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("projects the exact event's names without altering the saved field or an explicit blank", async () => {

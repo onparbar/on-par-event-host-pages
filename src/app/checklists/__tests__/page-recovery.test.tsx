@@ -17,9 +17,25 @@ const plan = { id: 77, name: "Sanitized Saturday draft", date: "2026-10-24", day
   rooms: ["VIP 1"], color: "#18332F", food: [], drink_options: [], entertainment: [], verification_status: "Verified" };
 const record: ChecklistRecord = { ...defaultChecklistState(plan.date), eventId: plan.id, eventName: plan.name, eventDate: plan.date, poc: "",
   status: "draft", updatedAt: "2026-10-24T20:00:00Z", submittedAt: null };
-afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
+afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("past unfinished checklist access", () => {
+  it("requests explicitly enabled public prefills without an Admin login and never replaces a saved checklist", async () => {
+    vi.stubEnv("EVENT_HOST_PUBLIC_STAFFING_ENABLED", "true");
+    const second = { ...plan, id: 78, source_event_id: "10078" };
+    vi.mocked(loadStaffEventPlans).mockResolvedValue({
+      plans: [plan, second], sync: null, sourceWarning: "", unfinishedEventIds: [], savedChecklistRecords: [record],
+    });
+    vi.mocked(loadStaffingPrefills).mockResolvedValueOnce({ "10078": ["Assigned Employee"] });
+    const tree = await Page({ searchParams: Promise.resolve({ date: plan.date }) });
+    expect(loadStaffingPrefills).toHaveBeenCalledExactlyOnceWith([
+      { eventId: "10078", date: plan.date, startAt: "2026-10-24T21:00:00.000Z", endAt: "2026-10-25T00:00:00.000Z" },
+    ], { allowPublicAssignments: true });
+    expect(tree.props.staffingPrefills).toEqual({ "10078": ["Assigned Employee"] });
+    expect(tree.props.initialRecords).toEqual([record]);
+    expect(hasAdminSession).not.toHaveBeenCalled();
+  });
+
   it("keeps an unfinished Saturday record available Monday without fabricating task completion", async () => {
     vi.useFakeTimers(); vi.setSystemTime("2026-10-26T16:00:00Z");
     vi.mocked(loadStaffEventPlans).mockResolvedValue({ plans: [plan], sync: null, sourceWarning: "", unfinishedEventIds: [77], savedChecklistRecords: [record] });

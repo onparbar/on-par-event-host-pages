@@ -57,13 +57,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const staffingEvents = operationalEvents.flatMap(({ event, startsAt, endsAt }) =>
     event.date >= today && !event.eventId.startsWith("vip-")
       ? [{ eventId: event.eventId, date: event.date, startAt: startsAt, endAt: endsAt }] : []);
-  const staffingEnabled = requiresStrongAdminSession();
+  const allowPublicAssignments = process.env.EVENT_HOST_PUBLIC_STAFFING_ENABLED === "true";
+  const staffingEnabled = allowPublicAssignments || requiresStrongAdminSession();
   const staffingByEvent: Record<string, StaffingCard> = staffingEnabled ? Object.fromEntries(operationalEvents
     .filter(({ event }) => !event.eventId.startsWith("vip-"))
     .map(({ event }) => [`${event.date}:${event.eventId}`, { names: [], status: "unverified" as const }])) : {};
   if (staffingEnabled && staffingEvents.length) {
     Object.assign(staffingByEvent, await loadStaffingCards(staffingEvents, {
-      now, ...(hasAdminSession(await cookies()) ? { allowAdminPreview: true } : { allowPublicStatus: true }),
+      now, ...(allowPublicAssignments ? { allowPublicAssignments: true } : hasAdminSession(await cookies()) ? { allowAdminPreview: true } : { allowPublicStatus: true }),
     }).catch(() => ({})));
   }
 

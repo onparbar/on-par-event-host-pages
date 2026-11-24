@@ -55,9 +55,10 @@ export default async function ChecklistsPage({
       startAt: window.startsAt, endAt: window.endsAt,
     }] : [];
   }) : [];
-  const allowAdminPreview = staffingEvents.length > 0 && requiresStrongAdminSession() && hasAdminSession(await cookies());
-  const staffingPrefills = allowAdminPreview
-    ? await loadStaffingPrefills(staffingEvents, { allowAdminPreview: true }).catch(() => ({})) : {};
+  const allowPublicAssignments = process.env.EVENT_HOST_PUBLIC_STAFFING_ENABLED === "true";
+  const allowAdminPreview = !allowPublicAssignments && staffingEvents.length > 0 && requiresStrongAdminSession() && hasAdminSession(await cookies());
+  const staffingPrefills = staffingEvents.length && (allowPublicAssignments || allowAdminPreview)
+    ? await loadStaffingPrefills(staffingEvents, allowPublicAssignments ? { allowPublicAssignments: true } : { allowAdminPreview: true }).catch(() => ({})) : {};
 
   return (
     <ChecklistsClient

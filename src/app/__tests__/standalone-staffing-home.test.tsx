@@ -15,6 +15,7 @@ vi.mock("@/lib/operations/staff-events", () => ({ loadStaffEventPlans: vi.fn() }
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv("EVENT_HOST_PUBLIC_STAFFING_ENABLED", "false");
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-11-13T18:00:00Z"));
   const event = {
@@ -25,7 +26,7 @@ beforeEach(() => {
     unfinishedEventIds: [], sourceWarning: "" });
   vi.mocked(loadStaffingCards).mockResolvedValue({ "2026-11-13:41": { names: ["Assigned Staff"], status: "review" } });
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 async function homeStaffing(date?: string) {
   const page = await HomePage({ searchParams: Promise.resolve(date ? { date } : {}) });
@@ -33,6 +34,16 @@ async function homeStaffing(date?: string) {
 }
 
 describe("standalone home staffing privacy", () => {
+  it("allows the public team projection without an Admin session only when explicitly enabled", async () => {
+    vi.stubEnv("EVENT_HOST_PUBLIC_STAFFING_ENABLED", "true");
+    vi.mocked(hasAdminSession).mockReturnValue(false);
+    expect(await homeStaffing()).toEqual({ "2026-11-13:41": { names: ["Assigned Staff"], status: "review" } });
+    expect(loadStaffingCards).toHaveBeenCalledExactlyOnceWith([{
+      eventId: "41", date: "2026-11-13", startAt: "2026-11-13T22:00:00.000Z", endAt: "2026-11-14T01:00:00.000Z",
+    }], { now: new Date("2026-11-13T18:00:00Z"), allowPublicAssignments: true });
+    expect(hasAdminSession).not.toHaveBeenCalled();
+  });
+
   it("does not read or disclose staffing when the staffing feature is off, even with a legacy Admin cookie", async () => {
     vi.mocked(hasAdminSession).mockReturnValue(true);
     expect(await homeStaffing()).toEqual({});

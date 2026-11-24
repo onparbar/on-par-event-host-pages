@@ -223,7 +223,7 @@ function unambiguousDisplayInstant(timestamp: number) {
   return label !== wallClock.format(timestamp - 3_600_000) && label !== wallClock.format(timestamp + 3_600_000);
 }
 
-type StaffingProjectionOptions = Pick<Dependencies, "now" | "load"> & { allowAdminPreview?: boolean; allowPublicStatus?: boolean };
+type StaffingProjectionOptions = Pick<Dependencies, "now" | "load"> & { allowAdminPreview?: boolean; allowPublicStatus?: boolean; allowPublicAssignments?: boolean };
 type StaffingEventIdentity = Omit<StaffingEvent, "eventName">;
 
 function verifiedStaffingTiming(event: StaffingEventIdentity, saved: StaffingEvent | undefined) {
@@ -242,27 +242,28 @@ function repeatedEventIds(events: readonly StaffingEventIdentity[]) {
   return repeated;
 }
 
-/** Public cards may expose safe staffing status; employee names still require an authorized Admin. */
+/** Public status remains names-free unless public assignment access is explicitly enabled. */
 export async function loadStaffingCards(events: readonly StaffingEventIdentity[], dependencies: StaffingProjectionOptions = {}): Promise<Record<string, StaffingCard>> {
-  if ((dependencies.allowAdminPreview !== true && dependencies.allowPublicStatus !== true) || !events.length) return {};
+  if ((dependencies.allowAdminPreview !== true && dependencies.allowPublicStatus !== true && dependencies.allowPublicAssignments !== true) || !events.length) return {};
   const state = await (dependencies.load ?? loadStaffingState)();
   const fresh = staffingSnapshotIsFresh(state, dependencies.now);
   const known = new Map(state.events.map((event) => [event.eventId, event]));
   const repeated = repeatedEventIds(events);
   return Object.fromEntries(events.filter(({ eventId }) => !repeated.has(eventId)).map((event) => {
     const timingMatches = verifiedStaffingTiming(event, known.get(event.eventId));
-    const names = dependencies.allowAdminPreview === true ? new Map(state.reconciliation?.assignments.filter((row) => row.eventId === event.eventId && row.eventDate === event.date &&
+    const status = fresh && dateInSnapshot(state, event.date, dependencies.now ?? new Date()) && timingMatches
+      ? state.reconciliation?.eventStatuses[event.eventId] ?? "unverified" : "unverified";
+    const names = (dependencies.allowAdminPreview === true || (dependencies.allowPublicAssignments === true && ["assigned", "review"].includes(status))) ? new Map(state.reconciliation?.assignments.filter((row) => row.eventId === event.eventId && row.eventDate === event.date &&
       (row.source === "manual" || timingMatches))
       .map((row) => [row.employeeId, row.employeeName])) : new Map<string, string>();
     return [`${event.date}:${event.eventId}`, { names: [...names.values()].sort((a, b) => a.localeCompare(b)),
-      status: fresh && dateInSnapshot(state, event.date, dependencies.now ?? new Date()) && timingMatches
-        ? state.reconciliation?.eventStatuses[event.eventId] ?? "unverified" : "unverified" }];
+      status }];
   }));
 }
 
 /** Only explicitly selected teams can prefill operational forms; do not return rosters or write either record. */
 export async function loadStaffingPrefills(events: readonly StaffingEventIdentity[], dependencies: StaffingProjectionOptions = {}): Promise<Record<string, string[]>> {
-  if (!events.length || dependencies.allowAdminPreview !== true) return {};
+  if (!events.length || (dependencies.allowAdminPreview !== true && dependencies.allowPublicAssignments !== true)) return {};
   const state = await (dependencies.load ?? loadStaffingState)();
   if (!staffingSnapshotIsFresh(state, dependencies.now) || !state.reconciliation) return {};
   const { assignments, eventStatuses } = state.reconciliation;
