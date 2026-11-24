@@ -190,6 +190,68 @@ describe("Corporate Parties staffing reconciliation", () => {
     expect(held.eventStatuses["123"]).toBe("unassigned");
   });
 
+  it.each(["none", "manual-team", "keep-clear"] as const)("retains a planned null-shift team as review after a fresh complete sync despite %s override", (override) => {
+    const planned: StaffingAssignment = { eventId: event.eventId, eventDate: event.date, employeeId: "99",
+      employeeName: "Planned staff", shiftId: null, source: "manual" };
+    const unassigned = reconcileStaffing({ ...complete, shifts: [] });
+    const result = reconcileStaffing({ ...complete, shifts: [], previousAssignments: [planned], previousAlerts: unassigned.alerts,
+      manualTeams: override === "manual-team" ? [{ eventId: event.eventId, eventDate: event.date }] : [],
+      keepClearEventIds: override === "keep-clear" ? [event.eventId] : [] });
+    expect(result.assignments).toEqual([planned]);
+    expect(result.dataStatus).toBe("verified");
+    expect(result.lastSuccessfulSyncAt).toBe(NOW.toISOString());
+    expect(result.eventStatuses).toEqual({ [event.eventId]: "review" });
+    expect(result.reviews).toContainEqual({ code: "unverified-assignment", eventIds: [event.eventId] });
+    expect(result.alerts).toEqual(unassigned.alerts);
+  });
+
+  it("does not let another verified manual team member hide a null-shift planned assignment", () => {
+    const verified: StaffingAssignment = { eventId: event.eventId, eventDate: event.date, employeeId: "11",
+      employeeName: "Staff One", shiftId: "1", source: "manual" };
+    const planned: StaffingAssignment = { ...verified, employeeId: "99", employeeName: "Planned staff", shiftId: null };
+    const result = reconcileStaffing({ ...complete, shifts: [shift()], previousAssignments: [verified, planned],
+      manualTeams: [{ eventId: event.eventId, eventDate: event.date }] });
+    expect(result.assignments).toEqual([verified, planned]);
+    expect(result.eventStatuses[event.eventId]).toBe("review");
+    expect(result.reviews).toEqual([{ code: "unverified-assignment", eventIds: [event.eventId] }]);
+  });
+
+  it("continues to verify a real published full-coverage manual shift normally", () => {
+    const verified: StaffingAssignment = { eventId: event.eventId, eventDate: event.date, employeeId: "11",
+      employeeName: "Staff One", shiftId: "1", source: "manual" };
+    const result = reconcileStaffing({ ...complete, shifts: [shift()], previousAssignments: [verified],
+      manualTeams: [{ eventId: event.eventId, eventDate: event.date }] });
+    expect(result.assignments).toEqual([verified]);
+    expect(result.eventStatuses[event.eventId]).toBe("assigned");
+    expect(result.reviews).toEqual([]);
+  });
+
+  it("retains overlap review when a verified manual shift conflicts with a planned null-shift assignment", () => {
+    const other: StaffingEvent = { ...event, eventId: "456", startAt: "2026-11-10T18:30:00-05:00" };
+    const planned: StaffingAssignment = { eventId: event.eventId, eventDate: event.date, employeeId: "11",
+      employeeName: "Staff One", shiftId: null, source: "manual" };
+    const verified: StaffingAssignment = { ...planned, eventId: other.eventId, shiftId: "1" };
+    const result = reconcileStaffing({ ...complete, events: [event, other], shifts: [shift()], previousAssignments: [planned, verified],
+      manualTeams: [{ eventId: event.eventId, eventDate: event.date }, { eventId: other.eventId, eventDate: other.date }] });
+    expect(result.assignments).toEqual([planned, verified]);
+    expect(result.eventStatuses).toEqual({ [event.eventId]: "review", [other.eventId]: "review" });
+    expect(result.reviews).toContainEqual({ code: "unverified-assignment", eventIds: [event.eventId] });
+    expect(result.reviews).toContainEqual({ code: "overlapping-shifts", eventIds: [other.eventId], shiftId: "1" });
+  });
+
+  it("does not automatically assign a published future shift over a retained planned overnight assignment", () => {
+    const now = new Date("2026-11-23T15:00:00Z");
+    const future: StaffingEvent = { ...event, eventId: "future", date: "2026-11-30", startAt: "2026-11-30T00:30:00-05:00", endAt: "2026-11-30T02:00:00-05:00" };
+    const context: StaffingEvent = { ...event, eventId: "context", date: "2026-11-29", startAt: "2026-11-29T23:00:00-05:00", endAt: "2026-11-30T01:00:00-05:00" };
+    const planned: StaffingAssignment = { eventId: context.eventId, eventDate: context.date, employeeId: "11", employeeName: "Staff One", shiftId: null, source: "manual" };
+    const candidate = shift({ startAt: future.startAt!, endAt: future.endAt! });
+    const result = reconcileStaffing({ complete: true, now, startDate: future.date, events: [context, future], shifts: [candidate], previousAssignments: [planned] });
+    expect(result.assignments).toEqual([planned]);
+    expect(result.reviews).toContainEqual({ code: "unverified-assignment", eventIds: [context.eventId] });
+    expect(result.reviews).toContainEqual({ code: "overlapping-shifts", eventIds: [future.eventId], shiftId: candidate.shiftId });
+    expect(result.eventStatuses).toEqual({ future: "review" });
+  });
+
   it("lets a fresh assignment cover a moved event without hiding the historical manual-change note", () => {
     const manual: StaffingAssignment = { eventId: "123", eventDate: "2026-11-09", employeeId: "22", employeeName: "Historical employee", shiftId: "2", source: "manual" };
     const result = reconcileStaffing({ ...complete, shifts: [shift()], previousAssignments: [manual] });

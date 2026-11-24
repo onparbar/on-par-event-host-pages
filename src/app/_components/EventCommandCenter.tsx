@@ -90,7 +90,7 @@ export function EventCommandCenter({ events, initialNow, assignedStaffByEvent = 
             <div><dt>Assigned staff</dt><dd>{isVip ? "Shift Lead" : names.length
               ? <button className="event-command-edit-staff" type="button" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined} aria-label={`Edit assigned staff: ${item.event.eventName} — ${names.join(", ")}`} onClick={(event) => togglePicker(event.currentTarget)}>{names.join(", ")}</button>
               : staffing?.status === "unassigned" ? "None" : staffing?.status === "assigned" ? "Assigned" : existingBwa || (staffing ? "Not confirmed" : "Not assigned")}
-              {names.length > 0 && staffing?.status === "unverified" ? <small className="event-command-staffing-note">Saved assignment · schedule verification needed</small> : null}
+              {names.length > 0 && (staffing?.status === "unverified" || staffing?.status === "review") ? <small className="event-command-staffing-note">Saved assignment · schedule verification needed</small> : null}
             </dd></div>
           </dl>
           <p className="event-command-freshness">Source refreshed: {timestampLabel(item.sourceSyncedAt)} · Source updated: {timestampLabel(item.sourceUpdatedAt)}</p>

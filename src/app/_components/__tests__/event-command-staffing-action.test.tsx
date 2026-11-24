@@ -90,7 +90,7 @@ describe("home Assign Staff action", () => {
     expect(trigger.focus).toHaveBeenCalledOnce();
   });
 
-  it.each(["unverified", "assigned"] as const)("keeps two saved names editable and shows the verification warning only when %s", (status) => {
+  it.each(["unverified", "review", "assigned"] as const)("keeps two saved names editable and shows the verification warning only when %s", (status) => {
     const props: Props = { events, initialNow, staffingByEvent: {
       "2026-11-24:501": { status, names: ["Synthetic One", "Synthetic Two"] },
     } };
@@ -100,7 +100,7 @@ describe("home Assign Staff action", () => {
     expect(names.props["aria-label"]).toBe("Edit assigned staff: Synthetic team event — Synthetic One, Synthetic Two");
     const warning = tree.find((element) => element.type === "small" && element.props.className === "event-command-staffing-note");
     const alert = action(tree);
-    if (status === "unverified") {
+    if (status !== "assigned") {
       expect(warning?.props.children).toBe("Saved assignment · schedule verification needed");
       expect(alert.props.children).toBe("Assign Staff");
       expect(alert.props.className).toBe("event-command-staffing-alert");

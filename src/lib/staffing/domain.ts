@@ -180,7 +180,12 @@ export function reconcileStaffing(input: {
   const manualReviewEventIds = new Set<string>();
   for (const row of manual) {
     const event = eventById.get(row.eventId);
-    if (!row.shiftId || !event) continue;
+    if (!row.shiftId) {
+      reviews.push({ code: "unverified-assignment", eventIds: [row.eventId] });
+      manualReviewEventIds.add(row.eventId);
+      continue;
+    }
+    if (!event) continue;
     const shift = shiftById.get(row.shiftId);
     if (!shift || shift.employeeId !== row.employeeId || event.date !== row.eventDate || !staffingShiftIsOnEventDay(shift, event.date)) {
       reviews.push({ code: "manual-shift-changed", eventIds: [row.eventId], shiftId: row.shiftId });
