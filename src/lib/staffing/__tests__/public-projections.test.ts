@@ -43,16 +43,16 @@ describe("explicit public assignment projections", () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it("keeps stale, changed, unknown and repeated event identities unverified without exposing a saved name", async () => {
+  it("retains saved manual names for an unverified exact event without confirming coverage or exposing other identities", async () => {
     const options = { now, load: async () => state, allowPublicAssignments: true };
-    for (const [events, currentNow] of [
-      [[event], new Date("2026-11-24T15:45:00.001Z")],
-      [[{ ...event, startAt: "2026-11-24T22:01:00Z" }], now],
-      [[{ ...event, date: "2026-11-25" }], now],
-      [[{ ...event, eventId: "unknown" }], now],
+    for (const [events, currentNow, names] of [
+      [[event], new Date("2026-11-24T15:45:00.001Z"), ["Casey", "Jordan"]],
+      [[{ ...event, startAt: "2026-11-24T22:01:00Z" }], now, ["Casey", "Jordan"]],
+      [[{ ...event, date: "2026-11-25" }], now, []],
+      [[{ ...event, eventId: "unknown" }], now, []],
     ] as const) {
       const cards = await loadStaffingCards(events, { ...options, now: currentNow });
-      expect(Object.values(cards)).toEqual([{ names: [], status: "unverified" }]);
+      expect(Object.values(cards)).toEqual([{ names, status: "unverified" }]);
       expect(await loadStaffingPrefills(events, { ...options, now: currentNow })).toEqual({});
     }
     expect(await loadStaffingCards([event, event], options)).toEqual({});

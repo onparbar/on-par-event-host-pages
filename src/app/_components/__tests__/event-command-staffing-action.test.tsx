@@ -90,6 +90,33 @@ describe("home Assign Staff action", () => {
     expect(trigger.focus).toHaveBeenCalledOnce();
   });
 
+  it.each(["unverified", "assigned"] as const)("keeps two saved names editable and shows the verification warning only when %s", (status) => {
+    const props: Props = { events, initialNow, staffingByEvent: {
+      "2026-11-24:501": { status, names: ["Synthetic One", "Synthetic Two"] },
+    } };
+    const tree = render(props);
+    const names = tree.find((element) => element.type === "button" && element.props.className === "event-command-edit-staff")!;
+    expect(names.props.children).toBe("Synthetic One, Synthetic Two");
+    expect(names.props["aria-label"]).toBe("Edit assigned staff: Synthetic team event — Synthetic One, Synthetic Two");
+    const warning = tree.find((element) => element.type === "small" && element.props.className === "event-command-staffing-note");
+    const alert = action(tree);
+    if (status === "unverified") {
+      expect(warning?.props.children).toBe("Saved assignment · schedule verification needed");
+      expect(alert.props.children).toBe("Assign Staff");
+      expect(alert.props.className).toBe("event-command-staffing-alert");
+    } else {
+      expect(warning).toBeUndefined();
+      expect(alert).toBeUndefined();
+    }
+    const trigger = { focus: vi.fn() } as unknown as HTMLButtonElement;
+    names.props.onClick!({ currentTarget: trigger });
+    const opened = render(props);
+    const picker = opened.find((element) => element.type === EventStaffingPicker)!;
+    expect(picker.props).toMatchObject({ id: "staffing-picker-2026-11-24-501", eventId: "501", date: "2026-11-24" });
+    expect(opened.find((element) => element.props.className === "event-command-edit-staff")?.props["aria-expanded"]).toBe(true);
+    expect(navigation.refresh).not.toHaveBeenCalled();
+  });
+
   it("does not show Assign Staff for assigned, disabled-staffing, or VIP Shift Lead cards", () => {
     const vip = buildOperationalEventSummaries([{ ...plan, id: 503, source_event_id: "vip-503" }], [], null);
     const props: Props = { events: [...events, ...vip], initialNow, staffingByEvent: {

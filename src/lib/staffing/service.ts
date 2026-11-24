@@ -249,12 +249,15 @@ export async function loadStaffingCards(events: readonly StaffingEventIdentity[]
   const fresh = staffingSnapshotIsFresh(state, dependencies.now);
   const known = new Map(state.events.map((event) => [event.eventId, event]));
   const repeated = repeatedEventIds(events);
+  const repeatedSaved = repeatedEventIds(state.events);
   return Object.fromEntries(events.filter(({ eventId }) => !repeated.has(eventId)).map((event) => {
     const timingMatches = verifiedStaffingTiming(event, known.get(event.eventId));
     const status = fresh && dateInSnapshot(state, event.date, dependencies.now ?? new Date()) && timingMatches
       ? state.reconciliation?.eventStatuses[event.eventId] ?? "unverified" : "unverified";
-    const names = (dependencies.allowAdminPreview === true || (dependencies.allowPublicAssignments === true && ["assigned", "review"].includes(status))) ? new Map(state.reconciliation?.assignments.filter((row) => row.eventId === event.eventId && row.eventDate === event.date &&
-      (row.source === "manual" || timingMatches))
+    const publicIdentity = dependencies.allowPublicAssignments === true && !repeatedSaved.has(event.eventId) && known.get(event.eventId)?.date === event.date;
+    const names = (dependencies.allowAdminPreview === true || publicIdentity) ? new Map(state.reconciliation?.assignments.filter((row) => row.eventId === event.eventId && row.eventDate === event.date &&
+      (dependencies.allowAdminPreview === true ? row.source === "manual" || timingMatches
+        : row.source === "manual" || (timingMatches && ["assigned", "review"].includes(status))))
       .map((row) => [row.employeeId, row.employeeName])) : new Map<string, string>();
     return [`${event.date}:${event.eventId}`, { names: [...names.values()].sort((a, b) => a.localeCompare(b)),
       status }];

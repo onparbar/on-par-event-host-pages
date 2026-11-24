@@ -19,6 +19,8 @@ Opening the dropdown performs no database writes and does not update automatic m
 
 Only one schedule week is verified at a time. Switching weeks retains manual teams and unresolved alerts outside that week, but does not verify their coverage or allow their old data to prefill operational forms. Verify the other week again before editing its teams. Freshness uses the actual observation time, expires after 45 minutes or an Eastern calendar-day change, and is never extended by saving an assignment.
 
+Saved manual team names remain visible on the dashboard for the exact, unique saved event and date even when schedule verification expires. The card explicitly says **Saved assignment · schedule verification needed** and retains its review action. This does not verify current availability, expose stale automatic matches, allow an unverified edit, or prefill an operational form from stale data.
+
 This date-selection change uses the existing versioned staffing document; it requires no new database migration. Preserve the configured owner-approved Admin credential and keep Staff Tools sign-in and handoff off during this release.
 
 ## Rollback

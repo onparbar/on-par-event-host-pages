@@ -281,3 +281,90 @@ describe("Staffing snapshot service", () => {
     expect(after.reconciliation?.assignments).toMatchObject([{ eventId: event.eventId, employeeId: untouched.employeeId }]);
   });
 });
+
+describe("saved manual staffing names on public cards", () => {
+  async function savedTeam() {
+    const shifts = [
+      { ...shift, employeeName: "Saved A" },
+      { ...shift, shiftId: "2", employeeId: "33", employeeName: "Saved B" },
+      { ...shift, shiftId: "3", employeeId: "44", employeeName: "Automatic C" },
+    ];
+    const state = await refreshStaffing({ ...persistence(), now, readEvents: async () => [event], readShifts: async () => shifts });
+    return { ...state, reconciliation: { ...state.reconciliation!, assignments: state.reconciliation!.assignments.map((row) => ({
+      ...row, source: row.employeeId === "44" ? "automatic" as const : "manual" as const,
+    })) } };
+  }
+  const key = `${event.date}:${event.eventId}`;
+  const staleAt = new Date(now.getTime() + 46 * 60_000);
+
+  it("keeps a saved multi-person manual team visible when stale while hiding automatic names and retaining unverified status", async () => {
+    const state = await savedTeam();
+    const load = vi.fn(async () => state);
+    expect(await loadStaffingCards([event], { now: staleAt, load, allowPublicAssignments: true }))
+      .toEqual({ [key]: { names: ["Saved A", "Saved B"], status: "unverified" } });
+    expect(load).toHaveBeenCalledOnce();
+    expect(await loadStaffingCards([event], { now, load, allowPublicAssignments: true }))
+      .toEqual({ [key]: { names: ["Automatic C", "Saved A", "Saved B"], status: "assigned" } });
+    expect(await loadStaffingCards([event], { now: staleAt, load, allowPublicStatus: true }))
+      .toEqual({ [key]: { names: [], status: "unverified" } });
+    expect(await loadStaffingCards([event], { now: staleAt, load, allowPublicAssignments: false })).toEqual({});
+  });
+
+  it.each(["events", "shifts", "incomplete"] as const)("retains saved manual names after a %s source failure without verifying coverage", async (failure) => {
+    const state = { ...await savedTeam(), failure };
+    expect(await loadStaffingCards([event], { now, load: async () => state, allowPublicAssignments: true }))
+      .toEqual({ [key]: { names: ["Saved A", "Saved B"], status: "unverified" } });
+  });
+
+  it("keeps manual names on an Eastern day rollover and outside the selected verified week", async () => {
+    const state = await savedTeam();
+    expect(await loadStaffingCards([event], { now: new Date("2026-11-11T05:00:00Z"), load: async () => state, allowPublicAssignments: true }))
+      .toEqual({ [key]: { names: ["Saved A", "Saved B"], status: "unverified" } });
+    const anotherWeek = { ...state, reconciliation: { ...state.reconciliation!,
+      window: { startDate: "2026-11-17", endDate: "2026-11-23", shiftStartDate: "2026-11-16" } } };
+    expect(staffingSnapshotIsFresh(anotherWeek, now)).toBe(true);
+    expect(await loadStaffingCards([event], { now, load: async () => anotherWeek, allowPublicAssignments: true }))
+      .toEqual({ [key]: { names: ["Saved A", "Saved B"], status: "unverified" } });
+  });
+
+  it("keeps manual names when event clock times change, without exposing automatic names or confirming status", async () => {
+    const state = await savedTeam();
+    for (const changed of [{ ...event, startAt: "2026-11-10T23:30:00Z" }, { ...event, startAt: null, endAt: null }]) {
+      expect(await loadStaffingCards([changed], { now, load: async () => state, allowPublicAssignments: true }))
+        .toEqual({ [key]: { names: ["Saved A", "Saved B"], status: "unverified" } });
+    }
+    const changedSavedTiming = { ...state, events: [{ ...event, startAt: "2026-11-10T23:30:00Z" }] };
+    expect(await loadStaffingCards([event], { now, load: async () => changedSavedTiming, allowPublicAssignments: true }))
+      .toEqual({ [key]: { names: ["Saved A", "Saved B"], status: "unverified" } });
+  });
+
+  it("requires an exact unique known event ID and date before showing saved manual names", async () => {
+    const state = await savedTeam();
+    const options = { now: staleAt, load: async () => state, allowPublicAssignments: true };
+    const wrongDate = { ...event, date: "2026-11-11" };
+    expect(await loadStaffingCards([wrongDate], options))
+      .toEqual({ [`${wrongDate.date}:${event.eventId}`]: { names: [], status: "unverified" } });
+    expect(await loadStaffingCards([event, event], options)).toEqual({});
+    expect(await loadStaffingCards([event, wrongDate], options)).toEqual({});
+    for (const events of [[], [event, event], [{ ...event, date: wrongDate.date }]]) {
+      expect(await loadStaffingCards([event], { ...options, load: async () => ({ ...state, events }) }))
+        .toEqual({ [key]: { names: [], status: "unverified" } });
+    }
+    const wrongAssignmentDate = { ...state, reconciliation: { ...state.reconciliation!, assignments:
+      state.reconciliation!.assignments.map((row) => ({ ...row, eventDate: wrongDate.date })) } };
+    expect(await loadStaffingCards([event], { ...options, load: async () => wrongAssignmentDate }))
+      .toEqual({ [key]: { names: [], status: "unverified" } });
+  });
+
+  it("does not change Admin visibility, stale prefills or stale-save rejection", async () => {
+    const state = await savedTeam();
+    const load = vi.fn(async () => state), save = vi.fn(async (next: StaffingState) => next);
+    expect(await loadStaffingCards([event], { now: staleAt, load, allowAdminPreview: true }))
+      .toEqual({ [key]: { names: ["Automatic C", "Saved A", "Saved B"], status: "unverified" } });
+    expect(await loadStaffingPrefills([event], { now: staleAt, load, allowPublicAssignments: true })).toEqual({});
+    await expect(updateStaffingOverride({ action: "replace-team", eventId: event.eventId, eventDate: event.date,
+      expectedVersion: state.version, choices: [{ shiftId: shift.shiftId }] }, { now: staleAt, load, save }))
+      .rejects.toThrow("Refresh the published schedule");
+    expect(save).not.toHaveBeenCalled();
+  });
+});
