@@ -70,6 +70,9 @@ import type {
 } from "@/lib/entertainment/types";
 import FloorPlanEventLegend from "./FloorPlanEventLegend";
 import FloorPlanLocalOutlines from "./FloorPlanLocalOutlines";
+import FloorPlanDayHighlights from "./FloorPlanDayHighlights";
+import FloorPlanSpecialHighlightsEditor, { useFloorPlanSpecialHighlights } from "./FloorPlanSpecialHighlightsEditor";
+import { drawFloorPlanDayHighlights } from "@/lib/floor-plans/day-highlights-canvas";
 
 type RequestState = "idle" | "loading" | "saving" | "error";
 
@@ -281,6 +284,7 @@ async function floorPlanRequest(date: string, body?: Record<string, unknown>) {
 export default function FloorPlanDashboard({ initialDate }: { initialDate: string }) {
   const { ready: contextReady, preferredEventId, requestedDate, selectEvent, clearEvent } = useEventContext();
   const [date, setDate] = useState(initialDate);
+  const specialHighlights = useFloorPlanSpecialHighlights(date);
   const [payload, setPayload] = useState<FloorPlanDayPayload | null>(null);
   const [activeEventId, setActiveEventId] = useState("");
   const [visibleEventId, setVisibleEventId] = useState<string | null>(null);
@@ -301,12 +305,18 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   const [foodTableMode, setFoodTableMode] = useState(false);
   const [entertainmentMode, setEntertainmentMode] = useState(false);
   const mapImageRef = useRef<HTMLImageElement | null>(null);
+  const floorPlanLoadSequence = useRef(0);
+  const requestedPlanDate = useRef(date);
+  requestedPlanDate.current = date;
 
   const loadDate = useCallback(async (nextDate: string) => {
+    const attempt = ++floorPlanLoadSequence.current;
     setRequestState("loading");
     setMessage("Loading saved floor plan…");
     try {
       const next = await floorPlanRequest(nextDate);
+      if (attempt !== floorPlanLoadSequence.current || requestedPlanDate.current !== nextDate) return;
+      if (next.date !== nextDate || next.plan.eventDate !== nextDate) throw new Error("The floor plan date could not be verified. Reload the selected date.");
       setPayload(next);
       setVisibleEventId(null);
       setActiveEventId((current) =>
@@ -327,6 +337,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           : "Local development mode: apply the floor-plan migration for durable storage.",
       );
     } catch (error) {
+      if (attempt !== floorPlanLoadSequence.current || requestedPlanDate.current !== nextDate) return;
       setRequestState("error");
       setMessage(error instanceof Error ? error.message : "Unable to load the floor plan.");
     }
@@ -337,7 +348,10 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }, [date, loadDate]);
 
   useEffect(() => {
-    if (contextReady && requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) setDate(requestedDate);
+    if (contextReady && requestedDate && requestedDate !== date && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      if ((dirty || specialHighlights.dirty) && !window.confirm("Discard unsaved floor-plan or special-event highlight changes and open another date?")) return;
+      setDate(requestedDate);
+    }
   }, [contextReady, requestedDate]);
 
   useEffect(() => {
@@ -348,7 +362,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
     if (!requested) setMessage("The requested event identity is unavailable or ambiguous. No party was selected; choose the exact event below.");
   }, [contextReady, preferredEventId, payload]);
 
-  const plan = payload?.plan ?? null;
+  const plan = payload?.date === date && payload.plan.eventDate === date ? payload.plan : null;
   const mapView = useMemo(
     () => plan && payload
       ? floorPlanEventView(plan, payload.entertainmentReservations, visibleEventId)
@@ -468,7 +482,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
   }
 
   function changeDate(nextDate: string) {
-    if (dirty && !window.confirm("Discard unsaved floor-plan changes and open another date?")) {
+    if ((dirty || specialHighlights.dirty) && !window.confirm("Discard unsaved floor-plan or special-event highlight changes and open another date?")) {
       return;
     }
     clearEvent();
@@ -775,7 +789,8 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
 
   async function exportPng() {
     const plan = mapView?.plan;
-    if (!plan || !mapView || dirty || !mapImageRef.current || plan.status !== "Approved") return;
+    const notesOnly = plan && !plan.events.length && specialHighlights.highlights.length > 0;
+    if (!plan || !mapView || dirty || specialHighlights.dirty || !specialHighlights.canEdit || !mapImageRef.current || (!notesOnly && plan.status !== "Approved")) return;
     const exportedVisibleEntertainment = visibleEntertainmentReservations(
       plan,
       mapView.entertainmentReservations,
@@ -787,7 +802,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       );
     const canvas = document.createElement("canvas");
     canvas.width = 1920;
-    canvas.height = 1080;
+    canvas.height = specialHighlights.highlights.length ? 1124 : 1080;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("PNG export is unavailable in this browser.");
     context.drawImage(mapImageRef.current, 0, 0, 1920, 1080);
@@ -917,6 +932,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
       context.lineWidth = 3;
       context.strokeRect(outline.x, outline.y, outline.width, outline.height);
     }
+    drawFloorPlanDayHighlights(context, specialHighlights.highlights);
     const link = document.createElement("a");
     link.download = `${date}-event-host-floor-plan${mapView.selectedEventId ? "-selected-event" : ""}.png`;
     link.href = canvas.toDataURL("image/png");
@@ -957,7 +973,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
           {plan?.events.length && !dirty ? <a className="button-link" href="/floor-plans">View saved plan</a> : null}
-          {plan?.status === "Approved" ? <><button disabled={dirty} onClick={() => void exportPng()} type="button">{mapView?.selectedEventId ? "Export selected event PNG" : "Export PNG"}</button><button disabled={dirty} onClick={() => window.print()} type="button">{mapView?.selectedEventId ? "Print selected event / PDF" : "Print / PDF"}</button></> : null}
+          {plan?.status === "Approved" || plan && !plan.events.length && specialHighlights.highlights.length > 0 ? <><button disabled={dirty || specialHighlights.dirty || !specialHighlights.canEdit} onClick={() => void exportPng()} type="button">{mapView?.selectedEventId ? "Export selected event PNG" : "Export PNG"}</button><button disabled={dirty || specialHighlights.dirty || !specialHighlights.canEdit} onClick={() => window.print()} type="button">{mapView?.selectedEventId ? "Print selected event / PDF" : "Print / PDF"}</button></> : null}
         </div>
         <div className={`floor-plan-save-state is-${requestState}`} role="status">
           <strong>{dirty ? "Unsaved" : requestState === "saving" ? "Working" : requestState === "error" ? "Needs attention" : "Saved"}</strong>
@@ -1000,7 +1016,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                   </button>
                 );
               })}
-              {!plan.events.length ? <p className="floor-plan-empty-copy">No live Tripleseat events have been loaded for this date. Refresh Tripleseat or generate the plan to retrieve the selected date.</p> : null}
+              {!plan.events.length ? <p className="floor-plan-empty-copy">No live Tripleseat events have been loaded for this date. You can still add date-only special event highlights in the inspector without a booking.</p> : null}
             </div>
           </aside>
 
@@ -1107,6 +1123,7 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
                     const geometry = floorPlanCustomGeometry(reservation)!;
                     return <button aria-label={`Custom note: ${reservation.label}`} className={`floor-plan-custom-note${selectedReservationId === reservation.id ? " is-selected" : ""}`} key={reservation.id} onClick={() => { setActiveEventId(event.id); setSelectedAreaIds([area.id]); setSelectedReservationId(reservation.id); }} style={{ left: `${(geometry.x / 1920) * 100}%`, top: `${(geometry.y / 1080) * 100}%`, width: `${(geometry.width / 1920) * 100}%`, height: `${(geometry.height / 1080) * 100}%`, backgroundColor: `${event.color}80`, borderColor: event.color, color: readableOverlayText(event.color) }} type="button">{reservation.label}</button>;
                   })}
+                  <FloorPlanDayHighlights highlights={specialHighlights.highlights} selectedId={specialHighlights.selectedId} onSelect={specialHighlights.setSelectedId} />
                 </div>
               </div>
             </div>
@@ -1116,10 +1133,12 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
               </p>
             ) : null}
             <p className="floor-plan-map-help">Click an event name under the date to show only that party; Show all events restores the full day. Editing: <strong>{activeEvent?.name ?? "Select an event"}</strong>. Select map objects, then use Add highlight or Delete highlight in the inspector. Filtering never changes saved assignments or conflict checks.</p>
+            {specialHighlights.highlights.length ? <p className="floor-plan-day-highlight-notice">Special event highlights are date-wide map notes, not party reservations or approved seating. {specialHighlights.dirty ? "Unsaved highlight changes are shown here." : "Saved separately from the floor plan."}</p> : null}
           </section>
 
           <aside className="floor-plan-inspector" aria-label="Floor plan inspector">
             <div className="floor-plan-panel-heading"><span className="portal-module-kicker">Inspector</span><h2>{selectedArea ? selectedArea.name : activeEvent?.name ?? "Select an event"}</h2></div>
+            <FloorPlanSpecialHighlightsEditor state={specialHighlights} selectedArea={selectedArea} />
             {activeEvent ? (
               <label className="floor-plan-event-color-editor">
                 <span>Event name &amp; highlight color</span>

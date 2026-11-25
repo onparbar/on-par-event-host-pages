@@ -22,6 +22,8 @@ import { findOperationalFloorPlanEvent } from "@/lib/operations/floor-plan-conte
 import { floorPlanEventView } from "@/lib/floor-plans/event-view";
 import { ENTERTAINMENT_UPDATE_CHANNEL } from "@/lib/entertainment/live-updates";
 import { STAFF_FLOOR_PLAN_INCOMPLETE, STAFF_FLOOR_PLAN_REFRESH_ERROR, type StaffFloorPlanPayload } from "@/lib/floor-plans/staff-publication";
+import FloorPlanDayHighlights, { FloorPlanDayHighlightNotice } from "./FloorPlanDayHighlights";
+import { formatFullDate } from "@/lib/entertainment/time";
 
 const FLOOR_PLAN_ZOOM_MIN = 50;
 const FLOOR_PLAN_ZOOM_MAX = 200;
@@ -76,30 +78,39 @@ export type FloorPlanUpcomingEntry =
       key: string;
       kind: "saved";
       publication: FloorPlanPublication;
+    }
+  | {
+      date: string;
+      key: string;
+      kind: "notes";
+      highlights: readonly AdminAssetOverlay[];
     };
 
 /** A staff workspace never substitutes an all-party image or another date. */
-export function SelectedEventFloorPlan({ payload, eventId, date, zoom = 100 }: {
+export function SelectedEventFloorPlan({ payload, eventId, date, zoom = 100, highlights = [] }: {
   payload: StaffFloorPlanPayload | null;
   eventId: string;
   date: string | null;
   zoom?: number;
+  highlights?: readonly AdminAssetOverlay[];
 }) {
   const selected = payload && payload.plan.eventDate === date ? findOperationalFloorPlanEvent(payload.plan.events, eventId) : null;
   const view = payload && selected ? floorPlanEventView(payload.plan, payload.entertainmentReservations, selected.id) : null;
   const assigned = selected && (selected.fullBuyout || Boolean(view?.plan.reservations.length) || Boolean(view?.entertainmentReservations.length));
   if (!payload || !assigned) return <PortalCard className="floor-plan-empty-card"><h2>No floor plan assigned</h2><p>No saved floor plan is assigned to this exact event and date. No other party’s seating or whole-day image has been substituted. Ask a manager to assign the plan.</p></PortalCard>;
-  return <PublishedFloorPlanMap focusEventId={eventId} payload={payload} zoom={zoom} />;
+  return <PublishedFloorPlanMap focusEventId={eventId} payload={payload} zoom={zoom} highlights={highlights} />;
 }
 
 export function buildUpcomingFloorPlanEntries(
   assets: readonly FloorPlanDisplayAsset[],
   publications: readonly FloorPlanPublication[],
+  highlightsByDate: Readonly<Record<string, readonly AdminAssetOverlay[]>> = {},
 ): FloorPlanUpcomingEntry[] {
   const saved = publications.filter((publication) => publication.payload);
   const savedDates = new Set(
     saved.map((publication) => publication.plan.eventDate),
   );
+  const displayedDates = new Set([...savedDates, ...assets.filter((asset) => !asset.specialPage).map((asset) => asset.date)]);
   return [
     ...assets
       .filter((asset) => !savedDates.has(asset.date))
@@ -115,6 +126,9 @@ export function buildUpcomingFloorPlanEntries(
       kind: "saved" as const,
       publication,
     })),
+    ...Object.entries(highlightsByDate)
+      .filter(([date, highlights]) => highlights.length && !displayedDates.has(date))
+      .map(([date, highlights]) => ({ date, key: `notes:${date}`, kind: "notes" as const, highlights })),
   ].sort((left, right) => left.date.localeCompare(right.date));
 }
 
@@ -250,6 +264,7 @@ export function FloorPlanCard({
   onSync,
   overlays,
   zoom = 100,
+  highlights = [],
 }: {
   asset: FloorPlanDisplayAsset;
   isOpen: boolean;
@@ -258,8 +273,10 @@ export function FloorPlanCard({
   onSync: () => void;
   overlays: AdminAssetOverlay[];
   zoom?: number;
+  highlights?: readonly AdminAssetOverlay[];
 }) {
   const date = dateBlock(asset.date);
+  const mapHighlights = asset.specialPage ? [] : highlights;
   const liveEvents = liveState?.payload?.plan.events ?? null;
   const displayedEvents = liveEvents?.map((event) => event.name) ?? asset.events;
   const badge = asset.specialPage
@@ -342,6 +359,7 @@ export function FloorPlanCard({
               </>
             )}
             <div className="floor-plan-image-frame">
+              {mapHighlights.length ? <FloorPlanDayHighlightNotice /> : null}
               {!asset.specialPage ? (
                 <p className="floor-plan-special-note">
                   This static image shows the whole day. Individual-event filtering is available on saved editable Event Host plans.
@@ -351,11 +369,14 @@ export function FloorPlanCard({
                 className="floor-plan-zoom-stage"
                 style={{ width: `${zoom}%` }}
               >
-                <AssetImageWithOverlays
-                  alt={`Floor plan for ${asset.label}`}
-                  image={asset.image}
-                  overlays={overlays}
-                />
+                <div className="asset-image-stage">
+                  <AssetImageWithOverlays
+                    alt={`Floor plan for ${asset.label}`}
+                    image={asset.image}
+                    overlays={overlays}
+                  />
+                  <FloorPlanDayHighlights highlights={mapHighlights} />
+                </div>
               </div>
             </div>
           </div>
@@ -373,6 +394,7 @@ export function PublishedFloorPlanCard({
   onSync,
   zoom = 100,
   showPlanningStatus = false,
+  highlights = [],
 }: {
   publication: FloorPlanPublication;
   isOpen: boolean;
@@ -381,6 +403,7 @@ export function PublishedFloorPlanCard({
   onSync: () => void;
   zoom?: number;
   showPlanningStatus?: boolean;
+  highlights?: readonly AdminAssetOverlay[];
 }) {
   const payload = liveState?.payload ?? publication.payload;
   const plan = payload?.plan ?? publication.plan;
@@ -452,9 +475,43 @@ export function PublishedFloorPlanCard({
                 </button>
               </div>
             </div>
-            <PublishedFloorPlanMap payload={payload} zoom={zoom} />
+            <PublishedFloorPlanMap payload={payload} zoom={zoom} highlights={highlights} />
           </div>
         ) : null}
+      </details>
+    </PortalCard>
+  );
+}
+
+export function FloorPlanDayNotesCard({ date, highlights, isOpen, onOpenChange, zoom = 100 }: {
+  date: string;
+  highlights: readonly AdminAssetOverlay[];
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  zoom?: number;
+}) {
+  const block = dateBlock(date);
+  return (
+    <PortalCard className="floor-plan-display-card">
+      <details onToggle={(event) => onOpenChange(event.currentTarget.open)} open={isOpen}>
+        <summary className="floor-plan-card-summary">
+          <span className="floor-plan-date-block"><small>{block.month}</small><strong>{block.day}</strong></span>
+          <span className="floor-plan-card-heading"><strong>{formatFullDate(date)}</strong><span>{highlights.map((highlight) => highlight.text).join(" · ")}</span></span>
+          <PortalStatusBadge>Date-wide notes</PortalStatusBadge>
+          <span className="floor-plan-expand-label"><span className="when-closed">View notes</span><span className="when-open">Close notes</span><span aria-hidden="true" className="floor-plan-chevron">⌄</span></span>
+        </summary>
+        {isOpen ? <div className="floor-plan-card-body">
+          <FloorPlanDayHighlightNotice />
+          <p>No party seating or entertainment assignments are shown on this notes-only map.</p>
+          <div className="published-floor-plan-map">
+            <div className="floor-plan-map-canvas" style={{ minWidth: `${9.8 * zoom}px`, width: `${zoom}%` }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt={`Date-wide floor map notes for ${formatFullDate(date)}`} draggable={false} src="/floor-plans/blank-floor-map.png" />
+              <div className="floor-plan-map-date"><strong>{formatFullDate(date)}</strong><span>Date-wide notes only</span></div>
+              <div className="floor-plan-area-layer published-floor-plan-area-layer"><FloorPlanDayHighlights highlights={highlights} /></div>
+            </div>
+          </div>
+        </div> : null}
       </details>
     </PortalCard>
   );
@@ -540,6 +597,7 @@ export default function FloorPlansClient({
   specialPages,
   today,
   planningMonth = "2026-12",
+  highlightsByDate = {},
 }: {
   initialState: Pick<AdminState, "archivedAssetKeys" | "overlaysByAsset">;
   plans: DateAsset[];
@@ -547,6 +605,7 @@ export default function FloorPlansClient({
   specialPages: DateAsset[];
   today: string;
   planningMonth?: string;
+  highlightsByDate?: Readonly<Record<string, readonly AdminAssetOverlay[]>>;
 }) {
   const router = useRouter();
   const eventContext = useEventContext();
@@ -574,8 +633,10 @@ export default function FloorPlansClient({
     [publications],
   );
   const allUpcoming = useMemo(
-    () => buildUpcomingFloorPlanEntries(organized.upcoming, savedPublications),
-    [organized.upcoming, savedPublications],
+    () => buildUpcomingFloorPlanEntries(organized.upcoming, savedPublications, Object.fromEntries(
+      Object.entries(highlightsByDate).filter(([date]) => date >= today || date === eventContext.requestedDate),
+    )),
+    [organized.upcoming, savedPublications, highlightsByDate, today, eventContext.requestedDate],
   );
   const monthPrefix = `${planningMonth}-`;
   const december = allUpcoming.filter((entry) => entry.date.startsWith(monthPrefix));
@@ -699,25 +760,26 @@ export default function FloorPlansClient({
         }}
         onSync={() => void handleLiveSync(asset.date)}
         overlays={initialState.overlaysByAsset[asset.image] ?? []}
+        highlights={highlightsByDate[asset.date] ?? []}
         zoom={planZoom}
       />
     );
   }
 
   function renderUpcomingPlan(entry: (typeof upcoming)[number]) {
-    return entry.kind === "static" ? renderPlan(entry.asset) : (
+    if (entry.kind === "static") return renderPlan(entry.asset);
+    const onOpenChange = (open: boolean) => setOpenAssetKey((current) => open ? entry.key : current === entry.key ? null : current);
+    if (entry.kind === "notes") return <FloorPlanDayNotesCard date={entry.date} highlights={entry.highlights} isOpen={openAssetKey === entry.key} key={entry.key} onOpenChange={onOpenChange} zoom={planZoom} />;
+    return (
       <PublishedFloorPlanCard
         isOpen={openAssetKey === entry.key}
         key={entry.key}
         liveState={liveByDate[entry.date]}
-        onOpenChange={(open) => {
-          setOpenAssetKey((current) =>
-            open ? entry.key : current === entry.key ? null : current,
-          );
-        }}
+        onOpenChange={onOpenChange}
         onSync={() => void handleLiveSync(entry.date)}
         publication={entry.publication}
         showPlanningStatus={entry.date.startsWith(monthPrefix)}
+        highlights={highlightsByDate[entry.date] ?? []}
         zoom={planZoom}
       />
     );
@@ -744,7 +806,7 @@ export default function FloorPlansClient({
       {focusedWorkspace ? <>
         <PortalPageHeader description="Reserved seating and entertainment for your selected event only. Use Switch Event in the header to choose another party." eyebrow="My event workspace" title="Floor Plan" />
         <p className="floor-plan-buffer-notice">Seating is reserved 1 hour before and 0.5 hour after the event. Entertainment uses booked times only, with no buffer.</p>
-        {!eventContext.ready ? <p role="status">Loading the selected event floor plan…</p> : <SelectedEventFloorPlan date={focusedDate} eventId={eventContext.requestedEventId!} payload={focusedPayload} zoom={planZoom} />}
+        {!eventContext.ready ? <p role="status">Loading the selected event floor plan…</p> : <SelectedEventFloorPlan date={focusedDate} eventId={eventContext.requestedEventId!} payload={focusedPayload} zoom={planZoom} highlights={focusedDate ? highlightsByDate[focusedDate] ?? [] : []} />}
       </> : <>
       <PortalPageHeader
         aside={

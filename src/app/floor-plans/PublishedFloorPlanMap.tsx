@@ -23,15 +23,19 @@ import { STAFF_FLOOR_PLAN_INCOMPLETE, type StaffFloorPlanPayload } from "@/lib/f
 import FloorPlanEventLegend from "./FloorPlanEventLegend";
 import FloorPlanLocalOutlines from "./FloorPlanLocalOutlines";
 import { formatClock } from "@/lib/entertainment/time";
+import type { AdminAssetOverlay } from "@/lib/admin-types";
+import FloorPlanDayHighlights, { FloorPlanDayHighlightNotice } from "./FloorPlanDayHighlights";
 
 export default function PublishedFloorPlanMap({
   payload,
   zoom = 100,
   focusEventId,
+  highlights = [],
 }: {
   payload: StaffFloorPlanPayload;
   zoom?: number;
   focusEventId?: string;
+  highlights?: readonly AdminAssetOverlay[];
 }) {
   const context = useEventContext();
   const [visibleEventId, setVisibleEventId] = useState<string | null>(null);
@@ -51,6 +55,7 @@ export default function PublishedFloorPlanMap({
       payload={payload}
       selectedEventId={selected?.id ?? null}
       focused={Boolean(focusEventId)}
+      highlights={highlights}
       zoom={zoom}
     />
     </>
@@ -63,12 +68,14 @@ export function PublishedFloorPlanMapView({
   selectedEventId,
   onSelectEvent,
   focused = false,
+  highlights = [],
 }: {
   payload: StaffFloorPlanPayload;
   zoom?: number;
   selectedEventId: string | null;
   onSelectEvent: (eventId: string | null) => void;
   focused?: boolean;
+  highlights?: readonly AdminAssetOverlay[];
 }) {
   const view = floorPlanEventView(payload.plan, payload.entertainmentReservations, selectedEventId);
   const { plan, entertainmentReservations } = view;
@@ -82,6 +89,7 @@ export function PublishedFloorPlanMapView({
   );
   return (
     <div className="published-floor-plan-map">
+      {highlights.length ? <FloorPlanDayHighlightNotice /> : null}
       {payload.incomplete ? <p className="floor-plan-warning-copy" role="status">{STAFF_FLOOR_PLAN_INCOMPLETE}</p> : null}
       <div
         className="floor-plan-map-canvas"
@@ -117,6 +125,7 @@ export function PublishedFloorPlanMapView({
           readOnly={focused}
         />
         <div className="floor-plan-area-layer published-floor-plan-area-layer">
+          <FloorPlanDayHighlights highlights={highlights} />
           <FloorPlanLocalOutlines plan={plan} entertainmentReservations={entertainmentReservations} />
           {multipleReservationOutlines.map((outline) => (
             <span

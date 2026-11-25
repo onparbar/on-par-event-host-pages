@@ -8,6 +8,8 @@ import {
 } from "@/lib/floor-plans/service";
 import { getFloorPlanStorage } from "@/lib/floor-plans/storage";
 import { staffFloorPlanDocument, staffFloorPlanPayload } from "@/lib/floor-plans/staff-publication";
+import { floorPlanPublicationDates } from "@/lib/floor-plans/publication";
+import { floorPlanHighlightDates, floorPlanHighlightsFromState } from "@/lib/floor-plans/day-highlights";
 import FloorPlansClient from "./FloorPlansClient";
 
 export const metadata = {
@@ -31,6 +33,14 @@ export default async function FloorPlansPage({ searchParams }: { searchParams: P
     loadAdminState(),
     loadLiveFloorPlanPublicationWindow(today, storage, requestedDate, undefined, planningMonth),
   ]);
+  const visibleDates = new Set([
+    ...floorPlanPublicationDates(today, requestedDate, planningMonth),
+    ...publications.map(({ plan }) => plan.eventDate),
+    ...[...floorPlans, ...floorPlanSpecialPages].map(({ date }) => date),
+  ]);
+  const highlightsByDate = Object.fromEntries(floorPlanHighlightDates(adminState)
+    .filter((date) => visibleDates.has(date))
+    .map((date) => [date, floorPlanHighlightsFromState(adminState, date)]));
   return (
     <FloorPlansClient
       initialState={{
@@ -41,6 +51,7 @@ export default async function FloorPlansPage({ searchParams }: { searchParams: P
         })),
       }}
       plans={floorPlans}
+      highlightsByDate={highlightsByDate}
       planningMonth={planningMonth}
       publications={publications.map(({ plan, payload }) => {
         const published = payload ? staffFloorPlanPayload(payload) : null;
