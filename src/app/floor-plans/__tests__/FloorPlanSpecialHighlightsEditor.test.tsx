@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminAssetOverlay } from "@/lib/admin-types";
 import { getFloorPlanArea } from "@/lib/floor-plans/configuration/areas";
+import { validateFloorPlanHighlights } from "@/lib/floor-plans/day-highlights";
 import Editor, { useFloorPlanSpecialHighlights, type FloorPlanSpecialHighlightsState } from "../FloorPlanSpecialHighlightsEditor";
 
 const hooks = vi.hoisted(() => ({ index: 0, states: [] as unknown[], refIndex: 0, refs: [] as Array<{ current: unknown }>,
@@ -53,6 +54,8 @@ function elements(node: unknown): Array<ReactElement<Props>> {
 function model(items: AdminAssetOverlay[] = []): FloorPlanSpecialHighlightsState {
   const state = { date: DATE, highlights: items, dirty: false, status: "idle" as const, message: "Loaded", selectedId: (items[0]?.id ?? null) as string | null,
     canEdit: true, canUndo: false, canRedo: false, undo: vi.fn(), redo: vi.fn(), save: vi.fn(), reload: vi.fn(),
+    get validation() { try { validateFloorPlanHighlights(state.highlights); return ""; } catch { return "Invalid highlight"; } },
+    get canSave() { return state.canEdit && state.dirty && !state.validation; },
     replaceHighlights: vi.fn(), setSelectedId: vi.fn() };
   state.replaceHighlights.mockImplementation((next: AdminAssetOverlay[]) => { state.highlights = next; state.dirty = true; });
   state.setSelectedId.mockImplementation((id: string | null) => { state.selectedId = id; });
@@ -81,8 +84,8 @@ describe("date-only special highlight draft", () => {
     const state = await load();
     expect(request).toHaveBeenCalledExactlyOnceWith("/api/admin/floor-plan-highlights?date=" + DATE, { cache: "no-store", signal: expect.any(AbortSignal) });
     state.setSelectedId("special-1"); state.replaceHighlights([note("special-1", "Bingo")]);
-    expect(read()).toMatchObject({ dirty: true, selectedId: "special-1", canUndo: true });
-    read().undo(); expect(read().highlights[0].text).toBe("Trivia"); expect(read().dirty).toBe(false);
+    expect(read()).toMatchObject({ dirty: true, selectedId: "special-1", canUndo: true, canSave: true, validation: "" });
+    read().undo(); expect(read().highlights[0].text).toBe("Trivia"); expect(read().canSave).toBe(false); expect(read().dirty).toBe(false);
     read().redo(); expect(read().highlights[0].text).toBe("Bingo"); expect(request).toHaveBeenCalledOnce();
   });
 
@@ -92,7 +95,7 @@ describe("date-only special highlight draft", () => {
     expect(request.mock.calls[1][0]).toBe("/api/admin/floor-plan-highlights");
     expect(request.mock.calls[1][1].method).toBe("PUT");
     expect(requestBody(request, 1)).toEqual({ date: DATE, highlights: [note("special-1", "Bingo")], expectedUpdatedAt: VERSION });
-    expect(read()).toMatchObject({ dirty: false, status: "saved", canUndo: false, canRedo: false });
+    expect(read()).toMatchObject({ dirty: false, status: "saved", canUndo: false, canRedo: false, canSave: false });
     expect(broadcast.opened).toHaveBeenCalledExactlyOnceWith("event-host-floor-plans");
     expect(broadcast.post).toHaveBeenCalledExactlyOnceWith({ action: "highlights-saved", date: DATE });
     expect(broadcast.close).toHaveBeenCalledOnce();
@@ -103,7 +106,7 @@ describe("date-only special highlight draft", () => {
     const request = vi.fn().mockResolvedValueOnce(Response.json(payload())).mockReturnValueOnce(new Promise<Response>((resolve) => { complete = resolve; }));
     vi.stubGlobal("fetch", request); await load(); const state = read(); state.replaceHighlights([note("special-1", "Bingo")]);
     const first = read().save(); void read().save(); read().replaceHighlights([]);
-    expect(read()).toMatchObject({ status: "saving", canEdit: false }); expect(read().highlights).toHaveLength(1); expect(request).toHaveBeenCalledTimes(2);
+    expect(read()).toMatchObject({ status: "saving", canEdit: false, canSave: false }); expect(read().highlights).toHaveLength(1); expect(request).toHaveBeenCalledTimes(2);
     complete(Response.json(payload([note("special-1", "Bingo")], DATE, NEXT_VERSION))); await first;
     expect(read().status).toBe("saved");
   });
@@ -112,7 +115,7 @@ describe("date-only special highlight draft", () => {
     const request = vi.fn().mockResolvedValueOnce(Response.json(payload())).mockResolvedValueOnce(Response.json({ error: "Another Admin saved." }, { status: 409 }))
       .mockResolvedValueOnce(Response.json(payload([note("new-version", "Live music")], DATE, NEXT_VERSION)));
     vi.stubGlobal("fetch", request); await load(); read().replaceHighlights([note("special-1", "Bingo")]); await read().save();
-    expect(read()).toMatchObject({ status: "conflict", dirty: true, canEdit: false }); expect(read().highlights[0].text).toBe("Bingo");
+    expect(read()).toMatchObject({ status: "conflict", dirty: true, canEdit: false, canSave: false }); expect(read().highlights[0].text).toBe("Bingo");
     expect(broadcast.post).not.toHaveBeenCalled();
     await read().save(); read().replaceHighlights([]); expect(request).toHaveBeenCalledTimes(2); expect(read().highlights).toHaveLength(1);
     vi.mocked(window.confirm).mockReturnValueOnce(false); await read().reload(); expect(request).toHaveBeenCalledTimes(2);
@@ -122,22 +125,22 @@ describe("date-only special highlight draft", () => {
 
   it.each([Response.json({ error: "Unavailable" }, { status: 503 }), Response.json(payload([], OTHER_DATE)), Response.json({ date: DATE, highlights: [], updatedAt: "bad" })])("disables editing after an unsuccessful or wrong-date load", async (response) => {
     const request = vi.fn().mockResolvedValue(response); vi.stubGlobal("fetch", request); await load();
-    expect(read()).toMatchObject({ status: "error", canEdit: false }); read().replaceHighlights([note()]); await read().save();
+    expect(read()).toMatchObject({ status: "error", canEdit: false, canSave: false }); read().replaceHighlights([note()]); await read().save();
     expect(read().highlights).toEqual([]); expect(request).toHaveBeenCalledOnce();
   });
 
   it("never sends an unnamed or out-of-bounds note", async () => {
     const request = vi.fn().mockResolvedValue(Response.json(payload())); vi.stubGlobal("fetch", request); await load();
     for (const invalid of [{ ...note(), text: " " }, { ...note(), x: 99, width: 2 }]) {
-      read().replaceHighlights([invalid]); await read().save(); expect(read().status).toBe("error");
+      read().replaceHighlights([invalid]); expect(read().canSave).toBe(false); expect(read().validation).not.toBe(""); await read().save(); expect(read().status).toBe("error");
     }
     expect(request).toHaveBeenCalledOnce();
   });
 
   it("retains a draft on save failure without automatic retry", async () => {
     const request = vi.fn().mockResolvedValueOnce(Response.json(payload())).mockResolvedValueOnce(Response.json({ error: "Save unavailable" }, { status: 503 }));
-    vi.stubGlobal("fetch", request); await load(); read().replaceHighlights([]); await read().save();
-    expect(read()).toMatchObject({ status: "error", dirty: true, canEdit: true }); expect(read().highlights).toEqual([]); expect(request).toHaveBeenCalledTimes(2);
+    vi.stubGlobal("fetch", request); await load(); read().replaceHighlights([]); expect(read().canSave).toBe(true); await read().save();
+    expect(read()).toMatchObject({ status: "error", dirty: true, canEdit: true, canSave: true }); expect(read().highlights).toEqual([]); expect(request).toHaveBeenCalledTimes(2);
   });
 
   it("aborts an old GET and ignores its late reply when the date changes", async () => {
@@ -161,6 +164,18 @@ describe("date-only special highlight draft", () => {
 });
 
 describe("special highlight editor controls", () => {
+  it("explains the Add-then-Save workflow and does not treat typing alone as a saved draft", () => {
+    const state = model();
+    field(tree(state), "New highlight name").props.onChange!({ target: { value: "Bingo" } });
+    const nodes = tree(state);
+    expect(button(nodes, "Add special event highlight").props.disabled).toBe(false);
+    expect(button(nodes, "Save special event highlights").props.disabled).toBe(true);
+    expect(nodes.some((item) => typeof item.props.children === "string" && item.props.children.includes("Typing a name alone does not add a highlight"))).toBe(true);
+    expect(state.replaceHighlights).not.toHaveBeenCalled(); expect(state.save).not.toHaveBeenCalled();
+    button(nodes, "Add special event highlight").props.onClick!();
+    expect(button(tree(state), "Save special event highlights").props.disabled).toBe(false);
+  });
+
   it("adds an independently named and colored note at the selected object's percentage bounds, locally only", () => {
     const state = model(), area = getFloorPlanArea("vip-1")!;
     field(tree(state, area), "New highlight name").props.onChange!({ target: { value: "  Bingo  " } });

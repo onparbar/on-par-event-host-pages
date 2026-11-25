@@ -9,6 +9,7 @@ const hooks = vi.hoisted(() => ({
   effectIndex: 0, deps: [] as Array<readonly unknown[]>, pending: [] as Array<{ index: number; effect: () => unknown }>, cleanups: [] as unknown[],
 }));
 const context = vi.hoisted(() => ({ clearEvent: vi.fn(), selectEvent: vi.fn() }));
+const highlights = vi.hoisted(() => ({ dirty: false, canEdit: true, canSave: false, status: "idle", message: "Loaded", validation: "", save: vi.fn() }));
 vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(),
   useState: (initial: unknown) => {
     const index = hooks.stateIndex++;
@@ -39,7 +40,7 @@ vi.mock("../FloorPlanDayHighlights", () => ({ default: "day-highlights" }));
 vi.mock("../FloorPlanSpecialHighlightsEditor", () => ({
   default: "special-highlight-editor",
   useFloorPlanSpecialHighlights: (date: string) => ({ date, highlights: [{ id: date, kind: "highlight", text: `Note ${date}`, x: 10, y: 10, width: 10, height: 10, fill: "#7C3AED" }],
-    dirty: false, canEdit: true, status: "idle", message: "Loaded", selectedId: null, setSelectedId: vi.fn() }),
+    ...highlights, selectedId: null, setSelectedId: vi.fn() }),
 }));
 
 import FloorPlanDashboard from "../FloorPlanDashboard";
@@ -54,7 +55,7 @@ function payload(date: string): FloorPlanDayPayload {
     entertainmentReservations: [], floorPlanConflicts: [], entertainmentConflicts: [], validation: [], revisions: [], persistence: "database", sourceMode: "live", warnings: [] };
 }
 type Props = { children?: unknown; className?: string; title?: string; highlights?: AdminAssetOverlay[]; "aria-label"?: string;
-  value?: string; onChange?: (event: { target: { value: string } }) => void };
+  value?: string; disabled?: boolean; onClick?: () => void; onChange?: (event: { target: { value: string } }) => void };
 function elements(node: unknown): Array<ReactElement<Props>> {
   if (!node || typeof node !== "object") return [];
   if (Array.isArray(node)) return node.flatMap(elements);
@@ -92,8 +93,35 @@ function defer() {
 beforeEach(() => {
   hooks.states = []; hooks.refs = []; hooks.callbacks = []; hooks.deps = []; hooks.pending = []; hooks.cleanups = [];
   vi.clearAllMocks(); vi.stubGlobal("window", { confirm: vi.fn(() => true), addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  Object.assign(highlights, { dirty: false, canEdit: true, canSave: false, status: "idle", message: "Loaded", validation: "" });
 });
 afterEach(() => { for (const cleanup of hooks.cleanups) if (typeof cleanup === "function") cleanup(); vi.unstubAllGlobals(); });
+
+describe("independent toolbar highlight save", () => {
+  const button = (nodes: ReturnType<typeof render>, name: string) => nodes.find((item) => item.type === "button" && text(item.props.children) === name)!;
+
+  it("enables Save highlights for a note-only draft without saving the floor plan", async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json(payload(FIRST))); vi.stubGlobal("fetch", fetch);
+    render(); effects(); await settle();
+    Object.assign(highlights, { dirty: true, canSave: true, message: "Unsaved special event highlights." });
+    const nodes = render();
+    expect(button(nodes, "Save floor plan").props.disabled).toBe(true);
+    expect(button(nodes, "Save highlights").props.disabled).toBe(false);
+    expect(nodes.some((item) => item.type === "strong" && item.props.children === "Unsaved")).toBe(true);
+    button(nodes, "Save highlights").props.onClick!();
+    expect(highlights.save).toHaveBeenCalledOnce(); expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it.each(["loading", "saving", "conflict", "invalid", "failed load", "unchanged"])("does not enable highlight Save when %s", async (condition) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(payload(FIRST)))); render(); effects(); await settle();
+    Object.assign(highlights, { dirty: condition !== "unchanged", canEdit: condition === "invalid" || condition === "unchanged", canSave: false,
+      status: condition === "failed load" ? "error" : condition, validation: condition === "invalid" ? "A highlight name is required." : "" });
+    const nodes = render();
+    expect(button(nodes, condition === "saving" ? "Saving highlights…" : "Save highlights").props.disabled).toBe(true);
+    if (condition === "invalid") expect(text(nodes)).toContain("A highlight name is required.");
+    expect(highlights.save).not.toHaveBeenCalled();
+  });
+});
 
 describe("Admin floor-plan date request isolation", () => {
   it("hides the old party and map immediately, before the next date's GET effect starts", async () => {

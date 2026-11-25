@@ -147,7 +147,12 @@ export function useFloorPlanSpecialHighlights(date: string) {
     await load();
   }
 
-  return { date, highlights: current.highlights, dirty: !equal(current.highlights, current.saved), status: current.status, message: current.message,
+  const dirty = !equal(current.highlights, current.saved);
+  let validation = "";
+  try { validateFloorPlanHighlights(current.highlights); }
+  catch (error) { validation = error instanceof Error ? error.message : "Check highlight names and bounds."; }
+
+  return { date, highlights: current.highlights, dirty, validation, canSave: editable(current) && dirty && !validation, status: current.status, message: current.message,
     selectedId: current.selectedId, setSelectedId: select, replaceHighlights, undo, redo,
     canUndo: editable(current) && current.past.length > 0, canRedo: editable(current) && current.future.length > 0, save, reload,
     canEdit: editable(current) };
@@ -163,9 +168,6 @@ export default function FloorPlanSpecialHighlightsEditor({ state, selectedArea }
   const [newColor, setNewColor] = useState("#7C3AED");
   useEffect(() => { setNewName(""); setNewColor("#7C3AED"); }, [state.date]);
   const selected = state.highlights.find((item) => item.id === state.selectedId);
-  let validation = "";
-  try { validateFloorPlanHighlights(state.highlights); }
-  catch (error) { validation = error instanceof Error ? error.message : "Check highlight names and bounds."; }
 
   function add() {
     if (!state.canEdit || !newName.trim() || newName.trim().length > 80 || state.highlights.length >= 50) return;
@@ -195,6 +197,7 @@ export default function FloorPlanSpecialHighlightsEditor({ state, selectedArea }
   return <section className="floor-plan-special-highlights" aria-label="Special event highlights">
     <h3>Special event highlights</h3>
     <p>Date-only map notes, not reservations or plan approval. They remain visible for the whole day even when a party is filtered.</p>
+    <p>Enter a name and color, click Add special event highlight to create a draft, then use Save highlights in the top toolbar or Save special event highlights below to publish it. Typing a name alone does not add a highlight.</p>
     <p>Select a map object before adding a note to use its bounds. With no object selected, the note starts near the middle. Use the percentage fields to adjust its position and size.</p>
     <fieldset disabled={!state.canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="floor-plan-field-group">
@@ -215,12 +218,12 @@ export default function FloorPlanSpecialHighlightsEditor({ state, selectedArea }
         <div className="floor-plan-inspector-actions"><button type="button" onClick={() => state.replaceHighlights(state.highlights.filter((item) => item.id !== selected.id))}>Delete selected special event highlight</button></div>
       </> : null}
     </fieldset>
-    {validation ? <p role="alert">{validation}</p> : null}
+    {state.validation ? <p role="alert">{state.validation}</p> : null}
     <p role={state.status === "error" || state.status === "conflict" ? "alert" : "status"}>{state.message}</p>
     <div className="floor-plan-inspector-actions">
       <button disabled={!state.canUndo} onClick={state.undo} type="button">Undo special event highlight</button>
       <button disabled={!state.canRedo} onClick={state.redo} type="button">Redo special event highlight</button>
-      <button disabled={!state.canEdit || !state.dirty || Boolean(validation)} onClick={() => void state.save()} type="button">{state.status === "saving" ? "Saving special event highlights…" : "Save special event highlights"}</button>
+      <button disabled={!state.canSave} onClick={() => void state.save()} type="button">{state.status === "saving" ? "Saving special event highlights…" : "Save special event highlights"}</button>
       <button disabled={state.status === "loading" || state.status === "saving"} onClick={() => void state.reload()} type="button">Reload special event highlights</button>
     </div>
   </section>;

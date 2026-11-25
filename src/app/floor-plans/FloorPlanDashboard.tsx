@@ -969,15 +969,17 @@ export default function FloorPlanDashboard({ initialDate }: { initialDate: strin
             <option value="reset-event">Reset the entire date plan</option>
           </select>
           <button disabled={!plan || saveConflict || requestState === "saving"} onClick={() => void runAction("generate")} type="button">Generate entire date</button>
-          <button disabled={!dirty || saveConflict || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save</button>
+          <button disabled={!dirty || saveConflict || requestState === "saving"} onClick={() => void runAction("save")} type="button">Save floor plan</button>
+          <button disabled={!specialHighlights.canSave} onClick={() => void specialHighlights.save()} type="button">{specialHighlights.status === "saving" ? "Saving highlights…" : "Save highlights"}</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("validate")} type="button">Validate</button>
           <button disabled={!plan?.events.length || dirty || requestState === "saving"} onClick={() => void runAction("approve")} type="button">Approve</button>
           {plan?.events.length && !dirty ? <a className="button-link" href="/floor-plans">View saved plan</a> : null}
           {plan?.status === "Approved" || plan && !plan.events.length && specialHighlights.highlights.length > 0 ? <><button disabled={dirty || specialHighlights.dirty || !specialHighlights.canEdit} onClick={() => void exportPng()} type="button">{mapView?.selectedEventId ? "Export selected event PNG" : "Export PNG"}</button><button disabled={dirty || specialHighlights.dirty || !specialHighlights.canEdit} onClick={() => window.print()} type="button">{mapView?.selectedEventId ? "Print selected event / PDF" : "Print / PDF"}</button></> : null}
         </div>
         <div className={`floor-plan-save-state is-${requestState}`} role="status">
-          <strong>{dirty ? "Unsaved" : requestState === "saving" ? "Working" : requestState === "error" ? "Needs attention" : "Saved"}</strong>
+          <strong>{dirty || specialHighlights.dirty ? "Unsaved" : requestState === "saving" || specialHighlights.status === "saving" ? "Working" : requestState === "error" || specialHighlights.status === "error" || specialHighlights.status === "conflict" ? "Needs attention" : "Saved"}</strong>
           <span>{message}</span>
+          <span>{specialHighlights.validation || specialHighlights.message}</span>
           {saveConflict ? <button type="button" onClick={() => {
             if (window.confirm("Your unsaved draft will be discarded. Load the latest saved plan to review it?")) void loadDate(date);
           }}>Reload latest and review</button> : null}
